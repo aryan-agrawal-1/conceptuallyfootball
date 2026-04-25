@@ -52,3 +52,4 @@ pnpm-debug.log*
 # Local/generated files
 allfiles.txt
 src/reep/data/
+.*.swp
