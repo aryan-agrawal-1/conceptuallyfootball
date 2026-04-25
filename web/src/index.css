@@ -1,0 +1,197 @@
+@import "tailwindcss";
+
+/* ─── Gotham font faces ─────────────────────────────────────────────────────── */
+@font-face {
+  font-family: 'Gotham';
+  src: url('./assets/fonts/GothamThin.otf') format('opentype');
+  font-weight: 100;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Gotham';
+  src: url('./assets/fonts/GothamThinItalic.otf') format('opentype');
+  font-weight: 100;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Gotham';
+  src: url('./assets/fonts/GothamExtraLight.otf') format('opentype');
+  font-weight: 200;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Gotham';
+  src: url('./assets/fonts/GothamExtraLightItalic.otf') format('opentype');
+  font-weight: 200;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Gotham';
+  src: url('./assets/fonts/GothamLight.otf') format('opentype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Gotham';
+  src: url('./assets/fonts/GothamLightItalic.otf') format('opentype');
+  font-weight: 300;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Gotham';
+  src: url('./assets/fonts/GothamBook.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Gotham';
+  src: url('./assets/fonts/GothamBokItalic.otf') format('opentype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Gotham';
+  src: url('./assets/fonts/GothamMedium.otf') format('opentype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Gotham';
+  src: url('./assets/fonts/GothamMediumItalic.otf') format('opentype');
+  font-weight: 500;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Gotham';
+  src: url('./assets/fonts/GothamBold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Gotham';
+  src: url('./assets/fonts/GothamBoldItalic.otf') format('opentype');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Gotham';
+  src: url('./assets/fonts/GothamBlack.otf') format('opentype');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Gotham';
+  src: url('./assets/fonts/GothamBlackItalic.otf') format('opentype');
+  font-weight: 800;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Gotham';
+  src: url('./assets/fonts/GothamUltra.otf') format('opentype');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Gotham';
+  src: url('./assets/fonts/GothamUltraItalic.otf') format('opentype');
+  font-weight: 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* ─── Design tokens ─────────────────────────────────────────────────────────── */
+@theme {
+  /* Palette */
+  --color-mat:          #070810;
+  --color-panel:        #0D0F1A;
+  --color-raised:       #131624;
+  --color-overlay:      #191D2E;
+  --color-line:         #1F2438;
+  --color-line-bright:  #2A3050;
+
+  --color-ink:          #E4EAF8;
+  --color-ink-dim:      #8A95B8;
+  --color-ink-muted:    #4E5878;
+
+  --color-electric:     #4A9EF5;
+  --color-electric-mid: #2066C4;
+  --color-electric-dim: #0D2248;
+
+  --color-gold:         #F0A832;
+  --color-gold-dim:     #3A2610;
+
+  --color-mint:         #1FD17C;
+  --color-ember:        #EF4444;
+  --color-ember-dim:    #3A1010;
+
+  --color-pos-fwd:      #F05A28;
+  --color-pos-mid:      #4A9EF5;
+  --color-pos-def:      #1FD17C;
+  --color-pos-gk:       #A855F7;
+
+  /* Typography */
+  --font-sans: 'Gotham', system-ui, sans-serif;
+
+  /* Spacing */
+  --spacing-nav: 52px;
+  --spacing-filter: 56px;
+}
+
+/* ─── Base reset ────────────────────────────────────────────────────────────── */
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-mat);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-weight: 400;
+  }
+
+  #root {
+    min-height: 100svh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-panel);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-bright);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-ink-muted);
+  }
+}
