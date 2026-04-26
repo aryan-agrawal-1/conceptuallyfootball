@@ -37,11 +37,12 @@ export function VisualiserRadarChart({
   const [hover, setHover] = useState<{ axisIndex: number; seriesId: number; x: number; y: number } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const size = exportMode ? 760 : 520
+  const padding = exportMode ? 76 : 44
   const center = size / 2
   const inner = exportMode ? 82 : 58
-  const band = exportMode ? 220 : 150
+  const band = exportMode ? 206 : 140
   const outer = inner + band
-  const labelR = outer + (exportMode ? 38 : 26)
+  const labelR = outer + (exportMode ? 28 : 20)
 
   const { axis, polygons } = useMemo(() => {
     const count = Math.max(axisLabels.length, 1)
@@ -100,8 +101,8 @@ export function VisualiserRadarChart({
       <svg
         width={size}
         height={size}
-        viewBox={`0 0 ${size} ${size}`}
-        className="max-w-full text-electric/25"
+        viewBox={`${-padding} ${-padding} ${size + padding * 2} ${size + padding * 2}`}
+        className="max-w-full overflow-visible text-electric/25"
         role="img"
         aria-label="Radar comparison chart"
       >
@@ -174,7 +175,7 @@ export function VisualiserRadarChart({
               key={`label-${item.label}`}
               x={item.labelPoint.x}
               y={item.labelPoint.y}
-              textAnchor="middle"
+              textAnchor={item.labelPoint.x > 20 ? 'start' : item.labelPoint.x < -20 ? 'end' : 'middle'}
               dominantBaseline="middle"
               fill="rgba(138,149,184,0.92)"
               fontSize={exportMode ? 13 : 10}

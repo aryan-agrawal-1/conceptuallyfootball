@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2 } from 'lucide-react'
+import { ChevronDown, Loader2, Search, X } from 'lucide-react'
 import { fetchCompetitionSeasonsCatalog, fetchTeamStatMatrix } from '../lib/api'
 import { applyClientFilters, useStatMatrix } from '../hooks/useStatMatrix'
 import {
@@ -29,7 +29,7 @@ import type {
   TeamStatMeta,
 } from '../types/api'
 import { formatValue } from '../lib/format'
-import { HudActionButton, HudFrame, HudLabel, HudPill, HudVSep } from '../components/hud/Hud'
+import { HudActionButton, HudCornerMarks, HudFrame, HudLabel, HudPill, HudVSep } from '../components/hud/Hud'
 import { ProfileRateToggle } from '../components/profile/ProfileRateToggle'
 import { formatTeamStatMode, teamKeyStatLabel, teamStatValueForMode } from '../lib/teamProfileMetrics'
 import { ChartShareCard } from '../components/visualizer/ChartShareCard'
@@ -495,7 +495,6 @@ export function DataVisualiser() {
                 />
                 {state.tab === 'players' && (
                   <>
-                    <HudVSep />
                     <div className="flex flex-wrap gap-2">
                       {PLAYER_POSITION_OPTIONS.map(option => (
                         <HudPill
@@ -742,9 +741,9 @@ function MetricControls({
       <div>
         <p className="mb-2 text-[10px] uppercase tracking-[0.22em] text-electric/75">Highlights</p>
         <div className="flex flex-wrap items-center gap-2">
-          <HudActionButton onClick={onOpenPins} className="px-3 py-2 text-[11px]">
+          <HudPill active={pinnedIds.length > 0} onClick={onOpenPins} className="px-3 py-2">
             {pinnedIds.length ? `${pinnedIds.length} pinned` : 'Pin entities'}
-          </HudActionButton>
+          </HudPill>
           {state.chart === 'scatter' && (
             <HudPill active={state.labels} onClick={() => onChange({ labels: !state.labels })}>
               Labels
@@ -1145,9 +1144,15 @@ function TeamFilterDropdown({
   onChange: (teams: string[]) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
   const ref = useRef<HTMLDivElement>(null)
   const label =
-    selected.length === 0 ? 'All clubs' : selected.length === 1 ? selected[0] : `${selected.length} clubs`
+    selected.length === 0 ? 'All Clubs' : selected.length === 1 ? selected[0] : `${selected.length} Clubs`
+  const filteredTeams = useMemo(() => {
+    const needle = search.trim().toLowerCase()
+    if (!needle) return teams
+    return teams.filter(team => team.toLowerCase().includes(needle))
+  }, [search, teams])
 
   useEffect(() => {
     function close(event: MouseEvent) {
@@ -1163,29 +1168,64 @@ function TeamFilterDropdown({
         type="button"
         onClick={() => setOpen(value => !value)}
         className={cn(
-          'border px-3 py-2 text-[11px] uppercase tracking-[0.15em]',
+          'relative flex items-center gap-1.5 border px-3 py-2 text-[11px] font-medium uppercase tracking-[0.15em] transition-colors',
           selected.length
-            ? 'border-electric bg-electric/15 text-electric'
-            : 'border-electric/15 text-ink-muted hover:border-electric/40',
+            ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
+            : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
         )}
       >
+        {selected.length > 0 && <HudCornerMarks size="size-1" />}
         {label}
+        {selected.length > 0 ? (
+          <X
+            size={11}
+            className="opacity-70"
+            onClick={event => {
+              event.stopPropagation()
+              onChange([])
+            }}
+          />
+        ) : (
+          <ChevronDown size={11} className={cn('transition-transform', open && 'rotate-180')} />
+        )}
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-50 mt-1 max-h-56 min-w-[220px] overflow-y-auto border border-electric/25 bg-panel/95 p-1 shadow-xl">
+        <div className="absolute left-0 top-full z-50 mt-1 w-60 border border-electric/25 bg-panel/95 shadow-xl">
+          <div className="border-b border-electric/20 p-2">
+            <div className="flex items-center gap-2 border border-electric/20 bg-mat/60 px-2 py-1.5">
+              <Search size={12} className="shrink-0 text-electric/60" />
+              <input
+                autoFocus
+                value={search}
+                onChange={event => setSearch(event.target.value)}
+                placeholder="Search club..."
+                className="flex-1 bg-transparent text-[11px] tracking-wide text-ink outline-none placeholder:text-electric/30"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="text-electric/50 hover:text-electric"
+                >
+                  <X size={10} />
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="max-h-56 overflow-y-auto p-1">
           {selected.length > 0 && (
             <button
               type="button"
-              className="w-full px-2 py-1 text-left text-[10px] uppercase tracking-[0.2em] text-electric/70 hover:bg-electric/8"
+              className="mb-0.5 w-full px-3 py-1.5 text-left text-[10px] uppercase tracking-[0.2em] text-electric/70 transition-colors hover:bg-electric/10 hover:text-electric"
               onClick={() => {
                 onChange([])
                 setOpen(false)
               }}
             >
-              Clear clubs
+              Clear selection
             </button>
           )}
-          {teams.map(team => {
+          {filteredTeams.map(team => {
             const on = selected.includes(team)
             return (
               <button
@@ -1193,14 +1233,39 @@ function TeamFilterDropdown({
                 type="button"
                 onClick={() => onChange(on ? selected.filter(entry => entry !== team) : [...selected, team])}
                 className={cn(
-                  'w-full px-2 py-1.5 text-left text-[12px]',
-                  on ? 'bg-electric/10 text-electric' : 'text-ink-dim hover:bg-electric/5',
+                  'flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[12px] transition-colors',
+                  on ? 'bg-electric/10 text-electric' : 'text-ink-dim hover:bg-electric/5 hover:text-ink',
                 )}
               >
+                <span
+                  className={cn(
+                    'flex h-3.5 w-3.5 shrink-0 items-center justify-center border transition-colors',
+                    on ? 'border-electric bg-electric/30' : 'border-electric/30',
+                  )}
+                >
+                  {on && (
+                    <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
+                      <path
+                        d="M1 3L3 5L7 1"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="text-electric"
+                      />
+                    </svg>
+                  )}
+                </span>
                 {team}
               </button>
             )
           })}
+          {filteredTeams.length === 0 && (
+            <p className="px-3 py-3 text-center text-[11px] uppercase tracking-[0.2em] text-electric/40">
+              No clubs found
+            </p>
+          )}
+          </div>
         </div>
       )}
     </div>

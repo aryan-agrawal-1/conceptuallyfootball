@@ -127,134 +127,160 @@ export function CompareRadarChart({
 
   return (
     <div ref={wrapRef} className="relative flex justify-center w-full min-w-0">
-      <svg
-        width={chartSize}
-        height={chartSize}
-        viewBox={`0 0 ${chartSize} ${chartSize}`}
-        className="text-electric/25 overflow-visible"
-        role="img"
-        aria-label="Player comparison radar chart"
-      >
-        <g transform={`translate(${chartCenter}, ${chartCenter})`}>
-          <circle
-            r={innerR}
-            fill={`url(#${coreFillId})`}
-            stroke="rgba(74, 158, 245, 0.12)"
-            strokeWidth={1}
-          />
-          {[0.25, 0.5, 0.75, 1].map((t, idx) => (
+      <div className="flex flex-col items-center gap-4">
+        <svg
+          width={chartSize}
+          height={chartSize}
+          viewBox={`0 0 ${chartSize} ${chartSize}`}
+          className="text-electric/25 overflow-visible"
+          role="img"
+          aria-label="Player comparison radar chart"
+        >
+          <g transform={`translate(${chartCenter}, ${chartCenter})`}>
             <circle
-              key={idx}
-              r={innerR + t * band}
-              fill="none"
-              stroke="currentColor"
+              r={innerR}
+              fill={`url(#${coreFillId})`}
+              stroke="rgba(74, 158, 245, 0.12)"
               strokeWidth={1}
-              strokeDasharray={idx === 3 ? undefined : '2 4'}
             />
-          ))}
-
-          {axes.map((ax, i) => {
-            const outer = polar(ax.theta, outerR)
-            return (
-              <line
-                key={`spoke-${ax.key}`}
-                x1={0}
-                y1={0}
-                x2={outer.x}
-                y2={outer.y}
+            {[0.25, 0.5, 0.75, 1].map((t, idx) => (
+              <circle
+                key={idx}
+                r={innerR + t * band}
+                fill="none"
                 stroke="currentColor"
                 strokeWidth={1}
-                strokeOpacity={highlightIndex === i ? 0.55 : 0.35}
+                strokeDasharray={idx === 3 ? undefined : '2 4'}
               />
-            )
-          })}
+            ))}
 
-          {players.map(({ row, slot }) => {
-            if (!row.eligibility.percentiles_eligible) return null
-            const pts = axes.map(ax => {
-              const found = ax.playerPoints.find(p => p.slot === slot)
-              return found?.pt
-            })
-            if (pts.some(p => !p)) return null
-            const path = buildClosedPath(pts as { x: number; y: number }[])
-            const fill = COMPARISON_SLOT_FILLS[slot % COMPARISON_SLOT_FILLS.length]
-            const stroke = COMPARISON_SLOT_STROKES[slot % COMPARISON_SLOT_STROKES.length]
-            return (
-              <path
-                key={`poly-${row.canonical_player_id}`}
-                d={path}
-                fill={fill}
-                stroke={stroke}
-                strokeWidth={1.75}
-                fillOpacity={1}
-                className="pointer-events-none"
-              />
-            )
-          })}
-
-          {players.map(({ row, slot }) => {
-            if (!row.eligibility.percentiles_eligible) return null
-            return axes.map((ax, i) => {
-              const pp = ax.playerPoints.find(p => p.slot === slot)
-              if (!pp) return null
+            {axes.map((ax, i) => {
+              const outer = polar(ax.theta, outerR)
               return (
-                <g key={`node-${row.canonical_player_id}-${ax.key}`}>
-                  <circle
-                    cx={pp.pt.x}
-                    cy={pp.pt.y}
-                    r={exportMode ? 0 : 14}
-                    fill="transparent"
-                    className="cursor-crosshair"
-                    onMouseEnter={e => {
-                      if (exportMode) return
-                      const { x, y } = pointerToLocal(e.clientX, e.clientY)
-                      onHoverStat(i)
-                      setTip({ statIndex: i, x, y })
-                    }}
-                    onMouseMove={e => {
-                      if (exportMode) return
-                      const { x, y } = pointerToLocal(e.clientX, e.clientY)
-                      setTip(prev => (prev ? { ...prev, x, y } : { statIndex: i, x, y }))
-                    }}
-                    onMouseLeave={() => {
-                      if (exportMode) return
-                      onHoverStat(null)
-                      setTip(null)
-                    }}
-                  />
-                  <circle
-                    cx={pp.pt.x}
-                    cy={pp.pt.y}
-                    r={4}
-                    fill={pp.stroke}
-                    stroke="rgba(7,8,16,0.95)"
-                    strokeWidth={1}
-                    pointerEvents="none"
-                  />
-                </g>
+                <line
+                  key={`spoke-${ax.key}`}
+                  x1={0}
+                  y1={0}
+                  x2={outer.x}
+                  y2={outer.y}
+                  stroke="currentColor"
+                  strokeWidth={1}
+                  strokeOpacity={highlightIndex === i ? 0.55 : 0.35}
+                />
               )
-            })
-          })}
+            })}
 
-          {axes.map((ax, i) => {
-            const active = highlightIndex === i
-            return (
-              <AxisLabelButton
-                key={`lbl-${ax.key}`}
-                x={ax.labelPt.x}
-                y={ax.labelPt.y}
-                midDeg={ax.midDeg}
-                text={ax.label}
-                active={active}
-                exportMode={exportMode}
-                onEnter={() => onHoverStat(i)}
-                onLeave={() => onHoverStat(null)}
-                onClick={() => onClickStat(lockedStatIndex === i ? null : i)}
-              />
-            )
-          })}
-        </g>
-      </svg>
+            {players.map(({ row, slot }) => {
+              if (!row.eligibility.percentiles_eligible) return null
+              const pts = axes.map(ax => {
+                const found = ax.playerPoints.find(p => p.slot === slot)
+                return found?.pt
+              })
+              if (pts.some(p => !p)) return null
+              const path = buildClosedPath(pts as { x: number; y: number }[])
+              const fill = COMPARISON_SLOT_FILLS[slot % COMPARISON_SLOT_FILLS.length]
+              const stroke = COMPARISON_SLOT_STROKES[slot % COMPARISON_SLOT_STROKES.length]
+              return (
+                <path
+                  key={`poly-${row.canonical_player_id}`}
+                  d={path}
+                  fill={fill}
+                  stroke={stroke}
+                  strokeWidth={1.75}
+                  fillOpacity={1}
+                  className="pointer-events-none"
+                />
+              )
+            })}
+
+            {players.map(({ row, slot }) => {
+              if (!row.eligibility.percentiles_eligible) return null
+              return axes.map((ax, i) => {
+                const pp = ax.playerPoints.find(p => p.slot === slot)
+                if (!pp) return null
+                return (
+                  <g key={`node-${row.canonical_player_id}-${ax.key}`}>
+                    <circle
+                      cx={pp.pt.x}
+                      cy={pp.pt.y}
+                      r={exportMode ? 0 : 14}
+                      fill="transparent"
+                      className="cursor-crosshair"
+                      onMouseEnter={e => {
+                        if (exportMode) return
+                        const { x, y } = pointerToLocal(e.clientX, e.clientY)
+                        onHoverStat(i)
+                        setTip({ statIndex: i, x, y })
+                      }}
+                      onMouseMove={e => {
+                        if (exportMode) return
+                        const { x, y } = pointerToLocal(e.clientX, e.clientY)
+                        setTip(prev => (prev ? { ...prev, x, y } : { statIndex: i, x, y }))
+                      }}
+                      onMouseLeave={() => {
+                        if (exportMode) return
+                        onHoverStat(null)
+                        setTip(null)
+                      }}
+                    />
+                    <circle
+                      cx={pp.pt.x}
+                      cy={pp.pt.y}
+                      r={4}
+                      fill={pp.stroke}
+                      stroke="rgba(7,8,16,0.95)"
+                      strokeWidth={1}
+                      pointerEvents="none"
+                    />
+                  </g>
+                )
+              })
+            })}
+
+            {axes.map((ax, i) => {
+              const active = highlightIndex === i
+              return (
+                <AxisLabelButton
+                  key={`lbl-${ax.key}`}
+                  x={ax.labelPt.x}
+                  y={ax.labelPt.y}
+                  midDeg={ax.midDeg}
+                  text={ax.label}
+                  active={active}
+                  exportMode={exportMode}
+                  onEnter={() => onHoverStat(i)}
+                  onLeave={() => onHoverStat(null)}
+                  onClick={() => onClickStat(lockedStatIndex === i ? null : i)}
+                />
+              )
+            })}
+          </g>
+        </svg>
+
+        <div className={cn('flex flex-wrap justify-center', exportMode ? 'gap-3' : 'gap-2')}>
+          {players.map(({ row, slot }) => (
+            <div
+              key={`legend-${row.canonical_player_id}`}
+              className={cn('border border-electric/20 bg-panel/55', exportMode ? 'px-4 py-3' : 'px-3 py-2')}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className="size-2 rounded-full"
+                  style={{ background: COMPARISON_SLOT_STROKES[slot % COMPARISON_SLOT_STROKES.length] }}
+                />
+                <span className={cn('font-medium text-ink', exportMode ? 'text-[15px]' : 'text-[12px]')}>
+                  {row.canonical_player_name}
+                </span>
+              </div>
+              {row.canonical_team_name && (
+                <div className={cn('mt-1 text-ink-muted', exportMode ? 'text-[12px]' : 'text-[10px]')}>
+                  {row.canonical_team_name}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
 
       {tip != null && tip.statIndex >= 0 && tip.statIndex < axes.length && (
         <div

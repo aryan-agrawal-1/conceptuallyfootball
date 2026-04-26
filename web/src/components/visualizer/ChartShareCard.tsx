@@ -12,6 +12,7 @@ interface ChartShareCardProps {
   fileName: string
   aspect?: ExportAspect
   renderContent: (opts: { exportMode: boolean }) => ReactNode
+  renderExportLegend?: () => ReactNode
 }
 
 function aspectClass(aspect: ExportAspect): string {
@@ -31,6 +32,7 @@ export function ChartShareCard({
   fileName,
   aspect = 'landscape',
   renderContent,
+  renderExportLegend,
 }: ChartShareCardProps) {
   const exportRef = useRef<HTMLDivElement>(null)
   const [busy, setBusy] = useState<'share' | 'download' | null>(null)
@@ -144,8 +146,11 @@ export function ChartShareCard({
               >
                 StatBaller
               </div>
-              <div className="relative z-10 flex h-full min-h-[660px] w-full items-center justify-center">
-                {renderContent({ exportMode: true })}
+              <div className="relative z-10 flex h-full min-h-[660px] w-full flex-col items-center justify-center gap-6">
+                <div className="flex w-full flex-1 items-center justify-center">
+                  {renderContent({ exportMode: true })}
+                </div>
+                {renderExportLegend && <div className="w-full">{renderExportLegend()}</div>}
               </div>
             </div>
 
