@@ -10,6 +10,7 @@ from ingestion.models import (
     IngestionRun,
     MetadataAuthority,
     MergedPlayerSeason,
+    PlayerDataMode,
     PositionGroup,
     Provider,
     ReepPlayerRow,
@@ -104,7 +105,10 @@ def execute_merge_for_slice(
 
     us_run = latest_success_run(competition_season, IngestionKind.UNDERSTAT)
     ss_run = latest_success_run(competition_season, IngestionKind.SOFASCORE)
-    assert us_run and ss_run
+    if competition_season.player_data_mode == PlayerDataMode.FULL_MERGE:
+        assert us_run and ss_run
+    elif not ss_run:
+        raise ValueError("Sofascore-only merge requires a successful Sofascore run.")
 
     us_map = {
         r.canonical_player_id: r
@@ -176,6 +180,13 @@ def execute_merge_for_slice(
                 us_yellow_cards=us.yellow_cards if us else None,
                 us_red_cards=us.red_cards if us else None,
                 ss_rating=ss.rating if ss else None,
+                ss_goals=ss.summary_goals if ss else None,
+                ss_assists=ss.summary_assists if ss else None,
+                ss_expected_goals=ss.summary_expected_goals if ss else None,
+                ss_expected_assists=ss.summary_expected_assists
+                if ss
+                else None,
+                ss_total_shots=ss.total_shots if ss else None,
                 ss_tackles=ss.tackles if ss else None,
                 ss_interceptions=ss.interceptions if ss else None,
                 ss_clearances=ss.clearances if ss else None,

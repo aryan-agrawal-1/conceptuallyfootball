@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, Loader2, Search, X } from 'lucide-react'
-import { fetchCompetitionSeasonsCatalog, fetchTeamStatMatrix } from '../lib/api'
+import { fetchTeamStatMatrix } from '../lib/api'
 import { applyClientFilters, useStatMatrix } from '../hooks/useStatMatrix'
 import {
   DEFAULT_BAR_COUNT,
@@ -23,11 +23,11 @@ import {
   stripPer90Suffix,
 } from '../lib/profileMetrics'
 import type {
-  CompetitionCatalogEntry,
   PlayerRow,
   TeamSeasonRow,
   TeamStatMeta,
 } from '../types/api'
+import { useScope } from '../context/ScopeContext'
 import { formatValue } from '../lib/format'
 import { HudActionButton, HudCornerMarks, HudFrame, HudLabel, HudPill, HudVSep } from '../components/hud/Hud'
 import { ProfileRateToggle } from '../components/profile/ProfileRateToggle'
@@ -70,34 +70,8 @@ export function DataVisualiser() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [pickerKind, setPickerKind] = useState<PickerKind>(null)
+  const { scopeLabel, buildScopedPath } = useScope()
   const state = useMemo(() => parseDataVisualiserParams(searchParams), [searchParams])
-
-  const catalogQuery = useQuery({
-    queryKey: ['competition-seasons-catalog'],
-    queryFn: fetchCompetitionSeasonsCatalog,
-    staleTime: 30 * 60 * 1000,
-  })
-
-  useEffect(() => {
-    if (!catalogQuery.data?.competitions?.length) return
-    const comp = catalogQuery.data.competitions.find(entry => entry.code === state.competition)
-    if (!comp) {
-      const first = catalogQuery.data.competitions[0]
-      writeState(state, setSearchParams, {
-        competition: first.code,
-        season: first.seasons[0]?.label ?? state.season,
-      })
-      return
-    }
-    if (!comp.seasons.some(season => season.label === state.season)) {
-      writeState(state, setSearchParams, { season: comp.seasons[0]?.label ?? state.season })
-    }
-  }, [catalogQuery.data, setSearchParams, state])
-
-  const seasonOptions = useMemo((): CompetitionCatalogEntry['seasons'] => {
-    const comp = catalogQuery.data?.competitions.find(entry => entry.code === state.competition)
-    return comp?.seasons ?? []
-  }, [catalogQuery.data, state.competition])
 
   const playerFetchFilters = useMemo(
     () => ({
@@ -378,7 +352,11 @@ export function DataVisualiser() {
           showLabels={state.labels}
           labelIds={labelIds}
           exportMode={exportMode}
-          onSelect={exportMode ? undefined : id => navigate(state.tab === 'players' ? `/player/${id}` : `/team/${id}`)}
+          onSelect={
+            exportMode
+              ? undefined
+              : id => navigate(buildScopedPath(state.tab === 'players' ? `/player/${id}` : `/team/${id}`))
+          }
         />
       )
     }
@@ -391,7 +369,11 @@ export function DataVisualiser() {
           }))}
           metricLabel={metricLabel(state.tab, barMetric, playerMeta, teamMeta)}
           exportMode={exportMode}
-          onSelect={exportMode ? undefined : id => navigate(state.tab === 'players' ? `/player/${id}` : `/team/${id}`)}
+          onSelect={
+            exportMode
+              ? undefined
+              : id => navigate(buildScopedPath(state.tab === 'players' ? `/player/${id}` : `/team/${id}`))
+          }
         />
       )
     }
@@ -421,7 +403,7 @@ export function DataVisualiser() {
           </p>
         </div>
         <Link
-          to="/"
+          to={buildScopedPath('/')}
           className="text-[10px] uppercase tracking-[0.22em] text-electric/70 hover:text-electric"
         >
           {state.tab === 'players' ? 'Back to Matrix' : 'Team profiles'}
@@ -431,34 +413,9 @@ export function DataVisualiser() {
       <div className="mb-6 flex flex-wrap items-center gap-3 border border-electric/20 bg-panel/70 px-4 py-3 backdrop-blur-md">
         <HudLabel>Scope</HudLabel>
         <HudVSep />
-        <div className="flex flex-wrap items-center gap-2">
-          <ControlSelect
-            value={state.competition}
-            onChange={value => {
-              const comp = catalogQuery.data?.competitions.find(entry => entry.code === value)
-              update({ competition: value, season: comp?.seasons[0]?.label ?? state.season })
-            }}
-            disabled={!catalogQuery.data?.competitions.length}
-            options={
-              catalogQuery.data?.competitions.map(entry => ({
-                value: entry.code,
-                label: entry.code,
-              })) ?? [{ value: state.competition, label: state.competition }]
-            }
-          />
-          <ControlSelect
-            value={state.season}
-            onChange={value => update({ season: value })}
-            disabled={!seasonOptions.length}
-            options={
-              seasonOptions.map(option => ({
-                value: option.label,
-                label: option.label,
-              })) || [{ value: state.season, label: state.season }]
-            }
-          />
-        </div>
-        {catalogQuery.isError && <span className="text-[10px] uppercase tracking-wide text-ember">Catalog failed</span>}
+        <span className="text-[11px] font-mono uppercase tracking-[0.16em] text-electric/85">
+          {scopeLabel}
+        </span>
         <div className="min-w-[8px] flex-1" />
         <div className="flex flex-wrap items-center gap-2">
           <HudPill active={state.tab === 'players'} onClick={() => update({ tab: 'players', chart: 'scatter' })}>

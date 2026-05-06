@@ -67,6 +67,12 @@ def _min_rows() -> int:
 
 def ingest_understat_slice(competition_season: CompetitionSeason, *, run: IngestionRun) -> None:
     _mark_run_start(run)
+    if not competition_season.supports_understat:
+        _mark_run_failed(
+            run,
+            "Understat ingestion is not configured for this competition season.",
+        )
+        return
     try:
         cfg = UnderstatLeagueConfig(
             league=competition_season.understat_league,
@@ -154,6 +160,12 @@ def ingest_understat_slice(competition_season: CompetitionSeason, *, run: Ingest
 
 def ingest_sofascore_slice(competition_season: CompetitionSeason, *, run: IngestionRun) -> None:
     _mark_run_start(run)
+    if not competition_season.supports_sofascore:
+        _mark_run_failed(
+            run,
+            "Sofascore ingestion is not configured for this competition season.",
+        )
+        return
     cfg = SofascoreSeasonConfig(
         unique_tournament_id=competition_season.sofascore_unique_tournament_id,
         season_id=competition_season.sofascore_season_id,
@@ -193,6 +205,8 @@ def ingest_sofascore_slice(competition_season: CompetitionSeason, *, run: Ingest
                     summary_goals=norm.get("summary_goals"),
                     summary_assists=norm.get("summary_assists"),
                     summary_expected_goals=norm.get("summary_expected_goals"),
+                    summary_expected_assists=norm.get("summary_expected_assists"),
+                    total_shots=norm.get("total_shots"),
                     summary_successful_dribbles=norm.get("summary_successful_dribbles"),
                     summary_accurate_passes_percentage=norm.get(
                         "summary_accurate_passes_percentage"
@@ -270,13 +284,19 @@ def run_merge_job(competition_season: CompetitionSeason, *, run: IngestionRun) -
         is_current=True,
     ).count()
     if count == 0:
-        _mark_run_failed(run, "Merge produced zero rows (no matched players in both sources).")
+        _mark_run_failed(run, "Merge produced zero current rows.")
         return
     _mark_run_success(run, stats={"merged_rows": count})
 
 
 def ingest_sofascore_team_slice(competition_season: CompetitionSeason, *, run: IngestionRun) -> None:
     _mark_run_start(run)
+    if not competition_season.supports_sofascore:
+        _mark_run_failed(
+            run,
+            "Sofascore team ingestion is not configured for this competition season.",
+        )
+        return
     cfg = SofascoreSeasonConfig(
         unique_tournament_id=competition_season.sofascore_unique_tournament_id,
         season_id=competition_season.sofascore_season_id,

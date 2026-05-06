@@ -6,10 +6,12 @@ from ingestion.galaxy_api import GalaxyApi, GalaxySimilarApi
 from ingestion.gk_api import GkDerivedPlayerSeasonDetailApi, GkDerivedPlayerSeasonListApi
 from ingestion.team_api import TeamSeasonDetailApi, TeamSeasonListApi, TeamSquadApi
 from ingestion.regression_api import RegressionLabFitApi
+from ingestion.search_api import SearchEntitiesApi
 
 
 urlpatterns = [
     path("competition-seasons", CompetitionSeasonsCatalogApi.as_view()),
+    path("search/entities", SearchEntitiesApi.as_view()),
     path("player-seasons/gk-derived-stats", GkDerivedPlayerSeasonListApi.as_view()),
     path(
         "player-seasons/gk-derived-stats/<int:canonical_player_id>",

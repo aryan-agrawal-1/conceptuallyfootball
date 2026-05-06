@@ -3,24 +3,25 @@ import { useNavigate } from 'react-router-dom'
 import { Command } from 'cmdk'
 import { Loader2 } from 'lucide-react'
 import { useSearchPaletteIndex } from '../../hooks/useSearchPaletteIndex'
+import { resolveEntityScope } from '../../hooks/useSearchPaletteIndex'
 import { foldForSearch } from '../../lib/foldAccents'
 import { cn } from '../../lib/utils'
-import type { PlayerRow } from '../../types/api'
-import type { SearchTeamRow } from '../../hooks/useSearchPaletteIndex'
+import { useScope } from '../../context/ScopeContext'
+import type { SearchPlayerEntity, SearchTeamEntity } from '../../types/api'
 import { HudCornerMarks } from '../hud/Hud'
 
 const DEFAULT_VISIBLE = 5
 
-function filterPlayers(rows: PlayerRow[], q: string): PlayerRow[] {
+function filterPlayers(rows: SearchPlayerEntity[], q: string): SearchPlayerEntity[] {
   const trimmed = q.trim()
   if (!trimmed) {
     return rows.slice(0, DEFAULT_VISIBLE)
   }
   const needle = foldForSearch(trimmed)
-  return rows.filter((p) => foldForSearch(p.canonical_player_name).includes(needle))
+  return rows.filter(p => foldForSearch(p.canonical_player_name).includes(needle))
 }
 
-function filterTeams(rows: SearchTeamRow[], q: string): SearchTeamRow[] {
+function filterTeams(rows: SearchTeamEntity[], q: string): SearchTeamEntity[] {
   const trimmed = q.trim()
   if (!trimmed) {
     return rows.slice(0, DEFAULT_VISIBLE)
@@ -38,7 +39,8 @@ export function CommandPalette({
 }) {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
-  const { playersSorted, teamsSorted, isLoading, isError } = useSearchPaletteIndex(open)
+  const { scope, buildScopedPath } = useScope()
+  const { globalPlayers, globalTeams, isLoading, isError } = useSearchPaletteIndex(open)
 
   const handleOpenChange = (next: boolean) => {
     if (!next) {
@@ -48,10 +50,10 @@ export function CommandPalette({
   }
 
   const visiblePlayers = useMemo(
-    () => filterPlayers(playersSorted, search),
-    [playersSorted, search],
+    () => filterPlayers(globalPlayers, search),
+    [globalPlayers, search],
   )
-  const visibleTeams = useMemo(() => filterTeams(teamsSorted, search), [teamsSorted, search])
+  const visibleTeams = useMemo(() => filterTeams(globalTeams, search), [globalTeams, search])
 
   const showEmpty =
     !isLoading &&
@@ -59,16 +61,18 @@ export function CommandPalette({
     visiblePlayers.length === 0 &&
     visibleTeams.length === 0 &&
     search.trim() !== '' &&
-    playersSorted.length + teamsSorted.length > 0
+    globalPlayers.length + globalTeams.length > 0
 
-  const handleSelectPlayer = (id: number) => {
+  const handleSelectPlayer = (entity: SearchPlayerEntity) => {
+    const nextScope = resolveEntityScope(entity.memberships, scope)
     handleOpenChange(false)
-    navigate(`/player/${id}`)
+    navigate(buildScopedPath(`/player/${entity.canonical_player_id}`, nextScope ?? undefined))
   }
 
-  const handleSelectTeam = (id: number) => {
+  const handleSelectTeam = (entity: SearchTeamEntity) => {
+    const nextScope = resolveEntityScope(entity.memberships, scope)
     handleOpenChange(false)
-    navigate(`/team/${id}`)
+    navigate(buildScopedPath(`/team/${entity.canonical_team_id}`, nextScope ?? undefined))
   }
 
   return (
@@ -136,7 +140,7 @@ export function CommandPalette({
                       key={`p-${p.canonical_player_id}`}
                       value={`player-${p.canonical_player_id}`}
                       keywords={[p.canonical_player_name]}
-                      onSelect={() => handleSelectPlayer(p.canonical_player_id)}
+                      onSelect={() => handleSelectPlayer(p)}
                       className={cn(
                         'flex cursor-pointer items-center gap-2 rounded-none border border-transparent px-3 py-2 text-[13px]',
                         'text-ink aria-selected:bg-electric/15 aria-selected:border-electric/30 aria-selected:text-electric',
@@ -144,9 +148,9 @@ export function CommandPalette({
                       )}
                     >
                       <span className="truncate">{p.canonical_player_name}</span>
-                      {p.canonical_team_name && (
+                      {p.memberships[0]?.canonical_team_name && (
                         <span className="ml-auto shrink-0 truncate text-[11px] text-ink-muted">
-                          {p.canonical_team_name}
+                          {p.memberships[0]?.canonical_team_name}
                         </span>
                       )}
                     </Command.Item>
@@ -164,7 +168,7 @@ export function CommandPalette({
                       key={`t-${t.canonical_team_id}`}
                       value={`team-${t.canonical_team_id}`}
                       keywords={[t.canonical_team_name]}
-                      onSelect={() => handleSelectTeam(t.canonical_team_id)}
+                      onSelect={() => handleSelectTeam(t)}
                       className={cn(
                         'flex cursor-pointer items-center gap-2 rounded-none border border-transparent px-3 py-2 text-[13px]',
                         'text-ink aria-selected:bg-electric/15 aria-selected:border-electric/30 aria-selected:text-electric',

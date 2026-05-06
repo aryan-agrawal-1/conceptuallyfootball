@@ -3,6 +3,7 @@ import { HudFrame } from '../hud/Hud'
 import { cn } from '../../lib/utils'
 import type { TeamSquadPlayer } from '../../types/api'
 import { formatValue } from '../../lib/format'
+import { useScope } from '../../context/ScopeContext'
 
 const POSITION_COLORS: Record<string, string> = {
   FWD: '#F05A28',
@@ -20,6 +21,7 @@ const SQUAD_GRID =
   'grid grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-3 items-center px-4'
 
 export function TeamSquadList({ squad }: TeamSquadListProps) {
+  const { buildScopedPath } = useScope()
   return (
     <HudFrame header={<span>Squad // Roster</span>} className="w-full">
       <div className="border-t border-electric/10">
@@ -38,7 +40,7 @@ export function TeamSquadList({ squad }: TeamSquadListProps) {
           {squad.map(p => (
             <Link
               key={p.canonical_player_id}
-              to={`/player/${p.canonical_player_id}`}
+              to={buildScopedPath(`/player/${p.canonical_player_id}`)}
               className={cn(
                 SQUAD_GRID,
                 'py-2.5 transition-colors hover:bg-electric/5',

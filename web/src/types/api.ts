@@ -1,5 +1,83 @@
 export type PositionGroup = 'FWD' | 'MID' | 'DEF' | 'GK' | 'UNK'
 
+export interface ScoreAvailabilityDetail {
+  available?: boolean
+  positions?: Partial<Record<PositionGroup, boolean>>
+  missing_components?: Partial<Record<PositionGroup, string[]>>
+  low_coverage_components?: Partial<Record<PositionGroup, Record<string, number>>>
+}
+
+export interface MetricAvailability {
+  available_metrics?: string[]
+  unavailable_metrics?: string[]
+  ui_available_metrics?: string[]
+  default_metrics?: string[]
+  low_coverage_metrics?: string[]
+  scores?: Record<string, ScoreAvailabilityDetail>
+  available_scores?: string[]
+  unavailable_scores?: string[]
+  coverage_by_position?: Partial<Record<PositionGroup, Record<string, number>>>
+  metric_thresholds?: Record<string, number>
+}
+
+export interface CompetitionSeasonOption {
+  label: string
+  competition_season_id: number
+  player_data_mode?: string
+  has_understat?: boolean
+  has_sofascore?: boolean
+  metric_availability?: MetricAvailability
+}
+
+export interface CompetitionCatalogEntry {
+  code: string
+  name: string
+  seasons: CompetitionSeasonOption[]
+}
+
+export interface CompetitionSeasonsCatalogResponse {
+  competitions: CompetitionCatalogEntry[]
+}
+
+export interface SearchScopeMembership {
+  competition: string
+  season: string
+  competition_season_id: number
+}
+
+export interface SearchPlayerMembership extends SearchScopeMembership {
+  canonical_team_id: number | null
+  canonical_team_name: string | null
+  position_group: PositionGroup
+  minutes: number
+}
+
+export interface SearchTeamMembership extends SearchScopeMembership {
+  rank: number | null
+  matches: number | null
+}
+
+export interface SearchPlayerEntity {
+  kind: 'player'
+  canonical_player_id: number
+  canonical_player_name: string
+  total_minutes: number
+  memberships: SearchPlayerMembership[]
+}
+
+export interface SearchTeamEntity {
+  kind: 'team'
+  canonical_team_id: number
+  canonical_team_name: string
+  total_matches: number
+  memberships: SearchTeamMembership[]
+}
+
+export interface SearchEntitiesResponse {
+  players: SearchPlayerEntity[]
+  teams: SearchTeamEntity[]
+}
+
 export interface Eligibility {
   percentiles_eligible: boolean
   percentiles_ineligibility_reason: string | null
@@ -261,19 +339,4 @@ export interface RegressionLabFitResponse {
   intercept: number
   predictions: RegressionLabPredictionRow[]
   warnings: string[]
-}
-
-export interface CompetitionSeasonOption {
-  label: string
-  competition_season_id: number
-}
-
-export interface CompetitionCatalogEntry {
-  code: string
-  name: string
-  seasons: CompetitionSeasonOption[]
-}
-
-export interface CompetitionSeasonsCatalogResponse {
-  competitions: CompetitionCatalogEntry[]
 }

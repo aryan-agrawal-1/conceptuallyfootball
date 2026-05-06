@@ -120,7 +120,7 @@ class TeamSourceIngestTests(TestCase):
         self.assertEqual(src.overall_stats_json["corners"], 196)
 
     @patch("ingestion.services.ingest.build_team_season_rows")
-    def test_ingest_quarantines_unmatched_team_but_keeps_source_row(self, mock_build_rows):
+    def test_ingest_creates_provider_native_team_fallback_and_keeps_audit_row(self, mock_build_rows):
         cs = _slice()
         mock_build_rows.return_value = [_team_row(provider_team_id="999", team_name="Mystery FC")]
         run = IngestionRun.objects.create(
@@ -134,13 +134,16 @@ class TeamSourceIngestTests(TestCase):
         run.refresh_from_db()
         self.assertEqual(run.status, IngestionRunStatus.SUCCESS)
         src = SofascoreTeamSeasonSource.objects.get(provider_team_id="999")
-        self.assertIsNone(src.canonical_team)
+        self.assertIsNotNone(src.canonical_team)
+        self.assertEqual(src.canonical_team.name, "Mystery FC")
         quarantine = UnmatchedProviderTeam.objects.get(
             competition_season=cs,
             provider=Provider.SOFASCORE,
             provider_team_id="999",
         )
         self.assertEqual(quarantine.team_name, "Mystery FC")
+        self.assertEqual(quarantine.resolved_team, src.canonical_team)
+        self.assertIsNotNone(quarantine.resolved_at)
 
 
 class TeamMergeTests(TestCase):

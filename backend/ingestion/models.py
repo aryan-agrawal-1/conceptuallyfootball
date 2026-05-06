@@ -36,6 +36,11 @@ class MetadataAuthority(models.TextChoices):
     SOFASCORE = "sofascore", "Sofascore"
 
 
+class PlayerDataMode(models.TextChoices):
+    FULL_MERGE = "full_merge", "Full merge"
+    SOFASCORE_ONLY = "sofascore_only", "Sofascore only"
+
+
 class PositionGroup(models.TextChoices):
     GK = "GK", "Goalkeeper"
     DEF = "DEF", "Defender"
@@ -70,16 +75,26 @@ class Season(models.Model):
 class CompetitionSeason(models.Model):
     competition = models.ForeignKey(Competition, on_delete=models.CASCADE, related_name="seasons")
     season = models.ForeignKey(Season, on_delete=models.CASCADE, related_name="competition_links")
-    understat_league = models.CharField(max_length=32, default="EPL")
+    player_data_mode = models.CharField(
+        max_length=24,
+        choices=PlayerDataMode.choices,
+        default=PlayerDataMode.FULL_MERGE,
+    )
+    has_understat = models.BooleanField(default=True)
+    has_sofascore = models.BooleanField(default=True)
+    understat_league = models.CharField(max_length=32, blank=True, null=True, default="EPL")
     understat_season_year = models.CharField(
         max_length=8,
+        blank=True,
+        null=True,
         help_text="Understat URL segment, e.g. 2025 for 2025-26 depending on Understat convention.",
     )
-    sofascore_unique_tournament_id = models.PositiveIntegerField()
-    sofascore_season_id = models.PositiveIntegerField()
+    sofascore_unique_tournament_id = models.PositiveIntegerField(null=True, blank=True)
+    sofascore_season_id = models.PositiveIntegerField(null=True, blank=True)
     expected_team_count = models.PositiveSmallIntegerField(default=20)
     min_merged_team_count = models.PositiveSmallIntegerField(default=18)
     min_team_stats_coverage_count = models.PositiveSmallIntegerField(default=18)
+    metric_availability = models.JSONField(default=dict, blank=True)
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -92,6 +107,22 @@ class CompetitionSeason(models.Model):
 
     def __str__(self) -> str:
         return f"{self.competition.short_code} {self.season.label}"
+
+    @property
+    def supports_understat(self) -> bool:
+        return self.has_understat and bool(self.understat_league and self.understat_season_year)
+
+    @property
+    def supports_sofascore(self) -> bool:
+        return (
+            self.has_sofascore
+            and self.sofascore_unique_tournament_id is not None
+            and self.sofascore_season_id is not None
+        )
+
+    @property
+    def requires_dual_provider_merge(self) -> bool:
+        return self.player_data_mode == PlayerDataMode.FULL_MERGE
 
 
 class IngestionRun(models.Model):
@@ -420,6 +451,8 @@ class SofascorePlayerSeasonSource(models.Model):
     summary_goals = models.PositiveIntegerField(null=True, blank=True)
     summary_assists = models.PositiveIntegerField(null=True, blank=True)
     summary_expected_goals = models.FloatField(null=True, blank=True)
+    summary_expected_assists = models.FloatField(null=True, blank=True)
+    total_shots = models.PositiveIntegerField(null=True, blank=True)
     summary_successful_dribbles = models.PositiveIntegerField(null=True, blank=True)
     summary_accurate_passes_percentage = models.FloatField(null=True, blank=True)
     tackles = models.PositiveIntegerField(null=True, blank=True)
@@ -501,7 +534,7 @@ class SofascoreTeamSeasonSource(models.Model):
 
     matches = models.PositiveIntegerField(null=True, blank=True)
     rank = models.PositiveIntegerField(null=True, blank=True)
-    points = models.PositiveIntegerField(null=True, blank=True)
+    points = models.IntegerField(null=True, blank=True)
     wins = models.PositiveIntegerField(null=True, blank=True)
     draws = models.PositiveIntegerField(null=True, blank=True)
     losses = models.PositiveIntegerField(null=True, blank=True)
@@ -683,6 +716,11 @@ class MergedPlayerSeason(models.Model):
     us_red_cards = models.PositiveIntegerField(null=True, blank=True)
 
     ss_rating = models.FloatField(null=True, blank=True)
+    ss_goals = models.PositiveIntegerField(null=True, blank=True)
+    ss_assists = models.PositiveIntegerField(null=True, blank=True)
+    ss_expected_goals = models.FloatField(null=True, blank=True)
+    ss_expected_assists = models.FloatField(null=True, blank=True)
+    ss_total_shots = models.PositiveIntegerField(null=True, blank=True)
     ss_tackles = models.PositiveIntegerField(null=True, blank=True)
     ss_interceptions = models.PositiveIntegerField(null=True, blank=True)
     ss_clearances = models.PositiveIntegerField(null=True, blank=True)
@@ -778,7 +816,7 @@ class MergedTeamSeason(models.Model):
 
     matches = models.PositiveIntegerField(null=True, blank=True)
     rank = models.PositiveIntegerField(null=True, blank=True)
-    points = models.PositiveIntegerField(null=True, blank=True)
+    points = models.IntegerField(null=True, blank=True)
     wins = models.PositiveIntegerField(null=True, blank=True)
     draws = models.PositiveIntegerField(null=True, blank=True)
     losses = models.PositiveIntegerField(null=True, blank=True)

@@ -3,8 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useQueries } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { fetchPlayerDetail } from '../lib/api'
-import { DEFAULT_FILTERS } from '../hooks/useStatMatrix'
 import { useSearchPaletteIndex } from '../hooks/useSearchPaletteIndex'
+import { useScope } from '../context/ScopeContext'
 import type { PlayerDetailResponse, PlayerRow, PositionGroup } from '../types/api'
 import { parsePlayerIdsParam, parseRateModeParam, parseStatsParam } from '../lib/comparisonUrl'
 import { resolveComparisonStatKeys } from '../lib/comparisonStatKeys'
@@ -39,6 +39,7 @@ export function Comparisons() {
   const [hoveredStatIndex, setHoveredStatIndex] = useState<number | null>(null)
   const [lockedStatIndex, setLockedStatIndex] = useState<number | null>(null)
   const [cohortConfirm, setCohortConfirm] = useState<PlayerRow | null>(null)
+  const { scope, scopeLabel, buildScopedPath } = useScope()
 
   const playerIds = useMemo(() => parsePlayerIdsParam(searchParams.get('players')), [searchParams])
   const urlStats = useMemo(() => parseStatsParam(searchParams.get('stats')), [searchParams])
@@ -49,8 +50,8 @@ export function Comparisons() {
 
   const { playersSorted, isLoading: indexLoading, isError: indexError } = useSearchPaletteIndex(true)
 
-  const competition = DEFAULT_FILTERS.competition
-  const season = DEFAULT_FILTERS.season
+  const competition = scope.competition
+  const season = scope.season
 
   const detailQueries = useQueries({
     queries: playerIds.map(id => ({
@@ -229,8 +230,8 @@ export function Comparisons() {
   }, [radarPlayers])
   const compareSubtitle = useMemo(() => {
     const cohort = cohortPosition ? POSITION_COHORT_LABEL[cohortPosition] : 'Players'
-    return `${DEFAULT_FILTERS.competition} ${DEFAULT_FILTERS.season} · ${cohort} · ${rateMode === 'per90' ? 'per 90' : 'season'} · ${statKeys.length} axes`
-  }, [cohortPosition, rateMode, statKeys.length])
+    return `${scopeLabel} · ${cohort} · ${rateMode === 'per90' ? 'per 90' : 'season'} · ${statKeys.length} axes`
+  }, [cohortPosition, rateMode, scopeLabel, statKeys.length])
 
   return (
     <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-8 pb-20">
@@ -240,7 +241,7 @@ export function Comparisons() {
             Comparisons
           </h1>
           <p className="text-[12px] text-ink-muted font-mono tabular-nums">
-            {DEFAULT_FILTERS.competition} · {DEFAULT_FILTERS.season}
+            {scope.competition} · {scope.season}
             {cohortPosition && (
               <>
                 {' '}
@@ -306,7 +307,7 @@ export function Comparisons() {
                         <div className="flex items-start justify-between gap-2 mb-1">
                           <div className="min-w-0">
                             <Link
-                              to={`/player/${id}`}
+                              to={buildScopedPath(`/player/${id}`)}
                               className="text-[13px] font-semibold text-ink truncate block hover:text-electric/90 hover:underline"
                             >
                               {label}
@@ -316,7 +317,7 @@ export function Comparisons() {
                                 {d?.canonical_team_id != null ? (
                                   <Link
                                     className="hover:text-electric hover:underline"
-                                    to={`/team/${d.canonical_team_id}`}
+                                    to={buildScopedPath(`/team/${d.canonical_team_id}`)}
                                   >
                                     {team}
                                   </Link>

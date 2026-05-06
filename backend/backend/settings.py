@@ -129,6 +129,21 @@ REST_FRAMEWORK = {
 
 STATBALLER_INGEST_MIN_ROWS = int(os.environ.get("STATBALLER_INGEST_MIN_ROWS", "200"))
 
+# Provider/batch pacing. Keep these conservative so large league refreshes do not
+# hammer Sofascore and trigger IP-level challenges.
+STATBALLER_SOFASCORE_REQUEST_DELAY_SECONDS = float(
+    os.environ.get("STATBALLER_SOFASCORE_REQUEST_DELAY_SECONDS", "1.5")
+)
+STATBALLER_SOFASCORE_RETRY_BASE_SLEEP_SECONDS = float(
+    os.environ.get("STATBALLER_SOFASCORE_RETRY_BASE_SLEEP_SECONDS", "8.0")
+)
+STATBALLER_BATCH_SLICE_SLEEP_SECONDS = float(
+    os.environ.get("STATBALLER_BATCH_SLICE_SLEEP_SECONDS", "20.0")
+)
+STATBALLER_BATCH_LEAGUE_SLEEP_SECONDS = float(
+    os.environ.get("STATBALLER_BATCH_LEAGUE_SLEEP_SECONDS", "120.0")
+)
+
 STATBALLER_REEP_DATA_PATH = os.environ.get("STATBALLER_REEP_DATA_PATH", "")
 STATBALLER_REEP_CSV_DIR = os.environ.get("STATBALLER_REEP_CSV_DIR", "")
 STATBALLER_HTTP_USER_AGENT = os.environ.get(

@@ -1,10 +1,11 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, AlertCircle } from 'lucide-react'
 import { fetchPlayerDetail } from '../lib/api'
-import { DEFAULT_FILTERS } from '../hooks/useStatMatrix'
 import type { PlayerDetailResponse, SecondaryTeamBadge } from '../types/api'
+import { useScope } from '../context/ScopeContext'
+import { resolveEntityScope, useSearchPaletteIndex } from '../hooks/useSearchPaletteIndex'
 import { ProfileBreadcrumb } from '../components/profile/ProfileBreadcrumb'
 import { ProfileRateToggle } from '../components/profile/ProfileRateToggle'
 import { ProfileKeyStats } from '../components/profile/ProfileKeyStats'
@@ -24,6 +25,7 @@ const POSITION_COHORT_LABEL: Record<PositionGroup, string> = {
 }
 
 function FormerClubsNote({ teams }: { teams: SecondaryTeamBadge[] | undefined }) {
+  const { buildScopedPath } = useScope()
   if (!teams?.length) return null
   return (
     <>
@@ -35,7 +37,7 @@ function FormerClubsNote({ teams }: { teams: SecondaryTeamBadge[] | undefined })
           {i > 0 && i < teams.length - 1 && <span>, </span>}
           {i > 0 && i === teams.length - 1 && <span> and </span>}
           <Link
-            to={`/team/${t.canonical_team_id}`}
+            to={buildScopedPath(`/team/${t.canonical_team_id}`)}
             className="text-electric/90 hover:text-electric hover:underline"
           >
             {t.canonical_team_name}
@@ -50,18 +52,35 @@ function FormerClubsNote({ teams }: { teams: SecondaryTeamBadge[] | undefined })
 export function PlayerProfile() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { scope, buildScopedPath } = useScope()
+  const { globalPlayers } = useSearchPaletteIndex(true)
+  const playerId = Number(id)
+
+  useEffect(() => {
+    if (!Number.isFinite(playerId) || !globalPlayers.length) return
+    const entity = globalPlayers.find(p => p.canonical_player_id === playerId)
+    if (!entity) return
+    const hasCurrent = entity.memberships.some(
+      m => m.competition === scope.competition && m.season === scope.season,
+    )
+    if (hasCurrent) return
+    const nextScope = resolveEntityScope(entity.memberships, scope)
+    if (nextScope) {
+      navigate(buildScopedPath(`/player/${playerId}`, nextScope), { replace: true })
+    }
+  }, [buildScopedPath, globalPlayers, navigate, playerId, scope])
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: [
       'player-detail',
       id,
-      DEFAULT_FILTERS.competition,
-      DEFAULT_FILTERS.season,
+      scope.competition,
+      scope.season,
     ],
     queryFn: () =>
       fetchPlayerDetail(Number(id), {
-        competition: DEFAULT_FILTERS.competition,
-        season: DEFAULT_FILTERS.season,
+        competition: scope.competition,
+        season: scope.season,
         include: 'meta',
       }),
     enabled: !!id,
@@ -84,7 +103,7 @@ export function PlayerProfile() {
         </p>
         <button
           type="button"
-          onClick={() => navigate('/')}
+          onClick={() => navigate(buildScopedPath('/'))}
           className="text-[12px] text-electric hover:underline"
         >
           Back to matrix
@@ -115,6 +134,7 @@ function ProfileLayout({
   meta: NonNullable<PlayerDetailResponse['meta']>
 }) {
   const [rateMode, setRateMode] = useState<ProfileRateMode>('per90')
+  const { buildScopedPath } = useScope()
 
   const showLowSampleBanner = useMemo(
     () => !player.eligibility.percentiles_eligible,
@@ -134,7 +154,7 @@ function ProfileLayout({
             {player.season_label} ·{' '}
             {player.canonical_team_id != null && player.canonical_team_name ? (
               <Link
-                to={`/team/${player.canonical_team_id}`}
+                to={buildScopedPath(`/team/${player.canonical_team_id}`)}
                 className="text-electric/90 hover:text-electric hover:underline"
               >
                 {player.canonical_team_name}
@@ -159,7 +179,7 @@ function ProfileLayout({
         </div>
         <div className="flex flex-wrap items-center gap-2 justify-end shrink-0">
           <Link
-            to={`/comparisons?players=${player.canonical_player_id}`}
+            to={buildScopedPath(`/comparisons?players=${player.canonical_player_id}`)}
             className="relative px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80 whitespace-nowrap"
           >
             Compare

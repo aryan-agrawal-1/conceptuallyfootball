@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, AlertCircle } from 'lucide-react'
 import { fetchTeamDetail, fetchTeamSquad } from '../lib/api'
-import { DEFAULT_FILTERS } from '../hooks/useStatMatrix'
 import type { TeamDetailResponse, TeamSquadPlayer } from '../types/api'
+import { useScope } from '../context/ScopeContext'
+import { resolveEntityScope, useSearchPaletteIndex } from '../hooks/useSearchPaletteIndex'
 import { ProfileRateToggle } from '../components/profile/ProfileRateToggle'
 import type { ProfileRateMode } from '../lib/profileMetrics'
 import { TeamKeyStats } from '../components/team/TeamKeyStats'
@@ -14,25 +15,41 @@ import { TeamSquadList } from '../components/team/TeamSquadList'
 export function TeamProfile() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { scope, buildScopedPath } = useScope()
+  const { globalTeams } = useSearchPaletteIndex(true)
   const teamId = Number(id)
 
+  useEffect(() => {
+    if (!Number.isFinite(teamId) || !globalTeams.length) return
+    const entity = globalTeams.find(t => t.canonical_team_id === teamId)
+    if (!entity) return
+    const hasCurrent = entity.memberships.some(
+      m => m.competition === scope.competition && m.season === scope.season,
+    )
+    if (hasCurrent) return
+    const nextScope = resolveEntityScope(entity.memberships, scope)
+    if (nextScope) {
+      navigate(buildScopedPath(`/team/${teamId}`, nextScope), { replace: true })
+    }
+  }, [buildScopedPath, globalTeams, navigate, scope, teamId])
+
   const detailQuery = useQuery({
-    queryKey: ['team-detail', id, DEFAULT_FILTERS.competition, DEFAULT_FILTERS.season],
+    queryKey: ['team-detail', id, scope.competition, scope.season],
     queryFn: () =>
       fetchTeamDetail(teamId, {
-        competition: DEFAULT_FILTERS.competition,
-        season: DEFAULT_FILTERS.season,
+        competition: scope.competition,
+        season: scope.season,
         include: 'meta',
       }),
     enabled: Number.isFinite(teamId) && teamId > 0,
   })
 
   const squadQuery = useQuery({
-    queryKey: ['team-squad', id, DEFAULT_FILTERS.competition, DEFAULT_FILTERS.season],
+    queryKey: ['team-squad', id, scope.competition, scope.season],
     queryFn: () =>
       fetchTeamSquad(teamId, {
-        competition: DEFAULT_FILTERS.competition,
-        season: DEFAULT_FILTERS.season,
+        competition: scope.competition,
+        season: scope.season,
       }),
     enabled: Number.isFinite(teamId) && teamId > 0,
   })
@@ -43,7 +60,7 @@ export function TeamProfile() {
         <p className="text-[13px] text-ink-muted">Invalid team id</p>
         <button
           type="button"
-          onClick={() => navigate('/')}
+          onClick={() => navigate(buildScopedPath('/'))}
           className="text-[12px] text-electric hover:underline"
         >
           Back to matrix
@@ -69,7 +86,7 @@ export function TeamProfile() {
         </p>
         <button
           type="button"
-          onClick={() => navigate('/')}
+          onClick={() => navigate(buildScopedPath('/'))}
           className="text-[12px] text-electric hover:underline"
         >
           Back to matrix
@@ -98,6 +115,7 @@ function TeamLayout({
 }) {
   const meta = team.meta
   const [rateMode, setRateMode] = useState<ProfileRateMode>('full')
+  const { buildScopedPath } = useScope()
 
   return (
     <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-8 pb-20">
@@ -105,7 +123,7 @@ function TeamLayout({
         className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.28em] text-electric/75 mb-8"
         aria-label="Breadcrumb"
       >
-        <Link to="/" className="hover:text-electric transition-colors">
+        <Link to={buildScopedPath('/')} className="hover:text-electric transition-colors">
           Matrix
         </Link>
         <span className="text-electric/25">//</span>

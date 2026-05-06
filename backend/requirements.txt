@@ -5,6 +5,7 @@ psycopg[binary]>=3.2
 celery[redis]>=5.4
 redis>=5.2
 requests>=2.32
+curl_cffi>=0.15
 python-dotenv>=1.0
 soccerdata>=1.9,<2
 scikit-learn>=1.7

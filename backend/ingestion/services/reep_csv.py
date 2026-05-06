@@ -30,6 +30,8 @@ TEAM_CSV_PROVIDER_OVERRIDES: dict[str, dict[str, str | None]] = {
     "reep_tfa99f7f9": {"key_understat": "220"},  # Brighton & Hove Albion F.C.
     "reep_te6c8eca5": {"key_understat": "81"},  # West Ham United F.C.
     "reep_t70979bf6": {"key_understat": None},  # SC Freiburg should not own Brighton's Understat id.
+    "reep_t52e2f188": {"key_sofascore": "2885"},  # Deportivo Alavés.
+    "reep_t88b915a8": {"key_sofascore": "2849"},  # Levante UD.
 }
 
 

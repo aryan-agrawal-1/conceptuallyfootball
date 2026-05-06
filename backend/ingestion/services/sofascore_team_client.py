@@ -3,9 +3,9 @@ from __future__ import annotations
 import time
 from typing import Any
 
-import requests
+from django.conf import settings
 
-from ingestion.services.sofascore_client import SofascoreSeasonConfig, sofascore_request_headers
+from ingestion.services.sofascore_client import SofascoreSeasonConfig, _request_get
 
 
 def _num(value: Any) -> int | None:
@@ -37,7 +37,7 @@ def fetch_season_teams(
         f"https://www.sofascore.com/api/v1/unique-tournament/"
         f"{config.unique_tournament_id}/season/{config.season_id}/teams"
     )
-    resp = requests.get(url, headers=sofascore_request_headers(), timeout=timeout)
+    resp = _request_get(url, params={}, timeout=timeout)
     resp.raise_for_status()
     return (resp.json().get("teams") or [])
 
@@ -50,7 +50,7 @@ def fetch_total_standings(
         f"https://www.sofascore.com/api/v1/unique-tournament/"
         f"{config.unique_tournament_id}/season/{config.season_id}/standings/total"
     )
-    resp = requests.get(url, headers=sofascore_request_headers(), timeout=timeout)
+    resp = _request_get(url, params={}, timeout=timeout)
     resp.raise_for_status()
     payload = resp.json()
     standings = payload.get("standings") or []
@@ -68,7 +68,7 @@ def fetch_team_overall_statistics(
         f"https://www.sofascore.com/api/v1/team/{team_id}/unique-tournament/"
         f"{config.unique_tournament_id}/season/{config.season_id}/statistics/overall"
     )
-    resp = requests.get(url, headers=sofascore_request_headers(), timeout=timeout)
+    resp = _request_get(url, params={}, timeout=timeout)
     resp.raise_for_status()
     return resp.json()
 
@@ -76,8 +76,12 @@ def fetch_team_overall_statistics(
 def build_team_season_rows(
     config: SofascoreSeasonConfig,
     *,
-    delay_seconds: float = 0.2,
+    delay_seconds: float | None = None,
 ) -> list[dict[str, Any]]:
+    if delay_seconds is None:
+        delay_seconds = float(
+            getattr(settings, "STATBALLER_SOFASCORE_REQUEST_DELAY_SECONDS", 1.5)
+        )
     teams = fetch_season_teams(config)
     standings_rows = fetch_total_standings(config)
     standings_by_team_id = {

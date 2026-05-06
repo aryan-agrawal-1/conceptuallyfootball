@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { cn } from '../../lib/utils'
+import { useScope } from '../../context/ScopeContext'
 
 interface ProfileBreadcrumbProps {
   playerName: string
@@ -7,6 +8,7 @@ interface ProfileBreadcrumbProps {
 }
 
 export function ProfileBreadcrumb({ playerName, className }: ProfileBreadcrumbProps) {
+  const { buildScopedPath } = useScope()
   return (
     <nav
       className={cn(
@@ -15,7 +17,7 @@ export function ProfileBreadcrumb({ playerName, className }: ProfileBreadcrumbPr
       )}
       aria-label="Breadcrumb"
     >
-      <Link to="/" className="hover:text-electric transition-colors">
+      <Link to={buildScopedPath('/')} className="hover:text-electric transition-colors">
         Matrix
       </Link>
       <span className="text-electric/25">//</span>

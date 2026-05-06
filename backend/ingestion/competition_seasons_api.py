@@ -33,6 +33,10 @@ class CompetitionSeasonsCatalogApi(APIView):
                 {
                     "label": cs.season.label,
                     "competition_season_id": cs.id,
+                    "player_data_mode": cs.player_data_mode,
+                    "has_understat": cs.has_understat,
+                    "has_sofascore": cs.has_sofascore,
+                    "metric_availability": cs.metric_availability,
                 }
             )
         return Response({"competitions": list(by_code.values())})

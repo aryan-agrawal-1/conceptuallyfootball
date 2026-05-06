@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from django.core.management import call_command
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
@@ -16,6 +17,7 @@ from ingestion.models import (
     MatchMethod,
     MetadataAuthority,
     MergedPlayerSeason,
+    PlayerDataMode,
     Provider,
     ProviderPlayerMapping,
     ProviderTeamMapping,
@@ -47,7 +49,7 @@ def _slice():
 
 
 class IdentityQuarantineTests(TestCase):
-    def test_unmatched_when_no_reep_row(self):
+    def test_provider_native_canonical_when_no_reep_row(self):
         cs = _slice()
         p = resolve_canonical_player(
             competition_season=cs,
@@ -56,13 +58,22 @@ class IdentityQuarantineTests(TestCase):
             display_name="Ghost",
             run=None,
         )
-        self.assertIsNone(p)
-        u = UnmatchedProviderPlayer.objects.get(
-            competition_season=cs,
+        self.assertIsNotNone(p)
+        assert p is not None
+        self.assertIsNone(p.reep_id)
+        self.assertEqual(p.display_name, "Ghost")
+        mapping = ProviderPlayerMapping.objects.get(
             provider=Provider.UNDERSTAT,
             provider_player_id="999",
         )
-        self.assertEqual(u.player_name, "Ghost")
+        self.assertEqual(mapping.canonical_player, p)
+        self.assertFalse(
+            UnmatchedProviderPlayer.objects.filter(
+                competition_season=cs,
+                provider=Provider.UNDERSTAT,
+                provider_player_id="999",
+            ).exists()
+        )
 
     def test_auto_match_creates_canonical_and_mapping(self):
         cs = _slice()
@@ -112,7 +123,16 @@ class IdentityQuarantineTests(TestCase):
             display_name="Ben Example",
             run=us_run,
         )
-        self.assertIsNone(unresolved)
+        self.assertIsNotNone(unresolved)
+        assert unresolved is not None
+        self.assertIsNone(unresolved.reep_id)
+        self.assertEqual(
+            ProviderPlayerMapping.objects.get(
+                provider=Provider.UNDERSTAT,
+                provider_player_id="u-1",
+            ).canonical_player,
+            unresolved,
+        )
 
         ss_src = SofascorePlayerSeasonSource.objects.create(
             competition_season=cs,
@@ -134,6 +154,7 @@ class IdentityQuarantineTests(TestCase):
         self.assertIsNotNone(resolved)
         assert resolved is not None
         self.assertIsNone(resolved.reep_id)
+        self.assertEqual(resolved, unresolved)
         ss_src.canonical_player = resolved
         ss_src.save(update_fields=["canonical_player"])
 
@@ -157,17 +178,10 @@ class IdentityQuarantineTests(TestCase):
             resolved,
         )
 
-        understat_unmatched = UnmatchedProviderPlayer.objects.get(
-            competition_season=cs,
-            provider=Provider.UNDERSTAT,
-            provider_player_id="u-1",
-        )
-        self.assertEqual(understat_unmatched.resolved_player, resolved)
         self.assertFalse(
             UnmatchedProviderPlayer.objects.filter(
                 competition_season=cs,
-                provider=Provider.SOFASCORE,
-                provider_player_id="s-1",
+                provider__in=[Provider.UNDERSTAT, Provider.SOFASCORE],
             ).exists()
         )
 
@@ -233,19 +247,35 @@ class IdentityQuarantineTests(TestCase):
             run=ss_run,
         )
 
-        self.assertIsNone(resolved)
-        self.assertFalse(
-            ProviderPlayerMapping.objects.filter(
+        self.assertIsNotNone(resolved)
+        assert resolved is not None
+        self.assertIsNone(resolved.reep_id)
+        self.assertEqual(resolved.display_name, "Alex Example")
+        self.assertEqual(
+            ProviderPlayerMapping.objects.get(
                 provider=Provider.SOFASCORE,
                 provider_player_id="s-1",
-            ).exists()
+            ).canonical_player,
+            resolved,
         )
-        self.assertTrue(
+        self.assertNotIn(
+            resolved,
+            [
+                ProviderPlayerMapping.objects.get(
+                    provider=Provider.UNDERSTAT,
+                    provider_player_id="u-1",
+                ).canonical_player,
+                ProviderPlayerMapping.objects.get(
+                    provider=Provider.UNDERSTAT,
+                    provider_player_id="u-2",
+                ).canonical_player,
+            ],
+        )
+        self.assertFalse(
             UnmatchedProviderPlayer.objects.filter(
                 competition_season=cs,
                 provider=Provider.SOFASCORE,
                 provider_player_id="s-1",
-                resolved_player__isnull=True,
             ).exists()
         )
 
@@ -518,6 +548,12 @@ class PositionNormalizationTests(TestCase):
     def test_normalize_position_group_handles_hyphenated_fullback_role(self):
         self.assertEqual(normalize_position_group("Right-Back"), "DEF")
 
+    def test_normalize_position_group_handles_sofascore_detailed_codes(self):
+        self.assertEqual(normalize_position_group("DL"), "DEF")
+        self.assertEqual(normalize_position_group("DC"), "DEF")
+        self.assertEqual(normalize_position_group("MC"), "MID")
+        self.assertEqual(normalize_position_group("AML"), "FWD")
+
     def test_normalize_position_group_leaves_plain_substitute_unknown(self):
         self.assertEqual(normalize_position_group("S"), "UNK")
 
@@ -667,6 +703,91 @@ class ManagementCommandSharedLogicTests(TestCase):
         run_merge_job(cs, run=mr)
         mr.refresh_from_db()
         self.assertEqual(mr.status, IngestionRunStatus.SUCCESS)
+
+    def test_seed_command_upserts_epl_to_eng1(self):
+        comp = Competition.objects.create(name="Premier League", short_code="EPL", country="England")
+        season = Season.objects.create(label="2025-26", sort_order=1)
+        CompetitionSeason.objects.create(
+            competition=comp,
+            season=season,
+            understat_league="EPL",
+            understat_season_year="2025",
+            sofascore_unique_tournament_id=17,
+            sofascore_season_id=1,
+        )
+
+        call_command("seed_competition_slices")
+
+        comp.refresh_from_db()
+        self.assertEqual(comp.short_code, "ENG1")
+        cs = CompetitionSeason.objects.get(competition=comp, season__label="2025-26")
+        self.assertEqual(cs.player_data_mode, PlayerDataMode.FULL_MERGE)
+        self.assertEqual(cs.sofascore_season_id, 76986)
+
+    def test_run_merge_job_allows_sofascore_only_slices(self):
+        comp = Competition.objects.create(name="Championship", short_code="ENG2", country="England")
+        season = Season.objects.create(label="2025-26", sort_order=2026)
+        cs = CompetitionSeason.objects.create(
+            competition=comp,
+            season=season,
+            player_data_mode=PlayerDataMode.SOFASCORE_ONLY,
+            has_understat=False,
+            has_sofascore=True,
+            understat_league=None,
+            understat_season_year=None,
+            sofascore_unique_tournament_id=18,
+            sofascore_season_id=77347,
+        )
+        team = CanonicalTeam.objects.create(name="Leeds United", reep_id="team-leeds")
+        player = CanonicalPlayer.objects.create(display_name="Sofa Only", reep_id="player-sofa-only")
+        ss_run = IngestionRun.objects.create(
+            kind=IngestionKind.SOFASCORE,
+            competition_season=cs,
+            status=IngestionRunStatus.SUCCESS,
+        )
+        SofascorePlayerSeasonSource.objects.create(
+            competition_season=cs,
+            ingestion_run=ss_run,
+            provider_player_id="ss-1",
+            provider_team_id="team-1",
+            player_name="Sofa Only",
+            team_name=team.name,
+            position_raw="M",
+            minutes=900,
+            summary_goals=4,
+            summary_assists=6,
+            summary_successful_dribbles=20,
+            tackles=18,
+            interceptions=11,
+            clearances=6,
+            outfielder_blocks=2,
+            big_chances_created=9,
+            accurate_passes=410,
+            accurate_passes_percentage=84.0,
+            key_passes=30,
+            shots_on_target=14,
+            shots_off_target=10,
+            canonical_player=player,
+            canonical_team=team,
+        )
+        merge_run = IngestionRun.objects.create(
+            kind=IngestionKind.MERGE,
+            competition_season=cs,
+            status=IngestionRunStatus.PENDING,
+        )
+
+        run_merge_job(cs, run=merge_run)
+
+        merge_run.refresh_from_db()
+        self.assertEqual(merge_run.status, IngestionRunStatus.SUCCESS)
+        row = MergedPlayerSeason.objects.get(
+            competition_season=cs,
+            canonical_player=player,
+            is_current=True,
+        )
+        self.assertEqual(row.metadata_authority, MetadataAuthority.SOFASCORE)
+        self.assertIsNone(row.us_xg)
+        self.assertEqual(row.ss_key_passes, 30)
 
 
 class ApiTests(TestCase):

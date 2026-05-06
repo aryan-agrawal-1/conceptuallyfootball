@@ -29,7 +29,12 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-import requests
+try:
+    from curl_cffi import requests as browser_requests
+except Exception:  # noqa: BLE001
+    browser_requests = None
+
+import requests as plain_requests
 from django.conf import settings
 
 
@@ -163,13 +168,66 @@ WIDE_STAT_FIELDS: tuple[str, ...] = (
 )
 
 
+DEFAULT_BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
+
+
+def _sofascore_user_agent() -> str:
+    configured = getattr(settings, "STATBALLER_HTTP_USER_AGENT", "")
+    if configured and "StatballerIngestion" not in configured:
+        return configured
+    return DEFAULT_BROWSER_USER_AGENT
+
+
 def sofascore_request_headers() -> dict[str, str]:
     return {
-        "User-Agent": settings.STATBALLER_HTTP_USER_AGENT,
-        "Accept": "application/json",
+        "User-Agent": _sofascore_user_agent(),
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
         "Referer": "https://www.sofascore.com/",
         "Origin": "https://www.sofascore.com",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Dest": "empty",
     }
+
+
+def _request_get(
+    url: str,
+    *,
+    params: dict[str, Any],
+    timeout: int,
+):
+    headers = sofascore_request_headers()
+    transient_statuses = {403, 429, 502, 503, 504}
+    last_response = None
+    retry_base_sleep_seconds = float(
+        getattr(settings, "STATBALLER_SOFASCORE_RETRY_BASE_SLEEP_SECONDS", 8.0)
+    )
+
+    for attempt in range(4):
+        if browser_requests is not None:
+            response = browser_requests.get(
+                url,
+                headers=headers,
+                params=params,
+                timeout=timeout,
+                impersonate="chrome124",
+            )
+        else:
+            response = plain_requests.get(url, headers=headers, params=params, timeout=timeout)
+
+        if response.status_code not in transient_statuses:
+            return response
+
+        last_response = response
+        if attempt < 3:
+            time.sleep(retry_base_sleep_seconds * (attempt + 1))
+
+    return last_response
 
 
 def fetch_statistics_page(
@@ -190,7 +248,7 @@ def fetch_statistics_page(
         "accumulation": "total",
         "group": group,
     }
-    resp = requests.get(url, headers=sofascore_request_headers(), params=params, timeout=timeout)
+    resp = _request_get(url, params=params, timeout=timeout)
     resp.raise_for_status()
     return resp.json()
 
@@ -212,9 +270,16 @@ def fetch_wide_statistics_page(
         "fields": ",".join(WIDE_STAT_FIELDS),
         "filters": "position.in.G~D~M~F",
     }
-    resp = requests.get(url, headers=sofascore_request_headers(), params=params, timeout=timeout)
+    resp = _request_get(url, params=params, timeout=timeout)
     resp.raise_for_status()
     return resp.json()
+
+
+def fetch_player_profile(player_id: str | int, timeout: int = 20) -> dict[str, Any]:
+    url = f"https://www.sofascore.com/api/v1/player/{player_id}"
+    resp = _request_get(url, params={}, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json().get("player") or {}
 
 
 def merge_player_stat_dicts(target: dict[int, dict[str, Any]], group: str, page_rows: list[dict]) -> None:
@@ -254,8 +319,12 @@ def merge_player_wide_stat_dicts(target: dict[int, dict[str, Any]], page_rows: l
 
 def fetch_full_season_statistics(
     config: SofascoreSeasonConfig,
-    delay_seconds: float = 0.35,
+    delay_seconds: float | None = None,
 ) -> dict[int, dict[str, Any]]:
+    if delay_seconds is None:
+        delay_seconds = float(
+            getattr(settings, "STATBALLER_SOFASCORE_REQUEST_DELAY_SECONDS", 1.5)
+        )
     merged: dict[int, dict[str, Any]] = {}
     for group in STAT_GROUPS:
         offset = 0
@@ -363,6 +432,8 @@ def row_to_normalized_record(player_id: int, row: dict[str, Any]) -> dict[str, A
         "summary_goals": num("summary", "goals"),
         "summary_assists": num("summary", "assists"),
         "summary_expected_goals": flt("summary", "expectedGoals"),
+        "summary_expected_assists": flt("league_stats", "expectedAssists"),
+        "total_shots": num("league_stats", "totalShots") or num("attack", "totalShots"),
         "summary_successful_dribbles": num("summary", "successfulDribbles"),
         "summary_accurate_passes_percentage": flt("summary", "accuratePassesPercentage"),
         "tackles": tackles(),

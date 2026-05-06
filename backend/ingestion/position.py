@@ -5,7 +5,22 @@ import re
 from ingestion.models import PositionGroup
 
 
-_MID_TOKENS = {"DM", "CM", "LM", "RM", "CAM", "CDM", "MID", "MIDFIELD", "MIDFIELDER"}
+_MID_TOKENS = {
+    "DM",
+    "CM",
+    "LM",
+    "RM",
+    "CAM",
+    "CDM",
+    "DMC",
+    "MC",
+    "ML",
+    "MR",
+    "AMC",
+    "MID",
+    "MIDFIELD",
+    "MIDFIELDER",
+}
 _DEF_TOKENS = {
     "D",
     "DEF",
@@ -15,8 +30,11 @@ _DEF_TOKENS = {
     "CENTERBACK",
     "CENTREBACK",
     "CB",
+    "DC",
     "LB",
     "RB",
+    "DL",
+    "DR",
     "LWB",
     "RWB",
     "WB",
@@ -28,8 +46,15 @@ _FWD_TOKENS = {
     "FW",
     "ST",
     "CF",
+    "FC",
     "LW",
     "RW",
+    "FL",
+    "FR",
+    "AML",
+    "AMR",
+    "FWL",
+    "FWR",
     "AM",
     "SS",
     "FORWARD",

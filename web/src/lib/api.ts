@@ -6,6 +6,7 @@ import type {
   MatrixResponse,
   PlayerDetailResponse,
   RegressionLabFitResponse,
+  SearchEntitiesResponse,
   TeamDetailResponse,
   TeamMatrixResponse,
   TeamSquadResponse,
@@ -202,6 +203,15 @@ export async function fetchRegressionLabFit(
 
 export async function fetchCompetitionSeasonsCatalog(): Promise<CompetitionSeasonsCatalogResponse> {
   const res = await fetch(`${BASE}/competition-seasons`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.detail ?? `API error ${res.status}`)
+  }
+  return res.json()
+}
+
+export async function fetchSearchEntities(): Promise<SearchEntitiesResponse> {
+  const res = await fetch(`${BASE}/search/entities`)
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.detail ?? `API error ${res.status}`)

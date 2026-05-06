@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { AlertCircle, ChevronDown, ChevronUp, Copy, Loader2 } from 'lucide-react'
 import { HudActionButton, HudFrame, HudLabel, HudPill, HudVSep } from '../components/hud/Hud'
 import { LabHelpHover } from '../components/regression/LabHelpHover'
 import { RegressionScatterPlot } from '../components/regression/RegressionScatterPlot'
 import { applyClientFilters, useStatMatrix } from '../hooks/useStatMatrix'
-import { fetchCompetitionSeasonsCatalog, fetchRegressionLabFit } from '../lib/api'
+import { fetchRegressionLabFit } from '../lib/api'
 import {
   groupPredictorPool,
   isLabPosition,
@@ -23,12 +23,12 @@ import {
 } from '../lib/regressionLabUrl'
 import { cn } from '../lib/utils'
 import type {
-  CompetitionCatalogEntry,
   MatrixFilters,
   PlayerRow,
   RegressionLabPredictionRow,
   StatMeta,
 } from '../types/api'
+import { useScope } from '../context/ScopeContext'
 
 const EMPTY: PlayerRow[] = []
 
@@ -96,6 +96,7 @@ function compareCohortRows(
 
 export function RegressionLab() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const { scope, scopeLabel, buildScopedPath } = useScope()
   const [filters, setFilters] = useState<MatrixFilters>(() => {
     const p = parseRegressionLabParams(searchParams)
     return {
@@ -124,37 +125,12 @@ export function RegressionLab() {
   const [cohortSortCol, setCohortSortCol] = useState<CohortSortCol>('residual')
   const [cohortSortDir, setCohortSortDir] = useState<'asc' | 'desc'>('desc')
 
-  const { data: catalog, isError: catalogIsError } = useQuery({
-    queryKey: ['competition-seasons-catalog'],
-    queryFn: fetchCompetitionSeasonsCatalog,
-    staleTime: 30 * 60 * 1000,
-  })
-
   useEffect(() => {
-    if (!catalog?.competitions?.length) return
     setFilters(prev => {
-      const comp = catalog.competitions.find(c => c.code === prev.competition)
-      if (!comp) {
-        const c0 = catalog.competitions[0]
-        const nextSeason = c0.seasons[0]?.label ?? prev.season
-        if (prev.competition === c0.code && prev.season === nextSeason) return prev
-        return { ...prev, competition: c0.code, season: nextSeason }
-      }
-      const hasSeason = comp.seasons.some(s => s.label === prev.season)
-      if (!hasSeason && comp.seasons[0]) {
-        const s0 = comp.seasons[0].label
-        if (prev.season === s0) return prev
-        return { ...prev, season: s0 }
-      }
-      return prev
+      if (prev.competition === scope.competition && prev.season === scope.season) return prev
+      return { ...prev, competition: scope.competition, season: scope.season, teams: undefined }
     })
-  }, [catalog])
-
-  const seasonOptions = useMemo((): CompetitionCatalogEntry['seasons'] => {
-    if (!catalog?.competitions.length) return []
-    const comp = catalog.competitions.find(c => c.code === filters.competition)
-    return comp?.seasons ?? []
-  }, [catalog, filters.competition])
+  }, [scope.competition, scope.season])
 
   const fetchFilters = useMemo(
     (): MatrixFilters => ({
@@ -389,64 +365,9 @@ export function RegressionLab() {
       <div className="sticky top-[52px] z-40 flex flex-wrap items-center gap-3 px-6 py-2 bg-panel/80 border-b border-electric/25 backdrop-blur-md shrink-0">
         <HudLabel>Regression Lab</HudLabel>
         <HudVSep />
-        <div className="flex items-center gap-2">
-          <label htmlFor="lab-competition" className="sr-only">
-            Competition
-          </label>
-          <select
-            id="lab-competition"
-            value={
-              catalog?.competitions.some(c => c.code === filters.competition)
-                ? filters.competition
-                : (catalog?.competitions[0]?.code ?? filters.competition)
-            }
-            onChange={e => {
-              const code = e.target.value
-              const comp = catalog?.competitions.find(c => c.code === code)
-              const nextSeason = comp?.seasons[0]?.label ?? filters.season
-              handleFiltersChange({ competition: code, season: nextSeason })
-            }}
-            disabled={!catalog?.competitions.length}
-            className="max-w-[min(200px,42vw)] px-2 py-1 text-[11px] font-mono border border-electric/25 bg-mat/60 text-electric outline-none focus:border-electric/50 disabled:opacity-50"
-          >
-            {!catalog?.competitions.length ? (
-              <option value={filters.competition}>{filters.competition}</option>
-            ) : (
-              catalog.competitions.map(c => (
-                <option key={c.code} value={c.code}>
-                  {c.code}
-                </option>
-              ))
-            )}
-          </select>
-          <label htmlFor="lab-season" className="sr-only">
-            Season
-          </label>
-          <select
-            id="lab-season"
-            value={
-              seasonOptions.some(s => s.label === filters.season)
-                ? filters.season
-                : (seasonOptions[0]?.label ?? filters.season)
-            }
-            onChange={e => handleFiltersChange({ season: e.target.value })}
-            disabled={!seasonOptions.length}
-            className="w-[5.75rem] px-2 py-1 text-[11px] font-mono border border-electric/25 bg-mat/60 text-electric outline-none focus:border-electric/50 disabled:opacity-50"
-          >
-            {!seasonOptions.length ? (
-              <option value={filters.season}>{filters.season}</option>
-            ) : (
-              seasonOptions.map(s => (
-                <option key={s.label} value={s.label}>
-                  {s.label}
-                </option>
-              ))
-            )}
-          </select>
-        </div>
-        {catalogIsError && (
-          <span className="text-[10px] text-ember uppercase tracking-wide">Catalog failed</span>
-        )}
+        <span className="text-[11px] font-mono uppercase tracking-[0.16em] text-electric/85">
+          {scopeLabel}
+        </span>
         <HudVSep />
         <div
           className={cn(
@@ -484,7 +405,7 @@ export function RegressionLab() {
         <MinStrip value={filters.min_minutes} onChange={m => handleFiltersChange({ min_minutes: m })} />
         <div className="flex-1 min-w-[8px]" />
         <Link
-          to="/"
+          to={buildScopedPath('/')}
           className="text-[10px] uppercase tracking-[0.2em] text-electric/70 hover:text-electric"
         >
           Matrix

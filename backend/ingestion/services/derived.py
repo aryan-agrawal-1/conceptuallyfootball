@@ -28,6 +28,7 @@ from ingestion.models import (
     IngestionRun,
     IngestionRunStatus,
     MergedPlayerSeason,
+    PlayerDataMode,
     PlayerSeasonDerivedStats,
     PositionGroup,
     SofascorePlayerSeasonSource,
@@ -157,7 +158,17 @@ def _build_metric_row(
     interceptions = merged.ss_interceptions or 0
     clearances = merged.ss_clearances or 0
     shots = merged.us_shots
-    key_passes = merged.us_key_passes
+    if shots is None:
+        shots = merged.ss_total_shots
+    if shots is None and (
+        merged.ss_shots_on_target is not None or merged.ss_shots_off_target is not None
+    ):
+        shots = (merged.ss_shots_on_target or 0) + (merged.ss_shots_off_target or 0)
+    goals = merged.us_goals if merged.us_goals is not None else merged.ss_goals
+    assists = merged.us_assists if merged.us_assists is not None else merged.ss_assists
+    key_passes = merged.us_key_passes if merged.us_key_passes is not None else merged.ss_key_passes
+    xg = merged.us_xg if merged.us_xg is not None else merged.ss_expected_goals
+    xa = merged.us_xa if merged.us_xa is not None else merged.ss_expected_assists
     ss_key_passes = merged.ss_key_passes or 0
     big_chances_created = merged.ss_big_chances_created or 0
     successful_dribbles = (sofascore.summary_successful_dribbles if sofascore else None) or 0
@@ -191,27 +202,27 @@ def _build_metric_row(
     return {
         "npxg": merged.us_npxg,
         "npxg_per_90": _per90(merged.us_npxg, minutes),
-        "xa": merged.us_xa,
-        "xa_per_90": _per90(merged.us_xa, minutes),
+        "xa": xa,
+        "xa_per_90": _per90(xa, minutes),
         "xgchain": merged.us_xgchain,
         "xgchain_per_90": _per90(merged.us_xgchain, minutes),
         "xgbuildup": merged.us_xgbuildup,
         "xgbuildup_per_90": _per90(merged.us_xgbuildup, minutes),
         "shots_per_90": _per90(shots, minutes),
-        "goals_per_90": _per90(merged.us_goals, minutes),
-        "assists_per_90": _per90(merged.us_assists, minutes),
+        "goals_per_90": _per90(goals, minutes),
+        "assists_per_90": _per90(assists, minutes),
         "key_passes_per_90": _per90(key_passes, minutes),
         "big_chances_created_per_90": _per90(big_chances_created, minutes),
         "successful_dribbles_per_90": _per90(successful_dribbles, minutes),
         "completed_passes_per_90": _per90(completed_passes, minutes),
         "goals_minus_xg": None
-        if merged.us_goals is None or merged.us_xg is None
-        else float(merged.us_goals) - float(merged.us_xg),
+        if goals is None or xg is None
+        else float(goals) - float(xg),
         "goals_minus_npxg": goals_minus_npxg_val,
         "finishing_shrunk_delta_per_shot": _finishing_shrunk_delta_per_shot(goals_minus_npxg_val, shots),
         "sot_rate": _sot_rate(merged, sot_f, off_f),
         "npxg_per_shot": _ratio(merged.us_npxg, shots),
-        "xa_per_key_pass": _ratio(merged.us_xa, key_passes),
+        "xa_per_key_pass": _ratio(xa, key_passes),
         "buildup_share": _ratio(merged.us_xgbuildup, merged.us_xgchain),
         "chance_involvement_per_90": _per90(chance_actions, minutes),
         "pass_accuracy": merged.ss_accurate_passes_percentage if merged.ss_accurate_passes_percentage is not None else 0.0,
@@ -259,7 +270,7 @@ def _build_coverage_report(metric_rows: list[dict], eligible_player_ids: set[int
     return report
 
 
-def _enforce_coverage(coverage_report: dict[str, float]) -> None:
+def _coverage_failures(coverage_report: dict[str, float]) -> list[str]:
     failures: list[str] = []
     for field_name, coverage in coverage_report.items():
         minimum = STYLE_METRIC_MIN_COVERAGE if field_name in STYLE_PROXY_METRICS else CORE_METRIC_MIN_COVERAGE
@@ -267,20 +278,131 @@ def _enforce_coverage(coverage_report: dict[str, float]) -> None:
             failures.append(
                 f"{field_name} coverage {coverage:.1%} below required {minimum:.0%}"
             )
-    for field_name in SCORE_COMPONENT_METRICS:
-        coverage = coverage_report.get(field_name, 0.0)
-        if coverage < SCORE_COMPONENT_MIN_COVERAGE:
-            failures.append(
-                f"{field_name} score-component coverage {coverage:.1%} below required {SCORE_COMPONENT_MIN_COVERAGE:.0%}"
-            )
-    for field_name in SCORE_PENALTY_METRICS:
-        coverage = coverage_report.get(field_name, 0.0)
-        if coverage < SCORE_COMPONENT_MIN_COVERAGE:
-            failures.append(
-                f"{field_name} score-penalty coverage {coverage:.1%} below required {SCORE_COMPONENT_MIN_COVERAGE:.0%}"
-            )
-    if failures:
-        raise ValueError("; ".join(failures))
+    return failures
+
+
+def _metric_minimum_coverage(metric_name: str) -> float:
+    return STYLE_METRIC_MIN_COVERAGE if metric_name in STYLE_PROXY_METRICS else CORE_METRIC_MIN_COVERAGE
+
+
+def _build_position_coverage_report(metric_rows: list[dict]) -> dict[str, dict[str, float]]:
+    report: dict[str, dict[str, float]] = {}
+    for position_group in ELIGIBLE_OUTFIELD_POSITIONS:
+        rows = [
+            row
+            for row in metric_rows
+            if row["position_group"] == position_group and row["percentiles_eligible"]
+        ]
+        total = len(rows)
+        report[position_group] = {}
+        for field_name in METRIC_FIELDS:
+            populated = sum(1 for row in rows if row[field_name] is not None)
+            report[position_group][field_name] = populated / total if total else 0.0
+    return report
+
+
+def _score_availability(
+    position_coverage_report: dict[str, dict[str, float]],
+) -> dict[str, dict]:
+    scores: dict[str, dict] = {}
+    for score_name, score_definition in SCORE_DEFINITIONS.items():
+        positions: dict[str, bool] = {}
+        missing_by_position: dict[str, list[str]] = {}
+        low_coverage_by_position: dict[str, dict[str, float]] = {}
+
+        for position_group in ELIGIBLE_OUTFIELD_POSITIONS:
+            components = list(score_definition["positions"].get(position_group) or [])
+            components.extend(score_definition.get("penalties", {}).get(position_group) or [])
+            coverage = position_coverage_report.get(position_group, {})
+            missing: list[str] = []
+            low_coverage: dict[str, float] = {}
+
+            for component in components:
+                metric_name = component["metric"]
+                metric_coverage = coverage.get(metric_name, 0.0)
+                if metric_coverage <= 0.0:
+                    missing.append(metric_name)
+                elif metric_coverage < SCORE_COMPONENT_MIN_COVERAGE:
+                    low_coverage[metric_name] = round(metric_coverage, 4)
+
+            positions[position_group] = not missing and not low_coverage
+            if missing:
+                missing_by_position[position_group] = sorted(missing)
+            if low_coverage:
+                low_coverage_by_position[position_group] = dict(sorted(low_coverage.items()))
+
+        scores[score_name] = {
+            "available": any(positions.values()),
+            "positions": positions,
+            "missing_components": missing_by_position,
+            "low_coverage_components": low_coverage_by_position,
+        }
+    return scores
+
+
+def _slice_metric_availability(
+    competition_season: CompetitionSeason,
+    *,
+    merged_rows: list[MergedPlayerSeason],
+    eligible_player_ids: set[int],
+    coverage_report: dict[str, float],
+    position_coverage_report: dict[str, dict[str, float]],
+) -> dict:
+    available_metrics = sorted(
+        metric_name for metric_name, coverage in coverage_report.items() if coverage > 0.0
+    )
+    unavailable_metrics = sorted(
+        metric_name for metric_name, coverage in coverage_report.items() if coverage <= 0.0
+    )
+    ui_available_metrics = sorted(
+        metric_name
+        for metric_name, coverage in coverage_report.items()
+        if coverage >= _metric_minimum_coverage(metric_name)
+    )
+    low_coverage_metrics = {
+        metric_name: {
+            "coverage": round(coverage, 4),
+            "minimum": _metric_minimum_coverage(metric_name),
+        }
+        for metric_name, coverage in sorted(coverage_report.items())
+        if 0.0 < coverage < _metric_minimum_coverage(metric_name)
+    }
+    score_availability = _score_availability(position_coverage_report)
+    return {
+        "player_data_mode": competition_season.player_data_mode,
+        "providers": {
+            "understat": competition_season.supports_understat,
+            "sofascore": competition_season.supports_sofascore,
+        },
+        "player_rows": {
+            "merged_current": len(merged_rows),
+            "eligible_outfield": len(eligible_player_ids),
+        },
+        "available_metrics": available_metrics,
+        "ui_available_metrics": ui_available_metrics,
+        "default_metrics": ui_available_metrics,
+        "low_coverage_metrics": low_coverage_metrics,
+        "unavailable_metrics": unavailable_metrics,
+        "coverage": {key: round(value, 4) for key, value in coverage_report.items()},
+        "coverage_by_position": {
+            position: {key: round(value, 4) for key, value in coverage.items()}
+            for position, coverage in position_coverage_report.items()
+        },
+        "metric_thresholds": {
+            "core": CORE_METRIC_MIN_COVERAGE,
+            "style": STYLE_METRIC_MIN_COVERAGE,
+            "score_component": SCORE_COMPONENT_MIN_COVERAGE,
+        },
+        "scores": score_availability,
+        "available_scores": sorted(
+            score_name for score_name, payload in score_availability.items() if payload["available"]
+        ),
+        "unavailable_scores": sorted(
+            score_name
+            for score_name, payload in score_availability.items()
+            if not payload["available"]
+        ),
+    }
 
 
 def _metric_distribution_by_position(
@@ -447,7 +569,12 @@ def materialize_derived_stats(
             metric_rows.append(row)
 
         coverage_report = _build_coverage_report(metric_rows, eligible_player_ids)
-        _enforce_coverage(coverage_report)
+        position_coverage_report = _build_position_coverage_report(metric_rows)
+        coverage_warnings = (
+            _coverage_failures(coverage_report)
+            if competition_season.player_data_mode == PlayerDataMode.FULL_MERGE
+            else []
+        )
         _assign_metric_percentiles(metric_rows)
         _assign_score_raw_values(metric_rows)
         _assign_score_percentiles(metric_rows)
@@ -463,6 +590,17 @@ def materialize_derived_stats(
             to_create.append(PlayerSeasonDerivedStats(**payload, is_current=True))
         PlayerSeasonDerivedStats.objects.bulk_create(to_create)
         gk_derived_rows = materialize_gk_derived_stats(competition_season, derived_run=run)
+        metric_availability = _slice_metric_availability(
+            competition_season,
+            merged_rows=merged_rows,
+            eligible_player_ids=eligible_player_ids,
+            coverage_report=coverage_report,
+            position_coverage_report=position_coverage_report,
+        )
+        if coverage_warnings:
+            metric_availability["coverage_warnings"] = coverage_warnings
+        competition_season.metric_availability = metric_availability
+        competition_season.save(update_fields=["metric_availability"])
     except Exception as exc:  # noqa: BLE001
         _mark_run_failed(run, str(exc))
         return
@@ -475,6 +613,7 @@ def materialize_derived_stats(
             "derived_rows": len(metric_rows),
             "eligible_rows": len(eligible_player_ids),
             "coverage": {key: round(value, 4) for key, value in coverage_report.items()},
+            "coverage_warnings": coverage_warnings,
             "gk_derived_rows": gk_derived_rows,
         },
     )

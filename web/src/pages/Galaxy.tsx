@@ -14,10 +14,9 @@ import {
   HudDivider,
   HudFrame,
 } from '../components/hud/Hud'
+import { useScope } from '../context/ScopeContext'
 
 const DEFAULT_FILTERS = {
-  competition: 'EPL',
-  season: '2025-26',
   position_group: '',
   team: '',
   min_minutes: 300,
@@ -504,6 +503,7 @@ function PlayerHud({
   onClear: () => void
   onOpenProfile: () => void
 }) {
+  const { buildScopedPath } = useScope()
   return (
     <HudFrame
       className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 w-[min(760px,calc(100%-2rem))]"
@@ -530,7 +530,7 @@ function PlayerHud({
             <p className="text-[11px] truncate">
               {point.canonical_team_id != null && point.canonical_team_name ? (
                 <Link
-                  to={`/team/${point.canonical_team_id}`}
+                  to={buildScopedPath(`/team/${point.canonical_team_id}`)}
                   className="text-ink-dim hover:text-electric hover:underline"
                 >
                   {point.canonical_team_name}
@@ -618,13 +618,14 @@ function PlayerHud({
 export function Galaxy() {
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
+  const { scope, scopeLabel, buildScopedPath } = useScope()
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null)
   const [hoveredPlayerId, setHoveredPlayerId] = useState<number | null>(null)
   const [search, setSearch] = useState('')
 
   const filters = {
-    competition: DEFAULT_FILTERS.competition,
-    season: DEFAULT_FILTERS.season,
+    competition: scope.competition,
+    season: scope.season,
     min_minutes: Number(params.get('min_minutes') ?? DEFAULT_FILTERS.min_minutes),
     position_group: params.get('position_group') ?? DEFAULT_FILTERS.position_group,
     team: params.get('team') ?? DEFAULT_FILTERS.team,
@@ -746,7 +747,7 @@ export function Galaxy() {
 
       <HudFrame
         className="absolute top-4 left-4 z-20 w-72"
-        header={`Target // ${filters.competition} ${filters.season}`}
+        header={`Target // ${scopeLabel}`}
       >
         <div className="p-3 space-y-2">
           <input
@@ -865,7 +866,7 @@ export function Galaxy() {
           onHoverEdge={id => setHoveredPlayerId(id)}
           onClear={() => setSelectedPlayerId(null)}
           onOpenProfile={() =>
-            navigate(`/player/${selectedPoint.canonical_player_id}`)
+            navigate(buildScopedPath(`/player/${selectedPoint.canonical_player_id}`))
           }
         />
       )}

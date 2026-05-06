@@ -7,14 +7,13 @@ from ingestion.models import Competition, CompetitionSeason, Season
 
 class Command(BaseCommand):
     help = (
-        "Create Premier League + 2025-26 CompetitionSeason if missing. "
-        "Sofascore IDs default from env SOFASCORE_PL_UNIQUE_TOURNAMENT_ID and "
-        "SOFASCORE_PL_SEASON_ID (must be set to real values for live ingestion)."
+        "Create ENG1 Premier League + 2025-26 CompetitionSeason if missing. "
+        "Prefer seed_competition_slices for full manifest-driven setup."
     )
 
     def handle(self, *args, **options) -> None:
         comp, _ = Competition.objects.get_or_create(
-            short_code="EPL",
+            short_code="ENG1",
             defaults={"name": "Premier League", "country": "England"},
         )
         season, _ = Season.objects.get_or_create(

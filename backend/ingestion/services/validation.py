@@ -9,6 +9,7 @@ from ingestion.models import (
     IngestionRun,
     IngestionRunStatus,
     IngestionKind,
+    PlayerDataMode,
     SofascoreTeamSeasonSource,
     SofascorePlayerSeasonSource,
     UnderstatPlayerSeasonSource,
@@ -90,6 +91,13 @@ def latest_success_run(competition_season: CompetitionSeason, kind: str) -> Inge
 def can_merge_slice(competition_season: CompetitionSeason) -> ValidationResult:
     u = latest_success_run(competition_season, IngestionKind.UNDERSTAT)
     s = latest_success_run(competition_season, IngestionKind.SOFASCORE)
+    if competition_season.player_data_mode == PlayerDataMode.SOFASCORE_ONLY:
+        if not s:
+            return ValidationResult(
+                False,
+                "Sofascore-only merge requires a successful Sofascore ingestion run for the same competition season.",
+            )
+        return ValidationResult(True, "")
     if not u or not s:
         return ValidationResult(
             False,

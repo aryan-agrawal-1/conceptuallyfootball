@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import html
+import re
+import unicodedata
+
 from django.db import transaction
 from django.utils import timezone
 
@@ -83,6 +87,43 @@ def _get_or_create_player_for_reep_row(
     )
 
 
+def _get_or_create_provider_native_player(
+    *,
+    provider: str,
+    provider_player_id: str,
+    display_name: str,
+) -> CanonicalPlayer:
+    pid = str(provider_player_id)
+    existing_map = (
+        ProviderPlayerMapping.objects.filter(provider=provider, provider_player_id=pid)
+        .select_related("canonical_player")
+        .first()
+    )
+    if existing_map:
+        return existing_map.canonical_player
+
+    player = CanonicalPlayer.objects.create(
+        display_name=display_name or f"{provider} player {pid}",
+    )
+    ProviderPlayerMapping.objects.create(
+        provider=provider,
+        provider_player_id=pid,
+        canonical_player=player,
+        match_method=MatchMethod.AUTO,
+    )
+    return player
+
+
+def _normalize_player_name_for_match(name: str) -> str:
+    value = html.unescape(name or "").casefold()
+    value = "".join(
+        char
+        for char in unicodedata.normalize("NFKD", value)
+        if not unicodedata.combining(char)
+    )
+    return re.sub(r"[^a-z0-9]+", " ", value).strip()
+
+
 def _resolve_player_from_slice_counterpart(
     *,
     competition_season: CompetitionSeason,
@@ -96,12 +137,15 @@ def _resolve_player_from_slice_counterpart(
     other_model = (
         SofascorePlayerSeasonSource if provider == Provider.UNDERSTAT else UnderstatPlayerSeasonSource
     )
-    candidates = list(
-        other_model.objects.filter(
-            competition_season=competition_season,
-            player_name__iexact=display_name,
-        )
-    )
+    normalized_display_name = _normalize_player_name_for_match(display_name)
+    if not normalized_display_name:
+        return None
+
+    candidates = [
+        row
+        for row in other_model.objects.filter(competition_season=competition_season)
+        if _normalize_player_name_for_match(row.player_name) == normalized_display_name
+    ]
     if len(candidates) != 1:
         return None
 
@@ -163,10 +207,14 @@ def resolve_canonical_player(
     else:
         row = ReepPlayerRow.objects.filter(sofascore_player_id=pid).first()
 
-    existing_map = ProviderPlayerMapping.objects.filter(
-        provider=provider,
-        provider_player_id=pid,
-    ).first()
+    existing_map = (
+        ProviderPlayerMapping.objects.filter(
+            provider=provider,
+            provider_player_id=pid,
+        )
+        .select_related("canonical_player")
+        .first()
+    )
     if existing_map:
         if row and existing_map.match_method == MatchMethod.AUTO:
             player = _get_or_create_player_for_reep_row(row=row, fallback_name=display_name)
@@ -180,6 +228,27 @@ def resolve_canonical_player(
                 player=player,
             )
             return player
+
+        if (
+            existing_map.match_method == MatchMethod.AUTO
+            and existing_map.canonical_player.reep_id is None
+        ):
+            player = _resolve_player_from_slice_counterpart(
+                competition_season=competition_season,
+                provider=provider,
+                display_name=display_name,
+            )
+            if player and player.id != existing_map.canonical_player_id:
+                existing_map.canonical_player = player
+                existing_map.save(update_fields=["canonical_player", "updated_at"])
+                _mark_unmatched_player_resolved(
+                    competition_season=competition_season,
+                    provider=provider,
+                    provider_player_id=pid,
+                    player=player,
+                )
+                return player
+
         return existing_map.canonical_player
 
     if not row:
@@ -188,26 +257,25 @@ def resolve_canonical_player(
             provider=provider,
             display_name=display_name,
         )
-        if player:
+        if player is None:
+            player = _get_or_create_provider_native_player(
+                provider=provider,
+                provider_player_id=pid,
+                display_name=display_name,
+            )
+        else:
             ProviderPlayerMapping.objects.get_or_create(
                 provider=provider,
                 provider_player_id=pid,
                 defaults={"canonical_player": player, "match_method": MatchMethod.AUTO},
             )
-            _mark_unmatched_player_resolved(
-                competition_season=competition_season,
-                provider=provider,
-                provider_player_id=pid,
-                player=player,
-            )
-            return player
-        UnmatchedProviderPlayer.objects.get_or_create(
+        _mark_unmatched_player_resolved(
             competition_season=competition_season,
             provider=provider,
             provider_player_id=pid,
-            defaults={"player_name": display_name, "first_seen_run": run},
+            player=player,
         )
-        return None
+        return player
 
     player = _get_or_create_player_for_reep_row(row=row, fallback_name=display_name)
 
@@ -223,6 +291,31 @@ def resolve_canonical_player(
         player=player,
     )
     return player
+
+
+def _get_or_create_provider_native_team(
+    *,
+    provider: str,
+    provider_team_id: str,
+    team_name: str,
+) -> CanonicalTeam:
+    tid = str(provider_team_id)
+    existing_map = (
+        ProviderTeamMapping.objects.filter(provider=provider, provider_team_id=tid)
+        .select_related("canonical_team")
+        .first()
+    )
+    if existing_map:
+        return existing_map.canonical_team
+
+    team = CanonicalTeam.objects.create(name=team_name or f"{provider} team {tid}")
+    ProviderTeamMapping.objects.create(
+        provider=provider,
+        provider_team_id=tid,
+        canonical_team=team,
+        match_method=MatchMethod.AUTO,
+    )
+    return team
 
 
 def resolve_canonical_team(
@@ -261,13 +354,21 @@ def resolve_canonical_team(
         return existing_map.canonical_team
 
     if not row:
-        UnmatchedProviderTeam.objects.get_or_create(
+        team = _get_or_create_provider_native_team(
+            provider=provider,
+            provider_team_id=tid,
+            team_name=team_name,
+        )
+        unmatched, _ = UnmatchedProviderTeam.objects.get_or_create(
             competition_season=competition_season,
             provider=provider,
             provider_team_id=tid,
             defaults={"team_name": team_name, "first_seen_run": run},
         )
-        return None
+        unmatched.resolved_team = team
+        unmatched.resolved_at = timezone.now()
+        unmatched.save(update_fields=["resolved_team", "resolved_at"])
+        return team
 
     team, _ = CanonicalTeam.objects.get_or_create(
         reep_id=row.reep_id,

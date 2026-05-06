@@ -17,7 +17,7 @@ import {
   getMinutesHeatRangeFromPlayers,
   minutesHeatPercentileFromRange,
 } from '../../lib/heatmap'
-import { TEAM_LOGOS } from '../../lib/teamLogos'
+import { getTeamLogoPath } from '../../lib/teamLogos'
 import {
   COLUMN_GROUPS,
   SCORE_COLUMN_IDS,
@@ -68,6 +68,9 @@ const SORTED_COL_STYLE: CSSProperties = {
   boxShadow:
     'inset 1px 0 0 rgba(74,158,245,0.35), inset -1px 0 0 rgba(74,158,245,0.35)',
 }
+
+const teamAcronym = (name: string | null | undefined): string =>
+  (name ?? '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase() || '---'
 
 /**
  * The row-hover "target lock" decoration: two L-brackets at one side of a
@@ -358,8 +361,8 @@ function buildMetaColumn(col: ColDef): ColumnDef<PlayerRow, unknown> {
         cell: info => {
           const row = info.row.original
           const name = info.getValue() as string | null
-          const logo = name ? TEAM_LOGOS[name] : undefined
           const tid = row.canonical_team_id
+          const logo = getTeamLogoPath(tid, name)
           const inner =
             logo != null ? (
               <img
@@ -369,13 +372,18 @@ function buildMetaColumn(col: ColDef): ColumnDef<PlayerRow, unknown> {
                 style={{ width: 30, height: 30, objectFit: 'contain' }}
               />
             ) : (
-              <span className="text-[10px] text-ink-muted">—</span>
+              <span
+                className="flex h-[30px] w-[30px] items-center justify-center text-[10px] font-bold text-ink-muted"
+                title={name ?? undefined}
+              >
+                {teamAcronym(name)}
+              </span>
             )
           return (
             <div className="flex items-center justify-center w-full h-full">
               {tid != null && name ? (
                 <Link
-                  to={`/team/${tid}`}
+                  to={`/team/${tid}?competition=${encodeURIComponent(row.competition_code)}&season=${encodeURIComponent(row.season_label)}`}
                   className="flex items-center justify-center rounded-sm ring-offset-2 ring-offset-mat hover:ring-1 hover:ring-electric/50"
                   aria-label={`Open ${name} team profile`}
                   onClick={e => e.stopPropagation()}
@@ -491,6 +499,7 @@ function buildMetricColumn(
 interface MatrixTableProps {
   players: PlayerRow[]
   visibleCols: Record<string, boolean>
+  columnGroups?: ColGroupDef[]
   heatmapEnabled: boolean
   rateMode: MatrixRateMode
   /** Vertical scroll container (StatMatrix main pane) — hides header tooltip on scroll. */
@@ -502,6 +511,7 @@ interface MatrixTableProps {
 export function MatrixTable({
   players,
   visibleCols,
+  columnGroups: columnGroupsOverride,
   heatmapEnabled,
   rateMode,
   scrollParentRef,
@@ -526,7 +536,7 @@ export function MatrixTable({
 
   const minutesRange = useMemo(() => getMinutesHeatRangeFromPlayers(players), [players])
 
-  const rawColumnGroups = variant === 'gk' ? COLUMN_GROUPS_GK : COLUMN_GROUPS
+  const rawColumnGroups = columnGroupsOverride ?? (variant === 'gk' ? COLUMN_GROUPS_GK : COLUMN_GROUPS)
 
   // Measure the scroll container so the GK matrix (far fewer columns) can stretch to fill the
   // viewport while keeping every cell a square. Outfield already overflows, so we leave it alone.
@@ -773,7 +783,11 @@ export function MatrixTable({
                     return (
                       <tr
                         key={row.id}
-                        onClick={() => navigate(`/player/${row.original.canonical_player_id}`)}
+                        onClick={() =>
+                          navigate(
+                            `/player/${row.original.canonical_player_id}?competition=${encodeURIComponent(row.original.competition_code)}&season=${encodeURIComponent(row.original.season_label)}`,
+                          )
+                        }
                         className="group cursor-pointer"
                         style={{
                           height: `${virtualRow.size}px`,

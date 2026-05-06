@@ -58,7 +58,18 @@ export STATBALLER_REEP_CSV_DIR="$HOME/src/reep/data"
 # Optional: lower minimum row count for dev slices (default 200)
 # export STATBALLER_INGEST_MIN_ROWS=200
 
-# Live Sofascore season for Premier League — replace with current IDs from Sofascore UI
+# Optional: provider/batch pacing for large Sofascore refreshes.
+# Defaults are intentionally conservative to reduce IP challenge/block risk.
+# Per-request delay between Sofascore API pages / team-stat requests.
+# export STATBALLER_SOFASCORE_REQUEST_DELAY_SECONDS=1.5
+# Base sleep for transient Sofascore 403/429/5xx retries; actual backoff is 1x, 2x, 3x.
+# export STATBALLER_SOFASCORE_RETRY_BASE_SLEEP_SECONDS=8.0
+# Sleep between competition-season slices in batch runners.
+# export STATBALLER_BATCH_SLICE_SLEEP_SECONDS=20.0
+# Longer sleep when a batch runner moves from one league to the next.
+# export STATBALLER_BATCH_LEAGUE_SLEEP_SECONDS=120.0
+
+# Live Sofascore season for Premier League / ENG1
 export SOFASCORE_PL_UNIQUE_TOURNAMENT_ID=17
 export SOFASCORE_PL_SEASON_ID=76986
 
@@ -78,17 +89,18 @@ python manage.py createsuperuser
 
 ---
 
-## 3. Bootstrap competition season (Premier League 2025–26)
+## 3. Seed competition seasons from the manifest
 
 ```bash
 cd backend
 source venv/bin/activate
-python manage.py bootstrap_pl_slice
+python manage.py seed_competition_slices
 ```
 
-Note the printed `CompetitionSeason id=` — used below as `<CS_ID>`.
-
-You can edit **Competition season** in Django admin if Sofascore or Understat IDs change.
+This upserts the checked-in league manifest, including `ENG1`, `ITA1`, `SPA1`, `GER1`,
+`FRA1`, `POR1`, `NED1`, `BEL1`, `SCO1`, and `ENG2` across their configured seasons.
+You can still edit **Competition season** in Django admin if provider IDs change, then
+re-run the command to resync from version-controlled config.
 
 ---
 
@@ -178,7 +190,7 @@ python manage.py runserver 8000
 Examples:
 
 ```bash
-curl -sS 'http://127.0.0.1:8000/internal/api/merged-player-seasons/?competition=EPL&season=2025-26' | head
+curl -sS 'http://127.0.0.1:8000/internal/api/merged-player-seasons/?competition=ENG1&season=2025-26' | head
 curl -sS 'http://127.0.0.1:8000/internal/api/merged-player-seasons/1/'
 ```
 
@@ -218,4 +230,3 @@ source venv/bin/activate
 export STATBALLER_USE_SQLITE=1
 python manage.py test ingestion.tests -v 2
 ```
-

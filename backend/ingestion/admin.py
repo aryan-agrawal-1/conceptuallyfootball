@@ -46,14 +46,18 @@ class CompetitionSeasonAdmin(admin.ModelAdmin):
         "id",
         "competition",
         "season",
+        "player_data_mode",
+        "has_understat",
+        "has_sofascore",
         "understat_league",
         "understat_season_year",
         "sofascore_unique_tournament_id",
         "sofascore_season_id",
         "is_active",
     )
-    list_filter = ("is_active", "competition")
+    list_filter = ("is_active", "competition", "player_data_mode", "has_understat", "has_sofascore")
     search_fields = ("season__label", "competition__short_code")
+    readonly_fields = ("metric_availability",)
 
 
 @admin.register(IngestionRun)
