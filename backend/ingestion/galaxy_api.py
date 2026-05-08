@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import Q
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -105,6 +106,13 @@ def _edge_payload(row: GalaxySimilarity) -> dict:
     }
 
 
+def _query_values(request, key: str) -> list[str]:
+    values: list[str] = []
+    for raw in request.query_params.getlist(key):
+        values.extend(part.strip() for part in raw.split(",") if part.strip())
+    return values
+
+
 class GalaxyApi(APIView):
     def get(self, request):
         try:
@@ -123,16 +131,26 @@ class GalaxyApi(APIView):
                 .order_by("canonical_player__display_name", "competition_season__competition__short_code")
             )
 
-            position_group = request.query_params.get("position_group")
-            if position_group:
-                queryset = queryset.filter(position_group__iexact=position_group)
+            position_groups = _query_values(request, "position_group")
+            if position_groups:
+                queryset = queryset.filter(position_group__in=[value.upper() for value in position_groups])
 
-            team_id = request.query_params.get("team")
-            if team_id:
-                if team_id.isdigit():
-                    queryset = queryset.filter(canonical_display_team_id=int(team_id))
+            teams = _query_values(request, "team")
+            if teams:
+                numeric_team_ids = [int(team) for team in teams if team.isdigit()]
+                team_names = [team for team in teams if not team.isdigit()]
+                team_name_filter = Q()
+                for team_name in team_names:
+                    team_name_filter |= Q(canonical_display_team__name__iexact=team_name)
+                if numeric_team_ids and team_names:
+                    queryset = queryset.filter(
+                        Q(canonical_display_team_id__in=numeric_team_ids)
+                        | team_name_filter
+                    )
+                elif numeric_team_ids:
+                    queryset = queryset.filter(canonical_display_team_id__in=numeric_team_ids)
                 else:
-                    queryset = queryset.filter(canonical_display_team__name__iexact=team_id)
+                    queryset = queryset.filter(team_name_filter)
 
             min_minutes = request.query_params.get("min_minutes")
             requested_min_minutes = snapshot.default_min_minutes

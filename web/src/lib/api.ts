@@ -140,8 +140,8 @@ export async function fetchTeamSquad(
 export interface GalaxyFilters {
   competition: string
   season: string
-  position_group?: string
-  team?: string
+  position_group?: string | string[]
+  team?: string | string[]
   min_minutes: number
 }
 
@@ -150,14 +150,20 @@ export async function fetchGalaxy(filters: GalaxyFilters): Promise<GalaxyRespons
   p.set('competition', filters.competition)
   p.set('season', filters.season)
   p.set('min_minutes', String(filters.min_minutes))
-  if (filters.position_group) p.set('position_group', filters.position_group)
-  if (filters.team) p.set('team', filters.team)
+  appendFilterValues(p, 'position_group', filters.position_group)
+  appendFilterValues(p, 'team', filters.team)
   const res = await fetch(`${BASE}/galaxy?${p}`)
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.detail ?? `API error ${res.status}`)
   }
   return res.json()
+}
+
+function appendFilterValues(p: URLSearchParams, key: string, value?: string | string[]) {
+  if (!value) return
+  const values = Array.isArray(value) ? value : [value]
+  values.filter(Boolean).forEach(entry => p.append(key, entry))
 }
 
 export async function fetchGalaxySimilar(

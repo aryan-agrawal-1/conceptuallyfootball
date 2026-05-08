@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, Loader2, Search, X } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { fetchTeamStatMatrix } from '../lib/api'
 import { applyClientFilters, useStatMatrix } from '../hooks/useStatMatrix'
 import {
@@ -29,7 +29,7 @@ import type {
 } from '../types/api'
 import { useScope } from '../context/ScopeContext'
 import { formatValue } from '../lib/format'
-import { HudActionButton, HudCornerMarks, HudFrame, HudLabel, HudPill, HudVSep } from '../components/hud/Hud'
+import { HudActionButton, HudFrame, HudLabel, HudPill, HudVSep } from '../components/hud/Hud'
 import { ProfileRateToggle } from '../components/profile/ProfileRateToggle'
 import { formatTeamStatMode, teamKeyStatLabel, teamStatValueForMode } from '../lib/teamProfileMetrics'
 import { ChartShareCard } from '../components/visualizer/ChartShareCard'
@@ -37,8 +37,8 @@ import { VisualiserEntityPicker, type VisualiserEntityOption } from '../componen
 import { VisualiserScatterPlot, type VisualiserScatterDatum } from '../components/visualizer/VisualiserScatterPlot'
 import { VisualiserBarChart, type VisualiserBarDatum } from '../components/visualizer/VisualiserBarChart'
 import { VisualiserRadarChart } from '../components/visualizer/VisualiserRadarChart'
-import { cn } from '../lib/utils'
 import { filterMetricGroups, usablePlayerMetricKeys, usableTeamMetricKeys } from '../lib/metricAvailability'
+import { HudMultiSelectDropdown, HudSelectDropdown, type HudDropdownGroup } from '../components/hud/HudDropdown'
 
 const MINUTE_OPTIONS = [0, 450, 900, 1350]
 const CHART_TYPES: Array<{ value: VisualiserChartType; label: string }> = [
@@ -731,7 +731,7 @@ function MetricControls({
             {pinnedIds.length ? `${pinnedIds.length} pinned` : 'Pin entities'}
           </HudPill>
           {state.chart === 'scatter' && (
-            <HudPill active={state.labels} onClick={() => onChange({ labels: !state.labels })}>
+            <HudPill active={state.labels} onClick={() => onChange({ labels: !state.labels })} className="px-3 py-2">
               Labels
             </HudPill>
           )}
@@ -869,6 +869,14 @@ function dedupeMetricGroups(groups: MetricGroup[]): MetricGroup[] {
   })
 }
 
+function toHudDropdownGroups(groups: MetricGroup[]): HudDropdownGroup[] {
+  return groups.map(group => ({
+    key: group.key,
+    label: group.label,
+    options: group.items.map(item => ({ value: item.key, label: item.label })),
+  }))
+}
+
 function playerMetricDefaults(position: VisualiserPlayerPosition) {
   if (position === 'GK') {
     return {
@@ -970,29 +978,27 @@ function writeState(
 }
 
 function ControlSelect({
+  label = 'Select value',
   value,
   onChange,
   options,
   disabled = false,
 }: {
+  label?: string
   value: string
   onChange: (value: string) => void
   options: Array<{ value: string; label: string }>
   disabled?: boolean
 }) {
   return (
-    <select
+    <HudSelectDropdown
+      label={label}
       value={value}
-      onChange={event => onChange(event.target.value)}
+      onChange={onChange}
       disabled={disabled}
-      className="max-w-[min(220px,44vw)] border border-electric/25 bg-mat/60 px-2 py-1 text-[11px] font-mono text-electric outline-none focus:border-electric/50 disabled:opacity-50"
-    >
-      {options.map(option => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
+      groups={[{ key: 'options', label, options }]}
+      className="w-[min(220px,44vw)]"
+    />
   )
 }
 
@@ -1010,21 +1016,12 @@ function MetricSelect({
   return (
     <label className="flex min-w-0 flex-col gap-2">
       <span className="text-[10px] uppercase tracking-[0.22em] text-electric/75">{label}</span>
-      <select
+      <HudSelectDropdown
+        label={label}
         value={value}
-        onChange={event => onChange(event.target.value)}
-        className="min-w-0 border border-electric/25 bg-mat/60 px-3 py-2 text-[12px] text-ink outline-none focus:border-electric/50"
-      >
-        {groups.map(group => (
-          <optgroup key={group.key} label={group.label}>
-            {group.items.map(item => (
-              <option key={item.key} value={item.key}>
-                {item.label}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
+        onChange={onChange}
+        groups={toHudDropdownGroups(groups)}
+      />
     </label>
   )
 }
@@ -1040,33 +1037,15 @@ function MetricMultiSelect({
   selected: string[]
   onChange: (selected: string[]) => void
 }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function close(event: MouseEvent) {
-      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [])
+  const options = groups.flatMap(group => group.items.map(item => ({ value: item.key, label: item.label })))
 
   return (
-    <div ref={ref} className="relative">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <p className="text-[10px] uppercase tracking-[0.22em] text-electric/75">{label}</p>
-        <button
-          type="button"
-          onClick={() => setOpen(value => !value)}
-          className="border border-electric/20 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-electric/80 hover:border-electric/40"
-        >
-          {selected.length} axes
-        </button>
-      </div>
+    <div className="relative">
+      <p className="mb-2 text-[10px] uppercase tracking-[0.22em] text-electric/75">{label}</p>
 
       <div className="mb-2 flex flex-wrap gap-1.5">
         {selected.map(key => {
-          const item = groups.flatMap(group => group.items).find(entry => entry.key === key)
+          const item = options.find(entry => entry.value === key)
           if (!item) return null
           return (
             <button
@@ -1080,42 +1059,15 @@ function MetricMultiSelect({
           )
         })}
       </div>
-
-      {open && (
-        <div className="max-h-64 overflow-y-auto border border-electric/25 bg-panel/98 shadow-xl">
-          {groups.map(group => (
-            <div key={group.key} className="border-b border-electric/10 last:border-b-0">
-              <p className="sticky top-0 bg-mat/90 px-3 py-1.5 text-[9px] uppercase tracking-[0.22em] text-ink-muted">
-                {group.label}
-              </p>
-              {group.items.map(item => {
-                const on = selected.includes(item.key)
-                const canAdd = on || selected.length < 8
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    disabled={!canAdd}
-                    onClick={() =>
-                      on
-                        ? onChange(selected.filter(entry => entry !== item.key))
-                        : onChange([...selected, item.key])
-                    }
-                    className={cn(
-                      'flex w-full items-center justify-between px-3 py-1.5 text-left text-[12px]',
-                      on ? 'bg-electric/10 text-electric' : 'text-ink-dim hover:bg-electric/6 hover:text-ink',
-                      !canAdd && 'cursor-not-allowed opacity-40',
-                    )}
-                  >
-                    <span>{item.label}</span>
-                    <span className="text-[10px] uppercase tracking-[0.2em]">{on ? 'On' : 'Add'}</span>
-                  </button>
-                )
-              })}
-            </div>
-          ))}
-        </div>
-      )}
+      <HudMultiSelectDropdown
+        label="Axes"
+        options={options}
+        selected={selected}
+        onChange={onChange}
+        emptyLabel="Select axes"
+        searchPlaceholder="Search metric..."
+        maxSelected={8}
+      />
     </div>
   )
 }
@@ -1129,132 +1081,15 @@ function TeamFilterDropdown({
   selected: string[]
   onChange: (teams: string[]) => void
 }) {
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
-  const ref = useRef<HTMLDivElement>(null)
-  const label =
-    selected.length === 0 ? 'All Clubs' : selected.length === 1 ? selected[0] : `${selected.length} Clubs`
-  const filteredTeams = useMemo(() => {
-    const needle = search.trim().toLowerCase()
-    if (!needle) return teams
-    return teams.filter(team => team.toLowerCase().includes(needle))
-  }, [search, teams])
-
-  useEffect(() => {
-    function close(event: MouseEvent) {
-      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [])
-
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen(value => !value)}
-        className={cn(
-          'relative flex items-center gap-1.5 border px-3 py-2 text-[11px] font-medium uppercase tracking-[0.15em] transition-colors',
-          selected.length
-            ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
-            : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
-        )}
-      >
-        {selected.length > 0 && <HudCornerMarks size="size-1" />}
-        {label}
-        {selected.length > 0 ? (
-          <X
-            size={11}
-            className="opacity-70"
-            onClick={event => {
-              event.stopPropagation()
-              onChange([])
-            }}
-          />
-        ) : (
-          <ChevronDown size={11} className={cn('transition-transform', open && 'rotate-180')} />
-        )}
-      </button>
-      {open && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-60 border border-electric/25 bg-panel/95 shadow-xl">
-          <div className="border-b border-electric/20 p-2">
-            <div className="flex items-center gap-2 border border-electric/20 bg-mat/60 px-2 py-1.5">
-              <Search size={12} className="shrink-0 text-electric/60" />
-              <input
-                autoFocus
-                value={search}
-                onChange={event => setSearch(event.target.value)}
-                placeholder="Search club..."
-                className="flex-1 bg-transparent text-[11px] tracking-wide text-ink outline-none placeholder:text-electric/30"
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => setSearch('')}
-                  className="text-electric/50 hover:text-electric"
-                >
-                  <X size={10} />
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="max-h-56 overflow-y-auto p-1">
-          {selected.length > 0 && (
-            <button
-              type="button"
-              className="mb-0.5 w-full px-3 py-1.5 text-left text-[10px] uppercase tracking-[0.2em] text-electric/70 transition-colors hover:bg-electric/10 hover:text-electric"
-              onClick={() => {
-                onChange([])
-                setOpen(false)
-              }}
-            >
-              Clear selection
-            </button>
-          )}
-          {filteredTeams.map(team => {
-            const on = selected.includes(team)
-            return (
-              <button
-                key={team}
-                type="button"
-                onClick={() => onChange(on ? selected.filter(entry => entry !== team) : [...selected, team])}
-                className={cn(
-                  'flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[12px] transition-colors',
-                  on ? 'bg-electric/10 text-electric' : 'text-ink-dim hover:bg-electric/5 hover:text-ink',
-                )}
-              >
-                <span
-                  className={cn(
-                    'flex h-3.5 w-3.5 shrink-0 items-center justify-center border transition-colors',
-                    on ? 'border-electric bg-electric/30' : 'border-electric/30',
-                  )}
-                >
-                  {on && (
-                    <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
-                      <path
-                        d="M1 3L3 5L7 1"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="text-electric"
-                      />
-                    </svg>
-                  )}
-                </span>
-                {team}
-              </button>
-            )
-          })}
-          {filteredTeams.length === 0 && (
-            <p className="px-3 py-3 text-center text-[11px] uppercase tracking-[0.2em] text-electric/40">
-              No clubs found
-            </p>
-          )}
-          </div>
-        </div>
-      )}
-    </div>
+    <HudMultiSelectDropdown
+      label="Clubs"
+      options={teams.map(team => ({ value: team, label: team }))}
+      selected={selected}
+      onChange={onChange}
+      emptyLabel="All Clubs"
+      searchPlaceholder="Search club..."
+    />
   )
 }
 

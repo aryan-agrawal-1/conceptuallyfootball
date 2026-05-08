@@ -32,6 +32,7 @@ const POSITION_COHORT_LABEL: Record<PositionGroup, string> = {
 }
 
 type PickerState = { kind: 'add' } | { kind: 'replace'; index: number }
+type DetailScope = { competition: string; season: string }
 
 export function Comparisons() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -52,18 +53,42 @@ export function Comparisons() {
 
   const competition = scope.competition
   const season = scope.season
+  const isAggregateScope = competition === 'BIG5' || competition === 'ALL'
+
+  const detailScopes = useMemo((): Array<DetailScope | null> => {
+    return playerIds.map(id => {
+      const scopedRow = playersSorted.find(p => p.canonical_player_id === id)
+      if (scopedRow) {
+        return {
+          competition: scopedRow.competition_code,
+          season: scopedRow.season_label,
+        }
+      }
+      return isAggregateScope ? null : { competition, season }
+    })
+  }, [competition, isAggregateScope, playerIds, playersSorted, season])
 
   const detailQueries = useQueries({
-    queries: playerIds.map(id => ({
-      queryKey: ['player-detail', competition, season, id],
-      queryFn: () =>
-        fetchPlayerDetail(id, {
-          competition,
-          season,
-          include: 'meta',
-        }),
-      enabled: Number.isFinite(id) && id > 0,
-    })),
+    queries: playerIds.map((id, index) => {
+      const detailScope = detailScopes[index]
+      return {
+        queryKey: [
+          'player-detail',
+          detailScope?.competition ?? competition,
+          detailScope?.season ?? season,
+          id,
+        ],
+        queryFn: () => {
+          if (!detailScope) throw new Error('Player is not available in this scope.')
+          return fetchPlayerDetail(id, {
+            competition: detailScope.competition,
+            season: detailScope.season,
+            include: 'meta',
+          })
+        },
+        enabled: Number.isFinite(id) && id > 0 && detailScope != null,
+      }
+    }),
   })
 
   const detailsOrdered = useMemo((): Array<PlayerDetailResponse | undefined> => {
@@ -110,8 +135,10 @@ export function Comparisons() {
       .filter((x): x is { row: PlayerDetailResponse; slot: 0 | 1 | 2 } => x != null)
   }, [playerIds, detailsOrdered])
 
-  const detailsLoading = detailQueries.some(q => q.isLoading)
-  const detailsError = detailQueries.some(q => q.isError)
+  const hasUnresolvedAggregatePlayer =
+    isAggregateScope && playerIds.length > 0 && detailScopes.some(s => s == null)
+  const detailsLoading = detailQueries.some(q => q.isLoading) || (hasUnresolvedAggregatePlayer && indexLoading)
+  const detailsError = detailQueries.some(q => q.isError) || (hasUnresolvedAggregatePlayer && !indexLoading)
 
   const anyLowMinutesOrIneligible = useMemo(() => {
     return radarPlayers.some(

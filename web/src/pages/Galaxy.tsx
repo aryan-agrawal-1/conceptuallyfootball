@@ -1,6 +1,6 @@
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Html, Line, OrbitControls, Stars } from '@react-three/drei'
-import { useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { AlertCircle, ArrowUpRight, Loader2, X } from 'lucide-react'
@@ -14,12 +14,27 @@ import {
   HudDivider,
   HudFrame,
 } from '../components/hud/Hud'
+import { HudMultiSelectDropdown } from '../components/hud/HudDropdown'
 import { useScope } from '../context/ScopeContext'
 
 const DEFAULT_FILTERS = {
-  position_group: '',
-  team: '',
+  position_group: [] as string[],
+  team: [] as string[],
   min_minutes: 900,
+}
+
+const POSITION_FILTER_OPTIONS = [
+  { value: 'FWD', label: 'FWD' },
+  { value: 'MID', label: 'MID' },
+  { value: 'DEF', label: 'DEF' },
+]
+
+function readParamValues(params: URLSearchParams, key: string): string[] {
+  return params
+    .getAll(key)
+    .flatMap(value => value.split(','))
+    .map(value => value.trim())
+    .filter(Boolean)
 }
 
 // ─── Star sprite ──────────────────────────────────────────────────────────────
@@ -634,13 +649,14 @@ export function Galaxy() {
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
   const [hoveredPlayerId, setHoveredPlayerId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [knownTeams, setKnownTeams] = useState<string[]>([])
 
   const filters = {
     competition: scope.competition,
     season: scope.season,
     min_minutes: Number(params.get('min_minutes') ?? DEFAULT_FILTERS.min_minutes),
-    position_group: params.get('position_group') ?? DEFAULT_FILTERS.position_group,
-    team: params.get('team') ?? DEFAULT_FILTERS.team,
+    position_group: readParamValues(params, 'position_group'),
+    team: readParamValues(params, 'team'),
   }
 
   const galaxyQuery = useQuery({
@@ -682,17 +698,27 @@ export function Galaxy() {
     return [...new Set(names)].sort((a, b) => a.localeCompare(b))
   }, [data?.points])
 
+  useEffect(() => {
+    if (teams.length === 0) return
+    setKnownTeams(current => {
+      const next = [...new Set([...current, ...teams])].sort((a, b) => a.localeCompare(b))
+      return next.length === current.length && next.every((team, index) => team === current[index]) ? current : next
+    })
+  }, [teams])
+
   function setFilter(next: Partial<typeof filters>) {
     const nextParams = new URLSearchParams(params)
     if ('position_group' in next) {
-      const value = next.position_group ?? ''
-      if (value) nextParams.set('position_group', value)
-      else nextParams.delete('position_group')
+      nextParams.delete('position_group')
+      for (const value of next.position_group ?? []) {
+        if (value) nextParams.append('position_group', value)
+      }
     }
     if ('team' in next) {
-      const value = next.team ?? ''
-      if (value) nextParams.set('team', value)
-      else nextParams.delete('team')
+      nextParams.delete('team')
+      for (const value of next.team ?? []) {
+        if (value) nextParams.append('team', value)
+      }
     }
     if ('min_minutes' in next) {
       const floor = data?.model_meta?.min_minutes ?? 450
@@ -771,16 +797,14 @@ export function Galaxy() {
             className="w-full bg-mat/80 border border-electric/30 px-2 py-1.5 text-[11px] tracking-widest uppercase placeholder:text-electric/40 focus:outline-none focus:border-electric"
           />
           <div className="grid grid-cols-2 gap-2">
-            <select
-              className="bg-mat/80 border border-electric/25 text-[11px] px-2 py-1.5 tracking-widest text-electric/90 focus:outline-none focus:border-electric"
-              value={filters.position_group}
-              onChange={event => setFilter({ position_group: event.target.value })}
-            >
-              <option value="">ALL POS</option>
-              <option value="FWD">FWD</option>
-              <option value="MID">MID</option>
-              <option value="DEF">DEF</option>
-            </select>
+            <HudMultiSelectDropdown
+              label="Positions"
+              options={POSITION_FILTER_OPTIONS}
+              selected={filters.position_group}
+              onChange={position_group => setFilter({ position_group })}
+              emptyLabel="All Pos"
+              className="min-w-0"
+            />
             <input
               type="number"
               className="bg-mat/80 border border-electric/25 text-[11px] px-2 py-1.5 font-mono text-electric/90 focus:outline-none focus:border-electric"
@@ -792,18 +816,14 @@ export function Galaxy() {
           <p className="text-[10px] uppercase tracking-[0.16em] text-electric/50">
             Model floor: {data.model_meta.min_minutes} minutes
           </p>
-          <select
-            className="w-full bg-mat/80 border border-electric/25 text-[11px] px-2 py-1.5 tracking-widest text-electric/90 focus:outline-none focus:border-electric"
-            value={filters.team}
-            onChange={event => setFilter({ team: event.target.value })}
-          >
-            <option value="">ALL TEAMS</option>
-            {teams.map(team => (
-              <option key={team} value={team}>
-                {team}
-              </option>
-            ))}
-          </select>
+          <HudMultiSelectDropdown
+            label="Clubs"
+            options={knownTeams.map(team => ({ value: team, label: team }))}
+            selected={filters.team}
+            onChange={team => setFilter({ team })}
+            emptyLabel="All Teams"
+            searchPlaceholder="Search club..."
+          />
           <HudDivider />
           <div className="max-h-72 overflow-auto border border-electric/15 bg-mat/40">
             {(data.players ?? [])
