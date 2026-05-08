@@ -135,7 +135,9 @@ def _resolve_player_from_slice_counterpart(
 
     other_provider = Provider.SOFASCORE if provider == Provider.UNDERSTAT else Provider.UNDERSTAT
     other_model = (
-        SofascorePlayerSeasonSource if provider == Provider.UNDERSTAT else UnderstatPlayerSeasonSource
+        SofascorePlayerSeasonSource
+        if provider == Provider.UNDERSTAT
+        else UnderstatPlayerSeasonSource
     )
     normalized_display_name = _normalize_player_name_for_match(display_name)
     if not normalized_display_name:
@@ -193,6 +195,91 @@ def _resolve_player_from_slice_counterpart(
     return player
 
 
+def _attach_provider_native_slice_counterpart(
+    *,
+    competition_season: CompetitionSeason,
+    provider: str,
+    display_name: str,
+    player: CanonicalPlayer,
+) -> None:
+    """
+    Reep rows are sometimes incomplete for one provider. If the opposite provider
+    already made an auto provider-native player for the same unique normalized name
+    in this slice, attach it to the reep-backed canonical player.
+    """
+    if not display_name:
+        return
+
+    other_provider = Provider.SOFASCORE if provider == Provider.UNDERSTAT else Provider.UNDERSTAT
+    other_model = (
+        SofascorePlayerSeasonSource if provider == Provider.UNDERSTAT else UnderstatPlayerSeasonSource
+    )
+    normalized_display_name = _normalize_player_name_for_match(display_name)
+    if not normalized_display_name:
+        return
+
+    tokens = normalized_display_name.split()
+    candidate_qs = other_model.objects.filter(competition_season=competition_season)
+    if tokens:
+        candidate_qs = candidate_qs.filter(player_name__icontains=tokens[-1])
+    candidates = [
+        row
+        for row in candidate_qs
+        if _normalize_player_name_for_match(row.player_name) == normalized_display_name
+    ]
+    if len(candidates) != 1:
+        return
+
+    counterpart = candidates[0]
+    counterpart_pid = str(counterpart.provider_player_id or "")
+    if not counterpart_pid:
+        return
+
+    counterpart_mapping = (
+        ProviderPlayerMapping.objects.filter(
+            provider=other_provider,
+            provider_player_id=counterpart_pid,
+        )
+        .select_related("canonical_player")
+        .first()
+    )
+    if counterpart_mapping:
+        if (
+            counterpart_mapping.match_method != MatchMethod.AUTO
+            or counterpart_mapping.canonical_player.reep_id
+            or counterpart_mapping.canonical_player_id == player.id
+        ):
+            return
+        counterpart_mapping.canonical_player = player
+        counterpart_mapping.save(update_fields=["canonical_player", "updated_at"])
+    else:
+        if counterpart.canonical_player_id and counterpart.canonical_player.reep_id:
+            return
+        ProviderPlayerMapping.objects.create(
+            provider=other_provider,
+            provider_player_id=counterpart_pid,
+            canonical_player=player,
+            match_method=MatchMethod.AUTO,
+        )
+
+    if counterpart.canonical_player_id != player.id:
+        counterpart.canonical_player = player
+        counterpart.save(update_fields=["canonical_player"])
+    _mark_unmatched_player_resolved(
+        competition_season=competition_season,
+        provider=other_provider,
+        provider_player_id=counterpart_pid,
+        player=player,
+    )
+
+
+def _reep_row_missing_counterpart_id(row: ReepPlayerRow, provider: str) -> bool:
+    other_provider = Provider.SOFASCORE if provider == Provider.UNDERSTAT else Provider.UNDERSTAT
+    if other_provider == Provider.UNDERSTAT:
+        return not row.understat_player_id
+    return not row.sofascore_player_id
+
+
 def resolve_canonical_player(
     *,
     competition_season: CompetitionSeason,
@@ -227,6 +314,13 @@ def resolve_canonical_player(
                 provider_player_id=pid,
                 player=player,
             )
+            if _reep_row_missing_counterpart_id(row, provider):
+                _attach_provider_native_slice_counterpart(
+                    competition_season=competition_season,
+                    provider=provider,
+                    display_name=display_name,
+                    player=player,
+                )
             return player
 
         if (
@@ -284,6 +378,13 @@ def resolve_canonical_player(
         provider_player_id=pid,
         defaults={"canonical_player": player, "match_method": MatchMethod.AUTO},
     )
+    if _reep_row_missing_counterpart_id(row, provider):
+        _attach_provider_native_slice_counterpart(
+            competition_season=competition_season,
+            provider=provider,
+            display_name=display_name,
+            player=player,
+        )
     _mark_unmatched_player_resolved(
         competition_season=competition_season,
         provider=provider,

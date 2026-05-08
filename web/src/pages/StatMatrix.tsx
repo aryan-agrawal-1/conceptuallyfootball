@@ -4,43 +4,18 @@ import { FilterBar } from '../components/matrix/FilterBar'
 import { MatrixTable } from '../components/matrix/MatrixTable'
 import { HudFrame } from '../components/hud/Hud'
 import { useStatMatrix, DEFAULT_FILTERS, applyClientFilters } from '../hooks/useStatMatrix'
-import { COLUMN_GROUPS, SCORE_COLUMN_IDS, SCORE_GROUP_ID, type ColDef, type ColGroupDef } from '../lib/columns'
+import { COLUMN_GROUPS, type ColDef, type ColGroupDef } from '../lib/columns'
 import { COLUMN_GROUPS_GK, buildMatrixVisibilityAll } from '../lib/gkColumns'
 import { logMatrixPerfPhases } from '../lib/perfDebug'
 import { isLabPosition } from '../lib/regressionLabConfig'
 import { buildRegressionLabHandoff } from '../lib/regressionLabUrl'
 import type { MatrixRateMode } from '../lib/matrixRateMode'
-import type { MatrixFilters, MetricAvailability, PlayerRow, PositionGroup } from '../types/api'
+import type { MatrixFilters, MetricAvailability, PlayerRow } from '../types/api'
 import { useScope } from '../context/ScopeContext'
 
 const EMPTY_PLAYER_ROWS: PlayerRow[] = []
-const POSITION_GROUPS = new Set<string>(['FWD', 'MID', 'DEF', 'GK', 'UNK'])
-
 function listIncludes(value: unknown, key: string): boolean {
   return Array.isArray(value) && value.includes(key)
-}
-
-function scoreAvailableForPosition(
-  availability: MetricAvailability | undefined,
-  key: string,
-  position: PositionGroup | string | undefined,
-): boolean {
-  if (!availability) return true
-  const score = availability.scores?.[key]
-  if (score) {
-    if (
-      position &&
-      POSITION_GROUPS.has(position) &&
-      score.positions?.[position as PositionGroup] === false
-    ) {
-      return false
-    }
-    if (score.available === false) return false
-    return true
-  }
-  if (listIncludes(availability.available_scores, key)) return true
-  if (listIncludes(availability.unavailable_scores, key)) return false
-  return true
 }
 
 function metricAvailable(
@@ -60,8 +35,8 @@ function columnAvailable(
   availability: MetricAvailability | undefined,
   position: MatrixFilters['position_group'],
 ): boolean {
+  void position
   if (col.isMeta) return true
-  if (col.isScore) return scoreAvailableForPosition(availability, col.id, position)
   return metricAvailable(availability, col.id)
 }
 
@@ -138,15 +113,7 @@ export function StatMatrix() {
     [filters.position_group, metricAvailability],
   )
 
-  // Hide score columns when no position is selected (cross-position percentiles are meaningless)
-  const effectiveVisibleCols = useMemo(() => {
-    if (filters.position_group === 'GK') return visibleCols
-    if (filters.position_group) return visibleCols
-    return {
-      ...visibleCols,
-      ...Object.fromEntries(SCORE_COLUMN_IDS.map(id => [id, false])),
-    }
-  }, [visibleCols, filters.position_group])
+  const effectiveVisibleCols = visibleCols
 
   const regressionLabHref = useMemo(() => {
     if (!filters.position_group || !isLabPosition(filters.position_group)) return null
@@ -159,7 +126,6 @@ export function StatMatrix() {
   }
 
   function handleColGroupToggle(groupId: string) {
-    if (!filters.position_group && groupId === SCORE_GROUP_ID) return
     const group = activeColumnGroups.find(g => g.id === groupId)
     if (!group) return
     const allVisible = group.cols.every(c => visibleCols[c.id])

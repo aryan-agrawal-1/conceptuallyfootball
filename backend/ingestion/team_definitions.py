@@ -298,11 +298,14 @@ def team_sections_for_row(
         for stat_key in MERGED_TEAM_SEASON_STAT_FIELDS:
             if TEAM_STAT_GROUP_FOR_KEY.get(stat_key) != group_key:
                 continue
+            value = stat_values.get(stat_key, getattr(row, stat_key))
+            if value is None:
+                continue
             entries.append(
                 {
                     "key": stat_key,
                     "label": TEAM_STAT_LABELS.get(stat_key, stat_key),
-                    "value": stat_values.get(stat_key, getattr(row, stat_key)),
+                    "value": value,
                     "rank": ranks_season.get(stat_key),
                     "rank_per_match": ranks_per_match.get(stat_key),
                 }

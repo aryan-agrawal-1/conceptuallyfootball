@@ -20,7 +20,6 @@ import {
 import { getTeamLogoPath } from '../../lib/teamLogos'
 import {
   COLUMN_GROUPS,
-  SCORE_COLUMN_IDS,
   STAT_CELL_PX,
   type ColDef,
   type ColGroupDef,
@@ -123,9 +122,6 @@ function getSortValue(
       return row.minutes
     default:
       break
-  }
-  if (SCORE_COLUMN_IDS.includes(columnId)) {
-    return row.scores[columnId] ?? null
   }
   return resolveMatrixMetric(row, columnId, rateMode).value
 }
@@ -262,23 +258,6 @@ function MinutesMatrixCell({ minutes }: { minutes: number }) {
   return <StatCellBody hStyle={hStyle}>{formatValue(minutes, 'integer')}</StatCellBody>
 }
 
-function ScoreMatrixCell({
-  value,
-  scoresEligible,
-}: {
-  value: number | null
-  scoresEligible: boolean
-}) {
-  const { heatmapEnabled } = useMatrixDisplay()
-  const score = scoresEligible ? value : null
-  const hStyle = getHeatmapStyle(score, heatmapEnabled)
-  return (
-    <StatCellBody hStyle={hStyle}>
-      {score !== null ? Math.round(score) : '—'}
-    </StatCellBody>
-  )
-}
-
 function MetricMatrixCell({
   unit,
   value,
@@ -312,7 +291,6 @@ function buildTableColumns(
         .filter(c => visibleCols[c.id])
         .map((col): ColumnDef<PlayerRow, unknown> => {
           if (col.isMeta) return buildMetaColumn(col)
-          if (col.isScore) return buildScoreColumn(col)
           return buildMetricColumn(col, rateMode, cohortMaps, resolveMetricFn)
         }),
     }))
@@ -428,28 +406,6 @@ function buildMetaColumn(col: ColDef): ColumnDef<PlayerRow, unknown> {
     default:
       return helper.display({ id: col.id, header: col.label, size: col.width }) as ColumnDef<PlayerRow, unknown>
   }
-}
-
-// ── Score columns ─────────────────────────────────────────────────────────────
-
-function buildScoreColumn(col: ColDef): ColumnDef<PlayerRow, unknown> {
-  return helper.accessor(
-    row => row.scores[col.id] ?? null,
-    {
-      id: col.id,
-      header: col.label,
-      size: col.width,
-      enableSorting: true,
-      sortingFn: 'basic',
-      sortDescFirst: true,
-      cell: info => (
-        <ScoreMatrixCell
-          value={info.getValue() as number | null}
-          scoresEligible={info.row.original.eligibility.scores_eligible}
-        />
-      ),
-    },
-  ) as ColumnDef<PlayerRow, unknown>
 }
 
 // ── Metric columns ────────────────────────────────────────────────────────────

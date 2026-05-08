@@ -19,6 +19,12 @@ from ingestion.derived_definitions import (
 from ingestion.models import CompetitionSeason, PlayerSeasonDerivedStats
 from ingestion.secondary_teams import secondary_teams_payload
 
+BIG_FIVE_COMPETITION_CODES = ("ENG1", "GER1", "SPA1", "FRA1", "ITA1")
+
+
+def _has_metric_value(row: PlayerSeasonDerivedStats, metric: str) -> bool:
+    return getattr(row, metric) is not None
+
 
 def _requested_meta(request) -> bool:
     include = request.query_params.get("include", "")
@@ -60,10 +66,48 @@ def _resolve_competition_season(request) -> CompetitionSeason:
         raise DjangoValidationError("Unknown competition and season combination.") from exc
 
 
+def _resolve_competition_scope(request) -> tuple[str, str, list[CompetitionSeason]]:
+    competition_season_id = request.query_params.get("competition_season")
+    if competition_season_id:
+        competition_season = _resolve_competition_season(request)
+        return (
+            competition_season.competition.short_code,
+            competition_season.season.label,
+            [competition_season],
+        )
+
+    competition_code = (request.query_params.get("competition") or "").strip().upper()
+    season_label = (request.query_params.get("season") or "").strip()
+    if not competition_code or not season_label:
+        raise DjangoValidationError(
+            "Provide either competition_season or both competition and season."
+        )
+
+    rows = CompetitionSeason.objects.select_related("competition", "season").filter(
+        is_active=True,
+        season__label__iexact=season_label,
+    )
+    if competition_code == "BIG5":
+        rows = rows.filter(competition__short_code__in=BIG_FIVE_COMPETITION_CODES)
+    elif competition_code == "ALL":
+        pass
+    else:
+        return (competition_code, season_label, [_resolve_competition_season(request)])
+
+    seasons = list(rows.order_by("competition__short_code"))
+    if not seasons:
+        raise DjangoValidationError("Unknown competition and season combination.")
+    return (competition_code, seasons[0].season.label, seasons)
+
+
 def _base_queryset(competition_season: CompetitionSeason) -> QuerySet[PlayerSeasonDerivedStats]:
+    return _base_queryset_for_seasons([competition_season])
+
+
+def _base_queryset_for_seasons(competition_seasons: list[CompetitionSeason]) -> QuerySet[PlayerSeasonDerivedStats]:
     return (
         PlayerSeasonDerivedStats.objects.filter(
-            competition_season=competition_season,
+            competition_season__in=competition_seasons,
             is_current=True,
         )
         .select_related(
@@ -146,6 +190,8 @@ def _detail_sections(row: PlayerSeasonDerivedStats) -> dict[str, dict]:
         for metric, definition in METRIC_DEFINITIONS.items():
             if definition["group"] != group_key:
                 continue
+            if not _has_metric_value(row, metric):
+                continue
             entries.append(
                 {
                     "key": metric,
@@ -164,17 +210,17 @@ def _detail_sections(row: PlayerSeasonDerivedStats) -> dict[str, dict]:
 class DerivedPlayerSeasonListApi(APIView):
     def get(self, request):
         try:
-            competition_season = _resolve_competition_season(request)
-            queryset = _base_queryset(competition_season)
+            competition_code, season_label, competition_seasons = _resolve_competition_scope(request)
+            queryset = _base_queryset_for_seasons(competition_seasons)
             queryset = _apply_filters(request, queryset)
             queryset = _apply_sorting(request, queryset)
         except DjangoValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         payload = {
-            "competition_season": competition_season.id,
-            "competition_code": competition_season.competition.short_code,
-            "season_label": competition_season.season.label,
+            "competition_season": competition_seasons[0].id if len(competition_seasons) == 1 else 0,
+            "competition_code": competition_code,
+            "season_label": season_label,
             "count": queryset.count(),
             "results": [_row_payload(row) for row in queryset],
         }

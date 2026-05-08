@@ -1,5 +1,5 @@
 /** Minutes below which we warn on comparisons (matches matrix default filter). */
-export const COMPARISON_MIN_MINUTES_WARNING = 450
+export const COMPARISON_MIN_MINUTES_WARNING = 900
 
 /** Same floor as profile polar chart. */
 export const COMPARISON_STAT_MIN = 4

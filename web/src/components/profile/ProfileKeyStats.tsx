@@ -17,19 +17,32 @@ interface ProfileKeyStatsProps {
 
 export function ProfileKeyStats({ player, rateMode, meta }: ProfileKeyStatsProps) {
   const specs = headerSpecsForPosition(player.position_group)
+    .map(spec => ({ spec, resolved: resolveHeaderCard(player, rateMode, spec, meta) }))
+    .filter(({ resolved }) => resolved.value != null)
+  const rawOnly = !player.eligibility.percentiles_eligible
 
   return (
-    <HudFrame header={<span>Signal // Key metrics</span>} className="w-full">
+    <HudFrame
+      header={<span>Signal // Key metrics</span>}
+      footer={
+        rawOnly ? (
+          <span className="text-electric/75">Raw metric values · not percentile ranked</span>
+        ) : undefined
+      }
+      className="w-full"
+    >
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 divide-x divide-electric/10 border-t border-electric/10">
-        {specs.map(spec => {
-          const r = resolveHeaderCard(player, rateMode, spec, meta)
-          const pct =
-            player.eligibility.percentiles_eligible && r.percentile != null
-              ? r.percentile
-              : null
+        {specs.map(({ spec, resolved: r }) => {
+          const pct = !rawOnly && r.percentile != null ? r.percentile : null
           const pc = pct != null ? getPercentileTextColor(pct) : undefined
           return (
-            <div key={spec.id} className="p-4 flex flex-col gap-2 min-h-[96px]">
+            <div
+              key={spec.id}
+              className={cn(
+                'p-4 flex flex-col gap-2 min-h-[96px]',
+                rawOnly && 'bg-electric/[0.03]',
+              )}
+            >
               <span className="text-[10px] font-medium tracking-[0.2em] uppercase text-ink-muted">
                 {r.label}
               </span>
@@ -38,12 +51,14 @@ export function ProfileKeyStats({ player, rateMode, meta }: ProfileKeyStatsProps
               </span>
               <div className="mt-auto flex items-center gap-2">
                 <span className="text-[9px] tracking-[0.15em] uppercase text-ink-muted">
-                  Pctl
+                  {rawOnly ? 'Rank' : 'Pctl'}
                 </span>
                 <span
                   className={cn(
                     'text-[12px] font-mono font-bold tabular-nums px-2 py-0.5 rounded border border-line-bright/60',
-                    pct == null && 'text-ink-muted border-line/50',
+                    rawOnly
+                      ? 'text-electric/85 border-electric/25 bg-electric/10 text-[10px] tracking-[0.12em] uppercase'
+                      : pct == null && 'text-ink-muted border-line/50',
                   )}
                   style={
                     pct != null
@@ -51,7 +66,7 @@ export function ProfileKeyStats({ player, rateMode, meta }: ProfileKeyStatsProps
                       : undefined
                   }
                 >
-                  {pct != null ? Math.round(pct) : '—'}
+                  {rawOnly ? 'Raw' : pct != null ? Math.round(pct) : '—'}
                 </span>
               </div>
             </div>

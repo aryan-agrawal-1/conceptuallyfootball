@@ -19,7 +19,7 @@ import { useScope } from '../context/ScopeContext'
 const DEFAULT_FILTERS = {
   position_group: '',
   team: '',
-  min_minutes: 300,
+  min_minutes: 900,
 }
 
 // ─── Star sprite ──────────────────────────────────────────────────────────────

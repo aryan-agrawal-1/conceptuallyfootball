@@ -101,6 +101,7 @@ export function profileSectionOrderForPosition(pos: PositionGroup): ProfileUiSec
 
 export const PROFILE_BAR_SPECS: ProfileBarSpec[] = [
   // Attacking
+  { id: 'xg', section: 'attacking', bar: { kind: 'paired', per90: 'xg_per_90', full: 'xg' } },
   { id: 'npxg', section: 'attacking', bar: { kind: 'paired', per90: 'npxg_per_90', full: 'npxg' } },
   { id: 'xa', section: 'attacking', bar: { kind: 'paired', per90: 'xa_per_90', full: 'xa' } },
   { id: 'xgchain', section: 'attacking', bar: { kind: 'paired', per90: 'xgchain_per_90', full: 'xgchain' } },
@@ -242,13 +243,13 @@ export function headerSpecsForPosition(pos: PositionGroup): ProfileHeaderCardSpe
     case 'FWD':
       return [
         { id: 'h1', label: 'Goals', bar: { kind: 'derivedSeasonFromPer90', per90: 'goals_per_90', integerSeason: true } },
-        { id: 'h2', label: 'NPxG', bar: { kind: 'paired', per90: 'npxg_per_90', full: 'npxg' } },
+        { id: 'h2', label: 'xG', bar: { kind: 'paired', per90: 'xg_per_90', full: 'xg' } },
         { id: 'h3', label: 'xA', bar: { kind: 'paired', per90: 'xa_per_90', full: 'xa' } },
         { id: 'h4', label: 'Shots', bar: { kind: 'derivedSeasonFromPer90', per90: 'shots_per_90', integerSeason: true } },
       ]
     case 'MID':
       return [
-        { id: 'h1', label: 'NPxG', bar: { kind: 'paired', per90: 'npxg_per_90', full: 'npxg' } },
+        { id: 'h1', label: 'xG', bar: { kind: 'paired', per90: 'xg_per_90', full: 'xg' } },
         { id: 'h2', label: 'xA', bar: { kind: 'paired', per90: 'xa_per_90', full: 'xa' } },
         { id: 'h3', label: 'Key passes', bar: { kind: 'derivedSeasonFromPer90', per90: 'key_passes_per_90', integerSeason: true } },
         { id: 'h4', label: 'xG Chain', bar: { kind: 'paired', per90: 'xgchain_per_90', full: 'xgchain' } },
@@ -273,7 +274,7 @@ export function headerSpecsForPosition(pos: PositionGroup): ProfileHeaderCardSpe
       ]
     default:
       return [
-        { id: 'h1', label: 'NPxG', bar: { kind: 'paired', per90: 'npxg_per_90', full: 'npxg' } },
+        { id: 'h1', label: 'xG', bar: { kind: 'paired', per90: 'xg_per_90', full: 'xg' } },
         { id: 'h2', label: 'xA', bar: { kind: 'paired', per90: 'xa_per_90', full: 'xa' } },
         { id: 'h3', label: 'Minutes', bar: { kind: 'invariant', key: 'minutes_display' } },
         { id: 'h4', label: 'xG Chain', bar: { kind: 'paired', per90: 'xgchain_per_90', full: 'xgchain' } },
@@ -303,7 +304,7 @@ export function resolveHeaderCard(
 
 const PIZZA_DEFAULT_KEYS: Record<PositionGroup, string[]> = {
   FWD: [
-    'npxg_per_90',
+    'xg_per_90',
     'goals_per_90',
     'xa_per_90',
     'shots_per_90',
@@ -313,7 +314,7 @@ const PIZZA_DEFAULT_KEYS: Record<PositionGroup, string[]> = {
     'chance_involvement_per_90',
   ],
   MID: [
-    'npxg_per_90',
+    'xg_per_90',
     'xa_per_90',
     'key_passes_per_90',
     'xgchain_per_90',
@@ -343,7 +344,7 @@ const PIZZA_DEFAULT_KEYS: Record<PositionGroup, string[]> = {
     'penalty_saves',
   ],
   UNK: [
-    'npxg_per_90',
+    'xg_per_90',
     'xa_per_90',
     'xgchain_per_90',
     'pass_accuracy',

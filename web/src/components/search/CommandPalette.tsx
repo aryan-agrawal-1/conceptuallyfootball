@@ -1,33 +1,84 @@
-import { useMemo, useState } from 'react'
+import { useDeferredValue, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Command } from 'cmdk'
 import { Loader2 } from 'lucide-react'
 import { useSearchPaletteIndex } from '../../hooks/useSearchPaletteIndex'
-import { resolveEntityScope } from '../../hooks/useSearchPaletteIndex'
+import { resolveEntityMembership, resolveEntityScope } from '../../hooks/useSearchPaletteIndex'
 import { foldForSearch } from '../../lib/foldAccents'
 import { cn } from '../../lib/utils'
-import { useScope } from '../../context/ScopeContext'
+import { useScope, type Scope } from '../../context/ScopeContext'
 import type { SearchPlayerEntity, SearchTeamEntity } from '../../types/api'
 import { HudCornerMarks } from '../hud/Hud'
 
 const DEFAULT_VISIBLE = 5
+const SEARCH_VISIBLE_LIMIT = 12
 
-function filterPlayers(rows: SearchPlayerEntity[], q: string): SearchPlayerEntity[] {
-  const trimmed = q.trim()
-  if (!trimmed) {
-    return rows.slice(0, DEFAULT_VISIBLE)
-  }
-  const needle = foldForSearch(trimmed)
-  return rows.filter(p => foldForSearch(p.canonical_player_name).includes(needle))
+type SearchIndexEntry<T> = {
+  entity: T
+  foldedName: string
+  priority: number
 }
 
-function filterTeams(rows: SearchTeamEntity[], q: string): SearchTeamEntity[] {
-  const trimmed = q.trim()
-  if (!trimmed) {
-    return rows.slice(0, DEFAULT_VISIBLE)
+function membershipPriority(
+  memberships: Array<{ competition: string; season: string }>,
+  scope: Scope,
+): number {
+  if (memberships.some(m => m.competition === scope.competition && m.season === scope.season)) {
+    return 0
   }
+  if (memberships.some(m => m.competition === scope.competition)) {
+    return 1
+  }
+  return 2
+}
+
+function buildPlayerIndex(
+  rows: SearchPlayerEntity[],
+  scope: Scope,
+): Array<SearchIndexEntry<SearchPlayerEntity>> {
+  return rows
+    .map(entity => ({
+      entity,
+      foldedName: foldForSearch(entity.canonical_player_name),
+      priority: membershipPriority(entity.memberships, scope),
+    }))
+    .sort((a, b) => {
+      const priorityDelta = a.priority - b.priority
+      if (priorityDelta !== 0) return priorityDelta
+      return b.entity.total_minutes - a.entity.total_minutes
+    })
+}
+
+function buildTeamIndex(
+  rows: SearchTeamEntity[],
+  scope: Scope,
+): Array<SearchIndexEntry<SearchTeamEntity>> {
+  return rows
+    .map(entity => ({
+      entity,
+      foldedName: foldForSearch(entity.canonical_team_name),
+      priority: membershipPriority(entity.memberships, scope),
+    }))
+    .sort((a, b) => {
+      const priorityDelta = a.priority - b.priority
+      if (priorityDelta !== 0) return priorityDelta
+      return a.entity.canonical_team_name.localeCompare(b.entity.canonical_team_name)
+    })
+}
+
+function pickMatches<T>(index: Array<SearchIndexEntry<T>>, q: string, limit: number): T[] {
+  const trimmed = q.trim()
+  const visibleLimit = trimmed ? limit : DEFAULT_VISIBLE
+  if (!trimmed) return index.slice(0, visibleLimit).map(item => item.entity)
+
   const needle = foldForSearch(trimmed)
-  return rows.filter((t) => foldForSearch(t.canonical_team_name).includes(needle))
+  const matches: T[] = []
+  for (const item of index) {
+    if (!item.foldedName.includes(needle)) continue
+    matches.push(item.entity)
+    if (matches.length >= visibleLimit) break
+  }
+  return matches
 }
 
 export function CommandPalette({
@@ -39,6 +90,7 @@ export function CommandPalette({
 }) {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
+  const deferredSearch = useDeferredValue(search)
   const { scope, buildScopedPath } = useScope()
   const { globalPlayers, globalTeams, isLoading, isError } = useSearchPaletteIndex(open)
 
@@ -49,18 +101,29 @@ export function CommandPalette({
     onOpenChange(next)
   }
 
-  const visiblePlayers = useMemo(
-    () => filterPlayers(globalPlayers, search),
-    [globalPlayers, search],
+  const playerIndex = useMemo(
+    () => buildPlayerIndex(globalPlayers, scope),
+    [globalPlayers, scope],
   )
-  const visibleTeams = useMemo(() => filterTeams(globalTeams, search), [globalTeams, search])
+  const teamIndex = useMemo(
+    () => buildTeamIndex(globalTeams, scope),
+    [globalTeams, scope],
+  )
+  const visiblePlayers = useMemo(
+    () => pickMatches(playerIndex, deferredSearch, SEARCH_VISIBLE_LIMIT),
+    [deferredSearch, playerIndex],
+  )
+  const visibleTeams = useMemo(
+    () => pickMatches(teamIndex, deferredSearch, SEARCH_VISIBLE_LIMIT),
+    [deferredSearch, teamIndex],
+  )
 
   const showEmpty =
     !isLoading &&
     !isError &&
     visiblePlayers.length === 0 &&
     visibleTeams.length === 0 &&
-    search.trim() !== '' &&
+    deferredSearch.trim() !== '' &&
     globalPlayers.length + globalTeams.length > 0
 
   const handleSelectPlayer = (entity: SearchPlayerEntity) => {
@@ -136,24 +199,12 @@ export function CommandPalette({
                   className="px-2 pt-2 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:pb-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.2em] [&_[cmdk-group-heading]]:text-electric/80"
                 >
                   {visiblePlayers.map((p) => (
-                    <Command.Item
+                    <SearchPlayerItem
                       key={`p-${p.canonical_player_id}`}
-                      value={`player-${p.canonical_player_id}`}
-                      keywords={[p.canonical_player_name]}
+                      player={p}
+                      scope={scope}
                       onSelect={() => handleSelectPlayer(p)}
-                      className={cn(
-                        'flex cursor-pointer items-center gap-2 rounded-none border border-transparent px-3 py-2 text-[13px]',
-                        'text-ink aria-selected:bg-electric/15 aria-selected:border-electric/30 aria-selected:text-electric',
-                        'data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-40',
-                      )}
-                    >
-                      <span className="truncate">{p.canonical_player_name}</span>
-                      {p.memberships[0]?.canonical_team_name && (
-                        <span className="ml-auto shrink-0 truncate text-[11px] text-ink-muted">
-                          {p.memberships[0]?.canonical_team_name}
-                        </span>
-                      )}
-                    </Command.Item>
+                    />
                   ))}
                 </Command.Group>
               )}
@@ -164,18 +215,12 @@ export function CommandPalette({
                   className="px-2 pt-3 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:pb-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.2em] [&_[cmdk-group-heading]]:text-electric/80"
                 >
                   {visibleTeams.map((t) => (
-                    <Command.Item
+                    <SearchTeamItem
                       key={`t-${t.canonical_team_id}`}
-                      value={`team-${t.canonical_team_id}`}
-                      keywords={[t.canonical_team_name]}
+                      team={t}
+                      scope={scope}
                       onSelect={() => handleSelectTeam(t)}
-                      className={cn(
-                        'flex cursor-pointer items-center gap-2 rounded-none border border-transparent px-3 py-2 text-[13px]',
-                        'text-ink aria-selected:bg-electric/15 aria-selected:border-electric/30 aria-selected:text-electric',
-                      )}
-                    >
-                      <span className="truncate">{t.canonical_team_name}</span>
-                    </Command.Item>
+                    />
                   ))}
                 </Command.Group>
               )}
@@ -195,5 +240,71 @@ export function CommandPalette({
         </div>
       </div>
     </Command.Dialog>
+  )
+}
+
+function SearchPlayerItem({
+  player,
+  scope,
+  onSelect,
+}: {
+  player: SearchPlayerEntity
+  scope: Scope
+  onSelect: () => void
+}) {
+  const membership = resolveEntityMembership(player.memberships, scope)
+  return (
+    <Command.Item
+      value={`player-${player.canonical_player_id}`}
+      keywords={[player.canonical_player_name]}
+      onSelect={onSelect}
+      className={cn(
+        'flex cursor-pointer items-center gap-2 rounded-none border border-transparent px-3 py-2 text-[13px]',
+        'text-ink aria-selected:bg-electric/15 aria-selected:border-electric/30 aria-selected:text-electric',
+        'data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-40',
+      )}
+    >
+      <span className="min-w-0 flex-1 truncate">{player.canonical_player_name}</span>
+      {membership && (
+        <span className="ml-auto flex max-w-[55%] shrink-0 items-center gap-2 overflow-hidden text-[11px] text-ink-muted">
+          {membership.canonical_team_name && (
+            <span className="truncate">{membership.canonical_team_name}</span>
+          )}
+          <span className="shrink-0 font-mono text-[10px] text-electric/70">
+            {membership.competition} {membership.season}
+          </span>
+        </span>
+      )}
+    </Command.Item>
+  )
+}
+
+function SearchTeamItem({
+  team,
+  scope,
+  onSelect,
+}: {
+  team: SearchTeamEntity
+  scope: Scope
+  onSelect: () => void
+}) {
+  const membership = resolveEntityMembership(team.memberships, scope)
+  return (
+    <Command.Item
+      value={`team-${team.canonical_team_id}`}
+      keywords={[team.canonical_team_name]}
+      onSelect={onSelect}
+      className={cn(
+        'flex cursor-pointer items-center gap-2 rounded-none border border-transparent px-3 py-2 text-[13px]',
+        'text-ink aria-selected:bg-electric/15 aria-selected:border-electric/30 aria-selected:text-electric',
+      )}
+    >
+      <span className="min-w-0 flex-1 truncate">{team.canonical_team_name}</span>
+      {membership && (
+        <span className="ml-auto shrink-0 font-mono text-[10px] text-electric/70">
+          {membership.competition} {membership.season}
+        </span>
+      )}
+    </Command.Item>
   )
 }

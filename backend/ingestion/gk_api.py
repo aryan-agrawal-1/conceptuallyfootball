@@ -14,6 +14,7 @@ from ingestion.gk_definitions import (
     GK_METRIC_GROUPS,
     LIST_SORT_FIELDS_GK,
 )
+from ingestion.derived_api import _resolve_competition_scope
 from ingestion.models import CompetitionSeason, PlayerSeasonGkDerivedStats
 from ingestion.secondary_teams import secondary_teams_payload
 
@@ -58,9 +59,13 @@ def _resolve_competition_season(request) -> CompetitionSeason:
 
 
 def _base_queryset(competition_season: CompetitionSeason) -> QuerySet[PlayerSeasonGkDerivedStats]:
+    return _base_queryset_for_seasons([competition_season])
+
+
+def _base_queryset_for_seasons(competition_seasons: list[CompetitionSeason]) -> QuerySet[PlayerSeasonGkDerivedStats]:
     return (
         PlayerSeasonGkDerivedStats.objects.filter(
-            competition_season=competition_season,
+            competition_season__in=competition_seasons,
             is_current=True,
         )
         .select_related(
@@ -143,17 +148,17 @@ def _row_payload(row: PlayerSeasonGkDerivedStats) -> dict:
 class GkDerivedPlayerSeasonListApi(APIView):
     def get(self, request):
         try:
-            competition_season = _resolve_competition_season(request)
-            queryset = _base_queryset(competition_season)
+            competition_code, season_label, competition_seasons = _resolve_competition_scope(request)
+            queryset = _base_queryset_for_seasons(competition_seasons)
             queryset = _apply_filters(request, queryset)
             queryset = _apply_sorting(request, queryset)
         except DjangoValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         payload = {
-            "competition_season": competition_season.id,
-            "competition_code": competition_season.competition.short_code,
-            "season_label": competition_season.season.label,
+            "competition_season": competition_seasons[0].id if len(competition_seasons) == 1 else 0,
+            "competition_code": competition_code,
+            "season_label": season_label,
             "matrix_kind": "gk",
             "count": queryset.count(),
             "results": [_row_payload(row) for row in queryset],

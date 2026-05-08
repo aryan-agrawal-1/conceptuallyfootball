@@ -6,7 +6,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ingestion.derived_api import _resolve_competition_season
+from ingestion.derived_api import _resolve_competition_scope, _resolve_competition_season
 from ingestion.models import CanonicalTeam, MergedPlayerSeason, MergedTeamSeason
 from ingestion.team_definitions import (
     MERGED_TEAM_SEASON_STAT_FIELDS,
@@ -38,6 +38,27 @@ def _squad_us_xg_xa_by_team(competition_season_id: int) -> dict[int, tuple[float
     rows = (
         MergedPlayerSeason.objects.filter(
             competition_season_id=competition_season_id,
+            is_current=True,
+            canonical_display_team_id__isnull=False,
+        )
+        .values("canonical_display_team_id")
+        .annotate(sxg=Sum("us_xg"), sxa=Sum("us_xa"))
+    )
+    out: dict[int, tuple[float | None, float | None]] = {}
+    for r in rows:
+        tid = r["canonical_display_team_id"]
+        sxg, sxa = r["sxg"], r["sxa"]
+        out[tid] = (
+            float(sxg) if sxg is not None else None,
+            float(sxa) if sxa is not None else None,
+        )
+    return out
+
+
+def _squad_us_xg_xa_by_team_for_seasons(competition_season_ids: list[int]) -> dict[int, tuple[float | None, float | None]]:
+    rows = (
+        MergedPlayerSeason.objects.filter(
+            competition_season_id__in=competition_season_ids,
             is_current=True,
             canonical_display_team_id__isnull=False,
         )
@@ -237,20 +258,20 @@ class TeamSeasonListApi(APIView):
 
     def get(self, request):
         try:
-            competition_season = _resolve_competition_season(request)
+            competition_code, season_label, competition_seasons = _resolve_competition_scope(request)
         except DjangoValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         league_rows = list(
             MergedTeamSeason.objects.filter(
-                competition_season=competition_season,
+                competition_season__in=competition_seasons,
                 is_current=True,
             )
             .select_related("canonical_team", "competition_season__competition", "competition_season__season")
-            .order_by("rank", "canonical_team__name")
+            .order_by("competition_season__competition__short_code", "rank", "canonical_team__name")
         )
 
-        squad_sums = _squad_us_xg_xa_by_team(competition_season.id)
+        squad_sums = _squad_us_xg_xa_by_team_for_seasons([cs.id for cs in competition_seasons])
         rank_maps_season = _build_all_ranks(league_rows, per_match=False, squad_sums=squad_sums)
         rank_maps_pm = _build_all_ranks(league_rows, per_match=True, squad_sums=squad_sums)
 
@@ -277,9 +298,9 @@ class TeamSeasonListApi(APIView):
             )
 
         payload = {
-            "competition_season": competition_season.id,
-            "competition_code": competition_season.competition.short_code,
-            "season_label": competition_season.season.label,
+            "competition_season": competition_seasons[0].id if len(competition_seasons) == 1 else 0,
+            "competition_code": competition_code,
+            "season_label": season_label,
             "count": len(results),
             "results": results,
         }

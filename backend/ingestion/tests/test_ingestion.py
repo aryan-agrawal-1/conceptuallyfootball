@@ -185,6 +185,74 @@ class IdentityQuarantineTests(TestCase):
             ).exists()
         )
 
+    def test_reep_backed_row_absorbs_existing_provider_native_counterpart(self):
+        cs = _slice()
+        us_run = IngestionRun.objects.create(
+            kind=IngestionKind.UNDERSTAT,
+            competition_season=cs,
+            status=IngestionRunStatus.SUCCESS,
+        )
+        ss_run = IngestionRun.objects.create(
+            kind=IngestionKind.SOFASCORE,
+            competition_season=cs,
+            status=IngestionRunStatus.SUCCESS,
+        )
+        us_src = UnderstatPlayerSeasonSource.objects.create(
+            competition_season=cs,
+            ingestion_run=us_run,
+            provider_player_id="u-1",
+            provider_team_id="",
+            player_name="Lamine Yamal",
+            team_name="Barcelona",
+            position_raw="F",
+        )
+        native = resolve_canonical_player(
+            competition_season=cs,
+            provider=Provider.UNDERSTAT,
+            provider_player_id="u-1",
+            display_name="Lamine Yamal",
+            run=us_run,
+        )
+        assert native is not None
+        us_src.canonical_player = native
+        us_src.save(update_fields=["canonical_player"])
+
+        ReepPlayerRow.objects.create(
+            reep_id="reep_lamine",
+            full_name="Lamine Yamal",
+            sofascore_player_id="s-1",
+        )
+        SofascorePlayerSeasonSource.objects.create(
+            competition_season=cs,
+            ingestion_run=ss_run,
+            provider_player_id="s-1",
+            provider_team_id="",
+            player_name="Lamine Yamal",
+            team_name="FC Barcelona",
+            position_raw="F",
+        )
+
+        resolved = resolve_canonical_player(
+            competition_season=cs,
+            provider=Provider.SOFASCORE,
+            provider_player_id="s-1",
+            display_name="Lamine Yamal",
+            run=ss_run,
+        )
+
+        self.assertIsNotNone(resolved)
+        assert resolved is not None
+        self.assertEqual(resolved.reep_id, "reep_lamine")
+        self.assertEqual(
+            ProviderPlayerMapping.objects.get(
+                provider=Provider.UNDERSTAT,
+                provider_player_id="u-1",
+            ).canonical_player,
+            resolved,
+        )
+        us_src.refresh_from_db()
+        self.assertEqual(us_src.canonical_player, resolved)
+
     def test_cross_provider_name_match_refuses_ambiguous_name(self):
         cs = _slice()
         us_run = IngestionRun.objects.create(

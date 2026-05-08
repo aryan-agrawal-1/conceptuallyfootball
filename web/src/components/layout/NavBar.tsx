@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Search } from 'lucide-react'
+import { ChevronDown, Search } from 'lucide-react'
 import { useScope } from '../../context/ScopeContext'
 import { cn } from '../../lib/utils'
-import { HudCornerMarks } from '../hud/Hud'
+import { HudCornerMarks, HudPopover } from '../hud/Hud'
 import { CommandPalette } from '../search/CommandPalette'
+import type { CompetitionCatalogEntry } from '../../types/api'
 
 const NAV_LINKS = [
   { to: '/', label: 'Matrix' },
@@ -19,6 +20,9 @@ const IS_MAC =
 
 export function NavBar() {
   const [searchOpen, setSearchOpen] = useState(false)
+  const [competitionOpen, setCompetitionOpen] = useState(false)
+  const [seasonOpen, setSeasonOpen] = useState(false)
+  const scopePickerRef = useRef<HTMLDivElement>(null)
   const {
     scope,
     setScope,
@@ -38,6 +42,17 @@ export function NavBar() {
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
+  }, [])
+
+  useEffect(() => {
+    function onMouseDown(e: MouseEvent) {
+      if (!scopePickerRef.current?.contains(e.target as Node)) {
+        setCompetitionOpen(false)
+        setSeasonOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
   }, [])
 
   return (
@@ -92,61 +107,167 @@ export function NavBar() {
           </kbd>
         </button>
 
-        <div className="flex items-center gap-1.5 border border-electric/20 px-2 py-1 bg-panel/50">
-          <label htmlFor="global-competition" className="sr-only">
-            Competition
-          </label>
-          <select
-            id="global-competition"
-            value={scope.competition}
+        <div ref={scopePickerRef} className="flex items-center gap-1.5 border border-electric/20 px-2 py-1 bg-panel/50">
+          <ScopeDropdown
+            label="Competition"
+            value={competitionDisplay(scope.competition, currentCompetition)}
+            open={competitionOpen}
             disabled={!competitions.length}
-            onChange={event => {
-              const competition = event.target.value
-              const nextCompetition = competitions.find(c => c.code === competition)
-              setScope({
-                competition,
-                season: nextCompetition?.seasons[0]?.label ?? scope.season,
-              })
+            onOpenChange={(open) => {
+              setCompetitionOpen(open)
+              if (open) setSeasonOpen(false)
             }}
-            className="max-w-[5.5rem] bg-transparent text-[10px] font-mono uppercase tracking-[0.12em] text-electric/90 outline-none disabled:opacity-50"
+            widthClassName="w-40"
           >
             {competitions.length ? (
               competitions.map(c => (
-                <option key={c.code} value={c.code}>
-                  {c.code}
-                </option>
+                <ScopeOption
+                  key={c.code}
+                  active={c.code === scope.competition}
+                  primary={competitionDisplay(c.code, c)}
+                  secondary={c.code === 'BIG5' || c.code === 'ALL' ? undefined : c.name}
+                  onSelect={() => {
+                    setScope({
+                      competition: c.code,
+                      season: c.seasons[0]?.label ?? scope.season,
+                    })
+                    setCompetitionOpen(false)
+                  }}
+                />
               ))
             ) : (
-              <option value={scope.competition}>{scope.competition}</option>
+              <ScopeOption active primary={scope.competition} onSelect={() => setCompetitionOpen(false)} />
             )}
-          </select>
+          </ScopeDropdown>
           <span className="h-3 w-px bg-electric/20" />
-          <label htmlFor="global-season" className="sr-only">
-            Season
-          </label>
-          <select
-            id="global-season"
+          <ScopeDropdown
+            label="Season"
             value={scope.season}
+            open={seasonOpen}
             disabled={!currentCompetition || !seasonOptions.length}
-            onChange={event => setScope({ competition: scope.competition, season: event.target.value })}
-            className="w-[5rem] bg-transparent text-[10px] font-mono uppercase tracking-[0.08em] text-electric/90 outline-none disabled:opacity-50"
+            onOpenChange={(open) => {
+              setSeasonOpen(open)
+              if (open) setCompetitionOpen(false)
+            }}
+            widthClassName="w-28"
           >
             {seasonOptions.length ? (
               seasonOptions.map(s => (
-                <option key={s.label} value={s.label}>
-                  {s.label}
-                </option>
+                <ScopeOption
+                  key={s.label}
+                  active={s.label === scope.season}
+                  primary={s.label}
+                  onSelect={() => {
+                    setScope({ competition: scope.competition, season: s.label })
+                    setSeasonOpen(false)
+                  }}
+                />
               ))
             ) : (
-              <option value={scope.season}>{scope.season}</option>
+              <ScopeOption active primary={scope.season} onSelect={() => setSeasonOpen(false)} />
             )}
-          </select>
+          </ScopeDropdown>
           {isError && <span className="w-1 h-1 rounded-full bg-ember" title="Catalog failed" />}
         </div>
       </div>
 
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
     </nav>
+  )
+}
+
+function competitionDisplay(code: string, competition: CompetitionCatalogEntry | undefined): string {
+  if (code === 'BIG5') return 'Big 5'
+  if (code === 'ALL') return 'All'
+  return competition?.code ?? code
+}
+
+function ScopeDropdown({
+  label,
+  value,
+  open,
+  disabled,
+  onOpenChange,
+  widthClassName,
+  children,
+}: {
+  label: string
+  value: string
+  open: boolean
+  disabled?: boolean
+  onOpenChange: (open: boolean) => void
+  widthClassName: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => onOpenChange(!open)}
+        className={cn(
+          'relative flex items-center justify-between gap-1.5 px-2 py-1 text-[10px] font-mono uppercase tracking-[0.12em] transition-colors border',
+          widthClassName,
+          open
+            ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
+            : 'border-transparent text-electric/90 hover:border-electric/30 hover:bg-electric/5',
+          disabled && 'opacity-50 pointer-events-none',
+        )}
+      >
+        {open && <HudCornerMarks size="size-1" />}
+        <span className="truncate">{value}</span>
+        <ChevronDown size={11} className={cn('shrink-0 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <HudPopover align="end" className={cn(widthClassName, 'max-h-72 overflow-y-auto p-1')}>
+          <div role="listbox" aria-label={label} className="flex flex-col gap-0.5">
+            {children}
+          </div>
+        </HudPopover>
+      )}
+    </div>
+  )
+}
+
+function ScopeOption({
+  active,
+  primary,
+  secondary,
+  onSelect,
+}: {
+  active: boolean
+  primary: string
+  secondary?: string
+  onSelect: () => void
+}) {
+  return (
+    <button
+      type="button"
+      role="option"
+      aria-selected={active}
+      onClick={onSelect}
+      className={cn(
+        'w-full flex items-center justify-between gap-2 px-2.5 py-1.5 text-left transition-colors border',
+        active
+          ? 'border-electric/40 bg-electric/10 text-electric'
+          : 'border-transparent text-ink-dim hover:bg-electric/5 hover:text-ink',
+      )}
+    >
+      <span className="min-w-0">
+        <span className="block truncate text-[11px] font-mono uppercase tracking-[0.14em]">
+          {primary}
+        </span>
+        {secondary && (
+          <span className="block truncate text-[9px] uppercase tracking-[0.14em] text-electric/45">
+            {secondary}
+          </span>
+        )}
+      </span>
+      {active && <span className="size-1.5 shrink-0 bg-electric" />}
+    </button>
   )
 }
 

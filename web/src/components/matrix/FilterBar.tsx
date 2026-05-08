@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Search, ChevronDown, X, Loader2 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { MatrixFilters, PositionGroup } from '../../types/api'
-import { SCORE_GROUP_ID, type ColGroupDef } from '../../lib/columns'
+import type { ColGroupDef } from '../../lib/columns'
 import type { MatrixRateMode } from '../../lib/matrixRateMode'
 import { HudCornerMarks, HudPill, HudVSep } from '../hud/Hud'
 
@@ -148,7 +148,6 @@ export function FilterBar({
         onOpenChange={setColPickerOpen}
         columnGroups={columnGroups}
         visibleCols={visibleCols}
-        scoresLocked={!filters.position_group}
         onGroupToggle={onColGroupToggle}
       />
     </div>
@@ -475,7 +474,6 @@ interface ColumnsDropdownProps {
   onOpenChange: (open: boolean) => void
   columnGroups: ColGroupDef[]
   visibleCols: Record<string, boolean>
-  scoresLocked: boolean
   onGroupToggle: (groupId: string) => void
 }
 
@@ -485,7 +483,6 @@ function ColumnsDropdown({
   onOpenChange,
   columnGroups,
   visibleCols,
-  scoresLocked,
   onGroupToggle,
 }: ColumnsDropdownProps) {
   return (
@@ -507,7 +504,6 @@ function ColumnsDropdown({
         <ColumnPicker
           groups={columnGroups}
           visibleCols={visibleCols}
-          scoresLocked={scoresLocked}
           onGroupToggle={onGroupToggle}
         />
       )}
@@ -515,17 +511,13 @@ function ColumnsDropdown({
   )
 }
 
-const SCORES_LOCKED_TOOLTIP =
-  'Scores are percentile ranks within each position (FWD, MID, DEF). Choose a position to compare players on the same scale.'
-
 interface ColumnPickerProps {
   groups: ColGroupDef[]
   visibleCols: Record<string, boolean>
-  scoresLocked: boolean
   onGroupToggle: (groupId: string) => void
 }
 
-function ColumnPicker({ groups, visibleCols, scoresLocked, onGroupToggle }: ColumnPickerProps) {
+function ColumnPicker({ groups, visibleCols, onGroupToggle }: ColumnPickerProps) {
   const statGroups = groups.filter(g => g.id !== 'meta')
 
   return (
@@ -539,17 +531,6 @@ function ColumnPicker({ groups, visibleCols, scoresLocked, onGroupToggle }: Colu
           {statGroups.map(group => {
             const allVisible = group.cols.every(c => visibleCols[c.id])
             const someVisible = group.cols.some(c => visibleCols[c.id])
-            const locked = scoresLocked && group.id === SCORE_GROUP_ID
-
-            if (locked) {
-              return (
-                <ScoresLockedRow
-                  key={group.id}
-                  label={group.label}
-                  colCount={group.cols.length}
-                />
-              )
-            }
 
             return (
               <button
@@ -575,37 +556,6 @@ function ColumnPicker({ groups, visibleCols, scoresLocked, onGroupToggle }: Colu
         </div>
       </div>
     </HudPopover>
-  )
-}
-
-function ScoresLockedRow({ label, colCount }: { label: string; colCount: number }) {
-  const [open, setOpen] = useState(false)
-
-  return (
-    <div
-      className="relative"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
-      <div
-        className="flex items-center justify-between px-3 py-2 text-[12px] font-medium cursor-help opacity-50 text-ink-muted border border-dashed border-electric/15"
-        aria-describedby={open ? 'scores-locked-tooltip' : undefined}
-      >
-        <span>{label}</span>
-        <span className="text-[10px] text-ink-muted font-mono tracking-wider">
-          {colCount} cols
-        </span>
-      </div>
-      {open && (
-        <div
-          id="scores-locked-tooltip"
-          role="tooltip"
-          className="absolute left-0 right-0 top-full z-[60] mt-1.5 border border-electric/25 bg-panel/95 backdrop-blur-md px-2.5 py-2 text-[11px] leading-snug text-ink-dim shadow-[0_8px_28px_-8px_rgba(74,158,245,0.4)] pointer-events-none"
-        >
-          {SCORES_LOCKED_TOOLTIP}
-        </div>
-      )}
-    </div>
   )
 }
 

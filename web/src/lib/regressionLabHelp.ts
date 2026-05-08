@@ -2,7 +2,7 @@
 
 export const LAB_HELP = {
   targetPanel:
-    'The outcome you want the model to explain or predict for each player in the cohort — for example a per-90 rate or one of the composite scores. Pick one target per run.',
+    'The raw-stat outcome you want the model to explain or predict for each player in the cohort. Pick one target per run.',
   predictorsPanel:
     'Raw stats used as inputs. The model estimates how those pieces move together with the target. Scores cannot be predictors here (only metrics). Rows missing any selected predictor or the target are dropped before fitting.',
   coefficientsPanel:

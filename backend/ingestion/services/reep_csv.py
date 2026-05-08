@@ -34,6 +34,17 @@ TEAM_CSV_PROVIDER_OVERRIDES: dict[str, dict[str, str | None]] = {
     "reep_t88b915a8": {"key_sofascore": "2849"},  # Levante UD.
 }
 
+PLAYER_CSV_PROVIDER_OVERRIDES: dict[str, dict[str, str | None]] = {
+    # Upstream currently has this player as "Yamil yamil" with only a SofaScore key.
+    # Keep the SofaScore key, attach the known Understat key, and expose the real name.
+    "reep_p9aa62ce3": {
+        "full_name": "Lamine Yamal",
+        "name": "Lamine Yamal",
+        "key_understat": "11527",
+        "key_sofascore": "1402912",
+    },
+}
+
 
 def _cell(row: dict[str, str], *keys: str) -> str | None:
     for k in keys:
@@ -46,6 +57,15 @@ def _cell(row: dict[str, str], *keys: str) -> str | None:
 def _team_provider_value(row: dict[str, str], key: str) -> str | None:
     reep_id = _cell(row, "reep_id")
     override = TEAM_CSV_PROVIDER_OVERRIDES.get(reep_id or "", {})
+    if key in override:
+        value = override[key]
+        return str(value) if value not in (None, "") else None
+    return _cell(row, key)
+
+
+def _player_provider_value(row: dict[str, str], key: str) -> str | None:
+    reep_id = _cell(row, "reep_id")
+    override = PLAYER_CSV_PROVIDER_OVERRIDES.get(reep_id or "", {})
     if key in override:
         value = override[key]
         return str(value) if value not in (None, "") else None
@@ -75,11 +95,15 @@ def _sync_people_csv(path: Path) -> int:
             rid = _cell(row, "reep_id")
             if not rid:
                 continue
-            under = _cell(row, "key_understat")
-            sofa = _cell(row, "key_sofascore")
+            under = _player_provider_value(row, "key_understat")
+            sofa = _player_provider_value(row, "key_sofascore")
             if not under and not sofa:
                 continue
-            display = _cell(row, "full_name") or _cell(row, "name") or ""
+            display = (
+                _player_provider_value(row, "full_name")
+                or _player_provider_value(row, "name")
+                or ""
+            )
             release_reep_player_id_clashes(
                 reep_id=rid,
                 understat_player_id=under,

@@ -11,6 +11,8 @@ import type { ProfileRateMode } from '../lib/profileMetrics'
 import { TeamKeyStats } from '../components/team/TeamKeyStats'
 import { TeamStatSections } from '../components/team/TeamStatSections'
 import { TeamSquadList } from '../components/team/TeamSquadList'
+import { ProfileScopeSelector } from '../components/profile/ProfileScopeSelector'
+import type { SearchTeamMembership } from '../types/api'
 
 export function TeamProfile() {
   const { id } = useParams<{ id: string }>()
@@ -18,20 +20,19 @@ export function TeamProfile() {
   const { scope, buildScopedPath } = useScope()
   const { globalTeams } = useSearchPaletteIndex(true)
   const teamId = Number(id)
+  const teamEntity = globalTeams.find(t => t.canonical_team_id === teamId)
 
   useEffect(() => {
-    if (!Number.isFinite(teamId) || !globalTeams.length) return
-    const entity = globalTeams.find(t => t.canonical_team_id === teamId)
-    if (!entity) return
-    const hasCurrent = entity.memberships.some(
+    if (!Number.isFinite(teamId) || !teamEntity) return
+    const hasCurrent = teamEntity.memberships.some(
       m => m.competition === scope.competition && m.season === scope.season,
     )
     if (hasCurrent) return
-    const nextScope = resolveEntityScope(entity.memberships, scope)
+    const nextScope = resolveEntityScope(teamEntity.memberships, scope)
     if (nextScope) {
       navigate(buildScopedPath(`/team/${teamId}`, nextScope), { replace: true })
     }
-  }, [buildScopedPath, globalTeams, navigate, scope, teamId])
+  }, [buildScopedPath, navigate, scope, teamEntity, teamId])
 
   const detailQuery = useQuery({
     queryKey: ['team-detail', id, scope.competition, scope.season],
@@ -100,6 +101,7 @@ export function TeamProfile() {
       team={detailQuery.data}
       squad={squadQuery.data?.results}
       squadLoading={squadQuery.isLoading}
+      memberships={teamEntity?.memberships ?? []}
     />
   )
 }
@@ -108,14 +110,17 @@ function TeamLayout({
   team,
   squad,
   squadLoading,
+  memberships,
 }: {
   team: TeamDetailResponse
   squad: TeamSquadPlayer[] | undefined
   squadLoading: boolean
+  memberships: SearchTeamMembership[]
 }) {
   const meta = team.meta
   const [rateMode, setRateMode] = useState<ProfileRateMode>('full')
-  const { buildScopedPath } = useScope()
+  const navigate = useNavigate()
+  const { scope, buildScopedPath } = useScope()
 
   return (
     <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-8 pb-20">
@@ -151,7 +156,17 @@ function TeamLayout({
             chips follow the toggle (season vs per-match leaderboard).
           </p>
         </div>
-        <ProfileRateToggle value={rateMode} onChange={setRateMode} />
+        <div className="flex flex-wrap items-center gap-2 justify-end shrink-0">
+          <ProfileScopeSelector
+            label="team-profile-scope"
+            currentScope={scope}
+            memberships={memberships}
+            onChange={nextScope => {
+              navigate(buildScopedPath(`/team/${team.canonical_team_id}`, nextScope))
+            }}
+          />
+          <ProfileRateToggle value={rateMode} onChange={setRateMode} />
+        </div>
       </div>
 
       <div className="flex flex-col gap-8">

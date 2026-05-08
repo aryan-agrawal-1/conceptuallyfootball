@@ -33,8 +33,13 @@ interface ProfileStatBarsProps {
 export function ProfileStatBars({ player, rateMode, meta }: ProfileStatBarsProps) {
   const barSpecs = profileBarSpecsForPosition(player.position_group)
   const sectionOrder = profileSectionOrderForPosition(player.position_group)
-  const grouped = barsBySection(barSpecs, sectionOrder)
+  const availableBarSpecs = barSpecs.filter(spec => {
+    const resolved = resolveProfileMetric(player, rateMode, spec.bar, meta)
+    return resolved.value != null
+  })
+  const grouped = barsBySection(availableBarSpecs, sectionOrder)
   const pctOk = player.eligibility.percentiles_eligible
+  const rawOnly = !pctOk
 
   return (
     <div className="flex flex-col gap-8">
@@ -47,6 +52,11 @@ export function ProfileStatBars({ player, rateMode, meta }: ProfileStatBarsProps
             className="w-full"
             header={
               <span className="text-electric/90">{PROFILE_SECTION_LABEL[section]}</span>
+            }
+            footer={
+              rawOnly ? (
+                <span className="text-electric/75">Raw values shown · percentile rank unavailable</span>
+              ) : undefined
             }
           >
             <div className="p-4 flex flex-col gap-3">
@@ -64,11 +74,13 @@ export function ProfileStatBars({ player, rateMode, meta }: ProfileStatBarsProps
           </HudFrame>
         )
       })}
-      <p className="text-[10px] text-ink-muted leading-relaxed tracking-wide max-w-2xl">
-        Season column shows accumulated totals where the API stores them; otherwise it shows an
-        estimated season count from rate × minutes (ranking still uses the per-90 percentile for
-        that stat).
-      </p>
+      {availableBarSpecs.length > 0 && (
+        <p className="text-[10px] text-ink-muted leading-relaxed tracking-wide max-w-2xl">
+          {rawOnly
+            ? 'This profile is below the minutes threshold, so values are shown without positional percentile colouring.'
+            : 'Season column shows accumulated totals where the API stores them; otherwise it shows an estimated season count from rate × minutes (ranking still uses the per-90 percentile for that stat).'}
+        </p>
+      )}
     </div>
   )
 }
@@ -85,6 +97,7 @@ function ProfileBarRow({ spec, player, rateMode, meta, pctOk }: ProfileBarRowPro
   const resolved = resolveProfileMetric(player, rateMode, spec.bar, meta)
   const label = labelForBarSpec(spec, meta)
   const pct = pctOk ? resolved.percentile : null
+  const rawOnly = !pctOk
   const fillPct = pct != null ? Math.min(100, Math.max(0, pct)) : 0
   const fill = pct != null ? getPercentileTextColor(pct) : 'rgba(78, 88, 120, 0.35)'
   const formatted = formatValue(resolved.value, mapUnit(resolved.formatUnit))
@@ -95,19 +108,31 @@ function ProfileBarRow({ spec, player, rateMode, meta, pctOk }: ProfileBarRowPro
         {label}
       </span>
 
-      <div className="relative h-9 rounded-sm bg-raised/80 border border-line/80 overflow-hidden">
+      <div
+        className={cn(
+          'relative h-9 rounded-sm bg-raised/80 border overflow-hidden',
+          rawOnly ? 'border-electric/20 shadow-[inset_0_0_0_1px_rgba(74,158,245,0.08)]' : 'border-line/80',
+        )}
+      >
         <div
           className="absolute left-0 top-0 h-full transition-[width] duration-500 ease-out overflow-hidden"
           style={{
-            width: pct != null ? `${fillPct}%` : 0,
-            backgroundColor: fill,
+            width: rawOnly ? '100%' : pct != null ? `${fillPct}%` : 0,
+            background: rawOnly
+              ? 'linear-gradient(90deg, rgba(74,158,245,0.18), rgba(31,209,124,0.08))'
+              : fill,
           }}
         >
-          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[12px] font-medium tabular-nums text-black truncate max-w-[calc(100%-8px)]">
+          <span
+            className={cn(
+              'absolute left-2 top-1/2 -translate-y-1/2 text-[12px] font-medium tabular-nums truncate max-w-[calc(100%-8px)]',
+              rawOnly ? 'text-ink' : 'text-black',
+            )}
+          >
             {formatted}
           </span>
         </div>
-        {pct == null && (
+        {pct == null && !rawOnly && (
           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[12px] font-semibold tabular-nums text-ink-muted">
             {formatted}
           </span>
@@ -117,11 +142,11 @@ function ProfileBarRow({ spec, player, rateMode, meta, pctOk }: ProfileBarRowPro
       <span
         className={cn(
           'text-[13px] font-mono tabular-nums w-9 text-right font-semibold shrink-0',
-          pct != null ? '' : 'text-ink-muted',
+          rawOnly ? 'text-electric/80 text-[10px] tracking-[0.12em] uppercase' : pct != null ? '' : 'text-ink-muted',
         )}
         style={pct != null ? { color: fill } : undefined}
       >
-        {pct != null ? Math.round(pct) : '—'}
+        {rawOnly ? 'Raw' : pct != null ? Math.round(pct) : '—'}
       </span>
     </div>
   )

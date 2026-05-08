@@ -200,6 +200,8 @@ def _build_metric_row(
     off_f = float(merged.ss_shots_off_target) if merged.ss_shots_off_target is not None else 0.0
 
     return {
+        "xg": xg,
+        "xg_per_90": _per90(xg, minutes),
         "npxg": merged.us_npxg,
         "npxg_per_90": _per90(merged.us_npxg, minutes),
         "xa": xa,

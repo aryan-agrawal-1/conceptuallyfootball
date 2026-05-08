@@ -9,12 +9,12 @@ import { resolveEntityScope, useSearchPaletteIndex } from '../hooks/useSearchPal
 import { ProfileBreadcrumb } from '../components/profile/ProfileBreadcrumb'
 import { ProfileRateToggle } from '../components/profile/ProfileRateToggle'
 import { ProfileKeyStats } from '../components/profile/ProfileKeyStats'
-import { ProfileCompositeScores } from '../components/profile/ProfileCompositeScores'
 import { ProfileStatBars } from '../components/profile/ProfileStatBars'
 import { ProfilePizzaSection } from '../components/profile/ProfilePizzaSection'
 import { ProfileEligibilityBanner } from '../components/profile/ProfileEligibilityBanner'
+import { ProfileScopeSelector } from '../components/profile/ProfileScopeSelector'
 import type { ProfileRateMode } from '../lib/profileMetrics'
-import type { PositionGroup } from '../types/api'
+import type { PositionGroup, SearchPlayerMembership } from '../types/api'
 
 const POSITION_COHORT_LABEL: Record<PositionGroup, string> = {
   FWD: 'forwards',
@@ -55,20 +55,22 @@ export function PlayerProfile() {
   const { scope, buildScopedPath } = useScope()
   const { globalPlayers } = useSearchPaletteIndex(true)
   const playerId = Number(id)
+  const playerEntity = useMemo(
+    () => globalPlayers.find(p => p.canonical_player_id === playerId),
+    [globalPlayers, playerId],
+  )
 
   useEffect(() => {
-    if (!Number.isFinite(playerId) || !globalPlayers.length) return
-    const entity = globalPlayers.find(p => p.canonical_player_id === playerId)
-    if (!entity) return
-    const hasCurrent = entity.memberships.some(
+    if (!Number.isFinite(playerId) || !playerEntity) return
+    const hasCurrent = playerEntity.memberships.some(
       m => m.competition === scope.competition && m.season === scope.season,
     )
     if (hasCurrent) return
-    const nextScope = resolveEntityScope(entity.memberships, scope)
+    const nextScope = resolveEntityScope(playerEntity.memberships, scope)
     if (nextScope) {
       navigate(buildScopedPath(`/player/${playerId}`, nextScope), { replace: true })
     }
-  }, [buildScopedPath, globalPlayers, navigate, playerId, scope])
+  }, [buildScopedPath, navigate, playerEntity, playerId, scope])
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: [
@@ -123,18 +125,21 @@ export function PlayerProfile() {
     )
   }
 
-  return <ProfileLayout player={data} meta={data.meta} />
+  return <ProfileLayout player={data} meta={data.meta} memberships={playerEntity?.memberships ?? []} />
 }
 
 function ProfileLayout({
   player,
   meta,
+  memberships,
 }: {
   player: PlayerDetailResponse
   meta: NonNullable<PlayerDetailResponse['meta']>
+  memberships: SearchPlayerMembership[]
 }) {
   const [rateMode, setRateMode] = useState<ProfileRateMode>('per90')
-  const { buildScopedPath } = useScope()
+  const navigate = useNavigate()
+  const { scope, buildScopedPath } = useScope()
 
   const showLowSampleBanner = useMemo(
     () => !player.eligibility.percentiles_eligible,
@@ -178,6 +183,14 @@ function ProfileLayout({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 justify-end shrink-0">
+          <ProfileScopeSelector
+            label="player-profile-scope"
+            currentScope={scope}
+            memberships={memberships}
+            onChange={nextScope => {
+              navigate(buildScopedPath(`/player/${player.canonical_player_id}`, nextScope))
+            }}
+          />
           <Link
             to={buildScopedPath(`/comparisons?players=${player.canonical_player_id}`)}
             className="relative px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80 whitespace-nowrap"
@@ -198,8 +211,6 @@ function ProfileLayout({
 
       <div className="flex flex-col gap-8">
         <ProfileKeyStats player={player} rateMode={rateMode} meta={meta} />
-
-        <ProfileCompositeScores player={player} />
 
         <section aria-labelledby="profile-breakdown-heading">
           <h2 id="profile-breakdown-heading" className="sr-only">

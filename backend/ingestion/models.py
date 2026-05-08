@@ -976,6 +976,10 @@ class PlayerSeasonDerivedStats(models.Model):
     scores_eligible = models.BooleanField(default=False)
     scores_ineligibility_reason = models.CharField(max_length=64, blank=True)
 
+    xg = models.FloatField(null=True, blank=True)
+    xg_percentile = models.FloatField(null=True, blank=True)
+    xg_per_90 = models.FloatField(null=True, blank=True)
+    xg_per_90_percentile = models.FloatField(null=True, blank=True)
     npxg = models.FloatField(null=True, blank=True)
     npxg_percentile = models.FloatField(null=True, blank=True)
     npxg_per_90 = models.FloatField(null=True, blank=True)

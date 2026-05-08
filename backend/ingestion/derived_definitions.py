@@ -17,6 +17,22 @@ METRIC_GROUPS = {
 }
 
 METRIC_DEFINITIONS: dict[str, dict] = {
+    "xg": {
+        "label": "xG",
+        "group": "attack",
+        "unit": "total",
+        "sources_used": ["understat", "sofascore"],
+        "description": "Expected goals. Uses Understat where available, otherwise Sofascore expected goals.",
+        "caveat": "Provider xG models can differ, so compare within the same competition slice.",
+    },
+    "xg_per_90": {
+        "label": "xG/90",
+        "group": "attack",
+        "unit": "per90",
+        "sources_used": ["understat", "sofascore"],
+        "description": "Expected goals per 90 minutes. Useful for comparing shot threat independent of playing time.",
+        "caveat": "Provider xG models can differ, so compare within the same competition slice.",
+    },
     "npxg": {
         "label": "NPxG",
         "group": "attack",

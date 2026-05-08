@@ -137,7 +137,7 @@ export function teamKeyStatSpecs(
 }> {
   const matches = team.stats.matches ?? null
   const rankMap = mode === 'full' ? team.ranks : team.ranks_per_match
-  return TEAM_KEY_STAT_KEYS.filter(k => k in team.stats).map(key => ({
+  return TEAM_KEY_STAT_KEYS.filter(k => team.stats[k] != null).map(key => ({
     key,
     label: teamKeyStatLabel(key, meta),
     value: formatTeamStatMode(key, team.stats[key], matches, mode),
@@ -145,4 +145,3 @@ export function teamKeyStatSpecs(
     showRankRow: !TEAM_KEY_STATS_WITHOUT_RANK.has(key),
   }))
 }
-

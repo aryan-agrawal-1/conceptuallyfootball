@@ -2,17 +2,10 @@ import type { PositionGroup, StatMeta } from '../types/api'
 
 export type LabPosition = 'FWD' | 'MID' | 'DEF'
 
-const SCORES = [
-  'finishing_score',
-  'creation_score',
-  'buildup_score',
-  'ball_winning_score',
-  'involvement_score',
-] as const
-
 /** Medium-curated targets per position (must stay aligned with backend). */
 export const TARGETS_BY_POSITION: Record<LabPosition, string[]> = {
   FWD: [
+    'xg_per_90',
     'npxg_per_90',
     'goals_per_90',
     'shots_per_90',
@@ -21,9 +14,9 @@ export const TARGETS_BY_POSITION: Record<LabPosition, string[]> = {
     'chance_involvement_per_90',
     'goals_minus_npxg',
     'npxg_per_shot',
-    ...SCORES,
   ],
   MID: [
+    'xg_per_90',
     'xa_per_90',
     'xgchain_per_90',
     'xgbuildup_per_90',
@@ -32,7 +25,6 @@ export const TARGETS_BY_POSITION: Record<LabPosition, string[]> = {
     'completed_passes_per_90',
     'pass_accuracy',
     'chance_involvement_per_90',
-    ...SCORES,
   ],
   DEF: [
     'tackles_per_90',
@@ -41,9 +33,9 @@ export const TARGETS_BY_POSITION: Record<LabPosition, string[]> = {
     'defensive_action_density',
     'ball_recoveries_per_90',
     'xgbuildup_per_90',
+    'xg_per_90',
     'xa_per_90',
     'pass_accuracy',
-    ...SCORES,
   ],
 }
 
@@ -61,6 +53,7 @@ export function recommendedPredictorsForTarget(
   targetKey: string,
   position: LabPosition,
 ): string[] {
+  void position
   const fwdAttack = ['shots_per_90', 'npxg_per_shot', 'key_passes_per_90', 'xgchain_per_90', 'chance_involvement_per_90']
   const midCreate = [
     'key_passes_per_90',
@@ -81,6 +74,7 @@ export function recommendedPredictorsForTarget(
 
   const byTarget: Record<string, string[]> = {
     // FWD metrics
+    xg_per_90: fwdAttack,
     npxg_per_90: fwdAttack,
     goals_per_90: ['npxg_per_90', 'shots_per_90', 'goals_minus_npxg', 'assists_per_90', 'npxg_per_shot'],
     shots_per_90: ['npxg_per_90', 'npxg_per_shot', 'goals_minus_npxg', 'key_passes_per_90'],
@@ -102,24 +96,6 @@ export function recommendedPredictorsForTarget(
     clearances_per_90: ['aerial_duels_won_per_90', 'tackles_per_90', 'ball_recoveries_per_90', 'blocks_per_90'],
     defensive_action_density: ['tackles_per_90', 'interceptions_per_90', 'ball_recoveries_per_90', 'clearances_per_90'],
     ball_recoveries_per_90: ['tackles_per_90', 'interceptions_per_90', 'pass_accuracy', 'ground_duels_won_per_90'],
-    // Scores — packs mirror score philosophy per role
-    finishing_score:
-      position === 'DEF'
-        ? ['npxg_per_shot', 'shots_per_90', 'sot_rate', 'goals_minus_npxg']
-        : ['npxg_per_shot', 'shots_per_90', 'goals_minus_npxg', 'npxg_per_90', 'sot_rate'],
-    creation_score:
-      position === 'DEF'
-        ? ['xgbuildup_per_90', 'xa_per_90', 'big_chances_created_per_90', 'accurate_long_balls_per_90', 'accurate_crosses_per_90']
-        : midCreate,
-    buildup_score:
-      position === 'DEF'
-        ? ['xgbuildup_per_90', 'completed_passes_per_90', 'accurate_long_balls_per_90', 'successful_dribbles_per_90', 'buildup_share']
-        : ['xgbuildup_per_90', 'buildup_share', 'completed_passes_per_90', 'accurate_long_balls_per_90', 'successful_dribbles_per_90'],
-    ball_winning_score: defProg,
-    involvement_score:
-      position === 'DEF'
-        ? ['xgchain_per_90', 'chance_involvement_per_90', 'successful_dribbles_per_90', 'key_passes_per_90']
-        : ['xgchain_per_90', 'chance_involvement_per_90', 'shots_per_90', 'key_passes_per_90', 'successful_dribbles_per_90'],
   }
 
   const pack = byTarget[targetKey]
@@ -129,6 +105,7 @@ export function recommendedPredictorsForTarget(
 
 /** All raw metrics that can appear as predictors in packs (subset of known API metrics). */
 export const PREDICTOR_METRIC_POOL: string[] = [
+  'xg_per_90',
   'npxg_per_90',
   'shots_per_90',
   'npxg_per_shot',

@@ -136,18 +136,6 @@ function MatrixHeaderTooltipFloater({ active }: { active: ActiveTip }) {
           <p className="mt-1 text-[10px] text-ink-dim leading-snug">
             {tip.description}
           </p>
-          {tip.scoreComponents && tip.scoreComponents.length > 0 ? (
-            <div className="mt-2 border-t border-electric/15 pt-2">
-              <p className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.2em] text-electric/80">
-                <span className="size-1 rounded-full bg-electric/60" />
-                Made from
-                <span className="text-electric/40 font-mono">// position-weighted</span>
-              </p>
-              <p className="mt-1 text-[10px] text-ink-dim leading-snug">
-                {tip.scoreComponents.join(' · ')}
-              </p>
-            </div>
-          ) : null}
         </div>
       </div>
     </div>

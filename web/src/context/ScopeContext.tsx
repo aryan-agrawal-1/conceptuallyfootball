@@ -78,6 +78,12 @@ function withScopeParams(path: string, scope: Scope): string {
   return `${pathname}?${p.toString()}`
 }
 
+function scopeCompetitionLabel(scope: Scope, competition: CompetitionCatalogEntry | undefined): string {
+  if (scope.competition === 'BIG5') return 'Big 5'
+  if (scope.competition === 'ALL') return 'All'
+  return competition?.code ?? scope.competition
+}
+
 export function ScopeProvider({ children }: { children: ReactNode }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const catalogQuery = useQuery({
@@ -150,7 +156,7 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
       currentCompetition,
       currentSeason,
       metricAvailability: currentSeason?.metric_availability,
-      scopeLabel: `${scope.competition} ${scope.season}`,
+      scopeLabel: `${scopeCompetitionLabel(scope, currentCompetition)} ${scope.season}`,
       isLoading: catalogQuery.isLoading,
       isError: catalogQuery.isError,
       buildScopedPath,

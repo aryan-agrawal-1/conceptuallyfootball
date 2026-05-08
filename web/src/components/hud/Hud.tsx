@@ -204,3 +204,26 @@ export function HudLabel({
     </span>
   )
 }
+
+export function HudPopover({
+  children,
+  className,
+  align = 'start',
+}: {
+  children: ReactNode
+  className?: string
+  align?: 'start' | 'end'
+}) {
+  return (
+    <div
+      className={cn(
+        'absolute top-full mt-1.5 border border-electric/25 bg-panel/95 backdrop-blur-md shadow-[0_12px_40px_-8px_rgba(74,158,245,0.45)] z-50',
+        align === 'start' ? 'left-0' : 'right-0',
+        className,
+      )}
+    >
+      <HudCornerMarks />
+      {children}
+    </div>
+  )
+}

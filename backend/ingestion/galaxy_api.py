@@ -5,7 +5,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ingestion.derived_api import _resolve_competition_season
+from ingestion.derived_api import _resolve_competition_scope
 from ingestion.models import PlayerSeasonEmbedding, PlayerSeasonSimilarity
 
 ARCHETYPE_COLORS = [
@@ -23,10 +23,10 @@ ARCHETYPE_COLORS = [
 class GalaxyApi(APIView):
     def get(self, request):
         try:
-            competition_season = _resolve_competition_season(request)
+            competition_code, season_label, competition_seasons = _resolve_competition_scope(request)
             queryset = (
                 PlayerSeasonEmbedding.objects.filter(
-                    competition_season=competition_season,
+                    competition_season__in=competition_seasons,
                     is_current=True,
                 )
                 .select_related("canonical_player", "canonical_display_team")
@@ -115,7 +115,7 @@ class GalaxyApi(APIView):
                 if selected:
                     similar_rows = (
                         PlayerSeasonSimilarity.objects.filter(
-                            competition_season=competition_season,
+                            competition_season__in=competition_seasons,
                             canonical_player_id=selected_id,
                             is_current=True,
                         )
@@ -135,9 +135,9 @@ class GalaxyApi(APIView):
 
         return Response(
             {
-                "competition_season": competition_season.id,
-                "competition_code": competition_season.competition.short_code,
-                "season_label": competition_season.season.label,
+                "competition_season": competition_seasons[0].id if len(competition_seasons) == 1 else 0,
+                "competition_code": competition_code,
+                "season_label": season_label,
                 "count": len(points),
                 "archetypes": archetypes,
                 "points": points,
@@ -151,7 +151,7 @@ class GalaxyApi(APIView):
 class GalaxySimilarApi(APIView):
     def get(self, request):
         try:
-            competition_season = _resolve_competition_season(request)
+            _competition_code, _season_label, competition_seasons = _resolve_competition_scope(request)
         except DjangoValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -165,7 +165,7 @@ class GalaxySimilarApi(APIView):
 
         embedding = (
             PlayerSeasonEmbedding.objects.filter(
-                competition_season=competition_season,
+                competition_season__in=competition_seasons,
                 canonical_player_id=player_id,
                 is_current=True,
             )
@@ -180,7 +180,7 @@ class GalaxySimilarApi(APIView):
 
         similar_rows = (
             PlayerSeasonSimilarity.objects.filter(
-                competition_season=competition_season,
+                competition_season=embedding.competition_season,
                 canonical_player_id=player_id,
                 is_current=True,
             )

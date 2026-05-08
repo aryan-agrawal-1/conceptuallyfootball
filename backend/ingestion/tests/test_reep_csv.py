@@ -53,3 +53,22 @@ class ReepCsvSyncTests(TestCase):
         self.assertEqual(brighton.understat_team_id, "220")
         self.assertEqual(west_ham.understat_team_id, "81")
         self.assertFalse(ReepTeamRow.objects.filter(reep_id="reep_t70979bf6").exists())
+
+    def test_player_csv_overrides_fix_known_lamine_yamal_alias(self):
+        d = Path(tempfile.mkdtemp())
+        (d / "people.csv").write_text(
+            "reep_id,type,name,full_name,key_understat,key_sofascore\n"
+            "reep_p9aa62ce3,player,Yamil yamil,Yamil yamil,,1402912\n",
+            encoding="utf-8",
+        )
+        (d / "teams.csv").write_text(
+            "reep_id,name,key_understat,key_sofascore\n",
+            encoding="utf-8",
+        )
+
+        sync_reep_from_csv_dir(d)
+
+        player = ReepPlayerRow.objects.get(reep_id="reep_p9aa62ce3")
+        self.assertEqual(player.full_name, "Lamine Yamal")
+        self.assertEqual(player.understat_player_id, "11527")
+        self.assertEqual(player.sofascore_player_id, "1402912")

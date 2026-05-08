@@ -72,6 +72,13 @@ export function resolveEntityScope(
   return match ? { competition: match.competition, season: match.season } : null
 }
 
+export function resolveEntityMembership<T extends { competition: string; season: string }>(
+  memberships: T[],
+  scope: Scope,
+): T | undefined {
+  return preferredMembership(memberships, scope)
+}
+
 export function useSearchPaletteIndex(enabled: boolean) {
   const { scope } = useScope()
   const query = useQuery<SearchEntitiesResponse, Error>({

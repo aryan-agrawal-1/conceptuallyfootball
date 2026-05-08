@@ -27,12 +27,20 @@ interface ProfilePizzaSectionProps {
 }
 
 export function ProfilePizzaSection({ player, rateMode, meta }: ProfilePizzaSectionProps) {
+  return (
+    <ProfilePizzaSectionInner
+      key={`${player.canonical_player_id}:${player.position_group}`}
+      player={player}
+      rateMode={rateMode}
+      meta={meta}
+    />
+  )
+}
+
+function ProfilePizzaSectionInner({ player, rateMode, meta }: ProfilePizzaSectionProps) {
   const [keys, setKeys] = useState<string[]>(() => loadPizzaMetricKeys(player.position_group))
   const warnMax = keys.length > PIZZA_SLICE_SOFT_MAX
-
-  useEffect(() => {
-    setKeys(loadPizzaMetricKeys(player.position_group))
-  }, [player.canonical_player_id, player.position_group])
+  const rawOnly = !player.eligibility.percentiles_eligible
 
   useEffect(() => {
     savePizzaMetricKeys(keys)
@@ -41,9 +49,15 @@ export function ProfilePizzaSection({ player, rateMode, meta }: ProfilePizzaSect
   const validKeys = useMemo(
     () =>
       keys.filter(
-        k => k in meta.metrics && !(player.position_group === 'GK' && k === 'rating'),
+        k => {
+          if (!(k in meta.metrics) || (player.position_group === 'GK' && k === 'rating')) {
+            return false
+          }
+          const resolved = resolveProfileMetric(player, rateMode, barKindForMetricKey(k), meta)
+          return resolved.value != null
+        },
       ),
-    [keys, meta.metrics, player.position_group],
+    [keys, meta, player, rateMode],
   )
 
   const sectionOrder = useMemo(() => Object.keys(meta.metric_groups), [meta.metric_groups])
@@ -51,10 +65,14 @@ export function ProfilePizzaSection({ player, rateMode, meta }: ProfilePizzaSect
   const chartKeys = useMemo(() => {
     if (validKeys.length >= PIZZA_SLICE_MIN) return validKeys
     const pad = defaultPizzaMetricKeys(player.position_group).filter(
-      k => k in meta.metrics && !validKeys.includes(k),
+      k => {
+        if (!(k in meta.metrics) || validKeys.includes(k)) return false
+        const resolved = resolveProfileMetric(player, rateMode, barKindForMetricKey(k), meta)
+        return resolved.value != null
+      },
     )
     return [...validKeys, ...pad].slice(0, Math.max(PIZZA_SLICE_MIN, validKeys.length))
-  }, [validKeys, meta.metrics, player.position_group])
+  }, [validKeys, meta, player, rateMode])
 
   function removeKey(k: string) {
     setKeys(prev => {
@@ -69,10 +87,12 @@ export function ProfilePizzaSection({ player, rateMode, meta }: ProfilePizzaSect
 
   return (
     <HudFrame
-      header={<span>Polar profile // Percentile shape</span>}
+      header={<span>{rawOnly ? 'Polar profile // Raw axes' : 'Polar profile // Percentile shape'}</span>}
       className="w-full"
       footer={
-        warnMax ? (
+        rawOnly ? (
+          <span className="text-electric/75">Equal-length slices show selected raw metrics only</span>
+        ) : warnMax ? (
           <span className="text-amber-400/90">
             {keys.length} axes — above {PIZZA_SLICE_SOFT_MAX} slices can get crowded.
           </span>
@@ -172,7 +192,7 @@ function ProfilePizzaSvg({ player, rateMode, meta, metricKeys, exportMode = fals
       const kind = barKindForMetricKey(key)
       const resolved = resolveProfileMetric(player, rateMode, kind, meta)
       const pctEligible = player.eligibility.percentiles_eligible
-      const pct = pctEligible ? (resolved.percentile ?? 0) : 0
+      const pct = pctEligible ? (resolved.percentile ?? 0) : 62
       const outer = innerR + rScale(pct)
       const start = i * span + pad
       const end = (i + 1) * span - pad
@@ -191,7 +211,8 @@ function ProfilePizzaSvg({ player, rateMode, meta, metricKeys, exportMode = fals
       return {
         key,
         d: dPath,
-        fill: pctEligible ? getPercentileTextColor(pct) : 'rgba(78, 88, 120, 0.5)',
+        fill: pctEligible ? getPercentileTextColor(pct) : 'rgba(74, 158, 245, 0.28)',
+        valueFill: pctEligible ? '#000000' : '#E4EAF8',
         label: stripPer90Suffix(meta.metrics[key]?.label ?? key),
         raw: resolved.value,
         formatUnit: resolved.formatUnit,
@@ -219,7 +240,7 @@ function ProfilePizzaSvg({ player, rateMode, meta, metricKeys, exportMode = fals
         viewBox={`0 0 ${chartSize} ${chartSize}`}
         className="text-electric/25 overflow-visible"
         role="img"
-        aria-label="Player percentile pizza chart"
+        aria-label={player.eligibility.percentiles_eligible ? 'Player percentile pizza chart' : 'Player raw metric polar chart'}
       >
         <g transform={`translate(${chartCenter}, ${chartCenter})`}>
           {[0.25, 0.5, 0.75, 1].map((t, idx) => (
@@ -268,7 +289,7 @@ function ProfilePizzaSvg({ player, rateMode, meta, metricKeys, exportMode = fals
               key={`v-${s.key}`}
               x={s.inner.x}
               y={s.inner.y}
-              fill="#000000"
+              fill={s.valueFill}
               fontSize={exportMode ? 16 : 11}
               fontFamily="ui-monospace, SFMono-Regular, monospace"
               textAnchor="middle"
@@ -307,7 +328,7 @@ function ProfilePizzaSvg({ player, rateMode, meta, metricKeys, exportMode = fals
             {tip.label}
           </div>
           <div>
-            Pctl <span className="text-electric">{tip.percentile != null ? Math.round(tip.percentile) : '—'}</span>
+            Rank <span className="text-electric">{tip.percentile != null ? Math.round(tip.percentile) : 'Raw'}</span>
           </div>
         </div>
       )}

@@ -38,19 +38,7 @@ const LAB_POSITIONS: { value: LabPosition; label: string }[] = [
   { value: 'DEF', label: 'DEF' },
 ]
 
-const SCORE_TARGET_KEYS = new Set<string>([
-  'finishing_score',
-  'creation_score',
-  'buildup_score',
-  'ball_winning_score',
-  'involvement_score',
-])
-
 function targetValue(row: PlayerRow, targetKey: string): number | null {
-  if (SCORE_TARGET_KEYS.has(targetKey)) {
-    const v = row.scores[targetKey as keyof typeof row.scores]
-    return v ?? null
-  }
   return row.metrics[targetKey] ?? null
 }
 
@@ -315,7 +303,6 @@ export function RegressionLab() {
 
   const targetLabel =
     meta?.metrics[target]?.label ??
-    meta?.scores?.[target]?.label ??
     target
 
   const canRun =
@@ -463,7 +450,7 @@ export function RegressionLab() {
                             : 'border-electric/15 text-ink-dim hover:border-electric/35',
                         )}
                       >
-                        {meta?.metrics[key]?.label ?? meta?.scores?.[key]?.label ?? key}
+                        {meta?.metrics[key]?.label ?? key}
                       </button>
                     ))}
                   {!position && (

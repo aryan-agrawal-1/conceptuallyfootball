@@ -55,7 +55,7 @@ function TeamSectionCard({
             )}
           >
             <div className="flex flex-col pb-1">
-              {section.metrics.map(m => {
+              {section.metrics.filter(m => m.value != null).map(m => {
                 const formatted = formatTeamStatMode(m.key, m.value, matches, rateMode)
                 const rk = rateMode === 'full' ? m.rank : m.rank_per_match
                 return (

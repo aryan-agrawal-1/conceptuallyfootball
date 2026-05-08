@@ -6,7 +6,6 @@ export interface ColDef {
   id: string
   label: string
   unit?: ColumnUnit
-  isScore?: boolean
   isMeta?: boolean
   isSticky?: boolean
   defaultVisible: boolean
@@ -32,17 +31,6 @@ export const COLUMN_GROUPS: ColGroupDef[] = [
       { id: 'canonical_player_name', label: 'Player', isMeta: true, isSticky: true, defaultVisible: true, width: 152 },
       { id: 'canonical_team_name',   label: 'Club',   isMeta: true, defaultVisible: true, width: S },
       { id: 'minutes',               label: 'Mins',   isMeta: true, unit: 'integer', defaultVisible: true, width: S },
-    ],
-  },
-  {
-    id: 'scores',
-    label: 'Scores',
-    cols: [
-      { id: 'finishing_score',    label: 'Fin',    isScore: true, unit: 'score', defaultVisible: true, width: S },
-      { id: 'creation_score',     label: 'Cre',    isScore: true, unit: 'score', defaultVisible: true, width: S },
-      { id: 'buildup_score',      label: 'Bld',    isScore: true, unit: 'score', defaultVisible: true, width: S },
-      { id: 'ball_winning_score', label: 'BWin',   isScore: true, unit: 'score', defaultVisible: true, width: S },
-      { id: 'involvement_score',  label: 'Inv',    isScore: true, unit: 'score', defaultVisible: true, width: S },
     ],
   },
   {
@@ -82,6 +70,7 @@ export const COLUMN_GROUPS: ColGroupDef[] = [
     id: 'attacking',
     label: 'Attacking',
     cols: [
+      { id: 'xg_per_90',        label: 'xG',      unit: 'per90', defaultVisible: true, width: S },
       { id: 'npxg_per_90',      label: 'NPxG',    unit: 'per90', defaultVisible: true, width: S },
       { id: 'xa_per_90',        label: 'xA',      unit: 'per90', defaultVisible: true, width: S },
       { id: 'goals_per_90',     label: 'Gls',     unit: 'per90', defaultVisible: true, width: S },
@@ -97,12 +86,6 @@ export const COLUMN_GROUPS: ColGroupDef[] = [
     ],
   },
 ]
-
-export const SCORE_GROUP_ID = 'scores' as const
-
-/** Column ids for composite scores (percentiles within each outfield position). */
-export const SCORE_COLUMN_IDS: string[] =
-  COLUMN_GROUPS.find(g => g.id === SCORE_GROUP_ID)?.cols.map(c => c.id) ?? []
 
 export const COL_BY_ID: Record<string, ColDef> = Object.fromEntries(
   COLUMN_GROUPS.flatMap(g => g.cols).map(c => [c.id, c]),

@@ -13,6 +13,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from ingestion.derived_definitions import METRIC_FIELDS, METRIC_DEFINITIONS, SCORE_FIELDS
+from ingestion.derived_api import BIG_FIVE_COMPETITION_CODES
 from ingestion.models import CompetitionSeason, PlayerSeasonDerivedStats
 
 
@@ -31,17 +32,29 @@ def _resolve_competition_season(competition: str, season: str) -> CompetitionSea
         raise DjangoValidationError("Unknown competition and season combination.") from exc
 
 
+def _resolve_competition_seasons(competition: str, season: str) -> tuple[str, str, list[CompetitionSeason]]:
+    code = competition.strip().upper()
+    if code not in {"BIG5", "ALL"}:
+        cs = _resolve_competition_season(competition, season)
+        return cs.competition.short_code, cs.season.label, [cs]
+
+    rows = CompetitionSeason.objects.select_related("competition", "season").filter(
+        is_active=True,
+        season__label__iexact=season,
+    )
+    if code == "BIG5":
+        rows = rows.filter(competition__short_code__in=BIG_FIVE_COMPETITION_CODES)
+    competition_seasons = list(rows.order_by("competition__short_code"))
+    if not competition_seasons:
+        raise DjangoValidationError("Unknown competition and season combination.")
+    return code, competition_seasons[0].season.label, competition_seasons
+
+
 def _allowed_target_keys(position_group: str) -> set[str]:
-    """Medium-curated targets per outfield position (metrics + scores)."""
-    common_scores = {
-        "finishing_score",
-        "creation_score",
-        "buildup_score",
-        "ball_winning_score",
-        "involvement_score",
-    }
+    """Medium-curated raw-stat targets per outfield position."""
     if position_group == "FWD":
         return {
+            "xg_per_90",
             "npxg_per_90",
             "goals_per_90",
             "shots_per_90",
@@ -50,10 +63,10 @@ def _allowed_target_keys(position_group: str) -> set[str]:
             "chance_involvement_per_90",
             "goals_minus_npxg",
             "npxg_per_shot",
-            *common_scores,
         }
     if position_group == "MID":
         return {
+            "xg_per_90",
             "xa_per_90",
             "xgchain_per_90",
             "xgbuildup_per_90",
@@ -62,7 +75,6 @@ def _allowed_target_keys(position_group: str) -> set[str]:
             "completed_passes_per_90",
             "pass_accuracy",
             "chance_involvement_per_90",
-            *common_scores,
         }
     if position_group == "DEF":
         return {
@@ -72,9 +84,9 @@ def _allowed_target_keys(position_group: str) -> set[str]:
             "defensive_action_density",
             "ball_recoveries_per_90",
             "xgbuildup_per_90",
+            "xg_per_90",
             "xa_per_90",
             "pass_accuracy",
-            *common_scores,
         }
     raise DjangoValidationError("position_group must be FWD, MID, or DEF.")
 
@@ -131,10 +143,10 @@ def fit_player_regression(
 
     _validate_predictors(predictor_keys)
 
-    cs = _resolve_competition_season(competition, season)
+    competition_code, season_label, competition_seasons = _resolve_competition_seasons(competition, season)
     rows = list(
         PlayerSeasonDerivedStats.objects.filter(
-            competition_season=cs,
+            competition_season__in=competition_seasons,
             is_current=True,
             position_group__iexact=position_group,
             canonical_player_id__in=canonical_player_ids,
@@ -257,8 +269,8 @@ def fit_player_regression(
         "model": "ridge",
         "alpha": alpha,
         "position_group": position_group,
-        "competition_code": cs.competition.short_code,
-        "season_label": cs.season.label,
+        "competition_code": competition_code,
+        "season_label": season_label,
         "sample": {
             "cohort_rows": cohort_rows,
             "usable_rows": usable,
