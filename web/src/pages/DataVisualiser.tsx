@@ -38,6 +38,7 @@ import { VisualiserScatterPlot, type VisualiserScatterDatum } from '../component
 import { VisualiserBarChart, type VisualiserBarDatum } from '../components/visualizer/VisualiserBarChart'
 import { VisualiserRadarChart } from '../components/visualizer/VisualiserRadarChart'
 import { cn } from '../lib/utils'
+import { filterMetricGroups, usablePlayerMetricKeys, usableTeamMetricKeys } from '../lib/metricAvailability'
 
 const MINUTE_OPTIONS = [0, 450, 900, 1350]
 const CHART_TYPES: Array<{ value: VisualiserChartType; label: string }> = [
@@ -109,7 +110,7 @@ export function DataVisualiser() {
   const playerMeta = playerQuery.data?.meta
   const teamMeta = teamQuery.data?.meta
 
-  const playerMetricGroups = useMemo(() => {
+  const rawPlayerMetricGroups = useMemo(() => {
     if (!playerMeta) return []
     const grouped = groupMetricsForPizzaPicker(playerMeta)
     return dedupeMetricGroups(
@@ -120,11 +121,39 @@ export function DataVisualiser() {
       })),
     )
   }, [playerMeta])
+  const rawPlayerMetricKeys = useMemo(
+    () => rawPlayerMetricGroups.flatMap(group => group.items.map(item => item.key)),
+    [rawPlayerMetricGroups],
+  )
+  const usablePlayerKeys = useMemo(
+    () =>
+      playerMeta
+        ? usablePlayerMetricKeys(rawPlayerMetricKeys, playerRows, state.mode, playerMeta)
+        : [],
+    [playerMeta, playerRows, rawPlayerMetricKeys, state.mode],
+  )
+  const playerMetricGroups = useMemo(
+    () => filterMetricGroups(rawPlayerMetricGroups, usablePlayerKeys),
+    [rawPlayerMetricGroups, usablePlayerKeys],
+  )
   const playerMetricKeys = useMemo(
     () => playerMetricGroups.flatMap(group => group.items.map(item => item.key)),
     [playerMetricGroups],
   )
-  const teamMetricGroups = useMemo(() => dedupeMetricGroups(buildTeamMetricGroups(teamMeta)), [teamMeta])
+  const rawTeamMetricGroups = useMemo(() => dedupeMetricGroups(buildTeamMetricGroups(teamMeta)), [teamMeta])
+  const rawTeamMetricKeys = useMemo(
+    () => rawTeamMetricGroups.flatMap(group => group.items.map(item => item.key)),
+    [rawTeamMetricGroups],
+  )
+  const teamRows = useMemo(() => teamQuery.data?.results ?? [], [teamQuery.data?.results])
+  const usableTeamKeys = useMemo(
+    () => usableTeamMetricKeys(rawTeamMetricKeys, teamRows, state.mode),
+    [rawTeamMetricKeys, state.mode, teamRows],
+  )
+  const teamMetricGroups = useMemo(
+    () => filterMetricGroups(rawTeamMetricGroups, usableTeamKeys),
+    [rawTeamMetricGroups, usableTeamKeys],
+  )
   const teamMetricKeys = useMemo(
     () => teamMetricGroups.flatMap(group => group.items.map(item => item.key)),
     [teamMetricGroups],

@@ -22,6 +22,58 @@ COMPETITION_ORDER = {
 }
 
 
+def _aggregate_metric_availability(items):
+    payloads = [item for item in items if item]
+    if not payloads:
+        return None
+
+    def intersect_list(key):
+        sets = [set(payload.get(key) or []) for payload in payloads]
+        if not sets:
+            return []
+        return sorted(set.intersection(*sets))
+
+    def union_list(key):
+        out = set()
+        for payload in payloads:
+            out.update(payload.get(key) or [])
+        return sorted(out)
+
+    low_coverage_metrics = {}
+    for payload in payloads:
+        low_coverage_metrics.update(payload.get("low_coverage_metrics") or {})
+
+    scores = {}
+    score_names = set()
+    for payload in payloads:
+        score_names.update((payload.get("scores") or {}).keys())
+    for score_name in sorted(score_names):
+        score_payloads = [
+            (payload.get("scores") or {}).get(score_name)
+            for payload in payloads
+            if (payload.get("scores") or {}).get(score_name)
+        ]
+        scores[score_name] = {
+            "available": bool(score_payloads) and all(item.get("available") for item in score_payloads),
+        }
+
+    return {
+        "player_data_mode": "aggregate",
+        "available_metrics": union_list("available_metrics"),
+        "ui_available_metrics": intersect_list("ui_available_metrics"),
+        "default_metrics": intersect_list("default_metrics"),
+        "low_coverage_metrics": low_coverage_metrics,
+        "unavailable_metrics": union_list("unavailable_metrics"),
+        "scores": scores,
+        "available_scores": sorted(
+            score_name for score_name, payload in scores.items() if payload.get("available")
+        ),
+        "unavailable_scores": sorted(
+            score_name for score_name, payload in scores.items() if not payload.get("available")
+        ),
+    }
+
+
 class CompetitionSeasonsCatalogApi(APIView):
     """
     Active competition-season slices for UI dropdowns.
@@ -45,6 +97,8 @@ class CompetitionSeasonsCatalogApi(APIView):
         by_code: OrderedDict[str, dict] = OrderedDict()
         all_seasons: OrderedDict[str, dict] = OrderedDict()
         big_five_seasons: OrderedDict[str, dict] = OrderedDict()
+        all_season_availability: dict[str, list[dict]] = {}
+        big_five_season_availability: dict[str, list[dict]] = {}
         for cs in rows:
             code = cs.competition.short_code
             if code not in by_code:
@@ -73,6 +127,7 @@ class CompetitionSeasonsCatalogApi(APIView):
                     "metric_availability": None,
                 },
             )
+            all_season_availability.setdefault(cs.season.label, []).append(cs.metric_availability)
             if code in BIG_FIVE_COMPETITION_CODES:
                 big_five_seasons.setdefault(
                     cs.season.label,
@@ -85,9 +140,14 @@ class CompetitionSeasonsCatalogApi(APIView):
                         "metric_availability": None,
                     },
                 )
+                big_five_season_availability.setdefault(cs.season.label, []).append(cs.metric_availability)
 
         aggregate_entries = []
         if big_five_seasons:
+            for label, payload in big_five_seasons.items():
+                payload["metric_availability"] = _aggregate_metric_availability(
+                    big_five_season_availability.get(label) or []
+                )
             aggregate_entries.append(
                 {
                     "code": "BIG5",
@@ -96,6 +156,10 @@ class CompetitionSeasonsCatalogApi(APIView):
                 }
             )
         if all_seasons:
+            for label, payload in all_seasons.items():
+                payload["metric_availability"] = _aggregate_metric_availability(
+                    all_season_availability.get(label) or []
+                )
             aggregate_entries.append(
                 {
                     "code": "ALL",

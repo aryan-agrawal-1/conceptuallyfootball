@@ -9,6 +9,7 @@ import { cn } from '../../lib/utils'
 import { useScope, type Scope } from '../../context/ScopeContext'
 import type { SearchPlayerEntity, SearchTeamEntity } from '../../types/api'
 import { HudCornerMarks } from '../hud/Hud'
+import { membershipPriority } from '../../lib/scopeMembership'
 
 const DEFAULT_VISIBLE = 5
 const SEARCH_VISIBLE_LIMIT = 12
@@ -17,19 +18,6 @@ type SearchIndexEntry<T> = {
   entity: T
   foldedName: string
   priority: number
-}
-
-function membershipPriority(
-  memberships: Array<{ competition: string; season: string }>,
-  scope: Scope,
-): number {
-  if (memberships.some(m => m.competition === scope.competition && m.season === scope.season)) {
-    return 0
-  }
-  if (memberships.some(m => m.competition === scope.competition)) {
-    return 1
-  }
-  return 2
 }
 
 function buildPlayerIndex(

@@ -10,6 +10,7 @@ import { fetchRegressionLabFit } from '../lib/api'
 import {
   groupPredictorPool,
   isLabPosition,
+  PREDICTOR_METRIC_POOL,
   recommendedPredictorsForTarget,
   TARGETS_BY_POSITION,
   toLabPosition,
@@ -22,6 +23,7 @@ import {
   type RegressionLabUrlState,
 } from '../lib/regressionLabUrl'
 import { cn } from '../lib/utils'
+import { hasMetricCoverage } from '../lib/metricAvailability'
 import type {
   MatrixFilters,
   PlayerRow,
@@ -133,8 +135,6 @@ export function RegressionLab() {
   const allPlayers = data?.results ?? EMPTY
   const meta: StatMeta | undefined = data?.meta
 
-  const predictorGroups = useMemo(() => groupPredictorPool(meta), [meta])
-
   const teams = useMemo(() => {
     const names = allPlayers
       .map(p => p.canonical_team_name)
@@ -153,14 +153,52 @@ export function RegressionLab() {
 
   const position = toLabPosition(filters.position_group)
 
+  const availableTargetKeys = useMemo(() => {
+    if (!position || !meta) return []
+    return TARGETS_BY_POSITION[position].filter(key => {
+      if (!meta.metrics[key]) return false
+      if (!cohortRows.length) return true
+      return hasMetricCoverage(cohortRows, row => targetValue(row, key))
+    })
+  }, [cohortRows, meta, position])
+
+  const availablePredictorKeys = useMemo(() => {
+    if (!meta) return []
+    return PREDICTOR_METRIC_POOL.filter(key => {
+      if (!meta.metrics[key]) return false
+      if (!cohortRows.length) return true
+      return hasMetricCoverage(cohortRows, row => row.metrics[key])
+    })
+  }, [cohortRows, meta])
+
+  const availablePredictorKeySet = useMemo(
+    () => new Set(availablePredictorKeys),
+    [availablePredictorKeys],
+  )
+
+  const predictorGroups = useMemo(
+    () => groupPredictorPool(meta, availablePredictorKeys),
+    [availablePredictorKeys, meta],
+  )
+
   useEffect(() => {
     if (!position) return
-    if (target && !TARGETS_BY_POSITION[position].includes(target)) {
+    if (isLoading) return
+    if (target && !availableTargetKeys.includes(target)) {
       setTarget('')
       setPredictors([])
       setPredictorsCustomized(false)
     }
-  }, [position, target])
+  }, [availableTargetKeys, isLoading, position, target])
+
+  useEffect(() => {
+    if (isLoading || !predictors.length) return
+    const next = predictors.filter(key => availablePredictorKeySet.has(key))
+    if (next.length !== predictors.length) {
+      setPredictors(next)
+      setPredictorsCustomized(next.length > 0)
+    }
+  }, [availablePredictorKeySet, isLoading, predictors])
 
   const usablePreview = useMemo(
     () => countUsableRows(cohortRows, target, predictors),
@@ -260,7 +298,7 @@ export function RegressionLab() {
     const replace = opts?.forceReplacePredictors || !predictorsCustomized
     setTarget(next)
     if (replace) {
-      setPredictors(recommendedPredictorsForTarget(next, position))
+      setPredictors(recommendedPredictorsForTarget(next, position, availablePredictorKeys))
       setPredictorsCustomized(false)
     }
   }
@@ -438,7 +476,7 @@ export function RegressionLab() {
               >
                 <div className="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col gap-2">
                   {position &&
-                    TARGETS_BY_POSITION[position].map(key => (
+                    availableTargetKeys.map(key => (
                       <button
                         key={key}
                         type="button"
@@ -453,6 +491,11 @@ export function RegressionLab() {
                         {meta?.metrics[key]?.label ?? key}
                       </button>
                     ))}
+                  {position && availableTargetKeys.length === 0 && (
+                    <p className="text-[11px] text-ink-muted">
+                      No populated target metrics are available for this cohort.
+                    </p>
+                  )}
                   {!position && (
                     <p className="text-[11px] text-ink-muted">Select a position to see targets.</p>
                   )}

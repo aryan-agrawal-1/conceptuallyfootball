@@ -1338,3 +1338,225 @@ class PlayerSeasonSimilarity(models.Model):
             f"sim {self.canonical_player_id}->{self.similar_player_id} "
             f"({self.similarity:.3f}) @ {self.competition_season_id}"
         )
+
+
+class GalaxySnapshot(models.Model):
+    scope_code = models.CharField(max_length=32, db_index=True)
+    season_label = models.CharField(max_length=32, db_index=True)
+    ingestion_run = models.ForeignKey(
+        IngestionRun,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="galaxy_snapshots",
+    )
+    model_version = models.CharField(max_length=32, default="galaxy_v2", db_index=True)
+    feature_profile = models.CharField(max_length=64, blank=True, default="")
+    min_minutes = models.PositiveIntegerField(default=450)
+    default_min_minutes = models.PositiveIntegerField(default=900)
+    top_k = models.PositiveSmallIntegerField(default=15)
+    included_competition_season_ids = models.JSONField(default=list, blank=True)
+    excluded_competitions = models.JSONField(default=list, blank=True)
+    feature_names = models.JSONField(default=list, blank=True)
+    feature_weights = models.JSONField(default=dict, blank=True)
+    feature_groups = models.JSONField(default=dict, blank=True)
+    imputation_values = models.JSONField(default=dict, blank=True)
+    scaling = models.JSONField(default=dict, blank=True)
+    position_penalties = models.JSONField(default=dict, blank=True)
+    diagnostics = models.JSONField(default=dict, blank=True)
+    is_current = models.BooleanField(default=True, db_index=True)
+    superseded_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["scope_code", "season_label"],
+                condition=models.Q(is_current=True),
+                name="uniq_current_galaxy_snapshot_scope_season",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["scope_code", "season_label", "is_current"]),
+            models.Index(fields=["feature_profile"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"galaxy {self.scope_code} {self.season_label} ({self.feature_profile})"
+
+
+class GalaxyArchetype(models.Model):
+    snapshot = models.ForeignKey(
+        GalaxySnapshot,
+        on_delete=models.CASCADE,
+        related_name="archetypes",
+    )
+    archetype_key = models.CharField(max_length=64)
+    position_group = models.CharField(
+        max_length=8,
+        choices=PositionGroup.choices,
+        default=PositionGroup.UNKNOWN,
+    )
+    cluster_id = models.PositiveSmallIntegerField(default=0)
+    label = models.CharField(max_length=80)
+    color = models.CharField(max_length=16, blank=True, default="")
+    size = models.PositiveIntegerField(default=0)
+    centroid = models.JSONField(default=dict, blank=True)
+    feature_signature = models.JSONField(default=dict, blank=True)
+    representative_players = models.JSONField(default=list, blank=True)
+    diagnostics = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["snapshot", "archetype_key"],
+                name="uniq_galaxy_archetype_key_per_snapshot",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["snapshot", "position_group"]),
+            models.Index(fields=["snapshot", "cluster_id"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.label} @ {self.snapshot}"
+
+
+class GalaxyPlayerEmbedding(models.Model):
+    snapshot = models.ForeignKey(
+        GalaxySnapshot,
+        on_delete=models.CASCADE,
+        related_name="player_embeddings",
+    )
+    galaxy_player_id = models.CharField(max_length=80, db_index=True)
+    competition_season = models.ForeignKey(
+        CompetitionSeason,
+        on_delete=models.CASCADE,
+        related_name="galaxy_player_embeddings",
+    )
+    canonical_player = models.ForeignKey(
+        CanonicalPlayer,
+        on_delete=models.CASCADE,
+        related_name="galaxy_embeddings",
+    )
+    canonical_display_team = models.ForeignKey(
+        CanonicalTeam,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="galaxy_display_team_rows",
+    )
+    derived_stats = models.ForeignKey(
+        PlayerSeasonDerivedStats,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="galaxy_embeddings",
+    )
+    primary_archetype = models.ForeignKey(
+        GalaxyArchetype,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="primary_players",
+    )
+    secondary_archetype = models.ForeignKey(
+        GalaxyArchetype,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="secondary_players",
+    )
+    position_group = models.CharField(
+        max_length=8,
+        choices=PositionGroup.choices,
+        default=PositionGroup.UNKNOWN,
+    )
+    native_position = models.CharField(max_length=64, blank=True)
+    minutes = models.PositiveIntegerField(null=True, blank=True)
+    primary_archetype_label = models.CharField(max_length=80, blank=True, default="")
+    primary_archetype_confidence = models.FloatField(null=True, blank=True)
+    secondary_archetype_label = models.CharField(max_length=80, blank=True, default="")
+    secondary_archetype_confidence = models.FloatField(null=True, blank=True)
+    archetype_margin = models.FloatField(null=True, blank=True)
+    archetype_diagnostics = models.JSONField(default=dict, blank=True)
+    feature_values = models.JSONField(default=dict, blank=True)
+    scaled_features = models.JSONField(default=dict, blank=True)
+    imputed_features = models.JSONField(default=list, blank=True)
+    umap_x = models.FloatField()
+    umap_y = models.FloatField()
+    umap_z = models.FloatField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["snapshot", "galaxy_player_id"],
+                name="uniq_galaxy_player_id_per_snapshot",
+            ),
+            models.UniqueConstraint(
+                fields=["snapshot", "competition_season", "canonical_player"],
+                name="uniq_galaxy_competition_player_per_snapshot",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["snapshot", "position_group"]),
+            models.Index(fields=["snapshot", "canonical_display_team"]),
+            models.Index(fields=["snapshot", "primary_archetype"]),
+            models.Index(fields=["competition_season", "canonical_player"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.galaxy_player_id} @ {self.snapshot}"
+
+
+class GalaxySimilarity(models.Model):
+    snapshot = models.ForeignKey(
+        GalaxySnapshot,
+        on_delete=models.CASCADE,
+        related_name="similarities",
+    )
+    source_embedding = models.ForeignKey(
+        GalaxyPlayerEmbedding,
+        on_delete=models.CASCADE,
+        related_name="similarity_rows",
+    )
+    similar_embedding = models.ForeignKey(
+        GalaxyPlayerEmbedding,
+        on_delete=models.CASCADE,
+        related_name="similar_to_rows",
+    )
+    rank = models.PositiveSmallIntegerField()
+    base_distance = models.FloatField()
+    distance = models.FloatField()
+    position_multiplier = models.FloatField(default=1.0)
+    candidate_percentile_score = models.FloatField()
+    absolute_fit_score = models.FloatField()
+    profile_match_score = models.FloatField()
+    weak_absolute_fit = models.BooleanField(default=False)
+    match_context = models.CharField(max_length=32, blank=True, default="")
+    explanation = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["snapshot", "source_embedding", "rank"],
+                name="uniq_galaxy_similarity_rank_per_source",
+            ),
+            models.UniqueConstraint(
+                fields=["snapshot", "source_embedding", "similar_embedding"],
+                name="uniq_galaxy_similarity_pair_per_snapshot",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["snapshot", "source_embedding", "rank"]),
+            models.Index(fields=["snapshot", "profile_match_score"]),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"galaxy sim {self.source_embedding_id}->{self.similar_embedding_id} "
+            f"({self.profile_match_score:.1f}) @ {self.snapshot_id}"
+        )

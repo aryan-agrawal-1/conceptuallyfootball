@@ -60,6 +60,16 @@ function ProfilePizzaSectionInner({ player, rateMode, meta }: ProfilePizzaSectio
     [keys, meta, player, rateMode],
   )
 
+  const usableKeySet = useMemo(() => {
+    const out = new Set<string>()
+    for (const key of Object.keys(meta.metrics)) {
+      if (player.position_group === 'GK' && key === 'rating') continue
+      const resolved = resolveProfileMetric(player, rateMode, barKindForMetricKey(key), meta)
+      if (resolved.value != null) out.add(key)
+    }
+    return out
+  }, [meta, player, rateMode])
+
   const sectionOrder = useMemo(() => Object.keys(meta.metric_groups), [meta.metric_groups])
 
   const chartKeys = useMemo(() => {
@@ -73,6 +83,13 @@ function ProfilePizzaSectionInner({ player, rateMode, meta }: ProfilePizzaSectio
     )
     return [...validKeys, ...pad].slice(0, Math.max(PIZZA_SLICE_MIN, validKeys.length))
   }, [validKeys, meta, player, rateMode])
+
+  useEffect(() => {
+    if (keys.length === chartKeys.length && keys.every((key, index) => key === chartKeys[index])) return
+    setKeys(chartKeys)
+    // Only sync when the loaded/stored axes are invalid for this player scope.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chartKeys])
 
   function removeKey(k: string) {
     setKeys(prev => {
@@ -132,10 +149,11 @@ function ProfilePizzaSectionInner({ player, rateMode, meta }: ProfilePizzaSectio
           meta={meta}
           sectionOrder={sectionOrder}
           excludeMetricKeys={player.position_group === 'GK' ? ['rating'] : undefined}
-          selectedKeys={keys}
+          usableKeys={usableKeySet}
+          selectedKeys={validKeys}
           onRemove={removeKey}
           onAdd={addKey}
-          canRemove={keys.length > PIZZA_SLICE_MIN}
+          canRemove={validKeys.length > PIZZA_SLICE_MIN}
         />
       </div>
     </HudFrame>
@@ -381,6 +399,7 @@ interface PizzaAxisPickerProps {
   /** Metrics omitted from the add-stat list (e.g. GK `rating`). */
   excludeMetricKeys?: readonly string[]
   selectedKeys: string[]
+  usableKeys: Set<string>
   canRemove: boolean
   onRemove: (k: string) => void
   onAdd: (k: string) => void
@@ -391,6 +410,7 @@ function PizzaAxisPicker({
   sectionOrder,
   excludeMetricKeys,
   selectedKeys,
+  usableKeys,
   canRemove,
   onRemove,
   onAdd,
@@ -420,9 +440,10 @@ function PizzaAxisPicker({
     return sectionOrder.flatMap(sec =>
       (grouped[sec] ?? [])
         .filter(({ key }) => !sel.has(key))
+        .filter(({ key }) => usableKeys.has(key))
         .map(item => ({ ...item, section: sec })),
     )
-  }, [grouped, sectionOrder, selectedKeys])
+  }, [grouped, sectionOrder, selectedKeys, usableKeys])
 
   return (
     <div className="w-full max-w-sm flex flex-col gap-3" ref={ref}>

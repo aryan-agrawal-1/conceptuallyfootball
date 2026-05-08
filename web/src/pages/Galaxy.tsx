@@ -144,8 +144,8 @@ function GalaxyStars({
   onHover,
 }: {
   points: GalaxyPoint[]
-  onSelect: (id: number) => void
-  onHover: (id: number | null) => void
+  onSelect: (id: string) => void
+  onHover: (id: string | null) => void
 }) {
   const texture = useMemo(() => makeStarTexture(), [])
 
@@ -153,7 +153,7 @@ function GalaxyStars({
     const positions = new Float32Array(points.length * 3)
     const colors = new Float32Array(points.length * 3)
     const sizes = new Float32Array(points.length)
-    const indexToPlayerId: number[] = []
+    const indexToPlayerId: string[] = []
 
     const minutesList = points.map(p => p.minutes)
     const range = {
@@ -171,7 +171,7 @@ function GalaxyStars({
       colors[i * 3 + 1] = colorObj.g
       colors[i * 3 + 2] = colorObj.b
       sizes[i] = sizeFromMinutes(point.minutes, range)
-      indexToPlayerId.push(point.canonical_player_id)
+      indexToPlayerId.push(point.galaxy_player_id)
     })
 
     return { positions, colors, sizes, indexToPlayerId }
@@ -382,11 +382,11 @@ function CameraFocus({ target }: { target: GalaxyPoint | null }) {
   const goalTarget = useRef(new THREE.Vector3())
   const goalCamera = useRef(new THREE.Vector3())
   const animating = useRef(false)
-  const lastTargetId = useRef<number | null>(null)
+  const lastTargetId = useRef<string | null>(null)
 
   useFrame(() => {
     if (!controls) return
-    const targetId = target?.canonical_player_id ?? null
+    const targetId = target?.galaxy_player_id ?? null
 
     if (targetId !== lastTargetId.current) {
       lastTargetId.current = targetId
@@ -429,18 +429,18 @@ function SimilarityLines({
   from,
 }: {
   edges: GalaxyEdge[]
-  pointsById: Map<number, GalaxyPoint>
+  pointsById: Map<string, GalaxyPoint>
   from: GalaxyPoint
 }) {
   if (!edges.length) return null
   return (
     <>
       {edges.map(edge => {
-        const to = pointsById.get(edge.to_player_id)
+        const to = pointsById.get(edge.to_galaxy_player_id)
         if (!to) return null
         return (
           <Line
-            key={`${edge.from_player_id}-${edge.to_player_id}`}
+            key={`${edge.from_galaxy_player_id}-${edge.to_galaxy_player_id}`}
             points={[
               [from.x, from.y, from.z],
               [to.x, to.y, to.z],
@@ -498,8 +498,8 @@ function PlayerHud({
   point: GalaxyPoint
   edges: GalaxyEdge[]
   isLoading: boolean
-  onSelectEdge: (id: number) => void
-  onHoverEdge: (id: number | null) => void
+  onSelectEdge: (id: string) => void
+  onHoverEdge: (id: string | null) => void
   onClear: () => void
   onOpenProfile: () => void
 }) {
@@ -507,10 +507,10 @@ function PlayerHud({
   return (
     <HudFrame
       className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 w-[min(760px,calc(100%-2rem))]"
-      header={`Target Acquired // ID ${point.canonical_player_id.toString().padStart(6, '0')}`}
+      header={`Target Acquired // ${point.galaxy_player_id}`}
       footer={
         <div className="flex justify-between items-center">
-          <span>Cluster {point.cluster_id + 1} // {point.cluster_label}</span>
+          <span>{point.competition_code} // {point.primary_archetype_label}</span>
           <span className="font-mono">
             X {point.x.toFixed(2)}  Y {point.y.toFixed(2)}  Z {point.z.toFixed(2)}
           </span>
@@ -550,7 +550,19 @@ function PlayerHud({
             <StatReadout label="Minutes" value={point.minutes.toLocaleString()} />
             <StatReadout
               label="Archetype"
-              value={<span className="text-[12px]">{point.cluster_label}</span>}
+              value={<span className="text-[12px]">{point.primary_archetype_label}</span>}
+            />
+            <StatReadout
+              label="Secondary"
+              value={<span className="text-[12px]">{point.secondary_archetype_label || 'None'}</span>}
+            />
+            <StatReadout
+              label="Confidence"
+              value={
+                point.primary_archetype_confidence == null
+                  ? 'n/a'
+                  : `${Math.round(point.primary_archetype_confidence * 100)}`
+              }
             />
           </div>
         </div>
@@ -573,9 +585,9 @@ function PlayerHud({
             ) : (
               edges.map(edge => (
                 <button
-                  key={edge.to_player_id}
-                  onClick={() => onSelectEdge(edge.to_player_id)}
-                  onMouseEnter={() => onHoverEdge(edge.to_player_id)}
+                  key={edge.to_galaxy_player_id}
+                  onClick={() => onSelectEdge(edge.to_galaxy_player_id)}
+                  onMouseEnter={() => onHoverEdge(edge.to_galaxy_player_id)}
                   onMouseLeave={() => onHoverEdge(null)}
                   className="w-full flex items-center justify-between px-2 py-1 text-[11px] border-b last:border-b-0 border-electric/10 hover:bg-electric/10 hover:text-electric transition-colors"
                 >
@@ -586,7 +598,7 @@ function PlayerHud({
                     <span className="truncate">{edge.to_player_name}</span>
                   </span>
                   <span className="font-mono text-electric">
-                    {Math.round(edge.similarity * 100)}%
+                    {Math.round(edge.profile_match_score ?? edge.similarity * 100)}
                   </span>
                 </button>
               ))
@@ -619,8 +631,8 @@ export function Galaxy() {
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
   const { scope, scopeLabel, buildScopedPath } = useScope()
-  const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null)
-  const [hoveredPlayerId, setHoveredPlayerId] = useState<number | null>(null)
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
+  const [hoveredPlayerId, setHoveredPlayerId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
 
   const filters = {
@@ -646,7 +658,7 @@ export function Galaxy() {
   const similarQuery = useQuery({
     queryKey: ['galaxy-similar', filters.competition, filters.season, selectedPlayerId],
     queryFn: () =>
-      fetchGalaxySimilar(selectedPlayerId as number, filters.competition, filters.season),
+      fetchGalaxySimilar(selectedPlayerId as string, filters.competition, filters.season),
     enabled: selectedPlayerId != null,
   })
 
@@ -658,8 +670,8 @@ export function Galaxy() {
   const laidOutPoints = useMemo(() => applyLayout(data?.points ?? []), [data?.points])
 
   const pointsById = useMemo(() => {
-    const m = new Map<number, GalaxyPoint>()
-    for (const point of laidOutPoints) m.set(point.canonical_player_id, point)
+    const m = new Map<string, GalaxyPoint>()
+    for (const point of laidOutPoints) m.set(point.galaxy_player_id, point)
     return m
   }, [laidOutPoints])
 
@@ -683,7 +695,8 @@ export function Galaxy() {
       else nextParams.delete('team')
     }
     if ('min_minutes' in next) {
-      nextParams.set('min_minutes', String(next.min_minutes ?? DEFAULT_FILTERS.min_minutes))
+      const floor = data?.model_meta?.min_minutes ?? 450
+      nextParams.set('min_minutes', String(Math.max(next.min_minutes ?? DEFAULT_FILTERS.min_minutes, floor)))
     }
     setParams(nextParams)
   }
@@ -725,19 +738,19 @@ export function Galaxy() {
     point: GalaxyPoint
     variant: 'hover' | 'selected' | 'linked'
   }> = []
-  const seenLabelIds = new Set<number>()
+  const seenLabelIds = new Set<string>()
   if (selectedPoint) {
     labeledPoints.push({ point: selectedPoint, variant: 'selected' })
-    seenLabelIds.add(selectedPoint.canonical_player_id)
+    seenLabelIds.add(selectedPoint.galaxy_player_id)
   }
   for (const edge of edges) {
-    if (seenLabelIds.has(edge.to_player_id)) continue
-    const p = pointsById.get(edge.to_player_id)
+    if (seenLabelIds.has(edge.to_galaxy_player_id)) continue
+    const p = pointsById.get(edge.to_galaxy_player_id)
     if (!p) continue
     labeledPoints.push({ point: p, variant: 'linked' })
-    seenLabelIds.add(p.canonical_player_id)
+    seenLabelIds.add(p.galaxy_player_id)
   }
-  if (hoveredPoint && !seenLabelIds.has(hoveredPoint.canonical_player_id)) {
+  if (hoveredPoint && !seenLabelIds.has(hoveredPoint.galaxy_player_id)) {
     labeledPoints.push({ point: hoveredPoint, variant: 'hover' })
   }
 
@@ -767,16 +780,18 @@ export function Galaxy() {
               <option value="FWD">FWD</option>
               <option value="MID">MID</option>
               <option value="DEF">DEF</option>
-              <option value="GK">GK</option>
             </select>
             <input
               type="number"
               className="bg-mat/80 border border-electric/25 text-[11px] px-2 py-1.5 font-mono text-electric/90 focus:outline-none focus:border-electric"
-              value={filters.min_minutes}
-              min={0}
-              onChange={event => setFilter({ min_minutes: Number(event.target.value) || 0 })}
+              value={Math.max(filters.min_minutes, data.model_meta.min_minutes)}
+              min={data.model_meta.min_minutes}
+              onChange={event => setFilter({ min_minutes: Number(event.target.value) || data.model_meta.min_minutes })}
             />
           </div>
+          <p className="text-[10px] uppercase tracking-[0.16em] text-electric/50">
+            Model floor: {data.model_meta.min_minutes} minutes
+          </p>
           <select
             className="w-full bg-mat/80 border border-electric/25 text-[11px] px-2 py-1.5 tracking-widest text-electric/90 focus:outline-none focus:border-electric"
             value={filters.team}
@@ -802,11 +817,11 @@ export function Galaxy() {
                 a.canonical_player_name.localeCompare(b.canonical_player_name),
               )
               .map(player => {
-                const isSelected = player.canonical_player_id === selectedPlayerId
-                const isHovered = player.canonical_player_id === hoveredPlayerId
+                const isSelected = player.galaxy_player_id === selectedPlayerId
+                const isHovered = player.galaxy_player_id === hoveredPlayerId
                 return (
                   <button
-                    key={player.canonical_player_id}
+                    key={player.galaxy_player_id}
                     title={player.canonical_player_name}
                     className={cn(
                       'w-full flex items-center gap-2 px-2 py-1 text-[11px] border-b last:border-b-0 border-electric/10 transition-colors text-left',
@@ -814,13 +829,13 @@ export function Galaxy() {
                       isSelected && 'bg-electric/15 text-electric',
                       isHovered && !isSelected && 'text-ink',
                     )}
-                    onClick={() => setSelectedPlayerId(player.canonical_player_id)}
+                    onClick={() => setSelectedPlayerId(player.galaxy_player_id)}
                     onMouseEnter={() =>
-                      setHoveredPlayerId(player.canonical_player_id)
+                      setHoveredPlayerId(player.galaxy_player_id)
                     }
                     onMouseLeave={() =>
                       setHoveredPlayerId(prev =>
-                        prev === player.canonical_player_id ? null : prev,
+                        prev === player.galaxy_player_id ? null : prev,
                       )
                     }
                   >
@@ -829,6 +844,7 @@ export function Galaxy() {
                     </span>
                     <span className="truncate">
                       {player.canonical_player_name}
+                      {player.competition_code ? ` · ${player.competition_code}` : ''}
                     </span>
                   </button>
                 )
@@ -844,7 +860,7 @@ export function Galaxy() {
         <div className="p-3 grid grid-cols-1 gap-1.5">
           {data.archetypes.map(item => (
             <div
-              key={item.cluster_id}
+              key={item.archetype_key}
               className="flex items-center gap-2 text-[11px] text-ink-dim"
             >
               <span
@@ -911,7 +927,7 @@ export function Galaxy() {
         {hoveredPoint && <HoverPulse point={hoveredPoint} />}
         {labeledPoints.map(({ point, variant }) => (
           <PlayerLabel
-            key={`label-${point.canonical_player_id}`}
+            key={`label-${point.galaxy_player_id}`}
             point={point}
             variant={variant}
           />

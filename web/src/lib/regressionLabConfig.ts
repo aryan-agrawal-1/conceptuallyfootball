@@ -52,8 +52,10 @@ export function toLabPosition(p: PositionGroup | string | undefined): LabPositio
 export function recommendedPredictorsForTarget(
   targetKey: string,
   position: LabPosition,
+  availableKeys?: Iterable<string>,
 ): string[] {
   void position
+  const available = availableKeys ? new Set(availableKeys) : null
   const fwdAttack = ['shots_per_90', 'npxg_per_shot', 'key_passes_per_90', 'xgchain_per_90', 'chance_involvement_per_90']
   const midCreate = [
     'key_passes_per_90',
@@ -99,8 +101,15 @@ export function recommendedPredictorsForTarget(
   }
 
   const pack = byTarget[targetKey]
-  if (!pack) return midCreate
-  return [...pack]
+  const base = pack ?? midCreate
+  if (!available) return [...base]
+  const filtered = base.filter(key => available.has(key))
+  if (filtered.length >= 2) return filtered
+  for (const key of available) {
+    if (!filtered.includes(key) && key !== targetKey) filtered.push(key)
+    if (filtered.length >= 5) break
+  }
+  return filtered
 }
 
 /** All raw metrics that can appear as predictors in packs (subset of known API metrics). */
@@ -152,10 +161,15 @@ export interface PredictorGroupSlice {
 }
 
 /** Group predictor keys by `StatMeta` metric groups for readable lab UI. */
-export function groupPredictorPool(meta: StatMeta | undefined): PredictorGroupSlice[] {
+export function groupPredictorPool(
+  meta: StatMeta | undefined,
+  allowedKeys?: Iterable<string>,
+): PredictorGroupSlice[] {
   if (!meta) return []
+  const allowed = allowedKeys ? new Set(allowedKeys) : null
   const buckets = new Map<string, string[]>()
   for (const key of PREDICTOR_METRIC_POOL) {
+    if (allowed && !allowed.has(key)) continue
     const def = meta.metrics[key]
     if (!def) continue
     const gid = def.group

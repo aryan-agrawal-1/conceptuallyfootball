@@ -5,6 +5,10 @@ from ingestion.models import (
     CanonicalTeam,
     Competition,
     CompetitionSeason,
+    GalaxyArchetype,
+    GalaxyPlayerEmbedding,
+    GalaxySimilarity,
+    GalaxySnapshot,
     IngestionRun,
     MergedPlayerSeason,
     MergedTeamSeason,
@@ -266,3 +270,69 @@ class PlayerSeasonSimilarityAdmin(admin.ModelAdmin):
     )
     list_filter = ("competition_season", "is_current")
     search_fields = ("canonical_player__display_name", "similar_player__display_name")
+
+
+@admin.register(GalaxySnapshot)
+class GalaxySnapshotAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "scope_code",
+        "season_label",
+        "feature_profile",
+        "min_minutes",
+        "is_current",
+        "created_at",
+    )
+    list_filter = ("scope_code", "season_label", "feature_profile", "is_current")
+    readonly_fields = ("created_at", "superseded_at")
+
+
+@admin.register(GalaxyArchetype)
+class GalaxyArchetypeAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "snapshot",
+        "archetype_key",
+        "position_group",
+        "label",
+        "size",
+    )
+    list_filter = ("snapshot", "position_group")
+    search_fields = ("label", "archetype_key")
+    readonly_fields = ("created_at",)
+
+
+@admin.register(GalaxyPlayerEmbedding)
+class GalaxyPlayerEmbeddingAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "snapshot",
+        "galaxy_player_id",
+        "canonical_player",
+        "competition_season",
+        "position_group",
+        "primary_archetype_label",
+        "minutes",
+    )
+    list_filter = ("snapshot", "competition_season", "position_group", "primary_archetype")
+    search_fields = ("galaxy_player_id", "canonical_player__display_name")
+    readonly_fields = ("created_at",)
+
+
+@admin.register(GalaxySimilarity)
+class GalaxySimilarityAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "snapshot",
+        "source_embedding",
+        "similar_embedding",
+        "rank",
+        "profile_match_score",
+        "match_context",
+    )
+    list_filter = ("snapshot", "match_context", "weak_absolute_fit")
+    search_fields = (
+        "source_embedding__canonical_player__display_name",
+        "similar_embedding__canonical_player__display_name",
+    )
+    readonly_fields = ("created_at",)

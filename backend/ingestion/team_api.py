@@ -288,9 +288,9 @@ class TeamSeasonListApi(APIView):
                 {
                     "canonical_team_id": row.canonical_team_id,
                     "canonical_team_name": row.canonical_team.name,
-                    "competition_season": competition_season.id,
-                    "competition_code": competition_season.competition.short_code,
-                    "season_label": competition_season.season.label,
+                    "competition_season": row.competition_season_id,
+                    "competition_code": row.competition_season.competition.short_code,
+                    "season_label": row.competition_season.season.label,
                     "stats": stat_values,
                     "ranks": ranks,
                     "ranks_per_match": ranks_per_match,

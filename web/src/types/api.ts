@@ -178,18 +178,39 @@ export interface MatrixFilters {
 }
 
 export interface GalaxyArchetype {
+  archetype_key: string
   cluster_id: number
+  position_group?: PositionGroup
   label: string
   color: string
+  size?: number
+  feature_signature?: Record<string, unknown>
+  representative_players?: Array<Record<string, unknown>>
 }
 
 export interface GalaxyPoint {
+  galaxy_player_id: string
   canonical_player_id: number
   canonical_player_name: string
   canonical_team_id: number | null
   canonical_team_name: string | null
+  competition_season_id: number
+  competition_code: string
+  season_label: string
   position_group: PositionGroup
+  native_position?: string | null
   minutes: number
+  archetype_key: string
+  archetype_label: string
+  archetype_color: string
+  primary_archetype_key: string
+  primary_archetype_label: string
+  primary_archetype_confidence: number | null
+  secondary_archetype_key: string
+  secondary_archetype_label: string
+  secondary_archetype_confidence: number | null
+  archetype_margin: number | null
+  archetype_diagnostics?: Record<string, unknown>
   cluster_id: number
   cluster_label: string
   cluster_color: string
@@ -199,11 +220,47 @@ export interface GalaxyPoint {
 }
 
 export interface GalaxyEdge {
+  from_galaxy_player_id: string
+  to_galaxy_player_id: string
   from_player_id: number
   to_player_id: number
   to_player_name: string
+  to_team_name?: string | null
+  to_competition_code?: string
+  distance?: number
+  base_distance?: number
+  position_multiplier?: number
+  candidate_percentile_score?: number
+  absolute_fit_score?: number
+  profile_match_score: number
+  weak_absolute_fit?: boolean
+  match_context?: string
+  explanation?: {
+    shared_traits?: string[]
+    differences?: string[]
+    top_feature_deltas?: Array<Record<string, unknown>>
+  }
   similarity: number
   rank: number
+}
+
+export interface GalaxyModelMeta {
+  snapshot_id: number
+  model_version: string
+  scope_code: string
+  season_label: string
+  feature_profile: string
+  min_minutes: number
+  default_min_minutes: number
+  requested_min_minutes?: number
+  effective_min_minutes?: number
+  top_k: number
+  feature_names: string[]
+  feature_weights: Record<string, number>
+  feature_groups: Record<string, string>
+  included_competition_season_ids: number[]
+  excluded_competitions: Array<Record<string, unknown>>
+  diagnostics?: Record<string, unknown>
 }
 
 export interface GalaxyResponse {
@@ -211,11 +268,17 @@ export interface GalaxyResponse {
   competition_code: string
   season_label: string
   count: number
+  model_meta: GalaxyModelMeta
   archetypes: GalaxyArchetype[]
   points: GalaxyPoint[]
   players: Array<{
+    galaxy_player_id: string
     canonical_player_id: number
     canonical_player_name: string
+    canonical_team_name?: string | null
+    competition_code?: string
+    position_group?: PositionGroup
+    minutes?: number
   }>
   selected_player: GalaxyPoint | null
   edges: GalaxyEdge[]
@@ -224,6 +287,7 @@ export interface GalaxyResponse {
 export interface GalaxySimilarResponse {
   selected_player: GalaxyPoint
   edges: GalaxyEdge[]
+  model_meta: GalaxyModelMeta
 }
 
 /** Team stat definitions from `include=meta` on team detail. */

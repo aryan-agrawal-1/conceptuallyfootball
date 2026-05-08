@@ -161,14 +161,14 @@ export async function fetchGalaxy(filters: GalaxyFilters): Promise<GalaxyRespons
 }
 
 export async function fetchGalaxySimilar(
-  playerId: number,
+  galaxyPlayerId: string,
   competition: string,
   season: string,
 ): Promise<GalaxySimilarResponse> {
   const p = new URLSearchParams()
   p.set('competition', competition)
   p.set('season', season)
-  p.set('player', String(playerId))
+  p.set('galaxy_player_id', galaxyPlayerId)
   const res = await fetch(`${BASE}/galaxy/similar?${p}`)
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))

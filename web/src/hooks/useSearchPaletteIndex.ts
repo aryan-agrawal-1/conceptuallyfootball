@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchSearchEntities } from '../lib/api'
 import { useScope, type Scope } from '../context/ScopeContext'
+import { preferredMembership, scopeIncludesMembership } from '../lib/scopeMembership'
 import type {
   PlayerRow,
   SearchEntitiesResponse,
@@ -23,18 +24,7 @@ function membershipForScope<T extends { competition: string; season: string }>(
   memberships: T[],
   scope: Scope,
 ): T | undefined {
-  return memberships.find(m => m.competition === scope.competition && m.season === scope.season)
-}
-
-function preferredMembership<T extends { competition: string; season: string }>(
-  memberships: T[],
-  scope: Scope,
-): T | undefined {
-  return (
-    membershipForScope(memberships, scope) ??
-    memberships.find(m => m.competition === scope.competition) ??
-    memberships[0]
-  )
+  return memberships.find(m => scopeIncludesMembership(scope, m))
 }
 
 function toPlayerRow(entity: SearchPlayerEntity, membership: SearchPlayerMembership): PlayerRow {
