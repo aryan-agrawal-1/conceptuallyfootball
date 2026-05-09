@@ -177,6 +177,10 @@ const CHART_SIZE = 460
 const INNER_R = 48
 const BAND = 140
 
+function formatSliceValue(raw: number | null, percentile: number | null, formatUnit: Parameters<typeof formatValue>[1]): string {
+  return percentile != null ? String(Math.round(percentile)) : formatValue(raw, formatUnit)
+}
+
 function ProfilePizzaSvg({ player, rateMode, meta, metricKeys, exportMode = false }: ProfilePizzaSvgProps) {
   const chartSize = exportMode ? 760 : CHART_SIZE
   const chartCenter = chartSize / 2
@@ -314,7 +318,7 @@ function ProfilePizzaSvg({ player, rateMode, meta, metricKeys, exportMode = fals
               dominantBaseline="middle"
               pointerEvents="none"
             >
-              {formatValue(s.raw, s.formatUnit)}
+              {formatSliceValue(s.raw, s.percentile, s.formatUnit)}
             </text>
           ))}
 
@@ -346,7 +350,15 @@ function ProfilePizzaSvg({ player, rateMode, meta, metricKeys, exportMode = fals
             {tip.label}
           </div>
           <div>
-            Rank <span className="text-electric">{tip.percentile != null ? Math.round(tip.percentile) : 'Raw'}</span>
+            {tip.percentile != null ? (
+              <>
+                Percentile <span className="text-electric">{Math.round(tip.percentile)}</span>
+              </>
+            ) : (
+              <>
+                Mode <span className="text-electric">Raw</span>
+              </>
+            )}
           </div>
         </div>
       )}
