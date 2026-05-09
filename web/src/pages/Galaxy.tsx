@@ -471,6 +471,42 @@ function SimilarityLines({
   )
 }
 
+function MinutesInput({
+  value,
+  floor,
+  onCommit,
+}: {
+  value: number
+  floor: number
+  onCommit: (minutes: number) => void
+}) {
+  const [draft, setDraft] = useState(String(Math.max(value, floor)))
+
+  function commitDraft() {
+    const parsed = Number(draft)
+    const nextMinutes = Number.isFinite(parsed) ? Math.max(parsed, floor) : floor
+    setDraft(String(nextMinutes))
+    onCommit(nextMinutes)
+  }
+
+  return (
+    <input
+      type="number"
+      aria-label="Minimum minutes"
+      className="bg-mat/80 border border-electric/25 text-[11px] px-2 py-1.5 font-mono text-electric/90 focus:outline-none focus:border-electric"
+      value={draft}
+      min={floor}
+      onChange={event => setDraft(event.target.value)}
+      onBlur={commitDraft}
+      onKeyDown={event => {
+        if (event.key === 'Enter') {
+          event.currentTarget.blur()
+        }
+      }}
+    />
+  )
+}
+
 function PositionBadge({ position }: { position: PositionGroup }) {
   return (
     <span className="text-[10px] px-2 py-0.5 rounded border border-electric/40 text-electric/90 tracking-[0.15em] font-medium">
@@ -805,12 +841,11 @@ export function Galaxy() {
               emptyLabel="All Pos"
               className="min-w-0"
             />
-            <input
-              type="number"
-              className="bg-mat/80 border border-electric/25 text-[11px] px-2 py-1.5 font-mono text-electric/90 focus:outline-none focus:border-electric"
-              value={Math.max(filters.min_minutes, data.model_meta.min_minutes)}
-              min={data.model_meta.min_minutes}
-              onChange={event => setFilter({ min_minutes: Number(event.target.value) || data.model_meta.min_minutes })}
+            <MinutesInput
+              key={`${filters.min_minutes}:${data.model_meta.min_minutes}`}
+              value={filters.min_minutes}
+              floor={data.model_meta.min_minutes}
+              onCommit={min_minutes => setFilter({ min_minutes })}
             />
           </div>
           <p className="text-[10px] uppercase tracking-[0.16em] text-electric/50">
