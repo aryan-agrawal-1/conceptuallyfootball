@@ -22,6 +22,44 @@ from ingestion.services.identity import resolve_canonical_team
 from ingestion.services.validation import can_merge_slice, latest_success_run
 
 
+NATIVE_POSITION_LABELS = {
+    "AM": "Attacking Midfield",
+    "CENTRAL MIDFIELDER": "Central Midfield",
+    "CENTRE-BACK": "Centre-Back",
+    "CENTRE-FORWARD": "Centre-Forward",
+    "CENTREBACK": "Centre-Back",
+    "CENTREFORWARD": "Centre-Forward",
+    "DC": "Centre-Back",
+    "DEFENDER": "Defender",
+    "DEFENSIVE MIDFIELDER": "Defensive Midfield",
+    "DL": "Left-Back",
+    "DM": "Defensive Midfield",
+    "DR": "Right-Back",
+    "F": "F",
+    "FORWARD": "Forward",
+    "FULL-BACK": "Full Back",
+    "FULLBACK": "Full Back",
+    "G": "Goalkeeper",
+    "GK": "Goalkeeper",
+    "GOALKEEPER": "Goalkeeper",
+    "INSIDE FORWARD": "Inside Forward",
+    "LW": "Left Winger",
+    "MC": "Central Midfield",
+    "MIDFIELDER": "Midfielder",
+    "ML": "Left Midfield",
+    "MR": "Right Midfield",
+    "RIGHT WINGER": "Right Winger",
+    "RW": "Right Winger",
+    "ST": "Centre-Forward",
+    "WINGER": "Winger",
+}
+
+
+def _canonical_native_position(raw: str) -> str:
+    normalized = " ".join(raw.strip().replace("_", " ").split())
+    return NATIVE_POSITION_LABELS.get(normalized.upper(), normalized)
+
+
 def _secondary_display_team_ids(
     us: UnderstatPlayerSeasonSource | None,
     primary: CanonicalTeam | None,
@@ -67,8 +105,6 @@ def _resolve_position_metadata(
     ss: SofascorePlayerSeasonSource | None,
 ) -> tuple[str, str]:
     candidates: list[str] = []
-    if us and us.position_raw:
-        candidates.append(us.position_raw)
     if ss and ss.position_raw:
         candidates.append(ss.position_raw)
 
@@ -83,14 +119,16 @@ def _resolve_position_metadata(
             candidates.append(reep_row.position_detail)
         if reep_row.position:
             candidates.append(reep_row.position)
+    if us and us.position_raw:
+        candidates.append(us.position_raw)
 
     for raw in candidates:
         group = normalize_position_group(raw)
         if group != PositionGroup.UNKNOWN:
-            return raw, group
+            return _canonical_native_position(raw), group
 
     fallback_raw = candidates[0] if candidates else ""
-    return fallback_raw, normalize_position_group(fallback_raw)
+    return _canonical_native_position(fallback_raw), normalize_position_group(fallback_raw)
 
 
 @transaction.atomic

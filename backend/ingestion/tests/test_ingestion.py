@@ -253,6 +253,81 @@ class IdentityQuarantineTests(TestCase):
         us_src.refresh_from_db()
         self.assertEqual(us_src.canonical_player, resolved)
 
+    def test_reep_full_name_absorbs_provider_native_counterpart_when_source_name_differs(self):
+        cs = _slice()
+        us_run = IngestionRun.objects.create(
+            kind=IngestionKind.UNDERSTAT,
+            competition_season=cs,
+            status=IngestionRunStatus.SUCCESS,
+        )
+        ss_run = IngestionRun.objects.create(
+            kind=IngestionKind.SOFASCORE,
+            competition_season=cs,
+            status=IngestionRunStatus.SUCCESS,
+        )
+        us_src = UnderstatPlayerSeasonSource.objects.create(
+            competition_season=cs,
+            ingestion_run=us_run,
+            provider_player_id="13051",
+            provider_team_id="",
+            player_name="Matias Fernandez-Pardo",
+            team_name="Lille",
+            position_raw="F",
+        )
+        native = resolve_canonical_player(
+            competition_season=cs,
+            provider=Provider.UNDERSTAT,
+            provider_player_id="13051",
+            display_name="Matias Fernandez-Pardo",
+            run=us_run,
+        )
+        assert native is not None
+        us_src.canonical_player = native
+        us_src.save(update_fields=["canonical_player"])
+
+        ReepPlayerRow.objects.create(
+            reep_id="reep_matias",
+            full_name="Matias Fernandez-Pardo",
+            sofascore_player_id="1149144",
+        )
+        SofascorePlayerSeasonSource.objects.create(
+            competition_season=cs,
+            ingestion_run=ss_run,
+            provider_player_id="1149144",
+            provider_team_id="",
+            player_name="Matías Fernández",
+            team_name="Lille",
+            position_raw="F",
+        )
+
+        resolved = resolve_canonical_player(
+            competition_season=cs,
+            provider=Provider.SOFASCORE,
+            provider_player_id="1149144",
+            display_name="Matías Fernández",
+            run=ss_run,
+        )
+
+        self.assertIsNotNone(resolved)
+        assert resolved is not None
+        self.assertEqual(resolved.reep_id, "reep_matias")
+        self.assertEqual(
+            ProviderPlayerMapping.objects.get(
+                provider=Provider.UNDERSTAT,
+                provider_player_id="13051",
+            ).canonical_player,
+            resolved,
+        )
+        self.assertEqual(
+            ProviderPlayerMapping.objects.get(
+                provider=Provider.SOFASCORE,
+                provider_player_id="1149144",
+            ).canonical_player,
+            resolved,
+        )
+        us_src.refresh_from_db()
+        self.assertEqual(us_src.canonical_player, resolved)
+
     def test_cross_provider_name_match_refuses_ambiguous_name(self):
         cs = _slice()
         us_run = IngestionRun.objects.create(
@@ -466,7 +541,7 @@ class MergeTests(TestCase):
             1,
         )
 
-    def test_merge_interprets_understat_goalkeeper_substitute_position(self):
+    def test_merge_prefers_reep_detail_over_understat_goalkeeper_substitute_position(self):
         self.cp.provider_mappings.all().delete()
         self.cp.delete()
         ReepPlayerRow.objects.create(
@@ -508,7 +583,7 @@ class MergeTests(TestCase):
             is_current=True,
         )
         self.assertEqual(row.position_group, "GK")
-        self.assertEqual(row.native_position, "GK S")
+        self.assertEqual(row.native_position, "Goalkeeper")
 
     def test_merge_falls_back_to_reep_position_when_understat_only_has_substitute_flag(self):
         self.cp.provider_mappings.all().delete()
@@ -553,6 +628,94 @@ class MergeTests(TestCase):
         )
         self.assertEqual(row.position_group, "MID")
         self.assertEqual(row.native_position, "Defensive Midfield")
+
+    def test_merge_prefers_sofascore_position_over_reep_and_understat(self):
+        self.cp.provider_mappings.all().delete()
+        self.cp.delete()
+        ReepPlayerRow.objects.create(
+            reep_id="rp_wide",
+            full_name="Wide Example",
+            understat_player_id="5",
+            sofascore_player_id="50",
+            position="midfielder",
+            position_detail="Central Midfield",
+        )
+        cp = CanonicalPlayer.objects.create(display_name="Wide Example", reep_id="rp_wide")
+        UnderstatPlayerSeasonSource.objects.create(
+            competition_season=self.cs,
+            ingestion_run=self.us_run,
+            provider_player_id="5",
+            provider_team_id="100",
+            player_name="Wide Example",
+            team_name="Alpha FC",
+            position_raw="F M",
+            canonical_player=cp,
+            canonical_team=self.ct,
+        )
+        SofascorePlayerSeasonSource.objects.create(
+            competition_season=self.cs,
+            ingestion_run=self.ss_run,
+            provider_player_id="50",
+            provider_team_id="200",
+            player_name="Wide Example",
+            team_name="Alpha FC",
+            position_raw="RW",
+            canonical_player=cp,
+            canonical_team=self.ct,
+        )
+
+        execute_merge_for_slice(self.cs, merge_run=None)
+        row = MergedPlayerSeason.objects.get(
+            competition_season=self.cs,
+            canonical_player=cp,
+            is_current=True,
+        )
+        self.assertEqual(row.position_group, "FWD")
+        self.assertEqual(row.native_position, "Right Winger")
+
+    def test_merge_canonicalizes_native_position_labels(self):
+        self.cp.provider_mappings.all().delete()
+        self.cp.delete()
+        ReepPlayerRow.objects.create(
+            reep_id="rp_cb",
+            full_name="Centre Back Example",
+            understat_player_id="6",
+            sofascore_player_id="60",
+            position="defender",
+            position_detail="centre-back",
+        )
+        cp = CanonicalPlayer.objects.create(display_name="Centre Back Example", reep_id="rp_cb")
+        UnderstatPlayerSeasonSource.objects.create(
+            competition_season=self.cs,
+            ingestion_run=self.us_run,
+            provider_player_id="6",
+            provider_team_id="100",
+            player_name="Centre Back Example",
+            team_name="Alpha FC",
+            position_raw="D",
+            canonical_player=cp,
+            canonical_team=self.ct,
+        )
+        SofascorePlayerSeasonSource.objects.create(
+            competition_season=self.cs,
+            ingestion_run=self.ss_run,
+            provider_player_id="60",
+            provider_team_id="200",
+            player_name="Centre Back Example",
+            team_name="Alpha FC",
+            position_raw="",
+            canonical_player=cp,
+            canonical_team=self.ct,
+        )
+
+        execute_merge_for_slice(self.cs, merge_run=None)
+        row = MergedPlayerSeason.objects.get(
+            competition_season=self.cs,
+            canonical_player=cp,
+            is_current=True,
+        )
+        self.assertEqual(row.position_group, "DEF")
+        self.assertEqual(row.native_position, "Centre-Back")
 
     def test_merge_sofascore_primary_team_and_secondary_from_understat(self):
         merge_run = IngestionRun.objects.create(

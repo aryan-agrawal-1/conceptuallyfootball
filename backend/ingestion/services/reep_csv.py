@@ -43,6 +43,16 @@ PLAYER_CSV_PROVIDER_OVERRIDES: dict[str, dict[str, str | None]] = {
         "key_understat": "11527",
         "key_sofascore": "1402912",
     },
+    # Local corrections for upstream/provider identity gaps observed in merged slices.
+    "reep_p625fe6e2": {"key_sofascore": "825550"},  # Joe Johnson, Luton.
+    "reep_p3695a227": {"key_sofascore": "2322979"},  # Sokratis Papastathopoulos, Real Betis.
+    "reep_p52974f47": {
+        "full_name": "Luis Javier Suárez",
+        "name": "Luis Javier Suárez",
+        "key_understat": "8978",
+        "key_sofascore": "914213",
+    },
+    "reep_p96d752b4": {"key_understat": "11249"},  # Ousmane Camara, Auxerre.
 }
 
 

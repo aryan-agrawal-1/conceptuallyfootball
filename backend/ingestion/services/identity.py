@@ -124,6 +124,10 @@ def _normalize_player_name_for_match(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", value).strip()
 
 
+def _normalized_player_aliases(*names: str) -> set[str]:
+    return {normalized for name in names if (normalized := _normalize_player_name_for_match(name))}
+
+
 def _resolve_player_from_slice_counterpart(
     *,
     competition_season: CompetitionSeason,
@@ -200,32 +204,27 @@ def _attach_provider_native_slice_counterpart(
     competition_season: CompetitionSeason,
     provider: str,
     display_name: str,
+    alias_names: tuple[str, ...] = (),
     player: CanonicalPlayer,
 ) -> None:
     """
     Reep rows are sometimes incomplete for one provider. If the opposite provider
-    already made an auto provider-native player for the same unique normalized name
+    already made an auto provider-native player for a same unique normalized alias
     in this slice, attach it to the reep-backed canonical player.
     """
-    if not display_name:
-        return
-
     other_provider = Provider.SOFASCORE if provider == Provider.UNDERSTAT else Provider.UNDERSTAT
     other_model = (
         SofascorePlayerSeasonSource if provider == Provider.UNDERSTAT else UnderstatPlayerSeasonSource
     )
-    normalized_display_name = _normalize_player_name_for_match(display_name)
-    if not normalized_display_name:
+    normalized_aliases = _normalized_player_aliases(display_name, *alias_names)
+    if not normalized_aliases:
         return
 
-    tokens = normalized_display_name.split()
     candidate_qs = other_model.objects.filter(competition_season=competition_season)
-    if tokens:
-        candidate_qs = candidate_qs.filter(player_name__icontains=tokens[-1])
     candidates = [
         row
         for row in candidate_qs
-        if _normalize_player_name_for_match(row.player_name) == normalized_display_name
+        if _normalize_player_name_for_match(row.player_name) in normalized_aliases
     ]
     if len(candidates) != 1:
         return
@@ -319,6 +318,7 @@ def resolve_canonical_player(
                     competition_season=competition_season,
                     provider=provider,
                     display_name=display_name,
+                    alias_names=(row.full_name,),
                     player=player,
                 )
             return player
@@ -383,6 +383,7 @@ def resolve_canonical_player(
             competition_season=competition_season,
             provider=provider,
             display_name=display_name,
+            alias_names=(row.full_name,),
             player=player,
         )
     _mark_unmatched_player_resolved(
