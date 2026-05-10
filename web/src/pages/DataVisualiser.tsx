@@ -424,7 +424,7 @@ export function DataVisualiser() {
             <span className="text-[10px] uppercase tracking-[0.22em] text-electric/55">Share-ready charts</span>
           </div>
           <h1 className="text-[34px] font-black leading-none tracking-tight text-ink sm:text-[40px]">
-            Build player and team charts from the StatBaller dataset.
+            Build player and team charts from the Conceptually Football dataset.
           </h1>
           <p className="mt-3 max-w-3xl text-[12px] leading-relaxed text-ink-dim">
             Start from a live example, swap chart types, then tune the cohort and metrics. Scatter works best for

@@ -358,7 +358,7 @@ const PIZZA_DEFAULT_KEYS: Record<PositionGroup, string[]> = {
 export const PIZZA_SLICE_MIN = 4
 export const PIZZA_SLICE_SOFT_MAX = 12
 
-export const PIZZA_STORAGE_KEY = 'statballer:pizza-axes:v1'
+export const PIZZA_STORAGE_KEY = 'conceptually-football:pizza-axes:v1'
 
 export function defaultPizzaMetricKeys(position: PositionGroup): string[] {
   return [...(PIZZA_DEFAULT_KEYS[position] ?? PIZZA_DEFAULT_KEYS.UNK)]

@@ -24,6 +24,7 @@ import {
   type ProfileRateMode,
 } from '../../lib/profileMetrics'
 import { getTeamLogoPath } from '../../lib/teamLogos'
+import { BRAND_DOMAIN, BRAND_NAME_UPPER, BRAND_SLUG } from '../../lib/brand'
 import { cn } from '../../lib/utils'
 import type { PlayerRow, StatMeta } from '../../types/api'
 
@@ -54,7 +55,7 @@ const POSITION_COHORT_LABEL: Record<PlayerRow['position_group'], string> = {
 }
 
 const THEME_LABEL: Record<ProfileExportTheme, string> = {
-  statballer: 'Statballer',
+  'conceptually-football': 'Conceptually Football',
   boring: 'Boring',
 }
 
@@ -182,7 +183,7 @@ export function PlayerProfileExportModal({
 
   const fileName = useMemo(
     () =>
-      `statballer-player-profile-${slugify(title || player.canonical_player_name)}-${slugify(player.season_label)}-${preset.theme}.png`,
+      `${BRAND_SLUG}-player-profile-${slugify(title || player.canonical_player_name)}-${slugify(player.season_label)}-${preset.theme}.png`,
     [player.canonical_player_name, player.season_label, preset.theme, title],
   )
 
@@ -321,7 +322,7 @@ export function PlayerProfileExportModal({
                 <SegmentedControl
                   label="Mode"
                   value={preset.theme}
-                  options={(['statballer', 'boring'] as const).map(value => ({
+                  options={(['conceptually-football', 'boring'] as const).map(value => ({
                     value,
                     label: THEME_LABEL[value],
                   }))}
@@ -700,7 +701,7 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
       ref={ref}
       className={cn(
         'relative overflow-hidden',
-        preset.theme === 'statballer' ? 'font-sans' : 'font-sans',
+        preset.theme === 'conceptually-football' ? 'font-sans' : 'font-sans',
       )}
       style={{
         width: A4_WIDTH,
@@ -724,7 +725,7 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
                 <img src={logo} alt="" className="max-h-[106px] max-w-[106px] object-contain" />
               ) : (
                 <span style={{ color: theme.accent }} className="text-[36px] font-black">
-                  SB
+                  CF
                 </span>
               )}
             </div>
@@ -740,13 +741,15 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
               </p>
             </div>
           </div>
-          <div className="shrink-0 text-right">
-            <p style={{ color: theme.accent }} className="text-[30px] font-black tracking-[0.14em]">
-              STATBALLER
-            </p>
-            <p style={{ color: theme.muted }} className="mt-2 text-[13px] uppercase tracking-[0.24em]">
-              statballer.com
-            </p>
+          <div className="flex shrink-0 items-start justify-end gap-4 text-right">
+            <div>
+              <p style={{ color: theme.accent }} className="max-w-[340px] text-[30px] font-black uppercase leading-tight tracking-[0.14em]">
+                {BRAND_NAME_UPPER}
+              </p>
+              <p style={{ color: theme.muted }} className="mt-2 text-[13px] uppercase tracking-[0.24em]">
+                {BRAND_DOMAIN}
+              </p>
+            </div>
           </div>
         </header>
 
@@ -781,7 +784,7 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
                 className="relative flex min-h-0 flex-col items-center justify-center overflow-hidden border px-4 py-6"
                 style={{ borderColor: theme.border, background: theme.panel }}
               >
-                {preset.theme === 'statballer' && <HudCornerMarks size="size-4" />}
+                {preset.theme === 'conceptually-football' && <HudCornerMarks size="size-4" />}
                 <p style={{ color: theme.accent }} className="mb-2 text-[15px] font-bold uppercase tracking-[0.26em]">
                   Profile chart
                 </p>
@@ -815,7 +818,7 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
                 className="relative min-h-0 overflow-hidden border p-8"
                 style={{ borderColor: theme.border, background: theme.panel }}
               >
-                {preset.theme === 'statballer' && <HudCornerMarks size="size-4" />}
+                {preset.theme === 'conceptually-football' && <HudCornerMarks size="size-4" />}
                 <p style={{ color: theme.accent }} className="mb-5 text-[15px] font-bold uppercase tracking-[0.26em]">
                   Notes
                 </p>
@@ -840,7 +843,7 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
             </div>
             <div className="text-right">
               <p style={{ color: theme.muted }} className="text-[14px] uppercase tracking-[0.24em]">
-                statballer.com
+                {BRAND_DOMAIN}
               </p>
             </div>
           </footer>
@@ -883,21 +886,12 @@ function surfaceTheme(theme: ProfileExportTheme): {
 
 function SurfaceBackground({ theme }: { theme: ProfileExportTheme }) {
   if (theme === 'boring') {
-    return (
-      <div className="absolute inset-0">
-        <div className="absolute left-[-80px] top-[520px] -rotate-90 text-[112px] font-black uppercase tracking-[0.22em] text-[#2066c4]/[0.045]">
-          Statballer
-        </div>
-      </div>
-    )
+    return
   }
   return (
     <>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(74,158,245,0.16),transparent_36%),linear-gradient(135deg,rgba(74,158,245,0.1),transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.04),transparent_24%)]" />
       <div className="absolute inset-0 opacity-[0.12] [background-image:linear-gradient(rgba(74,158,245,0.22)_1px,transparent_1px),linear-gradient(90deg,rgba(74,158,245,0.22)_1px,transparent_1px)] [background-size:38px_38px]" />
-      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[132px] font-black uppercase tracking-[0.24em] text-electric/[0.07]">
-        Statballer
-      </div>
     </>
   )
 }
@@ -921,7 +915,7 @@ function ExportStatTile({
         background: style.panel,
       }}
     >
-      {theme === 'statballer' && <HudCornerMarks size="size-3" />}
+      {theme === 'conceptually-football' && <HudCornerMarks size="size-3" />}
       <p style={{ color: style.muted }} className="mb-4 line-clamp-2 text-[13px] font-bold uppercase tracking-[0.18em]">
         {tile.label}
       </p>

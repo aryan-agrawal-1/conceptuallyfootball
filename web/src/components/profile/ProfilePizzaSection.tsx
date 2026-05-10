@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { arc as d3Arc } from 'd3-shape'
 import { scaleLinear } from 'd3-scale'
 import { ChevronDown, X } from 'lucide-react'
@@ -16,6 +16,7 @@ import {
   type ProfileRateMode,
 } from '../../lib/profileMetrics'
 import { loadPizzaMetricKeys, savePizzaMetricKeys } from '../../lib/profilePizzaStorage'
+import { BRAND_LOGO_URL } from '../../lib/brand'
 import { getPercentileTextColor } from '../../lib/heatmap'
 import { cn } from '../../lib/utils'
 import { ChartShareCard } from '../visualizer/ChartShareCard'
@@ -182,12 +183,15 @@ function formatSliceValue(raw: number | null, percentile: number | null, formatU
 }
 
 export function ProfilePizzaSvg({ player, rateMode, meta, metricKeys, exportMode = false }: ProfilePizzaSvgProps) {
+  const reactId = useId()
   const chartSize = exportMode ? 760 : CHART_SIZE
   const chartCenter = chartSize / 2
   const innerR = exportMode ? 82 : INNER_R
   const band = exportMode ? 220 : BAND
   const outerR = innerR + band
   const labelRingR = outerR + (exportMode ? 36 : 20)
+  const logoClipId = `pizza-logo-clip-${reactId.replace(/:/g, '')}`
+  const logoSize = innerR * 1.45
   const chartWrapRef = useRef<HTMLDivElement>(null)
   const [tip, setTip] = useState<{
     label: string
@@ -264,6 +268,11 @@ export function ProfilePizzaSvg({ player, rateMode, meta, metricKeys, exportMode
         role="img"
         aria-label={player.eligibility.percentiles_eligible ? 'Player percentile pizza chart' : 'Player raw metric polar chart'}
       >
+        <defs>
+          <clipPath id={logoClipId}>
+            <circle r={innerR - 8} />
+          </clipPath>
+        </defs>
         <g transform={`translate(${chartCenter}, ${chartCenter})`}>
           {[0.25, 0.5, 0.75, 1].map((t, idx) => (
             <circle
@@ -334,6 +343,16 @@ export function ProfilePizzaSvg({ player, rateMode, meta, metricKeys, exportMode
           ))}
 
           <circle r={innerR - 2} fill="#070810" stroke="#1F2438" strokeWidth={1} />
+          <image
+            href={BRAND_LOGO_URL}
+            x={-logoSize / 2}
+            y={-logoSize / 2}
+            width={logoSize}
+            height={logoSize}
+            preserveAspectRatio="xMidYMid meet"
+            clipPath={`url(#${logoClipId})`}
+            pointerEvents="none"
+          />
         </g>
       </svg>
 

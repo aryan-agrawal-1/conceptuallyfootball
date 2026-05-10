@@ -12,7 +12,7 @@ import {
   type ProfileRateMode,
 } from './profileMetrics'
 
-export type ProfileExportTheme = 'statballer' | 'boring'
+export type ProfileExportTheme = 'conceptually-football' | 'boring'
 
 export interface ProfileExportTile {
   key: string
@@ -30,7 +30,7 @@ export interface ProfileExportPreset {
 }
 
 const EXPORT_PRESET_VERSION = 1
-export const PROFILE_EXPORT_STORAGE_KEY = 'statballer:profile-export:v1'
+export const PROFILE_EXPORT_STORAGE_KEY = 'conceptually-football:profile-export:v1'
 
 interface StoredProfileExportPreset extends ProfileExportPreset {
   version: number
@@ -319,7 +319,7 @@ export function buildDefaultProfileExportPreset(
   rateMode: ProfileRateMode,
 ): ProfileExportPreset {
   return {
-    theme: 'statballer',
+    theme: 'conceptually-football',
     rateMode,
     stats: defaultProfileExportStats(player, meta, rateMode),
     chartEnabled: player.eligibility.percentiles_eligible,
@@ -364,7 +364,7 @@ export function hydrateProfileExportPreset(
   ]
 
   return {
-    theme: stored.theme === 'boring' ? 'boring' : 'statballer',
+    theme: stored.theme === 'boring' ? 'boring' : 'conceptually-football',
     rateMode: stored.rateMode ?? initialRateMode,
     stats: paddedStats.length ? paddedStats : fallback.stats,
     chartEnabled: player.eligibility.percentiles_eligible ? stored.chartEnabled : false,

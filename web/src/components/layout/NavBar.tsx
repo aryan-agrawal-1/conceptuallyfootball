@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { ChevronDown, Search } from 'lucide-react'
 import { useScope } from '../../context/ScopeContext'
+import { BRAND_LOGO_URL, BRAND_NAME } from '../../lib/brand'
 import { cn } from '../../lib/utils'
 import { HudCornerMarks, HudPopover } from '../hud/Hud'
 import { CommandPalette } from '../search/CommandPalette'
@@ -58,18 +59,10 @@ export function NavBar() {
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 h-[52px] flex items-center px-6 border-b border-electric/25 bg-mat/90 backdrop-blur-md">
       {/* Wordmark */}
-      <NavLink to={buildScopedPath('/')} className="flex items-baseline gap-0 mr-10 shrink-0">
-        <span
-          className="text-electric font-black tracking-[0.06em] text-[17px] leading-none"
-          style={{ fontWeight: 900 }}
-        >
-          STAT
-        </span>
-        <span
-          className="text-ink font-black tracking-[0.06em] text-[17px] leading-none"
-          style={{ fontWeight: 900 }}
-        >
-          BALLER
+      <NavLink to={buildScopedPath('/')} className="mr-10 flex shrink-0 items-center gap-2">
+        <img src={BRAND_LOGO_URL} alt="" className="size-7 object-contain" />
+        <span className="text-[13px] font-black uppercase leading-none tracking-[0.08em] text-ink">
+          {BRAND_NAME}
         </span>
       </NavLink>
 

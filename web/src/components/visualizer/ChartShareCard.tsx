@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { Download, Share2 } from 'lucide-react'
 import { toPng } from 'html-to-image'
 import { HudPill } from '../hud/Hud'
+import { BRAND_DOMAIN, BRAND_LOGO_URL, BRAND_NAME_UPPER, BRAND_SLUG } from '../../lib/brand'
 
 type ExportAspect = 'square' | 'landscape'
 
@@ -36,7 +37,10 @@ export function ChartShareCard({
 }: ChartShareCardProps) {
   const exportRef = useRef<HTMLDivElement>(null)
   const [busy, setBusy] = useState<'share' | 'download' | null>(null)
-  const safeFileName = useMemo(() => `${fileName.replace(/[^a-z0-9-_]+/gi, '-').toLowerCase()}.png`, [fileName])
+  const safeFileName = useMemo(
+    () => `${BRAND_SLUG}-${fileName.replace(/[^a-z0-9-_]+/gi, '-').toLowerCase()}.png`,
+    [fileName],
+  )
 
   async function buildImage(): Promise<string> {
     const node = exportRef.current
@@ -123,8 +127,11 @@ export function ChartShareCard({
                 </h2>
                 <p className="mt-3 max-w-[78ch] text-[16px] text-ink-dim">{subtitle}</p>
               </div>
-              <div className="shrink-0 text-right">
-                <div className="text-[13px] font-black tracking-[0.12em] text-electric">STATBALLER</div>
+              <div className="flex shrink-0 items-center justify-end gap-3 text-right">
+                <img src={BRAND_LOGO_URL} alt="" className="size-12 object-contain" />
+                <div className="max-w-[220px] text-[13px] font-black uppercase leading-tight tracking-[0.12em] text-electric">
+                  {BRAND_NAME_UPPER}
+                </div>
               </div>
             </div>
 
@@ -133,19 +140,6 @@ export function ChartShareCard({
               <div className="absolute right-2 top-2 size-3 border-r border-t border-electric/60" />
               <div className="absolute bottom-2 left-2 size-3 border-b border-l border-electric/60" />
               <div className="absolute bottom-2 right-2 size-3 border-b border-r border-electric/60" />
-              <div
-                className="pointer-events-none absolute inset-0 flex items-center justify-center"
-                style={{
-                  fontFamily: 'ui-monospace, SFMono-Regular, monospace',
-                  fontSize: aspect === 'landscape' ? '72px' : '88px',
-                  fontWeight: 900,
-                  letterSpacing: '0.2em',
-                  textTransform: 'uppercase',
-                  color: 'rgba(74,158,245,0.08)',
-                }}
-              >
-                StatBaller
-              </div>
               <div className="relative z-10 flex h-full min-h-[660px] w-full flex-col items-center justify-center gap-6">
                 <div className="flex w-full flex-1 items-center justify-center">
                   {renderContent({ exportMode: true })}
@@ -155,7 +149,7 @@ export function ChartShareCard({
             </div>
 
             <div className="flex items-center justify-between gap-4 text-[11px] uppercase tracking-[0.22em] text-electric/70">
-              <span>statballer.com</span>
+              <span>{BRAND_DOMAIN}</span>
               <span>{contextLabel}</span>
             </div>
           </div>
