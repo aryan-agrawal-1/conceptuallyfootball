@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, AlertCircle } from 'lucide-react'
+import { Loader2, AlertCircle, FileImage } from 'lucide-react'
 import { fetchPlayerDetail } from '../lib/api'
 import type { PlayerDetailResponse, SecondaryTeamBadge } from '../types/api'
 import { useScope } from '../context/ScopeContext'
@@ -13,6 +13,7 @@ import { ProfileStatBars } from '../components/profile/ProfileStatBars'
 import { ProfilePizzaSection } from '../components/profile/ProfilePizzaSection'
 import { ProfileEligibilityBanner } from '../components/profile/ProfileEligibilityBanner'
 import { ProfileScopeSelector } from '../components/profile/ProfileScopeSelector'
+import { PlayerProfileExportModal } from '../components/profile/PlayerProfileExportModal'
 import type { ProfileRateMode } from '../lib/profileMetrics'
 import type { PositionGroup, SearchPlayerMembership } from '../types/api'
 
@@ -138,6 +139,7 @@ function ProfileLayout({
   memberships: SearchPlayerMembership[]
 }) {
   const [rateMode, setRateMode] = useState<ProfileRateMode>('per90')
+  const [exportOpen, setExportOpen] = useState(false)
   const navigate = useNavigate()
   const { scope, buildScopedPath } = useScope()
 
@@ -197,6 +199,14 @@ function ProfileLayout({
           >
             Compare
           </Link>
+          <button
+            type="button"
+            onClick={() => setExportOpen(true)}
+            className="relative flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80 whitespace-nowrap"
+          >
+            <FileImage size={13} />
+            Export
+          </button>
           <ProfileRateToggle value={rateMode} onChange={setRateMode} />
         </div>
       </div>
@@ -226,6 +236,15 @@ function ProfileLayout({
           <ProfilePizzaSection player={player} rateMode={rateMode} meta={meta} />
         </section>
       </div>
+
+      {exportOpen && (
+        <PlayerProfileExportModal
+          player={player}
+          meta={meta}
+          initialRateMode={rateMode}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
     </div>
   )
 }

@@ -181,7 +181,7 @@ function formatSliceValue(raw: number | null, percentile: number | null, formatU
   return percentile != null ? String(Math.round(percentile)) : formatValue(raw, formatUnit)
 }
 
-function ProfilePizzaSvg({ player, rateMode, meta, metricKeys, exportMode = false }: ProfilePizzaSvgProps) {
+export function ProfilePizzaSvg({ player, rateMode, meta, metricKeys, exportMode = false }: ProfilePizzaSvgProps) {
   const chartSize = exportMode ? 760 : CHART_SIZE
   const chartCenter = chartSize / 2
   const innerR = exportMode ? 82 : INNER_R
