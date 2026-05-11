@@ -116,7 +116,7 @@ export function VisualiserScatterPlot({
         width={width}
         height={height}
         viewBox={`0 0 ${width} ${height}`}
-        className="max-w-full text-electric/30"
+        className="h-auto max-w-full text-electric/30"
         role="img"
         aria-label={`${xLabel} vs ${yLabel} scatter`}
         onMouseLeave={() => setHoverId(null)}

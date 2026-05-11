@@ -416,15 +416,16 @@ export function DataVisualiser() {
   }
 
   return (
-    <div className="mx-auto max-w-[1440px] px-6 py-8 pb-20 lg:px-10">
-      <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+    <div className="mx-auto max-w-[1440px] px-4 py-5 pb-24 sm:px-6 sm:py-8 lg:px-10 lg:pb-20">
+      <div className="mb-6 flex flex-col gap-5 lg:mb-8 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
           <div className="mb-3 flex items-center gap-2">
             <HudLabel>Data Visualiser</HudLabel>
             <span className="text-[10px] uppercase tracking-[0.22em] text-electric/55">Share-ready charts</span>
           </div>
-          <h1 className="text-[34px] font-black leading-none tracking-tight text-ink sm:text-[40px]">
-            Build player and team charts from the Conceptually Football dataset.
+          <h1 className="text-[28px] font-black leading-tight tracking-tight text-ink sm:text-[40px] sm:leading-none">
+            <span className="sm:hidden">Build player and team charts.</span>
+            <span className="hidden sm:inline">Build player and team charts from the Conceptually Football dataset.</span>
           </h1>
           <p className="mt-3 max-w-3xl text-[12px] leading-relaxed text-ink-dim">
             Start from a live example, swap chart types, then tune the cohort and metrics. Scatter works best for
@@ -439,7 +440,7 @@ export function DataVisualiser() {
         </Link>
       </div>
 
-      <div className="mb-6 flex flex-wrap items-center gap-3 border border-electric/20 bg-panel/70 px-4 py-3 backdrop-blur-md">
+      <div className="mb-5 flex flex-wrap items-center gap-2 border border-electric/20 bg-panel/70 px-3 py-3 backdrop-blur-md sm:mb-6 sm:gap-3 sm:px-4">
         <HudLabel>Scope</HudLabel>
         <HudVSep />
         <span className="text-[11px] font-mono uppercase tracking-[0.16em] text-electric/85">
@@ -456,7 +457,7 @@ export function DataVisualiser() {
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[400px_minmax(0,1fr)]">
+      <div className="grid gap-5 xl:grid-cols-[400px_minmax(0,1fr)] xl:gap-6">
         <div className="flex flex-col gap-6">
           <HudFrame header={<span>Builder // Config</span>}>
             <div className="flex flex-col gap-5 p-4">
@@ -542,7 +543,7 @@ export function DataVisualiser() {
           </HudFrame>
 
           <HudFrame header={<span>Readout // Cohort</span>}>
-            <div className="grid gap-3 p-4 sm:grid-cols-3">
+            <div className="grid grid-cols-3 gap-2 p-3 sm:gap-3 sm:p-4">
               <ReadoutCard label="Rows" value={String(state.tab === 'players' ? playerRows.length : teamQuery.data?.count ?? 0)} />
               <ReadoutCard label="Pinned" value={String(validPinnedIds.length)} />
               <ReadoutCard label="Radar set" value={String(compareIds.length)} />
@@ -592,7 +593,7 @@ export function DataVisualiser() {
               </div>
             )}
 
-            {!activeLoading && !activeIsError && <div className="min-h-[560px]">{renderChart(false)}</div>}
+            {!activeLoading && !activeIsError && <div className="min-h-[360px] sm:min-h-[480px] xl:min-h-[560px]">{renderChart(false)}</div>}
           </div>
         </HudFrame>
       </div>

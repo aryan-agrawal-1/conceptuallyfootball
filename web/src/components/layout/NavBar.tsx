@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { ChevronDown, Search } from 'lucide-react'
+import { BarChart3, ChevronDown, GitCompare, Microscope, Orbit, Search, Table2 } from 'lucide-react'
 import { useScope } from '../../context/ScopeContext'
 import { BRAND_LOGO_URL, BRAND_NAME } from '../../lib/brand'
 import { cn } from '../../lib/utils'
@@ -9,11 +9,11 @@ import { CommandPalette } from '../search/CommandPalette'
 import type { CompetitionCatalogEntry } from '../../types/api'
 
 const NAV_LINKS = [
-  { to: '/', label: 'Matrix' },
-  { to: '/galaxy', label: 'Galaxy' },
-  { to: '/data-visualiser', label: 'Visualiser' },
-  { to: '/comparisons', label: 'Comparisons' },
-  { to: '/regression-lab', label: 'Lab' },
+  { to: '/', label: 'Matrix', shortLabel: 'Matrix', icon: Table2 },
+  { to: '/galaxy', label: 'Galaxy', shortLabel: 'Galaxy', icon: Orbit },
+  { to: '/data-visualiser', label: 'Visualiser', shortLabel: 'Visualiser', icon: BarChart3 },
+  { to: '/comparisons', label: 'Comparisons', shortLabel: 'Compare', icon: GitCompare },
+  { to: '/regression-lab', label: 'Lab', shortLabel: 'Lab', icon: Microscope },
 ]
 
 const IS_MAC =
@@ -57,17 +57,18 @@ export function NavBar() {
   }, [])
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 h-[52px] flex items-center px-6 border-b border-electric/25 bg-mat/90 backdrop-blur-md">
+    <>
+    <nav className="fixed top-0 left-0 right-0 z-50 flex min-h-[64px] items-center gap-2 border-b border-electric/25 bg-mat/90 px-3 py-2 backdrop-blur-md lg:h-[52px] lg:min-h-0 lg:px-6 lg:py-0">
       {/* Wordmark */}
-      <NavLink to={buildScopedPath('/')} className="mr-10 flex shrink-0 items-center gap-2">
+      <NavLink to={buildScopedPath('/')} className="mr-1 flex shrink-0 items-center gap-2 lg:mr-10">
         <img src={BRAND_LOGO_URL} alt="" className="size-7 object-contain" />
-        <span className="text-[13px] font-black uppercase leading-none tracking-[0.08em] text-ink">
+        <span className="hidden text-[13px] font-black uppercase leading-none tracking-[0.08em] text-ink sm:inline">
           {BRAND_NAME}
         </span>
       </NavLink>
 
       {/* Nav links */}
-      <div className="flex items-center gap-2">
+      <div className="hidden items-center gap-2 lg:flex">
         {NAV_LINKS.map(({ to, label }) => (
           <NavLink key={to} to={buildScopedPath(to)} end={to === '/'}>
             {({ isActive }) => <HudNavButton active={isActive}>{label}</HudNavButton>}
@@ -75,12 +76,12 @@ export function NavBar() {
         ))}
       </div>
 
-      <div className="ml-auto flex items-center gap-3">
+      <div className="ml-auto flex min-w-0 items-center gap-2 lg:gap-3">
         <button
           type="button"
           onClick={() => setSearchOpen(true)}
           className={cn(
-            'relative flex items-center gap-2 border px-2.5 py-1.5 transition-colors',
+            'relative flex h-10 items-center gap-2 border px-2.5 py-1.5 transition-colors lg:h-auto',
             'border-electric/20 bg-panel/50 text-ink-muted hover:border-electric/40 hover:text-electric/90',
             'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-electric/50',
           )}
@@ -100,7 +101,7 @@ export function NavBar() {
           </kbd>
         </button>
 
-        <div ref={scopePickerRef} className="flex items-center gap-1.5 border border-electric/20 px-2 py-1 bg-panel/50">
+        <div ref={scopePickerRef} className="flex min-w-0 items-center gap-1 border border-electric/20 bg-panel/50 px-1.5 py-1 lg:gap-1.5 lg:px-2">
           <ScopeDropdown
             label="Competition"
             value={competitionDisplay(scope.competition, currentCompetition)}
@@ -110,7 +111,7 @@ export function NavBar() {
               setCompetitionOpen(open)
               if (open) setSeasonOpen(false)
             }}
-            widthClassName="w-40"
+            widthClassName="w-[84px] sm:w-32 lg:w-40"
           >
             {competitions.length ? (
               competitions.map(c => (
@@ -142,7 +143,7 @@ export function NavBar() {
               setSeasonOpen(open)
               if (open) setCompetitionOpen(false)
             }}
-            widthClassName="w-28"
+            widthClassName="w-[74px] sm:w-24 lg:w-28"
           >
             {seasonOptions.length ? (
               seasonOptions.map(s => (
@@ -166,6 +167,29 @@ export function NavBar() {
 
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
     </nav>
+    <nav
+      className="fixed bottom-0 left-0 right-0 z-50 grid h-[64px] grid-cols-5 border-t border-electric/25 bg-mat/95 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_28px_-18px_rgba(74,158,245,0.55)] backdrop-blur-md lg:hidden"
+      aria-label="Primary"
+    >
+      {NAV_LINKS.map(({ to, shortLabel, icon: Icon }) => (
+        <NavLink key={to} to={buildScopedPath(to)} end={to === '/'} className="min-w-0">
+          {({ isActive }) => (
+            <span
+              className={cn(
+                'flex h-full min-w-0 flex-col items-center justify-center gap-1 border-t-2 px-1 text-[9px] font-medium uppercase tracking-[0.08em]',
+                isActive
+                  ? 'border-electric text-electric'
+                  : 'border-transparent text-ink-muted',
+              )}
+            >
+              <Icon size={17} strokeWidth={2} />
+              <span className="w-full truncate text-center">{shortLabel}</span>
+            </span>
+          )}
+        </NavLink>
+      ))}
+    </nav>
+    </>
   )
 }
 

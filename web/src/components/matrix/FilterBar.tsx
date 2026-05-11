@@ -17,6 +17,14 @@ const POSITIONS: { value: PositionGroup | ''; label: string }[] = [
 
 const MIN_MINUTES_OPTIONS = [0, 450, 900, 1350, 1800]
 
+function positionLabel(value: string | undefined): string {
+  return POSITIONS.find(option => option.value === (value ?? ''))?.label ?? 'All'
+}
+
+function minutesLabel(value: number | null | undefined): string {
+  return !value ? 'All' : `${value}'`
+}
+
 interface FilterBarProps {
   filters: MatrixFilters
   teams: string[]
@@ -54,14 +62,20 @@ export function FilterBar({
 }: FilterBarProps) {
   const [teamOpen, setTeamOpen] = useState(false)
   const [colPickerOpen, setColPickerOpen] = useState(false)
+  const [positionOpen, setPositionOpen] = useState(false)
+  const [minutesOpen, setMinutesOpen] = useState(false)
   const [teamSearch, setTeamSearch] = useState('')
   const teamRef = useRef<HTMLDivElement>(null)
   const colRef = useRef<HTMLDivElement>(null)
+  const positionRef = useRef<HTMLDivElement>(null)
+  const minutesRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (teamRef.current && !teamRef.current.contains(e.target as Node)) setTeamOpen(false)
       if (colRef.current && !colRef.current.contains(e.target as Node)) setColPickerOpen(false)
+      if (positionRef.current && !positionRef.current.contains(e.target as Node)) setPositionOpen(false)
+      if (minutesRef.current && !minutesRef.current.contains(e.target as Node)) setMinutesOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -83,21 +97,34 @@ export function FilterBar({
   }
 
   return (
-    <div className="sticky top-[52px] z-40 flex items-center gap-3 px-6 h-[54px] bg-panel/80 border-b border-electric/25 backdrop-blur-md shrink-0 shadow-[0_8px_28px_-14px_rgba(74,158,245,0.45)]">
+    <div className="sticky top-[64px] z-40 flex min-h-[58px] shrink-0 flex-wrap items-center gap-2 overflow-visible border-b border-electric/25 bg-panel/80 px-3 py-2 shadow-[0_8px_28px_-14px_rgba(74,158,245,0.45)] backdrop-blur-md lg:top-[52px] lg:h-[54px] lg:flex-nowrap lg:gap-3 lg:px-6 lg:py-0">
       <MatrixReadout
         playerCount={playerCount}
         totalCount={totalCount}
         refetching={refetching}
       />
 
-      <HudVSep />
+      <HudVSep className="hidden lg:block" />
+
+      <MobileSingleDropdown
+        containerRef={positionRef}
+        label="Position"
+        value={positionLabel(filters.position_group)}
+        open={positionOpen}
+        onOpenChange={setPositionOpen}
+        options={POSITIONS}
+        onSelect={pos => {
+          onFiltersChange({ position_group: pos || undefined })
+          setPositionOpen(false)
+        }}
+      />
 
       <PositionGroupPicker
         value={filters.position_group}
         onChange={pos => onFiltersChange({ position_group: pos || undefined })}
       />
 
-      <HudVSep />
+      <HudVSep className="hidden lg:block" />
 
       <TeamPicker
         containerRef={teamRef}
@@ -112,7 +139,24 @@ export function FilterBar({
         onClear={clearTeams}
       />
 
-      <HudVSep />
+      <HudVSep className="hidden lg:block" />
+
+      <MobileSingleDropdown
+        containerRef={minutesRef}
+        label="Minutes"
+        value={minutesLabel(filters.min_minutes)}
+        open={minutesOpen}
+        onOpenChange={setMinutesOpen}
+        options={MIN_MINUTES_OPTIONS.map(mins => ({
+          value: String(mins),
+          label: minutesLabel(mins),
+        }))}
+        onSelect={mins => {
+          onFiltersChange({ min_minutes: Number(mins) })
+          setMinutesOpen(false)
+        }}
+        mono
+      />
 
       <MinMinutesPicker
         value={filters.min_minutes}
@@ -121,7 +165,7 @@ export function FilterBar({
 
       {regressionLabHref && (
         <>
-          <HudVSep />
+          <HudVSep className="hidden lg:block" />
           <Link
             to={regressionLabHref}
             className={cn(
@@ -134,11 +178,11 @@ export function FilterBar({
         </>
       )}
 
-      <div className="flex-1" />
+      <div className="hidden flex-1 lg:block" />
 
       <RateModeToggle value={rateMode} onChange={onRateModeChange} />
 
-      <HudVSep />
+      <HudVSep className="hidden lg:block" />
 
       <HeatmapToggle enabled={heatmapEnabled} onToggle={onHeatmapToggle} />
 
@@ -166,7 +210,7 @@ function MatrixReadout({
   refetching: boolean
 }) {
   return (
-    <span className="flex items-center gap-2 shrink-0">
+    <span className="hidden items-center gap-2 shrink-0 lg:flex">
       <span className="size-1 rounded-full bg-electric animate-pulse" />
       <span className="text-[10px] uppercase tracking-[0.25em] text-electric/80 font-medium">
         Matrix
@@ -185,6 +229,76 @@ function MatrixReadout({
 
 // ─── Position filter ─────────────────────────────────────────────────────────
 
+function MobileSingleDropdown({
+  containerRef,
+  label,
+  value,
+  open,
+  onOpenChange,
+  options,
+  onSelect,
+  mono = false,
+}: {
+  containerRef: React.RefObject<HTMLDivElement | null>
+  label: string
+  value: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  options: Array<{ value: string; label: string }>
+  onSelect: (value: string) => void
+  mono?: boolean
+}) {
+  return (
+    <div ref={containerRef} className="relative lg:hidden">
+      <button
+        type="button"
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => onOpenChange(!open)}
+        className={cn(
+          'relative flex items-center gap-1.5 border px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.15em] transition-colors',
+          open
+            ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
+            : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
+          mono && 'font-mono',
+        )}
+      >
+        {open && <HudCornerMarks size="size-1" />}
+        {value}
+        <ChevronDown size={11} className={cn('transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <HudPopover className="w-36">
+          <div role="listbox" aria-label={label} className="p-1">
+            {options.map(option => {
+              const active = option.label === value
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  onClick={() => onSelect(option.value)}
+                  className={cn(
+                    'w-full border px-3 py-2 text-left text-[11px] uppercase tracking-[0.15em] transition-colors',
+                    mono && 'font-mono',
+                    active
+                      ? 'border-electric/40 bg-electric/10 text-electric'
+                      : 'border-transparent text-ink-dim hover:bg-electric/5 hover:text-ink',
+                  )}
+                >
+                  {option.label}
+                </button>
+              )
+            })}
+          </div>
+        </HudPopover>
+      )}
+    </div>
+  )
+}
+
 function PositionGroupPicker({
   value,
   onChange,
@@ -193,7 +307,7 @@ function PositionGroupPicker({
   onChange: (value: PositionGroup | '') => void
 }) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="hidden items-center gap-1 lg:flex">
       {POSITIONS.map(({ value: optValue, label }) => {
         const active = value === optValue || (!value && optValue === '')
         return (
@@ -220,7 +334,7 @@ function MinMinutesPicker({
   onChange: (mins: number) => void
 }) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="hidden items-center gap-1 lg:flex">
       {MIN_MINUTES_OPTIONS.map(mins => (
         <HudPill
           key={mins}
@@ -576,7 +690,7 @@ function HudPopover({
   return (
     <div
       className={cn(
-        'absolute top-full mt-1.5 border border-electric/25 bg-panel/95 backdrop-blur-md shadow-[0_12px_40px_-8px_rgba(74,158,245,0.45)] z-50',
+        'absolute top-full z-50 mt-1.5 max-w-[calc(100vw-1.5rem)] border border-electric/25 bg-panel/95 shadow-[0_12px_40px_-8px_rgba(74,158,245,0.45)] backdrop-blur-md',
         align === 'start' ? 'left-0' : 'right-0',
         className,
       )}

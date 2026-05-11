@@ -67,8 +67,8 @@ export function RegressionScatterPlot({
   }
 
   return (
-    <div className={cn('w-full flex justify-center', className)}>
-      <div className="relative" style={{ width: W, height: H }}>
+    <div className={cn('flex w-full justify-center overflow-x-auto', className)}>
+      <div className="relative shrink-0" style={{ width: W, height: H }}>
         <svg
           width={W}
           height={H}

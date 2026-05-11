@@ -386,14 +386,14 @@ export function RegressionLab() {
   }, [lastFit])
 
   return (
-    <div className="flex flex-col min-h-[calc(100svh-52px)]">
-      <div className="sticky top-[52px] z-40 flex flex-wrap items-center gap-3 px-6 py-2 bg-panel/80 border-b border-electric/25 backdrop-blur-md shrink-0">
-        <HudLabel>Regression Lab</HudLabel>
-        <HudVSep />
-        <span className="text-[11px] font-mono uppercase tracking-[0.16em] text-electric/85">
+    <div className="flex min-h-[calc(100svh-132px)] flex-col lg:min-h-[calc(100svh-52px)]">
+      <div className="sticky top-[64px] z-40 flex shrink-0 items-center gap-2 overflow-x-auto border-b border-electric/25 bg-panel/80 px-3 py-2 backdrop-blur-md lg:top-[52px] lg:flex-wrap lg:gap-3 lg:overflow-visible lg:px-6">
+        <HudLabel className="shrink-0 whitespace-nowrap">Regression Lab</HudLabel>
+        <HudVSep className="hidden lg:block" />
+        <span className="hidden shrink-0 whitespace-nowrap text-[11px] font-mono uppercase tracking-[0.16em] text-electric/85 sm:inline">
           {scopeLabel}
         </span>
-        <HudVSep />
+        <HudVSep className="hidden lg:block" />
         <div
           className={cn(
             'flex items-center gap-1 rounded border px-1.5 py-0.5 transition-[box-shadow,border-color]',
@@ -420,15 +420,15 @@ export function RegressionLab() {
             </HudPill>
           ))}
         </div>
-        <HudVSep />
+        <HudVSep className="hidden lg:block" />
         <TeamStrip
           teams={teams}
           selected={filters.teams ?? []}
           onChange={next => handleFiltersChange({ teams: next.length ? next : undefined })}
         />
-        <HudVSep />
+        <HudVSep className="hidden lg:block" />
         <MinStrip value={filters.min_minutes} onChange={m => handleFiltersChange({ min_minutes: m })} />
-        <div className="flex-1 min-w-[8px]" />
+        <div className="hidden flex-1 lg:block lg:min-w-[8px]" />
         <Link
           to={buildScopedPath('/')}
           className="text-[10px] uppercase tracking-[0.2em] text-electric/70 hover:text-electric"
@@ -437,7 +437,7 @@ export function RegressionLab() {
         </Link>
       </div>
 
-      <div className="flex-1 overflow-auto px-6 py-4 flex flex-col gap-4">
+      <div className="flex flex-1 flex-col gap-4 overflow-auto px-4 py-4 sm:px-6">
         {isLoading && (
           <div className="flex items-center justify-center py-16 gap-2 text-electric">
             <Loader2 className="animate-spin size-5" />
@@ -471,7 +471,7 @@ export function RegressionLab() {
                     </LabHelpHover>
                   </>
                 }
-                className="min-h-0 h-[40vh]"
+                className="min-h-[260px] lg:h-[40vh] lg:min-h-0"
                 bodyClassName="flex-1 min-h-0 flex flex-col overflow-hidden p-0"
               >
                 <div className="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col gap-2">
@@ -511,7 +511,7 @@ export function RegressionLab() {
                     </LabHelpHover>
                   </>
                 }
-                className="min-h-0 h-[40vh]"
+                className="min-h-[300px] lg:h-[40vh] lg:min-h-0"
                 bodyClassName="flex-1 min-h-0 flex flex-col overflow-hidden p-0"
               >
                 <div className="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col gap-3">
@@ -659,8 +659,8 @@ export function RegressionLab() {
                   }
                   bodyClassName="p-0"
                 >
-                  <div className="max-h-56 overflow-y-auto">
-                    <table className="w-full text-[11px] font-mono">
+                  <div className="max-h-56 overflow-x-auto overflow-y-auto">
+                    <table className="w-full min-w-[420px] text-[11px] font-mono">
                       <thead className="sticky top-0 bg-mat/95 border-b border-electric/20 text-ink-muted uppercase tracking-wider text-[9px]">
                         <tr>
                           <th className="text-left px-2 py-1.5">Predictor</th>

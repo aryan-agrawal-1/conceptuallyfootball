@@ -261,8 +261,8 @@ export function Comparisons() {
   }, [cohortPosition, rateMode, scopeLabel, statKeys.length])
 
   return (
-    <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-8 pb-20">
-      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mx-auto max-w-[1400px] px-4 py-5 pb-24 sm:px-6 sm:py-8 lg:px-10 lg:pb-20">
+      <div className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-[30px] sm:text-[36px] font-black tracking-tight text-ink leading-none mb-2">
             Comparisons
@@ -314,9 +314,9 @@ export function Comparisons() {
       ) : (
         <div className="flex flex-col gap-6">
           <HudFrame header={<span>Selected // Roster</span>} className="w-full">
-            <div className="p-4 flex flex-col gap-4">
+            <div className="flex flex-col gap-4 p-3 sm:p-4">
               <div className="flex flex-col lg:flex-row gap-4 lg:items-start lg:justify-between">
-                <div className="flex flex-wrap gap-3">
+                <div className="grid w-full grid-cols-1 gap-3 sm:flex sm:flex-wrap">
                   {playerIds.map((id, index) => {
                     const d = detailsOrdered[index]
                     const label = d?.canonical_player_name ?? `Player ${id}`
@@ -329,7 +329,7 @@ export function Comparisons() {
                     return (
                       <div
                         key={`${id}-${index}`}
-                        className="relative min-w-[200px] max-w-[280px] border border-electric/25 bg-panel/50 px-3 py-2.5"
+                        className="relative min-w-0 border border-electric/25 bg-panel/50 px-3 py-2.5 sm:min-w-[200px] sm:max-w-[280px]"
                       >
                         <div className="flex items-start justify-between gap-2 mb-1">
                           <div className="min-w-0">
@@ -396,7 +396,7 @@ export function Comparisons() {
                     <button
                       type="button"
                       onClick={() => setPicker({ kind: 'add' })}
-                      className="min-h-[96px] min-w-[160px] border border-dashed border-electric/30 text-[11px] uppercase tracking-[0.2em] text-electric/70 hover:border-electric/50 hover:text-electric px-3"
+                      className="min-h-[72px] min-w-0 border border-dashed border-electric/30 px-3 text-[11px] uppercase tracking-[0.2em] text-electric/70 hover:border-electric/50 hover:text-electric sm:min-h-[96px] sm:min-w-[160px]"
                     >
                       Add player
                     </button>
@@ -427,7 +427,7 @@ export function Comparisons() {
                   </span>
                 }
               >
-                <div className="p-4 flex flex-col xl:flex-row gap-8 items-start">
+                <div className="flex flex-col items-start gap-5 p-3 sm:p-4 xl:flex-row xl:gap-8">
                   <div className="flex-1 flex flex-col gap-4 justify-center w-full min-w-0">
                     <div className="flex justify-end">
                       <ChartShareCard

@@ -102,7 +102,7 @@ export function VisualiserRadarChart({
         width={size}
         height={size}
         viewBox={`${-padding} ${-padding} ${size + padding * 2} ${size + padding * 2}`}
-        className="max-w-full overflow-visible text-electric/25"
+        className="h-auto max-w-full overflow-visible text-electric/25"
         role="img"
         aria-label="Radar comparison chart"
       >

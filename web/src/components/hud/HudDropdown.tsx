@@ -72,7 +72,7 @@ export function HudSelectDropdown({
         <ChevronDown size={11} className={cn('shrink-0 transition-transform', open && 'rotate-180')} />
       </button>
       {open && (
-        <HudPopover align={align} className="w-full min-w-60 max-h-72 overflow-y-auto p-1">
+        <HudPopover align={align} className="max-h-72 w-full min-w-[min(15rem,calc(100vw-1.5rem))] overflow-y-auto p-1">
           <div role="listbox" aria-label={label} className="flex flex-col gap-1">
             {groups.map(group => (
               <div key={group.key} className="border-b border-electric/10 pb-1 last:border-b-0 last:pb-0">
@@ -189,7 +189,7 @@ export function HudMultiSelectDropdown({
         )}
       </button>
       {open && (
-        <HudPopover align={align} className="w-60">
+        <HudPopover align={align} className="w-[min(15rem,calc(100vw-1.5rem))]">
           {searchPlaceholder && (
             <div className="border-b border-electric/20 p-2">
               <div className="flex items-center gap-2 border border-electric/20 bg-mat/60 px-2 py-1.5">

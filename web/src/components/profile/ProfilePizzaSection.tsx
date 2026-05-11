@@ -117,7 +117,7 @@ function ProfilePizzaSectionInner({ player, rateMode, meta }: ProfilePizzaSectio
         ) : undefined
       }
     >
-      <div className="p-4 flex flex-col lg:flex-row gap-8 items-start">
+      <div className="flex flex-col items-start gap-5 p-3 sm:p-4 lg:flex-row lg:gap-8">
         <div className="flex-1 flex flex-col gap-4 justify-center w-full min-w-0">
           <div className="flex justify-end">
             <ChartShareCard
@@ -259,12 +259,12 @@ export function ProfilePizzaSvg({ player, rateMode, meta, metricKeys, exportMode
   }
 
   return (
-    <div ref={chartWrapRef} className="relative inline-block">
+    <div ref={chartWrapRef} className="relative inline-block max-w-full">
       <svg
         width={chartSize}
         height={chartSize}
         viewBox={`0 0 ${chartSize} ${chartSize}`}
-        className="text-electric/25 overflow-visible"
+        className="h-auto max-w-full overflow-visible text-electric/25"
         role="img"
         aria-label={player.eligibility.percentiles_eligible ? 'Player percentile pizza chart' : 'Player raw metric polar chart'}
       >

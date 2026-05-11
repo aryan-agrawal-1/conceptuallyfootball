@@ -132,7 +132,7 @@ export function CompareRadarChart({
           width={chartSize}
           height={chartSize}
           viewBox={`0 0 ${chartSize} ${chartSize}`}
-          className="text-electric/25 overflow-visible"
+          className="h-auto max-w-full overflow-visible text-electric/25"
           role="img"
           aria-label="Player comparison radar chart"
         >

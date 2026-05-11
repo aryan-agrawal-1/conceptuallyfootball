@@ -217,7 +217,7 @@ export function HudPopover({
   return (
     <div
       className={cn(
-        'absolute top-full mt-1.5 border border-electric/25 bg-panel/95 backdrop-blur-md shadow-[0_12px_40px_-8px_rgba(74,158,245,0.45)] z-50',
+        'absolute top-full z-50 mt-1.5 max-w-[calc(100vw-1.5rem)] border border-electric/25 bg-panel/95 shadow-[0_12px_40px_-8px_rgba(74,158,245,0.45)] backdrop-blur-md',
         align === 'start' ? 'left-0' : 'right-0',
         className,
       )}
