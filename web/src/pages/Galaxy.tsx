@@ -3,7 +3,7 @@ import { Html, Line, OrbitControls, Stars } from '@react-three/drei'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { AlertCircle, ArrowUpRight, Loader2, X } from 'lucide-react'
+import { AlertCircle, ArrowUpRight, Loader2, Search, X } from 'lucide-react'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { fetchGalaxy, fetchGalaxySimilar } from '../lib/api'
@@ -493,7 +493,7 @@ function MinutesInput({
     <input
       type="number"
       aria-label="Minimum minutes"
-      className="bg-mat/80 border border-electric/25 text-[11px] px-2 py-1.5 font-mono text-electric/90 focus:outline-none focus:border-electric"
+      className="border border-electric/25 bg-mat/80 px-2 py-1.5 font-mono text-[16px] text-electric/90 focus:border-electric focus:outline-none lg:text-[11px]"
       value={draft}
       min={floor}
       onChange={event => setDraft(event.target.value)}
@@ -555,12 +555,25 @@ function PlayerHud({
   onOpenProfile: () => void
 }) {
   const { buildScopedPath } = useScope()
+  const header = (
+    <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+      <span className="truncate">Target Acquired // {point.galaxy_player_id}</span>
+      <button
+        type="button"
+        onClick={onOpenProfile}
+        className="inline-flex shrink-0 items-center gap-1 border border-electric/35 px-2 py-1 text-[9px] uppercase tracking-[0.16em] text-electric/90 lg:hidden"
+      >
+        Open
+        <ArrowUpRight size={11} />
+      </button>
+    </div>
+  )
   return (
     <HudFrame
-      className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 w-[min(760px,calc(100%-2rem))]"
-      header={`Target Acquired // ${point.galaxy_player_id}`}
+      className="absolute inset-x-3 bottom-3 z-20 max-h-[30svh] overflow-hidden lg:inset-x-auto lg:bottom-4 lg:left-1/2 lg:max-h-[46svh] lg:w-[min(760px,calc(100%-2rem))] lg:-translate-x-1/2"
+      header={header}
       footer={
-        <div className="flex justify-between items-center">
+        <div className="hidden justify-between items-center lg:flex">
           <span>{point.competition_code} // {point.primary_archetype_label}</span>
           <span className="font-mono">
             X {point.x.toFixed(2)}  Y {point.y.toFixed(2)}  Z {point.z.toFixed(2)}
@@ -568,14 +581,14 @@ function PlayerHud({
         </div>
       }
     >
-      <div className="grid grid-cols-[1.3fr_1fr_auto] gap-4 p-4 items-stretch">
+      <div className="grid max-h-[calc(30svh-34px)] grid-cols-1 items-stretch gap-2 overflow-y-auto p-2.5 sm:grid-cols-[1fr_auto] lg:max-h-none lg:grid-cols-[1.3fr_1fr_auto] lg:gap-4 lg:overflow-visible lg:p-4">
         {/* Identity column */}
-        <div className="flex flex-col gap-3 min-w-0">
+        <div className="flex min-w-0 flex-col gap-2 lg:gap-3">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.25em] text-electric/70 mb-1">
+            <p className="mb-1 text-[9px] uppercase tracking-[0.22em] text-electric/70 lg:text-[10px] lg:tracking-[0.25em]">
               Player
             </p>
-            <p className="text-[22px] leading-tight font-bold text-ink truncate">
+            <p className="break-words text-[15px] font-bold leading-tight text-ink sm:text-[18px] lg:truncate lg:text-[22px]">
               {point.canonical_player_name}
             </p>
             <p className="text-[11px] truncate">
@@ -591,13 +604,13 @@ function PlayerHud({
               )}
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 lg:gap-3">
             <PositionBadge position={point.position_group} />
-            <span className="text-[10px] uppercase tracking-[0.2em] text-electric/70">
+            <span className="text-[9px] uppercase tracking-[0.16em] text-electric/70 lg:text-[10px] lg:tracking-[0.2em]">
               {point.cluster_label}
             </span>
           </div>
-          <div className="grid grid-cols-2 gap-3 pt-1">
+          <div className="grid grid-cols-2 gap-2 pt-1 lg:gap-3">
             <StatReadout label="Minutes" value={point.minutes.toLocaleString()} />
             <StatReadout
               label="Archetype"
@@ -619,7 +632,7 @@ function PlayerHud({
         </div>
 
         {/* Top comps column */}
-        <div className="flex flex-col min-w-0">
+        <div className="hidden min-w-0 flex-col lg:flex">
           <p className="text-[10px] uppercase tracking-[0.25em] text-electric/70 mb-2">
             Top Comps
           </p>
@@ -658,7 +671,7 @@ function PlayerHud({
         </div>
 
         {/* Actions column */}
-        <div className="flex flex-col justify-between items-end gap-2 min-w-[140px]">
+        <div className="flex flex-row-reverse items-center justify-between gap-2 sm:col-span-1 lg:col-span-1 lg:min-w-[140px] lg:flex-col lg:items-end">
           <button
             onClick={onClear}
             className="flex items-center gap-1 text-[10px] uppercase tracking-[0.2em] text-ink-dim hover:text-ink"
@@ -666,7 +679,7 @@ function PlayerHud({
             <X size={12} />
             Clear
           </button>
-          <HudActionButton onClick={onOpenProfile} className="w-full">
+          <HudActionButton onClick={onOpenProfile} className="hidden w-auto px-3 py-2 text-[10px] lg:flex lg:w-full lg:px-4 lg:py-3 lg:text-[12px]">
             <span>Open Profile</span>
             <ArrowUpRight size={14} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
           </HudActionButton>
@@ -684,6 +697,7 @@ export function Galaxy() {
   const { scope, scopeLabel, buildScopedPath } = useScope()
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
   const [hoveredPlayerId, setHoveredPlayerId] = useState<string | null>(null)
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [knownTeams, setKnownTeams] = useState<string[]>([])
 
@@ -763,16 +777,28 @@ export function Galaxy() {
     setParams(nextParams)
   }
 
+  function selectGalaxyPlayer(id: string) {
+    setSelectedPlayerId(id)
+    setMobileSearchOpen(false)
+  }
+
+  function clearMobileSelectionOnMiss() {
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches) {
+      setSelectedPlayerId(null)
+      setHoveredPlayerId(null)
+    }
+  }
+
   if (galaxyQuery.isLoading) {
     return (
-      <div className="flex items-center justify-center h-[calc(100svh-52px)]">
+      <div className="flex h-[calc(100svh-132px)] items-center justify-center lg:h-[calc(100svh-52px)]">
         <Loader2 size={28} className="text-electric animate-spin" />
       </div>
     )
   }
   if (galaxyQuery.isError || !data) {
     return (
-      <div className="flex flex-col items-center justify-center h-[calc(100svh-52px)] gap-3">
+      <div className="flex h-[calc(100svh-132px)] flex-col items-center justify-center gap-3 px-4 lg:h-[calc(100svh-52px)]">
         <AlertCircle size={24} className="text-ember" />
         <p className="text-[12px] text-ink-muted">
           {galaxyQuery.error?.message ?? 'Failed to load galaxy.'}
@@ -788,6 +814,13 @@ export function Galaxy() {
       ? pointsById.get(hoveredPlayerId) ?? null
       : null
   const edges = similarQuery.data?.edges ?? []
+  const mobileSearchResults = (data.players ?? [])
+    .filter(player => {
+      const needle = search.trim().toLowerCase()
+      return needle.length > 0 && player.canonical_player_name.toLowerCase().includes(needle)
+    })
+    .sort((a, b) => a.canonical_player_name.localeCompare(b.canonical_player_name))
+    .slice(0, 6)
 
   // Floating labels are rendered for:
   //   - every star in the selected player's "network" (the selected player +
@@ -817,20 +850,20 @@ export function Galaxy() {
   }
 
   return (
-    <div className="h-[calc(100svh-52px)] relative bg-mat overflow-hidden">
+    <div className="relative h-[calc(100svh-132px)] overflow-hidden bg-mat lg:h-[calc(100svh-52px)]">
       <div className="absolute inset-0 opacity-60 pointer-events-none bg-[radial-gradient(circle_at_20%_20%,#31243d_0%,#0b0f1f_40%,#05070f_100%)]" />
 
       <HudFrame
-        className="absolute top-4 left-4 z-20 w-72"
+        className="absolute left-3 right-3 top-3 z-20 hidden max-h-[34svh] overflow-hidden sm:left-4 sm:right-auto sm:w-80 lg:block lg:max-h-none lg:w-72"
         header={`Target // ${scopeLabel}`}
       >
-        <div className="p-3 space-y-2">
+        <div className="max-h-[calc(34svh-36px)] space-y-2 overflow-y-auto p-3 lg:max-h-none lg:overflow-visible">
           <input
             type="search"
             placeholder="SEARCH PLAYER"
             value={search}
             onChange={event => setSearch(event.target.value)}
-            className="w-full bg-mat/80 border border-electric/30 px-2 py-1.5 text-[11px] tracking-widest uppercase placeholder:text-electric/40 focus:outline-none focus:border-electric"
+            className="w-full border border-electric/30 bg-mat/80 px-2 py-1.5 text-[16px] uppercase tracking-widest placeholder:text-electric/40 focus:border-electric focus:outline-none lg:text-[11px]"
           />
           <div className="grid grid-cols-2 gap-2">
             <HudMultiSelectDropdown
@@ -884,7 +917,7 @@ export function Galaxy() {
                       isSelected && 'bg-electric/15 text-electric',
                       isHovered && !isSelected && 'text-ink',
                     )}
-                    onClick={() => setSelectedPlayerId(player.galaxy_player_id)}
+                    onClick={() => selectGalaxyPlayer(player.galaxy_player_id)}
                     onMouseEnter={() =>
                       setHoveredPlayerId(player.galaxy_player_id)
                     }
@@ -908,8 +941,86 @@ export function Galaxy() {
         </div>
       </HudFrame>
 
+      <button
+        type="button"
+        onClick={() => {
+          setMobileSearchOpen(open => !open)
+          setHoveredPlayerId(null)
+        }}
+        className={cn(
+          'absolute left-3 top-3 z-30 flex items-center gap-2 border px-3 py-2 text-[11px] font-medium uppercase tracking-[0.18em] shadow-[0_12px_32px_-14px_rgba(74,158,245,0.75)] lg:hidden',
+          mobileSearchOpen
+            ? 'border-electric bg-electric/15 text-electric'
+            : 'border-electric/30 bg-panel/85 text-electric/90 backdrop-blur-md',
+        )}
+      >
+        <Search size={14} />
+        Search
+      </button>
+
+      {mobileSearchOpen && (
+        <HudFrame
+          className="absolute left-3 right-3 top-14 z-30 max-h-[42svh] overflow-hidden lg:hidden"
+          header={`Search // ${scopeLabel}`}
+        >
+          <div className="max-h-[calc(42svh-34px)] space-y-2 overflow-y-auto p-3">
+            <input
+              type="search"
+              autoFocus
+              placeholder="SEARCH PLAYER"
+              value={search}
+              onChange={event => setSearch(event.target.value)}
+              className="w-full border border-electric/30 bg-mat/80 px-2 py-2 text-[16px] uppercase tracking-widest text-ink placeholder:text-electric/40 focus:border-electric focus:outline-none lg:text-[12px]"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <HudMultiSelectDropdown
+                label="Positions"
+                options={POSITION_FILTER_OPTIONS}
+                selected={filters.position_group}
+                onChange={position_group => setFilter({ position_group })}
+                emptyLabel="All Pos"
+                className="min-w-0"
+              />
+              <MinutesInput
+                key={`mobile:${filters.min_minutes}:${data.model_meta.min_minutes}`}
+                value={filters.min_minutes}
+                floor={data.model_meta.min_minutes}
+                onCommit={min_minutes => setFilter({ min_minutes })}
+              />
+            </div>
+            <p className="text-[10px] uppercase tracking-[0.16em] text-electric/50">
+              Model floor: {data.model_meta.min_minutes} minutes
+            </p>
+            {search.trim() && (
+              <div className="border border-electric/15 bg-mat/50">
+                {mobileSearchResults.length ? (
+                  mobileSearchResults.map(player => (
+                    <button
+                      key={player.galaxy_player_id}
+                      type="button"
+                      onClick={() => selectGalaxyPlayer(player.galaxy_player_id)}
+                      className="flex w-full items-center gap-2 border-b border-electric/10 px-2 py-2 text-left text-[12px] text-ink-dim transition-colors last:border-b-0 hover:bg-electric/10 hover:text-electric"
+                    >
+                      <span className="text-electric/45 font-mono">·</span>
+                      <span className="min-w-0 flex-1 truncate">{player.canonical_player_name}</span>
+                      <span className="shrink-0 text-[10px] font-mono text-electric/60">
+                        {player.competition_code}
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <p className="px-3 py-3 text-center text-[11px] uppercase tracking-[0.18em] text-ink-muted">
+                    No players found
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </HudFrame>
+      )}
+
       <HudFrame
-        className="absolute top-4 right-4 z-20 w-64"
+        className="absolute right-4 top-4 z-20 hidden w-64 lg:block"
         header="Archetypes"
       >
         <div className="p-3 grid grid-cols-1 gap-1.5">
@@ -929,20 +1040,23 @@ export function Galaxy() {
       </HudFrame>
 
       {selectedPoint && (
-        <PlayerHud
-          point={selectedPoint}
-          edges={edges}
-          isLoading={similarQuery.isLoading}
-          onSelectEdge={id => setSelectedPlayerId(id)}
-          onHoverEdge={id => setHoveredPlayerId(id)}
-          onClear={() => setSelectedPlayerId(null)}
-          onOpenProfile={() =>
-            navigate(buildScopedPath(`/player/${selectedPoint.canonical_player_id}`))
-          }
-        />
+        <div className={cn(mobileSearchOpen && 'hidden lg:block')}>
+          <PlayerHud
+            point={selectedPoint}
+            edges={edges}
+            isLoading={similarQuery.isLoading}
+            onSelectEdge={id => setSelectedPlayerId(id)}
+            onHoverEdge={id => setHoveredPlayerId(id)}
+            onClear={() => setSelectedPlayerId(null)}
+            onOpenProfile={() =>
+              navigate(buildScopedPath(`/player/${selectedPoint.canonical_player_id}`))
+            }
+          />
+        </div>
       )}
 
       <Canvas
+        onPointerMissed={clearMobileSelectionOnMiss}
         camera={{ position: [0, 0, 28], fov: 60 }}
         // Cap DPR at 1.5 to keep the backing buffer small on Retina/hi-DPI
         // displays. At 1.75–2x, the combination of additively-blended star

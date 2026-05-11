@@ -12,7 +12,7 @@ export function ProfileBreadcrumb({ playerName, className }: ProfileBreadcrumbPr
   return (
     <nav
       className={cn(
-        'flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.28em] text-electric/75 mb-8',
+        'mb-6 flex min-w-0 items-center gap-2 overflow-hidden text-[10px] font-mono uppercase tracking-[0.2em] text-electric/75 sm:mb-8 sm:tracking-[0.28em]',
         className,
       )}
       aria-label="Breadcrumb"

@@ -28,7 +28,7 @@ export function ProfileScopeSelector({
   if (!memberships.length) return null
 
   return (
-    <div className="flex min-h-[32px] items-center gap-1.5 border border-electric/30 bg-mat/60 px-2 py-1.5 shrink-0">
+    <div className="flex min-h-[32px] max-w-full shrink-0 items-center gap-1.5 border border-electric/30 bg-mat/60 px-2 py-1.5">
       <label
         htmlFor={label}
         className="text-[9px] font-mono uppercase tracking-[0.18em] text-ink-dim"
@@ -42,7 +42,7 @@ export function ProfileScopeSelector({
           const next = memberships.find(m => scopeValue(m) === event.target.value)
           if (next) onChange({ competition: next.competition, season: next.season })
         }}
-        className="max-w-[11rem] bg-transparent text-[10px] font-mono uppercase tracking-[0.08em] text-electric/90 outline-none"
+        className="max-w-[9.5rem] bg-transparent text-[10px] font-mono uppercase tracking-[0.08em] text-electric/90 outline-none sm:max-w-[11rem]"
       >
         {memberships.map(m => (
           <option key={scopeValue(m)} value={scopeValue(m)}>

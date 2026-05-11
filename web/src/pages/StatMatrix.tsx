@@ -136,7 +136,7 @@ export function StatMatrix() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100svh-52px)]">
+    <div className="flex h-[calc(100svh-132px)] flex-col lg:h-[calc(100svh-52px)]">
       <FilterBar
         filters={filters}
         teams={teams}

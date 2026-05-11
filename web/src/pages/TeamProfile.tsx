@@ -123,9 +123,9 @@ function TeamLayout({
   const { scope, buildScopedPath } = useScope()
 
   return (
-    <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-8 pb-20">
+    <div className="mx-auto max-w-[1400px] px-4 py-5 pb-24 sm:px-6 sm:py-8 lg:px-10 lg:pb-20">
       <nav
-        className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.28em] text-electric/75 mb-8"
+        className="mb-6 flex min-w-0 items-center gap-2 overflow-hidden text-[10px] font-mono uppercase tracking-[0.2em] text-electric/75 sm:mb-8 sm:tracking-[0.28em]"
         aria-label="Breadcrumb"
       >
         <Link to={buildScopedPath('/')} className="hover:text-electric transition-colors">
@@ -139,9 +139,9 @@ function TeamLayout({
         </span>
       </nav>
 
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-8">
+      <div className="mb-6 flex flex-col gap-5 sm:mb-8 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
         <div className="min-w-0">
-          <h1 className="text-[34px] sm:text-[40px] font-black tracking-tight text-ink leading-none mb-2 truncate">
+          <h1 className="mb-2 break-words text-[30px] font-black leading-tight tracking-tight text-ink sm:truncate sm:text-[40px] sm:leading-none">
             {team.canonical_team_name}
           </h1>
           <p className="text-[12px] text-ink-muted font-mono tabular-nums">
@@ -156,7 +156,7 @@ function TeamLayout({
             chips follow the toggle (season vs per-match leaderboard).
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 justify-end shrink-0">
+        <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end sm:shrink-0">
           <ProfileScopeSelector
             label="team-profile-scope"
             currentScope={scope}
