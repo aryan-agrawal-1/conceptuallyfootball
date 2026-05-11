@@ -28,9 +28,10 @@ interface ProfileStatBarsProps {
   player: PlayerRow
   rateMode: ProfileRateMode
   meta: StatMeta
+  percentileMap?: Record<string, number | null>
 }
 
-export function ProfileStatBars({ player, rateMode, meta }: ProfileStatBarsProps) {
+export function ProfileStatBars({ player, rateMode, meta, percentileMap = player.percentiles }: ProfileStatBarsProps) {
   const barSpecs = profileBarSpecsForPosition(player.position_group)
   const sectionOrder = profileSectionOrderForPosition(player.position_group)
   const availableBarSpecs = barSpecs.filter(spec => {
@@ -68,6 +69,7 @@ export function ProfileStatBars({ player, rateMode, meta }: ProfileStatBarsProps
                   rateMode={rateMode}
                   meta={meta}
                   pctOk={pctOk}
+                  percentileMap={percentileMap}
                 />
               ))}
             </div>
@@ -91,10 +93,11 @@ interface ProfileBarRowProps {
   rateMode: ProfileRateMode
   meta: StatMeta
   pctOk: boolean
+  percentileMap: Record<string, number | null>
 }
 
-function ProfileBarRow({ spec, player, rateMode, meta, pctOk }: ProfileBarRowProps) {
-  const resolved = resolveProfileMetric(player, rateMode, spec.bar, meta)
+function ProfileBarRow({ spec, player, rateMode, meta, pctOk, percentileMap }: ProfileBarRowProps) {
+  const resolved = resolveProfileMetric(player, rateMode, spec.bar, meta, percentileMap)
   const label = labelForBarSpec(spec, meta)
   const pct = pctOk ? resolved.percentile : null
   const rawOnly = !pctOk

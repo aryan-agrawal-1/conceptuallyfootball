@@ -11,8 +11,8 @@ interface ComparePlayerPickerProps {
   title: string
   /** When set, only players in this position group appear. When null (empty comparison), all positions are shown. */
   lockPosition: PositionGroup | null
-  /** Already selected player ids (excluded from results). */
-  excludeIds: Set<number>
+  /** Already selected player-season row tokens (excluded from results). */
+  excludeTokens: Set<string>
   rows: PlayerRow[]
   isLoading: boolean
   isError: boolean
@@ -24,7 +24,7 @@ export function ComparePlayerPicker({
   open,
   title,
   lockPosition,
-  excludeIds,
+  excludeTokens,
   rows,
   isLoading,
   isError,
@@ -35,7 +35,8 @@ export function ComparePlayerPicker({
 
   const filtered = useMemo(() => {
     const cohort = rows.filter(p => {
-      if (excludeIds.has(p.canonical_player_id)) return false
+      const token = `${p.competition_code}:${p.season_label}:${p.canonical_player_id}`
+      if (excludeTokens.has(token)) return false
       if (lockPosition && p.position_group !== lockPosition) return false
       return true
     })
@@ -44,7 +45,7 @@ export function ComparePlayerPicker({
     if (!trimmed) return sorted
     const needle = foldForSearch(trimmed)
     return sorted.filter(p => foldForSearch(p.canonical_player_name).includes(needle))
-  }, [rows, lockPosition, excludeIds, q])
+  }, [rows, lockPosition, excludeTokens, q])
 
   if (!open) return null
 
@@ -100,8 +101,9 @@ export function ComparePlayerPicker({
               ) : (
                 filtered.map(p => {
                   const lowMins = p.minutes < COMPARISON_MIN_MINUTES_WARNING
+                  const token = `${p.competition_code}:${p.season_label}:${p.canonical_player_id}`
                   return (
-                    <li key={p.canonical_player_id}>
+                    <li key={token}>
                       <button
                         type="button"
                         onClick={() => {
@@ -116,7 +118,7 @@ export function ComparePlayerPicker({
                         <span className="flex-1 min-w-0 truncate text-[13px] text-ink">{p.canonical_player_name}</span>
                         {p.canonical_team_name && (
                           <span className="hidden sm:inline shrink-0 truncate text-[11px] text-ink-muted max-w-[140px]">
-                            {p.canonical_team_name}
+                            {p.canonical_team_name} · {p.competition_code}
                           </span>
                         )}
                         <span className="shrink-0 text-[11px] font-mono tabular-nums text-ink-muted">

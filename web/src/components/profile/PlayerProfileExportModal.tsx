@@ -32,6 +32,8 @@ interface PlayerProfileExportModalProps {
   player: PlayerRow
   meta: StatMeta
   initialRateMode: ProfileRateMode
+  percentileMap?: Record<string, number | null>
+  percentileScopeLabel?: string
   onClose: () => void
 }
 
@@ -96,6 +98,8 @@ export function PlayerProfileExportModal({
   player,
   meta,
   initialRateMode,
+  percentileMap = player.percentiles,
+  percentileScopeLabel = player.competition_code,
   onClose,
 }: PlayerProfileExportModalProps) {
   const exportRef = useRef<HTMLDivElement>(null)
@@ -135,7 +139,13 @@ export function PlayerProfileExportModal({
             formatUnit: undefined,
           }
         }
-        const resolved = resolveProfileMetric(player, preset.rateMode, barKindForMetricKey(tile.key), meta)
+        const resolved = resolveProfileMetric(
+          player,
+          preset.rateMode,
+          barKindForMetricKey(tile.key),
+          meta,
+          percentileMap,
+        )
         return {
           ...tile,
           available: true,
@@ -144,7 +154,7 @@ export function PlayerProfileExportModal({
           formatUnit: resolved.formatUnit,
         }
       }),
-    [meta, player, preset.rateMode, preset.stats],
+    [meta, percentileMap, player, preset.rateMode, preset.stats],
   )
 
   const validTiles = useMemo(() => resolvedTiles.filter(tile => tile.available), [resolvedTiles])
@@ -487,6 +497,8 @@ export function PlayerProfileExportModal({
                       chartMetricKeys={chartMetricKeys}
                       notes={notes}
                       previewInvalid={invalidReason}
+                      percentileMap={percentileMap}
+                      percentileScopeLabel={percentileScopeLabel}
                     />
                   </div>
                 </div>
@@ -539,6 +551,8 @@ export function PlayerProfileExportModal({
           tiles={validTiles}
           chartMetricKeys={chartMetricKeys}
           notes={notes}
+          percentileMap={percentileMap}
+          percentileScopeLabel={percentileScopeLabel}
         />
       </div>
     </div>
@@ -665,6 +679,8 @@ interface PlayerProfileExportSurfaceProps {
   tiles: ResolvedTile[]
   chartMetricKeys: string[]
   notes: string
+  percentileMap: Record<string, number | null>
+  percentileScopeLabel: string
   previewInvalid?: string | null
 }
 
@@ -677,6 +693,8 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
     tiles,
     chartMetricKeys,
     notes,
+    percentileMap,
+    percentileScopeLabel,
     previewInvalid,
   },
   ref,
@@ -691,7 +709,7 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
   const rawOnly = !player.eligibility.percentiles_eligible
   const contextLine = rawOnly
     ? `Stats: ${player.competition_code} ${player.season_label} · Raw values · Percentiles unavailable`
-    : `Stats: ${player.competition_code} ${player.season_label} · ${preset.rateMode === 'per90' ? 'Per 90' : 'Season'} · Percentiles vs ${POSITION_COHORT_LABEL[player.position_group]}`
+    : `Stats: ${player.competition_code} ${player.season_label} · ${preset.rateMode === 'per90' ? 'Per 90' : 'Season'} · Percentiles vs ${percentileScopeLabel} ${POSITION_COHORT_LABEL[player.position_group]}`
   const theme = surfaceTheme(preset.theme)
   const hasSupplement = preset.chartEnabled || preset.notesEnabled
   const chartScale = preset.notesEnabled ? 0.62 : 1.2
@@ -801,6 +819,7 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
                       rateMode={preset.rateMode}
                       meta={meta}
                       metricKeys={chartMetricKeys}
+                      percentileMap={percentileMap}
                       exportMode
                     />
                   </div>

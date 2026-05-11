@@ -14,6 +14,10 @@ export interface CompareStatTablePlayer {
   slot: number
 }
 
+function playerRowKey(row: PlayerRow): string {
+  return `${row.competition_code}:${row.season_label}:${row.canonical_player_id}`
+}
+
 interface CompareStatTableProps {
   metricKeys: string[]
   players: CompareStatTablePlayer[]
@@ -21,6 +25,7 @@ interface CompareStatTableProps {
   rateMode: ProfileRateMode
   lockedStatIndex: number | null
   hoveredStatIndex: number | null
+  percentileMapForRow?: (row: PlayerRow) => Record<string, number | null>
 }
 
 export function CompareStatTable({
@@ -30,6 +35,7 @@ export function CompareStatTable({
   rateMode,
   lockedStatIndex,
   hoveredStatIndex,
+  percentileMapForRow,
 }: CompareStatTableProps) {
   const highlight = lockedStatIndex ?? hoveredStatIndex
 
@@ -43,7 +49,7 @@ export function CompareStatTable({
             </th>
             {players.map(({ row, slot }) => (
               <th
-                key={row.canonical_player_id}
+                key={playerRowKey(row)}
                 className="px-3 py-2.5 text-[10px] uppercase tracking-[0.12em] font-mono font-medium"
                 style={{ color: COMPARISON_SLOT_STROKES[slot % COMPARISON_SLOT_STROKES.length] }}
               >
@@ -67,11 +73,11 @@ export function CompareStatTable({
                 <td className="px-3 py-2.5 text-ink-muted font-mono text-[11px]">{label}</td>
                 {players.map(({ row, slot }) => {
                   const kind = barKindForMetricKey(key)
-                  const r = resolveProfileMetric(row, rateMode, kind, meta)
+                  const r = resolveProfileMetric(row, rateMode, kind, meta, percentileMapForRow?.(row) ?? row.percentiles)
                   const pctOk = row.eligibility.percentiles_eligible
                   const pct = pctOk ? r.percentile : null
                   return (
-                    <td key={`${row.canonical_player_id}-${key}`} className="px-3 py-2.5 align-top">
+                    <td key={`${playerRowKey(row)}-${key}`} className="px-3 py-2.5 align-top">
                       <div className="flex flex-col gap-0.5">
                         <span
                           className="text-ink tabular-nums"

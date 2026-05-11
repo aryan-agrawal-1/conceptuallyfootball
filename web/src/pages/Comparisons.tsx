@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQueries } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
@@ -6,7 +6,14 @@ import { fetchPlayerDetail } from '../lib/api'
 import { useSearchPaletteIndex } from '../hooks/useSearchPaletteIndex'
 import { useScope } from '../context/ScopeContext'
 import type { PlayerDetailResponse, PlayerRow, PositionGroup } from '../types/api'
-import { parsePlayerIdsParam, parseRateModeParam, parseStatsParam } from '../lib/comparisonUrl'
+import {
+  parsePlayerRefsParam,
+  parseRateModeParam,
+  parseStatsParam,
+  playerRowToScopedRef,
+  scopedPlayerToken,
+  type ScopedPlayerRef,
+} from '../lib/comparisonUrl'
 import { resolveComparisonStatKeys } from '../lib/comparisonStatKeys'
 import {
   COMPARISON_MIN_MINUTES_WARNING,
@@ -22,6 +29,7 @@ import { CompareStatTable } from '../components/comparisons/CompareStatTable'
 import { ComparePlayerPicker } from '../components/comparisons/ComparePlayerPicker'
 import { ProfileEligibilityBanner } from '../components/profile/ProfileEligibilityBanner'
 import { ChartShareCard } from '../components/visualizer/ChartShareCard'
+import { scopeIncludesMembership } from '../lib/scopeMembership'
 
 const POSITION_COHORT_LABEL: Record<PositionGroup, string> = {
   FWD: 'Forwards',
@@ -32,7 +40,14 @@ const POSITION_COHORT_LABEL: Record<PositionGroup, string> = {
 }
 
 type PickerState = { kind: 'add' } | { kind: 'replace'; index: number }
-type DetailScope = { competition: string; season: string }
+
+function rowToken(row: PlayerRow): string {
+  return scopedPlayerToken(playerRowToScopedRef(row))
+}
+
+function refsEqual(left: ScopedPlayerRef[], right: ScopedPlayerRef[]): boolean {
+  return left.length === right.length && left.every((ref, index) => scopedPlayerToken(ref) === scopedPlayerToken(right[index]))
+}
 
 export function Comparisons() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -42,7 +57,7 @@ export function Comparisons() {
   const [cohortConfirm, setCohortConfirm] = useState<PlayerRow | null>(null)
   const { scope, scopeLabel, buildScopedPath } = useScope()
 
-  const playerIds = useMemo(() => parsePlayerIdsParam(searchParams.get('players')), [searchParams])
+  const parsedPlayerRefs = useMemo(() => parsePlayerRefsParam(searchParams.get('players')), [searchParams])
   const urlStats = useMemo(() => parseStatsParam(searchParams.get('stats')), [searchParams])
   const rateMode: ProfileRateMode = useMemo(
     () => parseRateModeParam(searchParams.get('mode')),
@@ -52,48 +67,60 @@ export function Comparisons() {
   const { playersSorted, isLoading: indexLoading, isError: indexError } = useSearchPaletteIndex(true)
 
   const competition = scope.competition
-  const season = scope.season
   const isAggregateScope = competition === 'BIG5' || competition === 'ALL'
 
-  const detailScopes = useMemo((): Array<DetailScope | null> => {
-    return playerIds.map(id => {
-      const scopedRow = playersSorted.find(p => p.canonical_player_id === id)
-      if (scopedRow) {
-        return {
-          competition: scopedRow.competition_code,
-          season: scopedRow.season_label,
-        }
-      }
-      return isAggregateScope ? null : { competition, season }
-    })
-  }, [competition, isAggregateScope, playerIds, playersSorted, season])
+  const playerRefs = useMemo(
+    () =>
+      parsedPlayerRefs.filter(ref =>
+        scopeIncludesMembership(scope, {
+          competition: ref.competition,
+          season: ref.season,
+        }),
+      ),
+    [parsedPlayerRefs, scope],
+  )
+
+  const playerTokens = useMemo(() => playerRefs.map(scopedPlayerToken), [playerRefs])
+
+  useEffect(() => {
+    if (refsEqual(parsedPlayerRefs, playerRefs)) return
+    setSearchParams(
+      prev => {
+        const p = new URLSearchParams(prev)
+        if (playerRefs.length) p.set('players', playerRefs.map(scopedPlayerToken).join(','))
+        else p.delete('players')
+        return p
+      },
+      { replace: true },
+    )
+  }, [parsedPlayerRefs, playerRefs, setSearchParams])
 
   const detailQueries = useQueries({
-    queries: playerIds.map((id, index) => {
-      const detailScope = detailScopes[index]
+    queries: playerRefs.map(ref => {
       return {
         queryKey: [
           'player-detail',
-          detailScope?.competition ?? competition,
-          detailScope?.season ?? season,
-          id,
+          ref.competition,
+          ref.season,
+          ref.id,
+          isAggregateScope ? competition : null,
         ],
         queryFn: () => {
-          if (!detailScope) throw new Error('Player is not available in this scope.')
-          return fetchPlayerDetail(id, {
-            competition: detailScope.competition,
-            season: detailScope.season,
-            include: 'meta',
+          return fetchPlayerDetail(ref.id, {
+            competition: ref.competition,
+            season: ref.season,
+            include: isAggregateScope ? 'meta,scope_percentiles' : 'meta',
+            percentile_scope: isAggregateScope ? competition : undefined,
           })
         },
-        enabled: Number.isFinite(id) && id > 0 && detailScope != null,
+        enabled: Number.isFinite(ref.id) && ref.id > 0,
       }
     }),
   })
 
   const detailsOrdered = useMemo((): Array<PlayerDetailResponse | undefined> => {
-    return playerIds.map((_, i) => detailQueries[i]?.data as PlayerDetailResponse | undefined)
-  }, [playerIds, detailQueries])
+    return playerRefs.map((_, i) => detailQueries[i]?.data as PlayerDetailResponse | undefined)
+  }, [playerRefs, detailQueries])
 
   const meta = useMemo(() => {
     for (const d of detailsOrdered) {
@@ -105,19 +132,20 @@ export function Comparisons() {
   const anchorRow: PlayerRow | null = useMemo(() => {
     const fromDetail = detailsOrdered[0]
     if (fromDetail) return fromDetail
-    if (!playerIds[0]) return null
-    return playersSorted.find(p => p.canonical_player_id === playerIds[0]) ?? null
-  }, [detailsOrdered, playerIds, playersSorted])
+    const first = playerRefs[0]
+    if (!first) return null
+    return playersSorted.find(p => rowToken(p) === scopedPlayerToken(first)) ?? null
+  }, [detailsOrdered, playerRefs, playersSorted])
 
   const cohortPosition: PositionGroup | null = anchorRow?.position_group ?? null
 
   const pickerLockPosition: PositionGroup | null =
-    playerIds.length === 0 ? null : cohortPosition
+    playerRefs.length === 0 ? null : cohortPosition
 
   const pickerTitle =
     picker?.kind === 'replace'
       ? 'Replace player'
-      : playerIds.length === 0
+      : playerRefs.length === 0
         ? 'Select first player'
         : 'Add player'
 
@@ -127,18 +155,16 @@ export function Comparisons() {
   }, [urlStats, cohortPosition, meta])
 
   const radarPlayers = useMemo(() => {
-    return playerIds
+    return playerRefs
       .map((_, i) => {
         const d = detailsOrdered[i]
         return d ? { row: d, slot: i as 0 | 1 | 2 } : null
       })
       .filter((x): x is { row: PlayerDetailResponse; slot: 0 | 1 | 2 } => x != null)
-  }, [playerIds, detailsOrdered])
+  }, [playerRefs, detailsOrdered])
 
-  const hasUnresolvedAggregatePlayer =
-    isAggregateScope && playerIds.length > 0 && detailScopes.some(s => s == null)
-  const detailsLoading = detailQueries.some(q => q.isLoading) || (hasUnresolvedAggregatePlayer && indexLoading)
-  const detailsError = detailQueries.some(q => q.isError) || (hasUnresolvedAggregatePlayer && !indexLoading)
+  const detailsLoading = detailQueries.some(q => q.isLoading)
+  const detailsError = detailQueries.some(q => q.isError)
 
   const anyLowMinutesOrIneligible = useMemo(() => {
     return radarPlayers.some(
@@ -146,12 +172,17 @@ export function Comparisons() {
     )
   }, [radarPlayers])
 
+  const percentileMapForRow = useCallback(
+    (row: PlayerRow) => (isAggregateScope ? row.scope_percentiles ?? {} : row.percentiles),
+    [isAggregateScope],
+  )
+
   const writeParams = useCallback(
-    (next: { playerIds: number[]; stats: string[] | null; mode: ProfileRateMode }) => {
+    (next: { playerRefs: ScopedPlayerRef[]; stats: string[] | null; mode: ProfileRateMode }) => {
       setSearchParams(
         prev => {
           const p = new URLSearchParams(prev)
-          if (next.playerIds.length) p.set('players', next.playerIds.join(','))
+          if (next.playerRefs.length) p.set('players', next.playerRefs.map(scopedPlayerToken).join(','))
           else p.delete('players')
           if (next.stats && next.stats.length) p.set('stats', next.stats.join(','))
           else p.delete('stats')
@@ -165,26 +196,36 @@ export function Comparisons() {
     [setSearchParams],
   )
 
+  useEffect(() => {
+    if (!cohortPosition || radarPlayers.length <= 1) return
+    const nextRefs = playerRefs.filter((_, index) => {
+      const row = detailsOrdered[index]
+      return !row || row.position_group === cohortPosition
+    })
+    if (refsEqual(nextRefs, playerRefs)) return
+    writeParams({ playerRefs: nextRefs, stats: urlStats, mode: rateMode })
+  }, [cohortPosition, detailsOrdered, playerRefs, radarPlayers.length, rateMode, urlStats, writeParams])
+
   const setRateMode = useCallback(
     (mode: ProfileRateMode) => {
-      writeParams({ playerIds, stats: urlStats, mode })
+      writeParams({ playerRefs, stats: urlStats, mode })
     },
-    [writeParams, playerIds, urlStats],
+    [writeParams, playerRefs, urlStats],
   )
 
   const setStatKeys = useCallback(
     (keys: string[]) => {
       const trimmed = keys.slice(0, COMPARISON_STAT_MAX)
       if (trimmed.length < COMPARISON_STAT_MIN) return
-      writeParams({ playerIds, stats: trimmed, mode: rateMode })
+      writeParams({ playerRefs, stats: trimmed, mode: rateMode })
     },
-    [writeParams, playerIds, rateMode],
+    [writeParams, playerRefs, rateMode],
   )
 
-  const commitPlayerIds = useCallback(
-    (ids: number[], opts?: { clearStats?: boolean }) => {
+  const commitPlayerRefs = useCallback(
+    (refs: ScopedPlayerRef[], opts?: { clearStats?: boolean }) => {
       writeParams({
-        playerIds: ids.slice(0, 3),
+        playerRefs: refs.slice(0, 3),
         stats: opts?.clearStats ? null : urlStats,
         mode: rateMode,
       })
@@ -198,26 +239,26 @@ export function Comparisons() {
     if (!picker) return
 
     if (picker.kind === 'add') {
-      if (playerIds.length >= 3) return
-      if (playerIds.length === 0) {
-        commitPlayerIds([row.canonical_player_id])
+      if (playerRefs.length >= 3) return
+      if (playerRefs.length === 0) {
+        commitPlayerRefs([playerRowToScopedRef(row)])
         setPicker(null)
         return
       }
       const anchor = anchorRow
       if (!anchor || row.position_group !== anchor.position_group) return
-      commitPlayerIds([...playerIds, row.canonical_player_id])
+      commitPlayerRefs([...playerRefs, playerRowToScopedRef(row)])
       setPicker(null)
       return
     }
 
     const idx = picker.index
-    const next = [...playerIds]
+    const next = [...playerRefs]
     const oldAnchor = detailsOrdered[0] ?? anchorRow
 
     if (
       idx === 0 &&
-      playerIds.length > 1 &&
+      playerRefs.length > 1 &&
       oldAnchor &&
       row.position_group !== oldAnchor.position_group
     ) {
@@ -226,28 +267,28 @@ export function Comparisons() {
       return
     }
 
-    next[idx] = row.canonical_player_id
+    next[idx] = playerRowToScopedRef(row)
     const clearStats = Boolean(
       idx === 0 && oldAnchor && row.position_group !== oldAnchor.position_group,
     )
-    commitPlayerIds(next, { clearStats })
+    commitPlayerRefs(next, { clearStats })
     setPicker(null)
   }
 
   function confirmCohortResetPlayer() {
     if (!cohortConfirm) return
-    commitPlayerIds([cohortConfirm.canonical_player_id], { clearStats: true })
+    commitPlayerRefs([playerRowToScopedRef(cohortConfirm)], { clearStats: true })
     setCohortConfirm(null)
   }
 
   function removePlayerAt(index: number) {
-    const next = playerIds.filter((_, i) => i !== index)
-    commitPlayerIds(next, { clearStats: next.length === 0 })
+    const next = playerRefs.filter((_, i) => i !== index)
+    commitPlayerRefs(next, { clearStats: next.length === 0 })
   }
 
-  const excludeIds = useMemo(() => new Set(playerIds), [playerIds])
+  const excludeTokens = useMemo(() => new Set(playerTokens), [playerTokens])
 
-  const empty = playerIds.length === 0
+  const empty = playerRefs.length === 0
   const compareTitle = useMemo(() => {
     if (!radarPlayers.length) return 'Comparisons · Radar'
     const names = radarPlayers.map(player => player.row.canonical_player_name)
@@ -257,7 +298,7 @@ export function Comparisons() {
   }, [radarPlayers])
   const compareSubtitle = useMemo(() => {
     const cohort = cohortPosition ? POSITION_COHORT_LABEL[cohortPosition] : 'Players'
-    return `${scopeLabel} · ${cohort} · ${rateMode === 'per90' ? 'per 90' : 'season'} · ${statKeys.length} axes`
+    return `${scopeLabel} · Percentiles vs ${cohort.toLowerCase()} · ${rateMode === 'per90' ? 'per 90' : 'season'} · ${statKeys.length} axes`
   }, [cohortPosition, rateMode, scopeLabel, statKeys.length])
 
   return (
@@ -278,8 +319,8 @@ export function Comparisons() {
             )}
           </p>
           <p className="mt-2 text-[11px] text-ink-dim leading-relaxed max-w-xl">
-            Choose a player to start a same-position comparison. The first player sets the cohort; add up to two more.
-            Chart nodes use positional percentiles; fills are translucent so overlaps read clearly.
+            Choose a player to start a same-position comparison. The first player sets the position group; add up to two
+            more. Chart nodes use percentiles against the selected scope and position.
           </p>
         </div>
         <ProfileRateToggle value={rateMode} onChange={setRateMode} />
@@ -317,9 +358,9 @@ export function Comparisons() {
             <div className="flex flex-col gap-4 p-3 sm:p-4">
               <div className="flex flex-col lg:flex-row gap-4 lg:items-start lg:justify-between">
                 <div className="grid w-full grid-cols-1 gap-3 sm:flex sm:flex-wrap">
-                  {playerIds.map((id, index) => {
+                  {playerRefs.map((ref, index) => {
                     const d = detailsOrdered[index]
-                    const label = d?.canonical_player_name ?? `Player ${id}`
+                    const label = d?.canonical_player_name ?? `Player ${ref.id}`
                     const team = d?.canonical_team_name
                     const mins = d?.minutes
                     const low =
@@ -328,13 +369,13 @@ export function Comparisons() {
                         !d.eligibility.percentiles_eligible)
                     return (
                       <div
-                        key={`${id}-${index}`}
+                        key={`${scopedPlayerToken(ref)}-${index}`}
                         className="relative min-w-0 border border-electric/25 bg-panel/50 px-3 py-2.5 sm:min-w-[200px] sm:max-w-[280px]"
                       >
                         <div className="flex items-start justify-between gap-2 mb-1">
                           <div className="min-w-0">
                             <Link
-                              to={buildScopedPath(`/player/${id}`)}
+                              to={buildScopedPath(`/player/${ref.id}`, { competition: ref.competition, season: ref.season })}
                               className="text-[13px] font-semibold text-ink truncate block hover:text-electric/90 hover:underline"
                             >
                               {label}
@@ -344,13 +385,17 @@ export function Comparisons() {
                                 {d?.canonical_team_id != null ? (
                                   <Link
                                     className="hover:text-electric hover:underline"
-                                    to={buildScopedPath(`/team/${d.canonical_team_id}`)}
+                                    to={buildScopedPath(`/team/${d.canonical_team_id}`, {
+                                      competition: d.competition_code,
+                                      season: d.season_label,
+                                    })}
                                   >
                                     {team}
                                   </Link>
                                 ) : (
                                   team
                                 )}
+                                {d && <span className="text-ink-dim"> · {d.competition_code}</span>}
                               </p>
                             )}
                           </div>
@@ -392,7 +437,7 @@ export function Comparisons() {
                       </div>
                     )
                   })}
-                  {playerIds.length > 0 && playerIds.length < 3 && anchorRow && (
+                  {playerRefs.length > 0 && playerRefs.length < 3 && anchorRow && (
                     <button
                       type="button"
                       onClick={() => setPicker({ kind: 'add' })}
@@ -446,6 +491,7 @@ export function Comparisons() {
                             lockedStatIndex={lockedStatIndex}
                             onHoverStat={setHoveredStatIndex}
                             onClickStat={setLockedStatIndex}
+                            percentileMapForRow={percentileMapForRow}
                             exportMode={exportMode}
                           />
                         )}
@@ -461,6 +507,7 @@ export function Comparisons() {
                         lockedStatIndex={lockedStatIndex}
                         onHoverStat={setHoveredStatIndex}
                         onClickStat={setLockedStatIndex}
+                        percentileMapForRow={percentileMapForRow}
                       />
                     </div>
                   </div>
@@ -482,6 +529,7 @@ export function Comparisons() {
                     rateMode={rateMode}
                     lockedStatIndex={lockedStatIndex}
                     hoveredStatIndex={hoveredStatIndex}
+                    percentileMapForRow={percentileMapForRow}
                   />
                 </div>
               </HudFrame>
@@ -494,7 +542,7 @@ export function Comparisons() {
         open={picker != null}
         title={pickerTitle}
         lockPosition={pickerLockPosition}
-        excludeIds={excludeIds}
+        excludeTokens={excludeTokens}
         rows={playersSorted}
         isLoading={indexLoading}
         isError={indexError}

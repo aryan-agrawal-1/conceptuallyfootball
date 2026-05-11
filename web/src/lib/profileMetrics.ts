@@ -169,12 +169,13 @@ export function resolveProfileMetric(
   mode: ProfileRateMode,
   bar: ProfileBarKind,
   meta: { metrics: Record<string, MetricDefinition> },
+  percentileMap: Record<string, number | null> = row.percentiles,
 ): ResolvedProfileMetric {
   const pctEligible = row.eligibility.percentiles_eligible
 
   if (bar.kind === 'invariant') {
     const v = row.metrics[bar.key] ?? null
-    const p = pctEligible ? (row.percentiles[bar.key] ?? null) : null
+    const p = pctEligible ? (percentileMap[bar.key] ?? null) : null
     return {
       metricKey: bar.key,
       value: v,
@@ -186,13 +187,13 @@ export function resolveProfileMetric(
   if (bar.kind === 'paired') {
     const key = mode === 'per90' ? bar.per90 : bar.full
     const v = row.metrics[key] ?? null
-    const p = pctEligible ? (row.percentiles[key] ?? null) : null
+    const p = pctEligible ? (percentileMap[key] ?? null) : null
     return { metricKey: key, value: v, percentile: p, formatUnit: unitFromMeta(key, meta) }
   }
 
   /* derivedSeasonFromPer90 */
   const per90Val = row.metrics[bar.per90] ?? null
-  const p = pctEligible ? (row.percentiles[bar.per90] ?? null) : null
+  const p = pctEligible ? (percentileMap[bar.per90] ?? null) : null
   if (mode === 'per90') {
     return {
       metricKey: bar.per90,
@@ -288,6 +289,7 @@ export function resolveHeaderCard(
   mode: ProfileRateMode,
   spec: ProfileHeaderCardSpec,
   meta: { metrics: Record<string, MetricDefinition> },
+  percentileMap: Record<string, number | null> = row.percentiles,
 ): ResolvedProfileMetric & { label: string } {
   if (spec.bar.kind === 'invariant' && spec.bar.key === 'minutes_display') {
     return {
@@ -298,7 +300,7 @@ export function resolveHeaderCard(
       formatUnit: 'integer',
     }
   }
-  const r = resolveProfileMetric(row, mode, spec.bar, meta)
+  const r = resolveProfileMetric(row, mode, spec.bar, meta, percentileMap)
   return { ...r, label: spec.label }
 }
 

@@ -62,12 +62,13 @@ export async function fetchGkStatMatrix(
  */
 export async function fetchPlayerDetail(
   playerId: number,
-  filters: Pick<MatrixFilters, 'competition' | 'season'> & { include?: string },
+  filters: Pick<MatrixFilters, 'competition' | 'season'> & { include?: string; percentile_scope?: string },
 ): Promise<PlayerDetailResponse> {
   const p = new URLSearchParams()
   p.set('competition', filters.competition)
   p.set('season', filters.season)
   if (filters.include) p.set('include', filters.include)
+  if (filters.percentile_scope) p.set('percentile_scope', filters.percentile_scope)
   const q = p.toString()
   const outfieldUrl = `${BASE}/player-seasons/derived-stats/${playerId}?${q}`
   const res = await fetch(outfieldUrl)

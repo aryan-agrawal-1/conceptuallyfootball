@@ -28,6 +28,10 @@ function buildClosedPath(points: { x: number; y: number }[]): string {
   return `M ${p0.x} ${p0.y} ${rest.map(p => `L ${p.x} ${p.y}`).join(' ')} Z`
 }
 
+function playerRowKey(row: PlayerRow): string {
+  return `${row.competition_code}:${row.season_label}:${row.canonical_player_id}`
+}
+
 export interface CompareRadarPlayer {
   row: PlayerRow
   slot: number
@@ -42,6 +46,7 @@ interface CompareRadarChartProps {
   lockedStatIndex: number | null
   onHoverStat: (index: number | null) => void
   onClickStat: (index: number | null) => void
+  percentileMapForRow?: (row: PlayerRow) => Record<string, number | null>
   exportMode?: boolean
 }
 
@@ -54,6 +59,7 @@ export function CompareRadarChart({
   lockedStatIndex,
   onHoverStat,
   onClickStat,
+  percentileMapForRow,
   exportMode = false,
 }: CompareRadarChartProps) {
   const chartSize = exportMode ? 720 : CHART_SIZE
@@ -89,7 +95,7 @@ export function CompareRadarChart({
 
       const playerPoints = players.map(({ row, slot }) => {
         const kind = barKindForMetricKey(key)
-        const resolved = resolveProfileMetric(row, rateMode, kind, meta)
+        const resolved = resolveProfileMetric(row, rateMode, kind, meta, percentileMapForRow?.(row) ?? row.percentiles)
         const pctOk = row.eligibility.percentiles_eligible
         const pct = pctOk ? (resolved.percentile ?? 0) : 0
         const r = innerR + rScale(pct)
@@ -114,7 +120,7 @@ export function CompareRadarChart({
         playerPoints,
       }
     })
-  }, [band, innerR, labelR, metricKeys, players, meta, rateMode])
+  }, [band, innerR, labelR, metricKeys, players, meta, rateMode, percentileMapForRow])
 
   const activeTipIndex = tip?.statIndex ?? null
   const highlightIndex = lockedStatIndex ?? hoveredStatIndex ?? activeTipIndex
@@ -182,7 +188,7 @@ export function CompareRadarChart({
               const stroke = COMPARISON_SLOT_STROKES[slot % COMPARISON_SLOT_STROKES.length]
               return (
                 <path
-                  key={`poly-${row.canonical_player_id}`}
+                  key={`poly-${playerRowKey(row)}`}
                   d={path}
                   fill={fill}
                   stroke={stroke}
@@ -199,7 +205,7 @@ export function CompareRadarChart({
                 const pp = ax.playerPoints.find(p => p.slot === slot)
                 if (!pp) return null
                 return (
-                  <g key={`node-${row.canonical_player_id}-${ax.key}`}>
+                  <g key={`node-${playerRowKey(row)}-${ax.key}`}>
                     <circle
                       cx={pp.pt.x}
                       cy={pp.pt.y}

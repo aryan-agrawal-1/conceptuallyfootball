@@ -12,16 +12,27 @@ from ingestion.gk_definitions import (
     GK_METRIC_DEFINITIONS,
     GK_METRIC_FIELDS,
     GK_METRIC_GROUPS,
+    GK_METRICS_WITH_PERCENTILE,
     LIST_SORT_FIELDS_GK,
 )
 from ingestion.derived_api import _resolve_competition_scope
 from ingestion.models import CompetitionSeason, PlayerSeasonGkDerivedStats
 from ingestion.secondary_teams import secondary_teams_payload
+from ingestion.scope_percentiles import (
+    build_scope_percentiles,
+    is_aggregate_scope,
+    requested_include,
+    resolve_scope_seasons,
+    scope_context,
+)
 
 
 def _requested_meta(request) -> bool:
-    include = request.query_params.get("include", "")
-    return "meta" in {part.strip() for part in include.split(",") if part.strip()}
+    return requested_include(request, "meta")
+
+
+def _requested_scope_percentiles(request) -> bool:
+    return requested_include(request, "scope_percentiles")
 
 
 def _gk_meta_payload() -> dict:
@@ -145,6 +156,10 @@ def _row_payload(row: PlayerSeasonGkDerivedStats) -> dict:
     }
 
 
+def _attach_scope_percentiles(payload: dict, row: PlayerSeasonGkDerivedStats, scope_payload: dict[int, dict]) -> None:
+    payload["scope_percentiles"] = scope_payload.get(row.id, {metric: None for metric in GK_METRIC_FIELDS})
+
+
 class GkDerivedPlayerSeasonListApi(APIView):
     def get(self, request):
         try:
@@ -155,14 +170,36 @@ class GkDerivedPlayerSeasonListApi(APIView):
         except DjangoValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
+        rows = list(queryset)
+        scope_percentiles = None
+        if _requested_scope_percentiles(request):
+            scope_code = request.query_params.get("percentile_scope") or competition_code
+            try:
+                scope_seasons = resolve_scope_seasons(scope_code, season_label)
+            except DjangoValidationError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            scope_percentiles = build_scope_percentiles(
+                scope_queryset=_base_queryset_for_seasons(scope_seasons),
+                rows=rows,
+                metric_fields=GK_METRIC_FIELDS,
+                percentile_metric_fields=GK_METRICS_WITH_PERCENTILE,
+            )
+
         payload = {
             "competition_season": competition_seasons[0].id if len(competition_seasons) == 1 else 0,
             "competition_code": competition_code,
             "season_label": season_label,
             "matrix_kind": "gk",
-            "count": queryset.count(),
-            "results": [_row_payload(row) for row in queryset],
+            "count": len(rows),
+            "results": [],
         }
+        for row in rows:
+            row_payload = _row_payload(row)
+            if scope_percentiles is not None:
+                _attach_scope_percentiles(row_payload, row, scope_percentiles)
+            payload["results"].append(row_payload)
+        if scope_percentiles is not None:
+            payload["scope_percentile_context"] = scope_context(scope_code, season_label, scope_seasons)
         if _requested_meta(request):
             payload["meta"] = _gk_meta_payload()
         return Response(payload)
@@ -174,12 +211,29 @@ class GkDerivedPlayerSeasonDetailApi(APIView):
             competition_season = _resolve_competition_season(request)
             queryset = _base_queryset(competition_season)
             row = queryset.get(canonical_player_id=canonical_player_id)
+            scope_percentiles = None
+            if _requested_scope_percentiles(request):
+                scope_code = request.query_params.get("percentile_scope") or (
+                    request.query_params.get("competition") if is_aggregate_scope(request.query_params.get("competition")) else None
+                )
+                if not scope_code:
+                    raise DjangoValidationError("Provide percentile_scope for scope percentiles.")
+                scope_seasons = resolve_scope_seasons(scope_code, competition_season.season.label)
+                scope_percentiles = build_scope_percentiles(
+                    scope_queryset=_base_queryset_for_seasons(scope_seasons),
+                    rows=[row],
+                    metric_fields=GK_METRIC_FIELDS,
+                    percentile_metric_fields=GK_METRICS_WITH_PERCENTILE,
+                )
         except DjangoValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except PlayerSeasonGkDerivedStats.DoesNotExist:
             return Response({"detail": "GK derived player-season not found."}, status=status.HTTP_404_NOT_FOUND)
 
         payload = _row_payload(row)
+        if scope_percentiles is not None:
+            _attach_scope_percentiles(payload, row, scope_percentiles)
+            payload["scope_percentile_context"] = scope_context(scope_code, competition_season.season.label, scope_seasons)
         if _requested_meta(request):
             payload["meta"] = _gk_meta_payload()
         return Response(payload)

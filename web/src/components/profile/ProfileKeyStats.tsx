@@ -16,18 +16,19 @@ interface ProfileKeyStatsProps {
   player: PlayerRow
   rateMode: ProfileRateMode
   meta: StatMeta
+  percentileMap?: Record<string, number | null>
 }
 
-export function ProfileKeyStats({ player, rateMode, meta }: ProfileKeyStatsProps) {
+export function ProfileKeyStats({ player, rateMode, meta, percentileMap = player.percentiles }: ProfileKeyStatsProps) {
   const primarySpecs = headerSpecsForPosition(player.position_group)
-    .map(spec => ({ spec, resolved: resolveHeaderCard(player, rateMode, spec, meta) }))
+    .map(spec => ({ spec, resolved: resolveHeaderCard(player, rateMode, spec, meta, percentileMap) }))
     .filter(({ resolved }) => resolved.value != null)
   const usedMetricKeys = new Set(primarySpecs.map(({ resolved }) => resolved.metricKey))
   const fallbackSpecs = Object.entries(meta.metrics)
     .map(([key, def]) => {
       if (usedMetricKeys.has(key)) return null
       if (player.position_group === 'GK' && key === 'rating') return null
-      const resolved = resolveProfileMetric(player, rateMode, barKindForMetricKey(key), meta)
+      const resolved = resolveProfileMetric(player, rateMode, barKindForMetricKey(key), meta, percentileMap)
       if (resolved.value == null) return null
       return {
         spec: {

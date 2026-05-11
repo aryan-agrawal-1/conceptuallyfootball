@@ -18,8 +18,14 @@ from ingestion.derived_definitions import (
 )
 from ingestion.models import CompetitionSeason, PlayerSeasonDerivedStats
 from ingestion.secondary_teams import secondary_teams_payload
-
-BIG_FIVE_COMPETITION_CODES = ("ENG1", "GER1", "SPA1", "FRA1", "ITA1")
+from ingestion.scope_percentiles import (
+    BIG_FIVE_COMPETITION_CODES,
+    build_scope_percentiles,
+    is_aggregate_scope,
+    requested_include,
+    resolve_scope_seasons,
+    scope_context,
+)
 
 
 def _has_metric_value(row: PlayerSeasonDerivedStats, metric: str) -> bool:
@@ -27,8 +33,11 @@ def _has_metric_value(row: PlayerSeasonDerivedStats, metric: str) -> bool:
 
 
 def _requested_meta(request) -> bool:
-    include = request.query_params.get("include", "")
-    return "meta" in {part.strip() for part in include.split(",") if part.strip()}
+    return requested_include(request, "meta")
+
+
+def _requested_scope_percentiles(request) -> bool:
+    return requested_include(request, "scope_percentiles")
 
 
 def _meta_payload() -> dict:
@@ -183,6 +192,10 @@ def _row_payload(row: PlayerSeasonDerivedStats) -> dict:
     }
 
 
+def _attach_scope_percentiles(payload: dict, row: PlayerSeasonDerivedStats, scope_payload: dict[int, dict]) -> None:
+    payload["scope_percentiles"] = scope_payload.get(row.id, {metric: None for metric in METRIC_FIELDS})
+
+
 def _detail_sections(row: PlayerSeasonDerivedStats) -> dict[str, dict]:
     sections: dict[str, dict] = {}
     for group_key, group_label in METRIC_GROUPS.items():
@@ -217,13 +230,34 @@ class DerivedPlayerSeasonListApi(APIView):
         except DjangoValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
+        rows = list(queryset)
+        scope_percentiles = None
+        if _requested_scope_percentiles(request):
+            scope_code = request.query_params.get("percentile_scope") or competition_code
+            try:
+                scope_seasons = resolve_scope_seasons(scope_code, season_label)
+            except DjangoValidationError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            scope_percentiles = build_scope_percentiles(
+                scope_queryset=_base_queryset_for_seasons(scope_seasons),
+                rows=rows,
+                metric_fields=METRIC_FIELDS,
+            )
+
         payload = {
             "competition_season": competition_seasons[0].id if len(competition_seasons) == 1 else 0,
             "competition_code": competition_code,
             "season_label": season_label,
-            "count": queryset.count(),
-            "results": [_row_payload(row) for row in queryset],
+            "count": len(rows),
+            "results": [],
         }
+        for row in rows:
+            row_payload = _row_payload(row)
+            if scope_percentiles is not None:
+                _attach_scope_percentiles(row_payload, row, scope_percentiles)
+            payload["results"].append(row_payload)
+        if scope_percentiles is not None:
+            payload["scope_percentile_context"] = scope_context(scope_code, season_label, scope_seasons)
         if _requested_meta(request):
             payload["meta"] = _meta_payload()
         return Response(payload)
@@ -235,12 +269,28 @@ class DerivedPlayerSeasonDetailApi(APIView):
             competition_season = _resolve_competition_season(request)
             queryset = _base_queryset(competition_season)
             row = queryset.get(canonical_player_id=canonical_player_id)
+            scope_percentiles = None
+            if _requested_scope_percentiles(request):
+                scope_code = request.query_params.get("percentile_scope") or (
+                    request.query_params.get("competition") if is_aggregate_scope(request.query_params.get("competition")) else None
+                )
+                if not scope_code:
+                    raise DjangoValidationError("Provide percentile_scope for scope percentiles.")
+                scope_seasons = resolve_scope_seasons(scope_code, competition_season.season.label)
+                scope_percentiles = build_scope_percentiles(
+                    scope_queryset=_base_queryset_for_seasons(scope_seasons),
+                    rows=[row],
+                    metric_fields=METRIC_FIELDS,
+                )
         except DjangoValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except PlayerSeasonDerivedStats.DoesNotExist:
             return Response({"detail": "Derived player-season not found."}, status=status.HTTP_404_NOT_FOUND)
 
         payload = _row_payload(row)
+        if scope_percentiles is not None:
+            _attach_scope_percentiles(payload, row, scope_percentiles)
+            payload["scope_percentile_context"] = scope_context(scope_code, competition_season.season.label, scope_seasons)
         payload["sections"] = _detail_sections(row)
         if _requested_meta(request):
             payload["meta"] = _meta_payload()

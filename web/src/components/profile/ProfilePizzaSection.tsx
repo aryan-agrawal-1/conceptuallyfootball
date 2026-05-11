@@ -25,20 +25,22 @@ interface ProfilePizzaSectionProps {
   player: PlayerRow
   rateMode: ProfileRateMode
   meta: StatMeta
+  percentileMap?: Record<string, number | null>
 }
 
-export function ProfilePizzaSection({ player, rateMode, meta }: ProfilePizzaSectionProps) {
+export function ProfilePizzaSection({ player, rateMode, meta, percentileMap }: ProfilePizzaSectionProps) {
   return (
     <ProfilePizzaSectionInner
       key={`${player.canonical_player_id}:${player.position_group}`}
       player={player}
       rateMode={rateMode}
       meta={meta}
+      percentileMap={percentileMap}
     />
   )
 }
 
-function ProfilePizzaSectionInner({ player, rateMode, meta }: ProfilePizzaSectionProps) {
+function ProfilePizzaSectionInner({ player, rateMode, meta, percentileMap = player.percentiles }: ProfilePizzaSectionProps) {
   const [keys, setKeys] = useState<string[]>(() => loadPizzaMetricKeys(player.position_group))
   const warnMax = keys.length > PIZZA_SLICE_SOFT_MAX
   const rawOnly = !player.eligibility.percentiles_eligible
@@ -54,7 +56,7 @@ function ProfilePizzaSectionInner({ player, rateMode, meta }: ProfilePizzaSectio
           if (!(k in meta.metrics) || (player.position_group === 'GK' && k === 'rating')) {
             return false
           }
-          const resolved = resolveProfileMetric(player, rateMode, barKindForMetricKey(k), meta)
+          const resolved = resolveProfileMetric(player, rateMode, barKindForMetricKey(k), meta, percentileMap)
           return resolved.value != null
         },
       ),
@@ -65,7 +67,7 @@ function ProfilePizzaSectionInner({ player, rateMode, meta }: ProfilePizzaSectio
     const out = new Set<string>()
     for (const key of Object.keys(meta.metrics)) {
       if (player.position_group === 'GK' && key === 'rating') continue
-      const resolved = resolveProfileMetric(player, rateMode, barKindForMetricKey(key), meta)
+      const resolved = resolveProfileMetric(player, rateMode, barKindForMetricKey(key), meta, percentileMap)
       if (resolved.value != null) out.add(key)
     }
     return out
@@ -78,12 +80,12 @@ function ProfilePizzaSectionInner({ player, rateMode, meta }: ProfilePizzaSectio
     const pad = defaultPizzaMetricKeys(player.position_group).filter(
       k => {
         if (!(k in meta.metrics) || validKeys.includes(k)) return false
-        const resolved = resolveProfileMetric(player, rateMode, barKindForMetricKey(k), meta)
+        const resolved = resolveProfileMetric(player, rateMode, barKindForMetricKey(k), meta, percentileMap)
         return resolved.value != null
       },
     )
     return [...validKeys, ...pad].slice(0, Math.max(PIZZA_SLICE_MIN, validKeys.length))
-  }, [validKeys, meta, player, rateMode])
+  }, [validKeys, meta, player, rateMode, percentileMap])
 
   useEffect(() => {
     if (keys.length === chartKeys.length && keys.every((key, index) => key === chartKeys[index])) return
@@ -166,6 +168,7 @@ interface ProfilePizzaSvgProps {
   rateMode: ProfileRateMode
   meta: StatMeta
   metricKeys: string[]
+  percentileMap?: Record<string, number | null>
   exportMode?: boolean
 }
 
@@ -182,7 +185,14 @@ function formatSliceValue(raw: number | null, percentile: number | null, formatU
   return percentile != null ? String(Math.round(percentile)) : formatValue(raw, formatUnit)
 }
 
-export function ProfilePizzaSvg({ player, rateMode, meta, metricKeys, exportMode = false }: ProfilePizzaSvgProps) {
+export function ProfilePizzaSvg({
+  player,
+  rateMode,
+  meta,
+  metricKeys,
+  percentileMap = player.percentiles,
+  exportMode = false,
+}: ProfilePizzaSvgProps) {
   const reactId = useId()
   const chartSize = exportMode ? 760 : CHART_SIZE
   const chartCenter = chartSize / 2
@@ -216,7 +226,7 @@ export function ProfilePizzaSvg({ player, rateMode, meta, metricKeys, exportMode
 
     return metricKeys.map((key, i) => {
       const kind = barKindForMetricKey(key)
-      const resolved = resolveProfileMetric(player, rateMode, kind, meta)
+      const resolved = resolveProfileMetric(player, rateMode, kind, meta, percentileMap)
       const pctEligible = player.eligibility.percentiles_eligible
       const pct = pctEligible ? (resolved.percentile ?? 0) : 62
       const outer = innerR + rScale(pct)
@@ -248,7 +258,7 @@ export function ProfilePizzaSvg({ player, rateMode, meta, metricKeys, exportMode
         midDeg: (mid * 180) / Math.PI,
       }
     })
-  }, [band, innerR, labelRingR, metricKeys, player, rateMode, meta])
+  }, [band, innerR, labelRingR, metricKeys, player, rateMode, meta, percentileMap])
 
   if (metricKeys.length === 0) {
     return (

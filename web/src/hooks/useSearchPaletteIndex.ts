@@ -20,6 +20,10 @@ export type SearchTeamRow = {
   totalMinutes?: number
 }
 
+export function playerScopeToken(row: Pick<PlayerRow, 'competition_code' | 'season_label' | 'canonical_player_id'>): string {
+  return `${row.competition_code}:${row.season_label}:${row.canonical_player_id}`
+}
+
 function membershipForScope<T extends { competition: string; season: string }>(
   memberships: T[],
   scope: Scope,
@@ -80,11 +84,15 @@ export function useSearchPaletteIndex(enabled: boolean) {
 
   const playersSorted = useMemo(() => {
     return (query.data?.players ?? [])
-      .map(entity => {
-        const membership = membershipForScope(entity.memberships, scope)
-        return membership ? toPlayerRow(entity, membership) : null
+      .flatMap(entity => {
+        const memberships =
+          scope.competition === 'BIG5' || scope.competition === 'ALL'
+            ? entity.memberships.filter(membership => scopeIncludesMembership(scope, membership))
+            : [membershipForScope(entity.memberships, scope)].filter(
+                (membership): membership is SearchPlayerMembership => membership != null,
+              )
+        return memberships.map(membership => toPlayerRow(entity, membership))
       })
-      .filter((row): row is PlayerRow => row != null)
       .sort((a, b) => b.minutes - a.minutes)
   }, [query.data?.players, scope])
 

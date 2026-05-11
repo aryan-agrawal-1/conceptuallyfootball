@@ -12,6 +12,8 @@ from ingestion.models import (
     IngestionRun,
     IngestionRunStatus,
     PlayerSeasonDerivedStats,
+    PlayerSeasonGkDerivedStats,
+    PositionGroup,
     Season,
     SofascorePlayerSeasonSource,
     UnderstatPlayerSeasonSource,
@@ -298,3 +300,90 @@ class DerivedStatsTests(TestCase):
         self.assertIn("scores", payload)
         self.assertIn("creation_score", payload["scores"])
         self.assertIn("finishing_score", payload["scores"])
+
+    def test_big5_scope_percentiles_are_returned_without_replacing_league_percentiles(self):
+        season = Season.objects.create(label="2026-27", sort_order=2027)
+        eng = Competition.objects.create(name="English Premier League", short_code="ENG1", country="England")
+        ger = Competition.objects.create(name="Bundesliga", short_code="GER1", country="Germany")
+        eng_cs = CompetitionSeason.objects.create(competition=eng, season=season)
+        ger_cs = CompetitionSeason.objects.create(competition=ger, season=season)
+        team = CanonicalTeam.objects.create(name="Scope FC", reep_id="scope-team")
+
+        def make_row(name: str, cs: CompetitionSeason, xg_per_90: float, stored_pct: float, minutes: int = 900):
+            player = CanonicalPlayer.objects.create(display_name=name, reep_id=f"scope-{name}")
+            return PlayerSeasonDerivedStats.objects.create(
+                competition_season=cs,
+                canonical_player=player,
+                canonical_display_team=team,
+                formula_version="v-test",
+                position_group=PositionGroup.FWD,
+                native_position="F",
+                minutes=minutes,
+                percentiles_eligible=minutes >= 600,
+                xg_per_90=xg_per_90,
+                xg_per_90_percentile=stored_pct,
+                is_current=True,
+            )
+
+        low = make_row("Low Forward", eng_cs, 1.0, 99.0)
+        make_row("Mid Forward", ger_cs, 2.0, 50.0)
+        make_row("High Forward", ger_cs, 3.0, 75.0)
+        make_row("Short Sample", eng_cs, 100.0, 100.0, minutes=200)
+
+        response = self.client.get(
+            f"/api/v1/player-seasons/derived-stats/{low.canonical_player_id}",
+            {
+                "competition": "ENG1",
+                "season": "2026-27",
+                "include": "scope_percentiles",
+                "percentile_scope": "BIG5",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["percentiles"]["xg_per_90"], 99.0)
+        self.assertAlmostEqual(payload["scope_percentiles"]["xg_per_90"], 16.6666666667)
+        self.assertEqual(payload["scope_percentile_context"]["competition_code"], "BIG5")
+
+    def test_big5_scope_percentiles_work_for_goalkeepers(self):
+        season = Season.objects.create(label="2027-28", sort_order=2028)
+        eng = Competition.objects.create(name="English Premier League", short_code="ENG1", country="England")
+        ita = Competition.objects.create(name="Serie A", short_code="ITA1", country="Italy")
+        eng_cs = CompetitionSeason.objects.create(competition=eng, season=season)
+        ita_cs = CompetitionSeason.objects.create(competition=ita, season=season)
+        team = CanonicalTeam.objects.create(name="Keeper FC", reep_id="keeper-team")
+
+        def make_row(name: str, cs: CompetitionSeason, saves_per_90: float, stored_pct: float):
+            player = CanonicalPlayer.objects.create(display_name=name, reep_id=f"keeper-{name}")
+            return PlayerSeasonGkDerivedStats.objects.create(
+                competition_season=cs,
+                canonical_player=player,
+                canonical_display_team=team,
+                formula_version="gk-test",
+                minutes=900,
+                appearances=10,
+                percentiles_eligible=True,
+                saves_per_90=saves_per_90,
+                saves_per_90_percentile=stored_pct,
+                is_current=True,
+            )
+
+        low = make_row("Low Keeper", eng_cs, 2.0, 91.0)
+        make_row("High Keeper", ita_cs, 4.0, 88.0)
+
+        response = self.client.get(
+            f"/api/v1/player-seasons/gk-derived-stats/{low.canonical_player_id}",
+            {
+                "competition": "ENG1",
+                "season": "2027-28",
+                "include": "scope_percentiles",
+                "percentile_scope": "BIG5",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["percentiles"]["saves_per_90"], 91.0)
+        self.assertEqual(payload["scope_percentiles"]["appearances"], None)
+        self.assertAlmostEqual(payload["scope_percentiles"]["saves_per_90"], 25.0)

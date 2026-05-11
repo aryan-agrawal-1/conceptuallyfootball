@@ -5,7 +5,7 @@ import { Loader2, AlertCircle, FileImage } from 'lucide-react'
 import { fetchPlayerDetail } from '../lib/api'
 import type { PlayerDetailResponse, SecondaryTeamBadge } from '../types/api'
 import { useScope } from '../context/ScopeContext'
-import { resolveEntityScope, useSearchPaletteIndex } from '../hooks/useSearchPaletteIndex'
+import { resolveEntityMembership, resolveEntityScope, useSearchPaletteIndex } from '../hooks/useSearchPaletteIndex'
 import { ProfileBreadcrumb } from '../components/profile/ProfileBreadcrumb'
 import { ProfileRateToggle } from '../components/profile/ProfileRateToggle'
 import { ProfileKeyStats } from '../components/profile/ProfileKeyStats'
@@ -16,6 +16,7 @@ import { ProfileScopeSelector } from '../components/profile/ProfileScopeSelector
 import { PlayerProfileExportModal } from '../components/profile/PlayerProfileExportModal'
 import type { ProfileRateMode } from '../lib/profileMetrics'
 import type { PositionGroup, SearchPlayerMembership } from '../types/api'
+import { scopeIncludesMembership } from '../lib/scopeMembership'
 
 const POSITION_COHORT_LABEL: Record<PositionGroup, string> = {
   FWD: 'forwards',
@@ -24,6 +25,8 @@ const POSITION_COHORT_LABEL: Record<PositionGroup, string> = {
   GK: 'goalkeepers',
   UNK: 'players',
 }
+
+type ProfilePercentileMode = 'league' | 'scope'
 
 function FormerClubsNote({ teams }: { teams: SecondaryTeamBadge[] | undefined }) {
   const { buildScopedPath } = useScope()
@@ -63,9 +66,7 @@ export function PlayerProfile() {
 
   useEffect(() => {
     if (!Number.isFinite(playerId) || !playerEntity) return
-    const hasCurrent = playerEntity.memberships.some(
-      m => m.competition === scope.competition && m.season === scope.season,
-    )
+    const hasCurrent = playerEntity.memberships.some(m => scopeIncludesMembership(scope, m))
     if (hasCurrent) return
     const nextScope = resolveEntityScope(playerEntity.memberships, scope)
     if (nextScope) {
@@ -73,20 +74,30 @@ export function PlayerProfile() {
     }
   }, [buildScopedPath, navigate, playerEntity, playerId, scope])
 
+  const concreteMembership = useMemo(
+    () => (playerEntity ? resolveEntityMembership(playerEntity.memberships, scope) : undefined),
+    [playerEntity, scope],
+  )
+  const isAggregateScope = scope.competition === 'BIG5' || scope.competition === 'ALL'
+  const detailCompetition = concreteMembership?.competition ?? scope.competition
+  const detailSeason = concreteMembership?.season ?? scope.season
+
   const { data, isLoading, isError, error } = useQuery({
     queryKey: [
       'player-detail',
       id,
-      scope.competition,
-      scope.season,
+      detailCompetition,
+      detailSeason,
+      isAggregateScope ? scope.competition : null,
     ],
     queryFn: () =>
       fetchPlayerDetail(Number(id), {
-        competition: scope.competition,
-        season: scope.season,
-        include: 'meta',
+        competition: detailCompetition,
+        season: detailSeason,
+        include: isAggregateScope ? 'meta,scope_percentiles' : 'meta',
+        percentile_scope: isAggregateScope ? scope.competition : undefined,
       }),
-    enabled: !!id,
+    enabled: !!id && (!isAggregateScope || concreteMembership != null),
   })
 
   if (isLoading) {
@@ -139,6 +150,7 @@ function ProfileLayout({
   memberships: SearchPlayerMembership[]
 }) {
   const [rateMode, setRateMode] = useState<ProfileRateMode>('per90')
+  const [percentileMode, setPercentileMode] = useState<ProfilePercentileMode>('league')
   const [exportOpen, setExportOpen] = useState(false)
   const navigate = useNavigate()
   const { scope, buildScopedPath } = useScope()
@@ -147,6 +159,12 @@ function ProfileLayout({
     () => !player.eligibility.percentiles_eligible,
     [player.eligibility.percentiles_eligible],
   )
+  const isAggregateScope = scope.competition === 'BIG5' || scope.competition === 'ALL'
+  const canUseScopePercentiles = isAggregateScope && player.scope_percentiles != null
+  const activePercentileMap =
+    percentileMode === 'scope' && canUseScopePercentiles ? player.scope_percentiles ?? {} : player.percentiles
+  const percentileScopeLabel =
+    percentileMode === 'scope' && canUseScopePercentiles ? scope.competition : player.competition_code
 
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-5 pb-24 sm:px-6 sm:py-8 lg:px-10 lg:pb-20">
@@ -181,7 +199,7 @@ function ProfileLayout({
             <span className="text-ink">
               {POSITION_COHORT_LABEL[player.position_group]}
             </span>{' '}
-            in the {player.season_label} season.
+            in {percentileScopeLabel} {player.season_label}.
           </p>
         </div>
         <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end sm:shrink-0">
@@ -194,7 +212,9 @@ function ProfileLayout({
             }}
           />
           <Link
-            to={buildScopedPath(`/comparisons?players=${player.canonical_player_id}`)}
+            to={buildScopedPath(
+              `/comparisons?players=${player.competition_code}:${player.season_label}:${player.canonical_player_id}`,
+            )}
             className="relative px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80 whitespace-nowrap"
           >
             Compare
@@ -219,21 +239,40 @@ function ProfileLayout({
         </div>
       )}
 
+      {canUseScopePercentiles && (
+        <div className="mb-6 flex flex-wrap items-center gap-2">
+          {(['league', 'scope'] as const).map(mode => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setPercentileMode(mode)}
+              className={
+                mode === percentileMode
+                  ? 'border border-electric/50 bg-electric/10 px-3 py-1.5 text-[11px] uppercase tracking-[0.15em] text-electric'
+                  : 'border border-electric/15 px-3 py-1.5 text-[11px] uppercase tracking-[0.15em] text-ink-muted hover:border-electric/35 hover:text-electric/80'
+              }
+            >
+              {mode === 'league' ? player.competition_code : scope.competition}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="flex flex-col gap-8">
-        <ProfileKeyStats player={player} rateMode={rateMode} meta={meta} />
+        <ProfileKeyStats player={player} rateMode={rateMode} meta={meta} percentileMap={activePercentileMap} />
 
         <section aria-labelledby="profile-breakdown-heading">
           <h2 id="profile-breakdown-heading" className="sr-only">
             Stat breakdown
           </h2>
-          <ProfileStatBars player={player} rateMode={rateMode} meta={meta} />
+          <ProfileStatBars player={player} rateMode={rateMode} meta={meta} percentileMap={activePercentileMap} />
         </section>
 
         <section aria-labelledby="profile-pizza-heading">
           <h2 id="profile-pizza-heading" className="sr-only">
             Percentile pizza chart
           </h2>
-          <ProfilePizzaSection player={player} rateMode={rateMode} meta={meta} />
+          <ProfilePizzaSection player={player} rateMode={rateMode} meta={meta} percentileMap={activePercentileMap} />
         </section>
       </div>
 
@@ -242,6 +281,8 @@ function ProfileLayout({
           player={player}
           meta={meta}
           initialRateMode={rateMode}
+          percentileMap={activePercentileMap}
+          percentileScopeLabel={percentileScopeLabel}
           onClose={() => setExportOpen(false)}
         />
       )}

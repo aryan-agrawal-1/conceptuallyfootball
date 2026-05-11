@@ -111,8 +111,16 @@ export interface PlayerRow {
   eligibility: Eligibility
   metrics: Record<string, number | null>
   percentiles: Record<string, number | null>
+  scope_percentiles?: Record<string, number | null>
+  scope_percentile_context?: ScopePercentileContext
   scores: Record<string, number | null>
   score_raw: Record<string, number | null>
+}
+
+export interface ScopePercentileContext {
+  competition_code: string
+  season_label: string
+  competition_season_ids?: number[]
 }
 
 export interface MetricDefinition {
@@ -149,6 +157,7 @@ export interface MatrixResponse {
   count: number
   results: PlayerRow[]
   meta?: StatMeta
+  scope_percentile_context?: ScopePercentileContext
 }
 
 /** `GET /player-seasons/derived-stats/:id` — player row + optional grouped sections + meta. */
