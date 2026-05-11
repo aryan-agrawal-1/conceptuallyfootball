@@ -199,7 +199,7 @@ export function HudMultiSelectDropdown({
                   value={search}
                   onChange={event => setSearch(event.target.value)}
                   placeholder={searchPlaceholder}
-                  className="min-w-0 flex-1 bg-transparent text-[11px] tracking-wide text-ink outline-none placeholder:text-electric/30"
+                  className="min-w-0 flex-1 bg-transparent text-[16px] tracking-wide text-ink outline-none placeholder:text-electric/30 lg:text-[11px]"
                 />
                 {search && (
                   <button

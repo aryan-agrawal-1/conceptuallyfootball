@@ -596,8 +596,8 @@ export function RegressionLab() {
             )}
 
             {lastFit && !resultsStale && (
-              <div className="grid gap-4 xl:grid-cols-2">
-                <HudFrame header="Fit summary // CV headline" bodyClassName="p-3">
+              <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+                <HudFrame header="Fit summary // CV headline" className="min-w-0" bodyClassName="p-3">
                   <div className="grid grid-cols-2 gap-3 font-mono text-[12px]">
                     <FitSummaryStat
                       label="CV R²"
@@ -657,6 +657,7 @@ export function RegressionLab() {
                       </LabHelpHover>
                     </>
                   }
+                  className="min-w-0"
                   bodyClassName="p-0"
                 >
                   <div className="max-h-56 overflow-x-auto overflow-y-auto">
@@ -709,7 +710,7 @@ export function RegressionLab() {
                       </LabHelpHover>
                     </>
                   }
-                  className="xl:col-span-2"
+                  className="min-w-0 xl:col-span-2"
                   bodyClassName="p-2"
                 >
                   <RegressionScatterPlot rows={lastFit.predictions} targetLabel={targetLabel} />

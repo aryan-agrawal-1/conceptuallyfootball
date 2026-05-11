@@ -511,7 +511,7 @@ function TeamPicker({
                 value={search}
                 onChange={e => onSearchChange(e.target.value)}
                 placeholder="Search club..."
-                className="flex-1 text-[11px] bg-transparent outline-none text-ink placeholder:text-electric/30 tracking-wide"
+                className="min-w-0 flex-1 bg-transparent text-[16px] tracking-wide text-ink outline-none placeholder:text-electric/30 lg:text-[11px]"
               />
               {search && (
                 <button

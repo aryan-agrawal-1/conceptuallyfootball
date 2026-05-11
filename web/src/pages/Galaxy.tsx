@@ -493,7 +493,7 @@ function MinutesInput({
     <input
       type="number"
       aria-label="Minimum minutes"
-      className="bg-mat/80 border border-electric/25 text-[11px] px-2 py-1.5 font-mono text-electric/90 focus:outline-none focus:border-electric"
+      className="border border-electric/25 bg-mat/80 px-2 py-1.5 font-mono text-[16px] text-electric/90 focus:border-electric focus:outline-none lg:text-[11px]"
       value={draft}
       min={floor}
       onChange={event => setDraft(event.target.value)}
@@ -555,10 +555,23 @@ function PlayerHud({
   onOpenProfile: () => void
 }) {
   const { buildScopedPath } = useScope()
+  const header = (
+    <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+      <span className="truncate">Target Acquired // {point.galaxy_player_id}</span>
+      <button
+        type="button"
+        onClick={onOpenProfile}
+        className="inline-flex shrink-0 items-center gap-1 border border-electric/35 px-2 py-1 text-[9px] uppercase tracking-[0.16em] text-electric/90 lg:hidden"
+      >
+        Open
+        <ArrowUpRight size={11} />
+      </button>
+    </div>
+  )
   return (
     <HudFrame
       className="absolute inset-x-3 bottom-3 z-20 max-h-[30svh] overflow-hidden lg:inset-x-auto lg:bottom-4 lg:left-1/2 lg:max-h-[46svh] lg:w-[min(760px,calc(100%-2rem))] lg:-translate-x-1/2"
-      header={`Target Acquired // ${point.galaxy_player_id}`}
+      header={header}
       footer={
         <div className="hidden justify-between items-center lg:flex">
           <span>{point.competition_code} // {point.primary_archetype_label}</span>
@@ -666,7 +679,7 @@ function PlayerHud({
             <X size={12} />
             Clear
           </button>
-          <HudActionButton onClick={onOpenProfile} className="w-auto px-3 py-2 text-[10px] lg:w-full lg:px-4 lg:py-3 lg:text-[12px]">
+          <HudActionButton onClick={onOpenProfile} className="hidden w-auto px-3 py-2 text-[10px] lg:flex lg:w-full lg:px-4 lg:py-3 lg:text-[12px]">
             <span>Open Profile</span>
             <ArrowUpRight size={14} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
           </HudActionButton>
@@ -769,6 +782,13 @@ export function Galaxy() {
     setMobileSearchOpen(false)
   }
 
+  function clearMobileSelectionOnMiss() {
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches) {
+      setSelectedPlayerId(null)
+      setHoveredPlayerId(null)
+    }
+  }
+
   if (galaxyQuery.isLoading) {
     return (
       <div className="flex h-[calc(100svh-132px)] items-center justify-center lg:h-[calc(100svh-52px)]">
@@ -843,7 +863,7 @@ export function Galaxy() {
             placeholder="SEARCH PLAYER"
             value={search}
             onChange={event => setSearch(event.target.value)}
-            className="w-full bg-mat/80 border border-electric/30 px-2 py-1.5 text-[11px] tracking-widest uppercase placeholder:text-electric/40 focus:outline-none focus:border-electric"
+            className="w-full border border-electric/30 bg-mat/80 px-2 py-1.5 text-[16px] uppercase tracking-widest placeholder:text-electric/40 focus:border-electric focus:outline-none lg:text-[11px]"
           />
           <div className="grid grid-cols-2 gap-2">
             <HudMultiSelectDropdown
@@ -950,7 +970,7 @@ export function Galaxy() {
               placeholder="SEARCH PLAYER"
               value={search}
               onChange={event => setSearch(event.target.value)}
-              className="w-full border border-electric/30 bg-mat/80 px-2 py-2 text-[12px] uppercase tracking-widest text-ink placeholder:text-electric/40 focus:border-electric focus:outline-none"
+              className="w-full border border-electric/30 bg-mat/80 px-2 py-2 text-[16px] uppercase tracking-widest text-ink placeholder:text-electric/40 focus:border-electric focus:outline-none lg:text-[12px]"
             />
             <div className="grid grid-cols-2 gap-2">
               <HudMultiSelectDropdown
@@ -1036,6 +1056,7 @@ export function Galaxy() {
       )}
 
       <Canvas
+        onPointerMissed={clearMobileSelectionOnMiss}
         camera={{ position: [0, 0, 28], fov: 60 }}
         // Cap DPR at 1.5 to keep the backing buffer small on Retina/hi-DPI
         // displays. At 1.75–2x, the combination of additively-blended star

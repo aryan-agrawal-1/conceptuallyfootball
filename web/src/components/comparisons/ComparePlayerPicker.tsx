@@ -67,7 +67,7 @@ export function ComparePlayerPicker({
               value={q}
               onChange={e => setQ(e.target.value)}
               placeholder="Search name…"
-              className="flex-1 min-w-0 bg-transparent border border-electric/25 px-3 py-2 text-[13px] text-ink placeholder:text-ink-muted outline-none focus:border-electric/50"
+              className="min-w-0 flex-1 border border-electric/25 bg-transparent px-3 py-2 text-[16px] text-ink outline-none placeholder:text-ink-muted focus:border-electric/50 lg:text-[13px]"
               autoFocus
             />
             <button
