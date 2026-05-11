@@ -153,6 +153,25 @@ class IngestionRun(models.Model):
         return f"{self.kind} {self.status} {scope}"
 
 
+class MaterializedApiPayload(models.Model):
+    """Cached public API JSON payload keyed by endpoint params and source version."""
+
+    cache_key = models.CharField(max_length=255, unique=True, db_index=True)
+    source_version = models.CharField(max_length=128, db_index=True)
+    payload = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["cache_key", "source_version"], name="ingestion_m_cache_k_9f2600_idx"),
+            models.Index(fields=["updated_at"], name="ingestion_m_updated_9420a7_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return self.cache_key
+
+
 class ReepPlayerRow(models.Model):
     """Scoped offline reep identity rows (subset import, not full public register)."""
 
@@ -796,6 +815,16 @@ class MergedPlayerSeason(models.Model):
             models.Index(fields=["competition_season", "is_current"]),
             models.Index(fields=["competition_season", "canonical_display_team"]),
             models.Index(fields=["competition_season", "position_group"]),
+            models.Index(
+                fields=["competition_season", "canonical_display_team"],
+                condition=models.Q(is_current=True),
+                name="merged_player_current_team_idx",
+            ),
+            models.Index(
+                fields=["competition_season", "canonical_player"],
+                condition=models.Q(is_current=True),
+                name="mp_cur_player_idx",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -1118,6 +1147,21 @@ class PlayerSeasonDerivedStats(models.Model):
             models.Index(fields=["competition_season", "position_group"]),
             models.Index(fields=["competition_season", "canonical_display_team"]),
             models.Index(fields=["competition_season", "formula_version"]),
+            models.Index(
+                fields=["competition_season", "position_group", "minutes"],
+                condition=models.Q(is_current=True),
+                name="der_cur_pos_min_idx",
+            ),
+            models.Index(
+                fields=["competition_season", "canonical_display_team"],
+                condition=models.Q(is_current=True),
+                name="derived_current_team_idx",
+            ),
+            models.Index(
+                fields=["competition_season", "canonical_player"],
+                condition=models.Q(is_current=True),
+                name="derived_current_player_idx",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -1221,6 +1265,16 @@ class PlayerSeasonGkDerivedStats(models.Model):
         indexes = [
             models.Index(fields=["competition_season", "is_current"]),
             models.Index(fields=["competition_season", "canonical_display_team"]),
+            models.Index(
+                fields=["competition_season", "canonical_display_team"],
+                condition=models.Q(is_current=True),
+                name="gk_current_team_idx",
+            ),
+            models.Index(
+                fields=["competition_season", "canonical_player"],
+                condition=models.Q(is_current=True),
+                name="gk_current_player_idx",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -1505,6 +1559,15 @@ class GalaxyPlayerEmbedding(models.Model):
             models.Index(fields=["snapshot", "canonical_display_team"]),
             models.Index(fields=["snapshot", "primary_archetype"]),
             models.Index(fields=["competition_season", "canonical_player"]),
+            models.Index(fields=["snapshot", "minutes"], name="gal_emb_snap_min_idx"),
+            models.Index(
+                fields=["snapshot", "position_group", "minutes"],
+                name="galaxy_embedding_pos_min_idx",
+            ),
+            models.Index(
+                fields=["snapshot", "canonical_display_team", "minutes"],
+                name="galaxy_embedding_team_min_idx",
+            ),
         ]
 
     def __str__(self) -> str:

@@ -5,6 +5,7 @@ from collections import OrderedDict
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from ingestion.api_cache import get_or_build_payload, joined_version, model_version, stable_cache_key
 from ingestion.derived_api import BIG_FIVE_COMPETITION_CODES
 from ingestion.models import CompetitionSeason
 
@@ -81,6 +82,17 @@ class CompetitionSeasonsCatalogApi(APIView):
     """
 
     def get(self, request):
+        cache_key = stable_cache_key("competition-seasons", {"path": request.path})
+        source_version = joined_version("competition-seasons", model_version(CompetitionSeason))
+
+        payload, _ = get_or_build_payload(
+            cache_key=cache_key,
+            source_version=source_version,
+            builder=self._build_payload,
+        )
+        return Response(payload)
+
+    def _build_payload(self) -> dict:
         rows = (
             CompetitionSeason.objects.filter(is_active=True)
             .select_related("competition", "season")
@@ -167,4 +179,4 @@ class CompetitionSeasonsCatalogApi(APIView):
                     "seasons": list(all_seasons.values()),
                 }
             )
-        return Response({"competitions": aggregate_entries + list(by_code.values())})
+        return {"competitions": aggregate_entries + list(by_code.values())}

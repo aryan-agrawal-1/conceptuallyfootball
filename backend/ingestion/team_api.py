@@ -6,6 +6,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from ingestion.api_cache import canonical_query_params, get_or_build_payload, joined_version, model_version, stable_cache_key
 from ingestion.derived_api import _resolve_competition_scope, _resolve_competition_season
 from ingestion.models import CanonicalTeam, MergedPlayerSeason, MergedTeamSeason
 from ingestion.team_definitions import (
@@ -199,13 +200,39 @@ class TeamSeasonDetailApi(APIView):
     """
 
     def get(self, request, canonical_team_id: int):
+        cache_key = stable_cache_key(
+            "team-season-detail",
+            {
+                "path": request.path,
+                "team": canonical_team_id,
+                "query": canonical_query_params(request),
+            },
+        )
+        source_version = joined_version(
+            "team-season-detail",
+            model_version(MergedTeamSeason, {"is_current": True}),
+            model_version(MergedPlayerSeason, {"is_current": True}),
+        )
+        try:
+            payload, _ = get_or_build_payload(
+                cache_key=cache_key,
+                source_version=source_version,
+                builder=lambda: self._build_payload(request, canonical_team_id),
+            )
+        except DjangoValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except MergedTeamSeason.DoesNotExist as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        return Response(payload)
+
+    def _build_payload(self, request, canonical_team_id: int) -> dict:
         try:
             competition_season = _resolve_competition_season(request)
         except DjangoValidationError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            raise
 
         if not CanonicalTeam.objects.filter(pk=canonical_team_id).exists():
-            return Response({"detail": "Team not found."}, status=status.HTTP_404_NOT_FOUND)
+            raise MergedTeamSeason.DoesNotExist("Team not found.")
 
         league_rows = list(
             MergedTeamSeason.objects.filter(
@@ -217,10 +244,7 @@ class TeamSeasonDetailApi(APIView):
         row_map = {r.canonical_team_id: r for r in league_rows}
         row = row_map.get(canonical_team_id)
         if row is None:
-            return Response(
-                {"detail": "Merged team-season not found for this competition and season."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            raise MergedTeamSeason.DoesNotExist("Merged team-season not found for this competition and season.")
 
         squad_sums = _squad_us_xg_xa_by_team(competition_season.id)
 
@@ -247,7 +271,7 @@ class TeamSeasonDetailApi(APIView):
         }
         if _requested_meta(request):
             payload["meta"] = team_meta_payload()
-        return Response(payload)
+        return payload
 
 
 class TeamSeasonListApi(APIView):
@@ -257,10 +281,30 @@ class TeamSeasonListApi(APIView):
     """
 
     def get(self, request):
+        cache_key = stable_cache_key(
+            "team-season-list",
+            {"path": request.path, "query": canonical_query_params(request)},
+        )
+        source_version = joined_version(
+            "team-season-list",
+            model_version(MergedTeamSeason, {"is_current": True}),
+            model_version(MergedPlayerSeason, {"is_current": True}),
+        )
+        try:
+            payload, _ = get_or_build_payload(
+                cache_key=cache_key,
+                source_version=source_version,
+                builder=lambda: self._build_payload(request),
+            )
+        except DjangoValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(payload)
+
+    def _build_payload(self, request) -> dict:
         try:
             competition_code, season_label, competition_seasons = _resolve_competition_scope(request)
         except DjangoValidationError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            raise
 
         league_rows = list(
             MergedTeamSeason.objects.filter(
@@ -306,7 +350,7 @@ class TeamSeasonListApi(APIView):
         }
         if _requested_meta(request):
             payload["meta"] = team_meta_payload()
-        return Response(payload)
+        return payload
 
 
 _POSITION_ORDER = {"GK": 0, "DEF": 1, "MID": 2, "FWD": 3, "UNK": 4}
@@ -316,23 +360,46 @@ class TeamSquadApi(APIView):
     """Public: squad list for a canonical team in a competition-season."""
 
     def get(self, request, canonical_team_id: int):
+        cache_key = stable_cache_key(
+            "team-squad",
+            {
+                "path": request.path,
+                "team": canonical_team_id,
+                "query": canonical_query_params(request),
+            },
+        )
+        source_version = joined_version(
+            "team-squad",
+            model_version(MergedTeamSeason, {"is_current": True}),
+            model_version(MergedPlayerSeason, {"is_current": True}),
+        )
+        try:
+            payload, _ = get_or_build_payload(
+                cache_key=cache_key,
+                source_version=source_version,
+                builder=lambda: self._build_payload(request, canonical_team_id),
+            )
+        except DjangoValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except MergedTeamSeason.DoesNotExist as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        return Response(payload)
+
+    def _build_payload(self, request, canonical_team_id: int) -> dict:
         try:
             competition_season = _resolve_competition_season(request)
         except DjangoValidationError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            raise
 
         if not CanonicalTeam.objects.filter(pk=canonical_team_id).exists():
-            return Response({"detail": "Team not found."}, status=status.HTTP_404_NOT_FOUND)
+            raise MergedTeamSeason.DoesNotExist("Team not found.")
 
         if not MergedTeamSeason.objects.filter(
             competition_season=competition_season,
             canonical_team_id=canonical_team_id,
             is_current=True,
         ).exists():
-            return Response(
-                {"detail": "Merged team-season not found for this competition and season."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            raise MergedTeamSeason.DoesNotExist("Merged team-season not found for this competition and season.")
 
         players = (
             MergedPlayerSeason.objects.filter(
@@ -365,12 +432,10 @@ class TeamSquadApi(APIView):
             )
         )
 
-        return Response(
-            {
-                "competition_season": competition_season.id,
-                "competition_code": competition_season.competition.short_code,
-                "season_label": competition_season.season.label,
-                "canonical_team_id": canonical_team_id,
-                "results": squad,
-            }
-        )
+        return {
+            "competition_season": competition_season.id,
+            "competition_code": competition_season.competition.short_code,
+            "season_label": competition_season.season.label,
+            "canonical_team_id": canonical_team_id,
+            "results": squad,
+        }

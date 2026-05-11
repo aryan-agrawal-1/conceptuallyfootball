@@ -6,6 +6,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from ingestion.api_cache import canonical_query_params, get_or_build_payload, joined_version, model_version, stable_cache_key
 from ingestion.derived_definitions import MIN_ELIGIBLE_MINUTES
 from ingestion.gk_definitions import (
     FORMULA_VERSION_GK,
@@ -16,7 +17,7 @@ from ingestion.gk_definitions import (
     LIST_SORT_FIELDS_GK,
 )
 from ingestion.derived_api import _resolve_competition_scope
-from ingestion.models import CompetitionSeason, PlayerSeasonGkDerivedStats
+from ingestion.models import CanonicalTeam, CompetitionSeason, PlayerSeasonGkDerivedStats
 from ingestion.secondary_teams import secondary_teams_payload
 from ingestion.scope_percentiles import (
     build_scope_percentiles,
@@ -74,6 +75,11 @@ def _base_queryset(competition_season: CompetitionSeason) -> QuerySet[PlayerSeas
 
 
 def _base_queryset_for_seasons(competition_seasons: list[CompetitionSeason]) -> QuerySet[PlayerSeasonGkDerivedStats]:
+    metric_value_fields = []
+    for metric in GK_METRIC_FIELDS:
+        metric_value_fields.append(metric)
+        if metric != "appearances":
+            metric_value_fields.append(f"{metric}_percentile")
     return (
         PlayerSeasonGkDerivedStats.objects.filter(
             competition_season__in=competition_seasons,
@@ -85,8 +91,26 @@ def _base_queryset_for_seasons(competition_seasons: list[CompetitionSeason]) -> 
             "competition_season",
             "competition_season__competition",
             "competition_season__season",
-            "derived_ingestion_run",
             "merged_player_season",
+        )
+        .only(
+            "id",
+            "canonical_player_id",
+            "canonical_player__display_name",
+            "canonical_display_team_id",
+            "canonical_display_team__name",
+            "merged_player_season_id",
+            "merged_player_season__secondary_display_team_ids",
+            "competition_season_id",
+            "competition_season__competition__short_code",
+            "competition_season__season__label",
+            "minutes",
+            "appearances",
+            "formula_version",
+            "derived_ingestion_run_id",
+            "percentiles_eligible",
+            "percentiles_ineligibility_reason",
+            *metric_value_fields,
         )
     )
 
@@ -120,7 +144,18 @@ def _apply_sorting(request, queryset: QuerySet[PlayerSeasonGkDerivedStats]) -> Q
     return queryset
 
 
-def _row_payload(row: PlayerSeasonGkDerivedStats) -> dict:
+def _secondary_team_names_for_rows(rows: list[PlayerSeasonGkDerivedStats]) -> dict[int, str]:
+    team_ids: set[int] = set()
+    for row in rows:
+        merged = row.merged_player_season
+        if merged and merged.secondary_display_team_ids:
+            team_ids.update(int(pk) for pk in merged.secondary_display_team_ids)
+    if not team_ids:
+        return {}
+    return dict(CanonicalTeam.objects.filter(pk__in=team_ids).values_list("pk", "name"))
+
+
+def _row_payload(row: PlayerSeasonGkDerivedStats, secondary_team_names: dict[int, str] | None = None) -> dict:
     metrics = {metric: getattr(row, metric) for metric in GK_METRIC_FIELDS}
     percentiles = {}
     for metric in GK_METRIC_FIELDS:
@@ -133,7 +168,7 @@ def _row_payload(row: PlayerSeasonGkDerivedStats) -> dict:
         "canonical_player_name": row.canonical_player.display_name,
         "canonical_team_id": row.canonical_display_team_id,
         "canonical_team_name": row.canonical_display_team.name if row.canonical_display_team else None,
-        "secondary_teams": secondary_teams_payload(row.merged_player_season),
+        "secondary_teams": secondary_teams_payload(row.merged_player_season, secondary_team_names),
         "competition_season": row.competition_season_id,
         "competition_code": row.competition_season.competition.short_code,
         "season_label": row.competition_season.season.label,
@@ -162,22 +197,42 @@ def _attach_scope_percentiles(payload: dict, row: PlayerSeasonGkDerivedStats, sc
 
 class GkDerivedPlayerSeasonListApi(APIView):
     def get(self, request):
+        cache_key = stable_cache_key(
+            "gk-derived-player-season-list",
+            {"path": request.path, "query": canonical_query_params(request)},
+        )
+        source_version = joined_version(
+            "gk-derived-list",
+            model_version(PlayerSeasonGkDerivedStats, {"is_current": True}),
+        )
+        try:
+            payload, _ = get_or_build_payload(
+                cache_key=cache_key,
+                source_version=source_version,
+                builder=lambda: self._build_payload(request),
+            )
+        except DjangoValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(payload)
+
+    def _build_payload(self, request) -> dict:
         try:
             competition_code, season_label, competition_seasons = _resolve_competition_scope(request)
             queryset = _base_queryset_for_seasons(competition_seasons)
             queryset = _apply_filters(request, queryset)
             queryset = _apply_sorting(request, queryset)
         except DjangoValidationError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            raise
 
         rows = list(queryset)
+        secondary_team_names = _secondary_team_names_for_rows(rows)
         scope_percentiles = None
         if _requested_scope_percentiles(request):
             scope_code = request.query_params.get("percentile_scope") or competition_code
             try:
                 scope_seasons = resolve_scope_seasons(scope_code, season_label)
             except DjangoValidationError as exc:
-                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+                raise
             scope_percentiles = build_scope_percentiles(
                 scope_queryset=_base_queryset_for_seasons(scope_seasons),
                 rows=rows,
@@ -194,7 +249,7 @@ class GkDerivedPlayerSeasonListApi(APIView):
             "results": [],
         }
         for row in rows:
-            row_payload = _row_payload(row)
+            row_payload = _row_payload(row, secondary_team_names)
             if scope_percentiles is not None:
                 _attach_scope_percentiles(row_payload, row, scope_percentiles)
             payload["results"].append(row_payload)
@@ -202,11 +257,36 @@ class GkDerivedPlayerSeasonListApi(APIView):
             payload["scope_percentile_context"] = scope_context(scope_code, season_label, scope_seasons)
         if _requested_meta(request):
             payload["meta"] = _gk_meta_payload()
-        return Response(payload)
+        return payload
 
 
 class GkDerivedPlayerSeasonDetailApi(APIView):
     def get(self, request, canonical_player_id: int):
+        cache_key = stable_cache_key(
+            "gk-derived-player-season-detail",
+            {
+                "path": request.path,
+                "player": canonical_player_id,
+                "query": canonical_query_params(request),
+            },
+        )
+        source_version = joined_version(
+            "gk-derived-detail",
+            model_version(PlayerSeasonGkDerivedStats, {"is_current": True}),
+        )
+        try:
+            payload, _ = get_or_build_payload(
+                cache_key=cache_key,
+                source_version=source_version,
+                builder=lambda: self._build_payload(request, canonical_player_id),
+            )
+        except DjangoValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except PlayerSeasonGkDerivedStats.DoesNotExist:
+            return Response({"detail": "GK derived player-season not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(payload)
+
+    def _build_payload(self, request, canonical_player_id: int) -> dict:
         try:
             competition_season = _resolve_competition_season(request)
             queryset = _base_queryset(competition_season)
@@ -226,9 +306,9 @@ class GkDerivedPlayerSeasonDetailApi(APIView):
                     percentile_metric_fields=GK_METRICS_WITH_PERCENTILE,
                 )
         except DjangoValidationError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            raise
         except PlayerSeasonGkDerivedStats.DoesNotExist:
-            return Response({"detail": "GK derived player-season not found."}, status=status.HTTP_404_NOT_FOUND)
+            raise
 
         payload = _row_payload(row)
         if scope_percentiles is not None:
@@ -236,4 +316,4 @@ class GkDerivedPlayerSeasonDetailApi(APIView):
             payload["scope_percentile_context"] = scope_context(scope_code, competition_season.season.label, scope_seasons)
         if _requested_meta(request):
             payload["meta"] = _gk_meta_payload()
-        return Response(payload)
+        return payload

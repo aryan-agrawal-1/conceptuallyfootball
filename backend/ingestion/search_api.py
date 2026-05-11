@@ -3,6 +3,7 @@ from __future__ import annotations
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from ingestion.api_cache import get_or_build_payload, joined_version, model_version, stable_cache_key
 from ingestion.models import (
     MergedTeamSeason,
     PlayerSeasonDerivedStats,
@@ -20,6 +21,21 @@ class SearchEntitiesApi(APIView):
     """
 
     def get(self, request):
+        cache_key = stable_cache_key("search-entities", {"path": request.path})
+        source_version = joined_version(
+            "search-entities",
+            model_version(PlayerSeasonDerivedStats, {"is_current": True}),
+            model_version(PlayerSeasonGkDerivedStats, {"is_current": True}),
+            model_version(MergedTeamSeason, {"is_current": True}),
+        )
+        payload, _ = get_or_build_payload(
+            cache_key=cache_key,
+            source_version=source_version,
+            builder=self._build_payload,
+        )
+        return Response(payload)
+
+    def _build_payload(self) -> dict:
         players: dict[int, dict] = {}
         player_membership_seen: set[tuple[int, str, str]] = set()
 
@@ -175,15 +191,13 @@ class SearchEntitiesApi(APIView):
                     reverse=True,
                 )
 
-        return Response(
-            {
-                "players": sorted(
-                    players.values(),
-                    key=lambda p: (-p["total_minutes"], p["canonical_player_name"]),
-                ),
-                "teams": sorted(
-                    teams.values(),
-                    key=lambda t: (t["canonical_team_name"], -t["total_matches"]),
-                ),
-            }
-        )
+        return {
+            "players": sorted(
+                players.values(),
+                key=lambda p: (-p["total_minutes"], p["canonical_player_name"]),
+            ),
+            "teams": sorted(
+                teams.values(),
+                key=lambda t: (t["canonical_team_name"], -t["total_matches"]),
+            ),
+        }

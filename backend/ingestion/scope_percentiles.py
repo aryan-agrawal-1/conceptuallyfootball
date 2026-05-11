@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.exceptions import FieldDoesNotExist
 from django.db.models import QuerySet
 
+from ingestion.api_cache import get_or_build_payload, joined_version, model_version, stable_cache_key
 from ingestion.models import CompetitionSeason
 
 BIG_FIVE_COMPETITION_CODES = ("ENG1", "GER1", "SPA1", "FRA1", "ITA1")
@@ -83,6 +84,42 @@ def build_scope_percentiles(
     except FieldDoesNotExist:
         pass
 
+    season_ids = list(scope_queryset.order_by("competition_season_id").values_list("competition_season_id", flat=True).distinct())
+    cache_key = stable_cache_key(
+        "scope-percentiles",
+        {
+            "model": scope_queryset.model._meta.label_lower,
+            "competition_season_ids": season_ids,
+            "fields": fields,
+            "percentile_fields": sorted(fields_with_percentiles),
+        },
+    )
+    source_version = joined_version(
+        "scope-percentiles",
+        scope_queryset.model._meta.label_lower,
+        model_version(scope_queryset.model, {"is_current": True}),
+    )
+    cached_payload, _ = get_or_build_payload(
+        cache_key=cache_key,
+        source_version=source_version,
+        builder=lambda: _build_all_scope_percentiles(
+            scope_queryset=scope_queryset,
+            fields=fields,
+            fields_with_percentiles=fields_with_percentiles,
+        ),
+    )
+    return {
+        row_id: cached_payload.get(str(row_id), {field: None for field in fields})
+        for row_id in row_ids
+    }
+
+
+def _build_all_scope_percentiles(
+    *,
+    scope_queryset: QuerySet,
+    fields: list[str],
+    fields_with_percentiles: set[str],
+) -> dict[str, dict[str, float | None]]:
     scope_rows = list(scope_queryset)
     distributions: dict[tuple[str, str], list[float]] = defaultdict(list)
     for row in scope_rows:
@@ -95,10 +132,8 @@ def build_scope_percentiles(
             if value is not None:
                 distributions[(getattr(row, "position_group", "GK"), field)].append(float(value))
 
-    out: dict[int, dict[str, float | None]] = {}
+    out: dict[str, dict[str, float | None]] = {}
     for row in scope_rows:
-        if row.id not in row_ids:
-            continue
         payload: dict[str, float | None] = {}
         for field in fields:
             payload[field] = None
@@ -109,5 +144,5 @@ def build_scope_percentiles(
             if value is None or not values:
                 continue
             payload[field] = percentile_rank(float(value), values)
-        out[row.id] = payload
+        out[str(row.id)] = payload
     return out

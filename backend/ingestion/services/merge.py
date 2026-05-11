@@ -63,6 +63,7 @@ def _canonical_native_position(raw: str) -> str:
 def _secondary_display_team_ids(
     us: UnderstatPlayerSeasonSource | None,
     primary: CanonicalTeam | None,
+    resolved_team_cache: dict[str, CanonicalTeam | None] | None = None,
 ) -> list[int]:
     """
     Multi-club Understat rows store official team ids in `provider_team_ids` (from the league
@@ -81,13 +82,18 @@ def _secondary_display_team_ids(
         tid = str(tid).strip()
         if not tid:
             continue
-        ct = resolve_canonical_team(
-            competition_season=cs,
-            provider=Provider.UNDERSTAT,
-            provider_team_id=tid,
-            team_name=us.team_name or "",
-            run=None,
-        )
+        if resolved_team_cache is not None and tid in resolved_team_cache:
+            ct = resolved_team_cache[tid]
+        else:
+            ct = resolve_canonical_team(
+                competition_season=cs,
+                provider=Provider.UNDERSTAT,
+                provider_team_id=tid,
+                team_name=us.team_name or "",
+                run=None,
+            )
+            if resolved_team_cache is not None:
+                resolved_team_cache[tid] = ct
         if not ct:
             continue
         if primary_id is not None and ct.pk == primary_id:
@@ -103,6 +109,7 @@ def _resolve_position_metadata(
     *,
     us: UnderstatPlayerSeasonSource | None,
     ss: SofascorePlayerSeasonSource | None,
+    reep_rows_by_id: dict[str, ReepPlayerRow] | None = None,
 ) -> tuple[str, str]:
     candidates: list[str] = []
     if ss and ss.position_raw:
@@ -110,9 +117,13 @@ def _resolve_position_metadata(
 
     reep_row = None
     if us and us.canonical_player and us.canonical_player.reep_id:
-        reep_row = ReepPlayerRow.objects.filter(reep_id=us.canonical_player.reep_id).first()
+        reep_row = (reep_rows_by_id or {}).get(us.canonical_player.reep_id)
+        if reep_row is None and reep_rows_by_id is None:
+            reep_row = ReepPlayerRow.objects.filter(reep_id=us.canonical_player.reep_id).first()
     elif ss and ss.canonical_player and ss.canonical_player.reep_id:
-        reep_row = ReepPlayerRow.objects.filter(reep_id=ss.canonical_player.reep_id).first()
+        reep_row = (reep_rows_by_id or {}).get(ss.canonical_player.reep_id)
+        if reep_row is None and reep_rows_by_id is None:
+            reep_row = ReepPlayerRow.objects.filter(reep_id=ss.canonical_player.reep_id).first()
 
     if reep_row:
         if reep_row.position_detail:
@@ -163,6 +174,16 @@ def execute_merge_for_slice(
         ).select_related("canonical_player")
     }
     player_ids = set(us_map.keys()) | set(ss_map.keys())
+    reep_ids = {
+        row.canonical_player.reep_id
+        for row in [*us_map.values(), *ss_map.values()]
+        if row.canonical_player and row.canonical_player.reep_id
+    }
+    reep_rows_by_id = {
+        row.reep_id: row
+        for row in ReepPlayerRow.objects.filter(reep_id__in=reep_ids)
+    }
+    secondary_team_cache: dict[str, CanonicalTeam | None] = {}
 
     MergedPlayerSeason.objects.filter(
         competition_season=competition_season,
@@ -190,9 +211,13 @@ def execute_merge_for_slice(
         if display_team is None and us:
             display_team = us.canonical_team
 
-        secondary_team_ids = _secondary_display_team_ids(us, display_team)
+        secondary_team_ids = _secondary_display_team_ids(us, display_team, secondary_team_cache)
 
-        native_pos, pos_group = _resolve_position_metadata(us=us, ss=ss)
+        native_pos, pos_group = _resolve_position_metadata(
+            us=us,
+            ss=ss,
+            reep_rows_by_id=reep_rows_by_id,
+        )
 
         to_create.append(
             MergedPlayerSeason(

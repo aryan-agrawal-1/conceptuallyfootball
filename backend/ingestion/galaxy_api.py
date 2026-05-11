@@ -6,6 +6,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from ingestion.api_cache import canonical_query_params, get_or_build_payload, joined_version, model_version, stable_cache_key
 from ingestion.models import GalaxyPlayerEmbedding, GalaxySimilarity
 from ingestion.services.galaxy import latest_galaxy_snapshot
 
@@ -117,6 +118,36 @@ class GalaxyApi(APIView):
     def get(self, request):
         try:
             snapshot = _snapshot_or_404(request)
+        except DjangoValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except GalaxyPlayerEmbedding.DoesNotExist as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+
+        cache_key = stable_cache_key(
+            "galaxy",
+            {
+                "path": request.path,
+                "snapshot": snapshot.id,
+                "query": canonical_query_params(request),
+            },
+        )
+        source_version = joined_version(
+            "galaxy",
+            snapshot.id,
+            model_version(GalaxyPlayerEmbedding, {"snapshot": snapshot}),
+        )
+        try:
+            payload, _ = get_or_build_payload(
+                cache_key=cache_key,
+                source_version=source_version,
+                builder=lambda: self._build_payload(request, snapshot),
+            )
+        except DjangoValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(payload)
+
+    def _build_payload(self, request, snapshot) -> dict:
+        try:
             queryset = (
                 GalaxyPlayerEmbedding.objects.filter(snapshot=snapshot)
                 .select_related(
@@ -162,9 +193,7 @@ class GalaxyApi(APIView):
             effective_min_minutes = max(requested_min_minutes, snapshot.min_minutes)
             queryset = queryset.filter(minutes__gte=effective_min_minutes)
         except DjangoValidationError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        except GalaxyPlayerEmbedding.DoesNotExist as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+            raise
 
         rows = list(queryset)
         archetype_ids = {row.primary_archetype_id for row in rows if row.primary_archetype_id}
@@ -195,24 +224,22 @@ class GalaxyApi(APIView):
             for row in rows
         ]
 
-        return Response(
-            {
-                "competition_season": 0 if len(snapshot.included_competition_season_ids) != 1 else snapshot.included_competition_season_ids[0],
-                "competition_code": snapshot.scope_code,
-                "season_label": snapshot.season_label,
-                "count": len(points),
-                "model_meta": {
-                    **_model_meta(snapshot),
-                    "requested_min_minutes": requested_min_minutes,
-                    "effective_min_minutes": effective_min_minutes,
-                },
-                "archetypes": archetypes,
-                "points": points,
-                "players": players,
-                "selected_player": None,
-                "edges": [],
-            }
-        )
+        return {
+            "competition_season": 0 if len(snapshot.included_competition_season_ids) != 1 else snapshot.included_competition_season_ids[0],
+            "competition_code": snapshot.scope_code,
+            "season_label": snapshot.season_label,
+            "count": len(points),
+            "model_meta": {
+                **_model_meta(snapshot),
+                "requested_min_minutes": requested_min_minutes,
+                "effective_min_minutes": effective_min_minutes,
+            },
+            "archetypes": archetypes,
+            "points": points,
+            "players": players,
+            "selected_player": None,
+            "edges": [],
+        }
 
 
 class GalaxySimilarApi(APIView):
