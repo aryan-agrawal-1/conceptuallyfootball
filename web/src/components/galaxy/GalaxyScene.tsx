@@ -193,7 +193,7 @@ function PlayerLabel({ point, variant = 'hover' }: GalaxyLabel) {
       position={[point.x, point.y + 0.55, point.z]}
       center
       distanceFactor={12}
-      zIndexRange={[50, 0]}
+      zIndexRange={[10, 0]}
       style={{ pointerEvents: 'none' }}
     >
       <div
