@@ -372,6 +372,63 @@ class DerivedStatsTests(TestCase):
         self.assertAlmostEqual(payload["scope_percentiles"]["xg_per_90"], 16.6666666667)
         self.assertEqual(payload["scope_percentile_context"]["competition_code"], "BIG5")
 
+    def test_all_scope_percentiles_cache_isolated_by_position_group(self):
+        season = Season.objects.create(label="2028-29", sort_order=2029)
+        eng = Competition.objects.create(name="English Premier League", short_code="ENG1", country="England")
+        sco = Competition.objects.create(name="Scottish Premiership", short_code="SCO1", country="Scotland")
+        eng_cs = CompetitionSeason.objects.create(competition=eng, season=season)
+        sco_cs = CompetitionSeason.objects.create(competition=sco, season=season)
+        team = CanonicalTeam.objects.create(name="All Scope FC", reep_id="all-scope-team")
+
+        def make_row(
+            name: str,
+            cs: CompetitionSeason,
+            position_group: PositionGroup,
+            xg_per_90: float,
+        ):
+            player = CanonicalPlayer.objects.create(display_name=name, reep_id=f"all-scope-{name}")
+            return PlayerSeasonDerivedStats.objects.create(
+                competition_season=cs,
+                canonical_player=player,
+                canonical_display_team=team,
+                formula_version="v-test",
+                position_group=position_group,
+                native_position="P",
+                minutes=900,
+                percentiles_eligible=True,
+                xg_per_90=xg_per_90,
+                is_current=True,
+            )
+
+        forward = make_row("Forward", eng_cs, PositionGroup.FWD, 1.0)
+        make_row("Forward Peer", sco_cs, PositionGroup.FWD, 3.0)
+        defender = make_row("Defender", eng_cs, PositionGroup.DEF, 2.0)
+        make_row("Defender Peer", sco_cs, PositionGroup.DEF, 4.0)
+
+        forward_response = self.client.get(
+            f"/api/v1/player-seasons/derived-stats/{forward.canonical_player_id}",
+            {
+                "competition": "ENG1",
+                "season": "2028-29",
+                "include": "scope_percentiles",
+                "percentile_scope": "ALL",
+            },
+        )
+        defender_response = self.client.get(
+            f"/api/v1/player-seasons/derived-stats/{defender.canonical_player_id}",
+            {
+                "competition": "ENG1",
+                "season": "2028-29",
+                "include": "scope_percentiles",
+                "percentile_scope": "ALL",
+            },
+        )
+
+        self.assertEqual(forward_response.status_code, 200)
+        self.assertEqual(defender_response.status_code, 200)
+        self.assertAlmostEqual(forward_response.json()["scope_percentiles"]["xg_per_90"], 25.0)
+        self.assertAlmostEqual(defender_response.json()["scope_percentiles"]["xg_per_90"], 25.0)
+
     def test_big5_scope_percentiles_work_for_goalkeepers(self):
         season = Season.objects.create(label="2027-28", sort_order=2028)
         eng = Competition.objects.create(name="English Premier League", short_code="ENG1", country="England")

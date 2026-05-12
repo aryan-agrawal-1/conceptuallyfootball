@@ -21,6 +21,7 @@ from ingestion.models import CanonicalTeam, CompetitionSeason, PlayerSeasonDeriv
 from ingestion.secondary_teams import secondary_teams_payload
 from ingestion.scope_percentiles import (
     BIG_FIVE_COMPETITION_CODES,
+    SCOPE_PERCENTILES_CACHE_VERSION,
     build_scope_percentiles,
     is_aggregate_scope,
     requested_include,
@@ -286,6 +287,7 @@ class DerivedPlayerSeasonListApi(APIView):
         )
         source_version = joined_version(
             "derived-list",
+            SCOPE_PERCENTILES_CACHE_VERSION,
             model_version(PlayerSeasonDerivedStats, {"is_current": True}),
         )
         try:
@@ -362,6 +364,7 @@ class DerivedPlayerSeasonDetailApi(APIView):
         )
         source_version = joined_version(
             "derived-detail",
+            SCOPE_PERCENTILES_CACHE_VERSION,
             model_version(PlayerSeasonDerivedStats, {"is_current": True}),
         )
         try:

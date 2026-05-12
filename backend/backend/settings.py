@@ -52,6 +52,7 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.gzip.GZipMiddleware",
     "ingestion.middleware.ApiCacheHeadersMiddleware",
+    "ingestion.middleware.PublicApiSessionBypassMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.http.ConditionalGetMiddleware",

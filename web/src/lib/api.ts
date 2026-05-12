@@ -71,13 +71,15 @@ export async function fetchPlayerDetail(
   if (filters.percentile_scope) p.set('percentile_scope', filters.percentile_scope)
   const q = p.toString()
   const outfieldUrl = `${BASE}/player-seasons/derived-stats/${playerId}?${q}`
-  const res = await fetch(outfieldUrl)
+  // Detail payloads can carry scope percentiles. Force HTTP-cache revalidation so
+  // the browser cannot hand comparisons/profile an older response first.
+  const res = await fetch(outfieldUrl, { cache: 'no-cache' })
   if (res.ok) {
     return res.json()
   }
   if (res.status === 404) {
     const gkUrl = `${BASE}/player-seasons/gk-derived-stats/${playerId}?${q}`
-    const gkRes = await fetch(gkUrl)
+    const gkRes = await fetch(gkUrl, { cache: 'no-cache' })
     if (gkRes.ok) {
       return gkRes.json()
     }

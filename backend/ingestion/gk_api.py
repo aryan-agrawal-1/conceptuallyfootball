@@ -20,6 +20,7 @@ from ingestion.derived_api import _resolve_competition_scope
 from ingestion.models import CanonicalTeam, CompetitionSeason, PlayerSeasonGkDerivedStats
 from ingestion.secondary_teams import secondary_teams_payload
 from ingestion.scope_percentiles import (
+    SCOPE_PERCENTILES_CACHE_VERSION,
     build_scope_percentiles,
     is_aggregate_scope,
     requested_include,
@@ -218,6 +219,7 @@ class GkDerivedPlayerSeasonListApi(APIView):
         )
         source_version = joined_version(
             "gk-derived-list",
+            SCOPE_PERCENTILES_CACHE_VERSION,
             model_version(PlayerSeasonGkDerivedStats, {"is_current": True}),
         )
         try:
@@ -296,6 +298,7 @@ class GkDerivedPlayerSeasonDetailApi(APIView):
         )
         source_version = joined_version(
             "gk-derived-detail",
+            SCOPE_PERCENTILES_CACHE_VERSION,
             model_version(PlayerSeasonGkDerivedStats, {"is_current": True}),
         )
         try:

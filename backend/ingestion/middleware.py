@@ -2,6 +2,20 @@ from __future__ import annotations
 
 import hashlib
 
+from django.conf import settings
+
+
+class PublicApiSessionBypassMiddleware:
+    """Do not decode browser sessions for public JSON API reads."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.path.startswith("/api/v1/"):
+            request.COOKIES.pop(settings.SESSION_COOKIE_NAME, None)
+        return self.get_response(request)
+
 
 class ApiCacheHeadersMiddleware:
     """Attach browser-friendly cache headers to deterministic public API GETs."""

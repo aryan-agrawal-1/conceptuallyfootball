@@ -12,6 +12,7 @@ from ingestion.models import CompetitionSeason
 
 BIG_FIVE_COMPETITION_CODES = ("ENG1", "GER1", "SPA1", "FRA1", "ITA1")
 AGGREGATE_SCOPE_CODES = ("BIG5", "ALL")
+SCOPE_PERCENTILES_CACHE_VERSION = "v2"
 
 
 def requested_include(request, key: str) -> bool:
@@ -89,7 +90,9 @@ def build_scope_percentiles(
         "scope-percentiles",
         {
             "model": scope_queryset.model._meta.label_lower,
+            "version": SCOPE_PERCENTILES_CACHE_VERSION,
             "competition_season_ids": season_ids,
+            "position_groups": sorted(relevant_positions),
             "fields": fields,
             "percentile_fields": sorted(fields_with_percentiles),
         },
