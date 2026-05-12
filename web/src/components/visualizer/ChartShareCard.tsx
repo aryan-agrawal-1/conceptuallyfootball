@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { Download, Share2 } from 'lucide-react'
-import { toPng } from 'html-to-image'
 import { HudPill } from '../hud/Hud'
 import { BRAND_DOMAIN, BRAND_LOGO_URL, BRAND_NAME_UPPER, BRAND_SLUG } from '../../lib/brand'
 
@@ -42,9 +41,14 @@ export function ChartShareCard({
     [fileName],
   )
 
+  async function waitForExportSurface() {
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+  }
+
   async function buildImage(): Promise<string> {
     const node = exportRef.current
     if (!node) throw new Error('Export surface unavailable.')
+    const { toPng } = await import('html-to-image')
     return toPng(node, {
       cacheBust: true,
       pixelRatio: 2.5,
@@ -55,6 +59,7 @@ export function ChartShareCard({
   async function handleDownload() {
     try {
       setBusy('download')
+      await waitForExportSurface()
       const dataUrl = await buildImage()
       const link = document.createElement('a')
       link.href = dataUrl
@@ -68,6 +73,7 @@ export function ChartShareCard({
   async function handleShare() {
     try {
       setBusy('share')
+      await waitForExportSurface()
       const dataUrl = await buildImage()
       const file = await dataUrlToFile(dataUrl, safeFileName)
       if (
@@ -105,7 +111,7 @@ export function ChartShareCard({
         </HudPill>
       </div>
 
-      <div className="fixed left-[-20000px] top-0 pointer-events-none opacity-0" aria-hidden="true">
+      {busy && <div className="fixed left-[-20000px] top-0 pointer-events-none opacity-0" aria-hidden="true">
         <div
           ref={exportRef}
           className={`relative overflow-hidden border border-electric/30 bg-[#070810] text-ink shadow-[0_0_80px_-12px_rgba(74,158,245,0.3)] ${aspectClass(aspect)}`}
@@ -154,7 +160,7 @@ export function ChartShareCard({
             </div>
           </div>
         </div>
-      </div>
+      </div>}
     </>
   )
 }

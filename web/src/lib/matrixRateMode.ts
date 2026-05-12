@@ -15,6 +15,23 @@ export function cohortPercentileRank(value: number, cohort: number[]): number {
   return ((less + lessOrEqual) / 2 / cohort.length) * 100
 }
 
+export function buildPercentileLookup(values: number[]): Map<number, number> {
+  const sorted = [...values].sort((left, right) => left - right)
+  const percentileByValue = new Map<number, number>()
+  const total = sorted.length
+  let start = 0
+
+  while (start < total) {
+    const value = sorted[start]
+    let end = start + 1
+    while (end < total && sorted[end] === value) end += 1
+    percentileByValue.set(value, ((start + end) / 2 / total) * 100)
+    start = end
+  }
+
+  return percentileByValue
+}
+
 export function per90ToSeasonApprox(per90: number | null, minutes: number | null | undefined): number | null {
   if (per90 == null || minutes == null || minutes <= 0) return null
   return (per90 * minutes) / 90
@@ -263,11 +280,13 @@ export function buildCohortPercentileMaps(
     const numeric = resolved
       .map(r => r.v)
       .filter((v): v is number => v != null && !Number.isNaN(v))
+    const percentileByValue = buildPercentileLookup(numeric)
 
     const cohortByColumn = new Map<number, number>()
     for (const { id, v } of resolved) {
       if (v == null || Number.isNaN(v)) continue
-      cohortByColumn.set(id, cohortPercentileRank(v, numeric))
+      const percentile = percentileByValue.get(v)
+      if (percentile != null) cohortByColumn.set(id, percentile)
     }
     out.set(colId, cohortByColumn)
   }

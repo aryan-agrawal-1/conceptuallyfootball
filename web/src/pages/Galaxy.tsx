@@ -1,11 +1,7 @@
-import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { Html, Line, OrbitControls, Stars } from '@react-three/drei'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { AlertCircle, ArrowUpRight, Loader2, Search, X } from 'lucide-react'
-import * as THREE from 'three'
-import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { fetchGalaxy, fetchGalaxySimilar } from '../lib/api'
 import type { GalaxyEdge, GalaxyPoint, PositionGroup } from '../types/api'
 import { cn } from '../lib/utils'
@@ -16,6 +12,10 @@ import {
 } from '../components/hud/Hud'
 import { HudMultiSelectDropdown } from '../components/hud/HudDropdown'
 import { useScope } from '../context/ScopeContext'
+
+const GalaxyScene = lazy(() =>
+  import('../components/galaxy/GalaxyScene').then(module => ({ default: module.GalaxyScene })),
+)
 
 const DEFAULT_FILTERS = {
   position_group: [] as string[],
@@ -37,37 +37,6 @@ function readParamValues(params: URLSearchParams, key: string): string[] {
     .filter(Boolean)
 }
 
-// ─── Star sprite ──────────────────────────────────────────────────────────────
-// A radial-gradient sprite with a bright white core and soft falloff. When it's
-// tinted by vertexColors + AdditiveBlending, colors show as a halo around a
-// near-white center — which is the "colored star" look in the reference.
-
-function makeStarTexture(): THREE.Texture {
-  const size = 128
-  const canvas = document.createElement('canvas')
-  canvas.width = size
-  canvas.height = size
-  const ctx = canvas.getContext('2d')!
-  const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
-  grad.addColorStop(0.0, 'rgba(255,255,255,1)')
-  grad.addColorStop(0.15, 'rgba(255,255,255,0.85)')
-  grad.addColorStop(0.4, 'rgba(255,255,255,0.25)')
-  grad.addColorStop(1.0, 'rgba(255,255,255,0)')
-  ctx.fillStyle = grad
-  ctx.fillRect(0, 0, size, size)
-  const tex = new THREE.CanvasTexture(canvas)
-  tex.colorSpace = THREE.SRGBColorSpace
-  tex.needsUpdate = true
-  return tex
-}
-
-// Scales minutes into a subtle sprite-size multiplier (kept narrow per spec).
-function sizeFromMinutes(minutes: number, range: { min: number; max: number }): number {
-  if (range.max <= range.min) return 1
-  const t = (minutes - range.min) / (range.max - range.min)
-  return 0.9 + t * 0.35
-}
-
 // ─── Layout pass ─────────────────────────────────────────────────────────────
 // UMAP can land similar players *extremely* close together — often overlapping
 // within a single sprite. We do two things to fix that without touching the
@@ -78,398 +47,6 @@ function sizeFromMinutes(minutes: number, range: { min: number; max: number }): 
 //      the overall shape of the embedding but guarantees no overlap.
 //
 // N is small (~hundreds of players) so an O(N^2) pass per iteration is fine.
-
-const LAYOUT_SCALE = 4
-const MIN_SEPARATION = 1
-const RELAX_ITERATIONS = 30
-
-function applyLayout(points: GalaxyPoint[]): GalaxyPoint[] {
-  if (points.length === 0) return points
-  const positions: [number, number, number][] = points.map(p => [
-    p.x * LAYOUT_SCALE,
-    p.y * LAYOUT_SCALE,
-    p.z * LAYOUT_SCALE,
-  ])
-  const minSq = MIN_SEPARATION * MIN_SEPARATION
-  const n = positions.length
-
-  for (let iter = 0; iter < RELAX_ITERATIONS; iter++) {
-    let anyOverlap = false
-    for (let i = 0; i < n; i++) {
-      for (let j = i + 1; j < n; j++) {
-        const a = positions[i]
-        const b = positions[j]
-        const dx = b[0] - a[0]
-        const dy = b[1] - a[1]
-        const dz = b[2] - a[2]
-        const d2 = dx * dx + dy * dy + dz * dz
-        if (d2 >= minSq || d2 === 0) continue
-        anyOverlap = true
-        const d = Math.sqrt(d2)
-        const push = (MIN_SEPARATION - d) / 2
-        const ux = dx / d
-        const uy = dy / d
-        const uz = dz / d
-        a[0] -= ux * push
-        a[1] -= uy * push
-        a[2] -= uz * push
-        b[0] += ux * push
-        b[1] += uy * push
-        b[2] += uz * push
-      }
-    }
-    if (!anyOverlap) break
-  }
-
-  // Recenter: UMAP returns coordinates with an arbitrary origin, so the
-  // cluster's center of mass almost never lands at (0,0,0). If we don't fix
-  // that, the default camera (which looks at the origin) frames empty space
-  // on one side and the cluster on the other. Shifting every point by the
-  // centroid snaps the galaxy to the middle of the view on first paint.
-  let cx = 0
-  let cy = 0
-  let cz = 0
-  for (const p of positions) {
-    cx += p[0]
-    cy += p[1]
-    cz += p[2]
-  }
-  cx /= n
-  cy /= n
-  cz /= n
-  for (const p of positions) {
-    p[0] -= cx
-    p[1] -= cy
-    p[2] -= cz
-  }
-
-  return points.map((p, i) => ({
-    ...p,
-    x: positions[i][0],
-    y: positions[i][1],
-    z: positions[i][2],
-  }))
-}
-
-// ─── Stars (single Points mesh, one draw call) ────────────────────────────────
-
-function GalaxyStars({
-  points,
-  onSelect,
-  onHover,
-}: {
-  points: GalaxyPoint[]
-  onSelect: (id: string) => void
-  onHover: (id: string | null) => void
-}) {
-  const texture = useMemo(() => makeStarTexture(), [])
-
-  const { positions, colors, sizes, indexToPlayerId } = useMemo(() => {
-    const positions = new Float32Array(points.length * 3)
-    const colors = new Float32Array(points.length * 3)
-    const sizes = new Float32Array(points.length)
-    const indexToPlayerId: string[] = []
-
-    const minutesList = points.map(p => p.minutes)
-    const range = {
-      min: Math.min(...minutesList, 0),
-      max: Math.max(...minutesList, 1),
-    }
-
-    const colorObj = new THREE.Color()
-    points.forEach((point, i) => {
-      positions[i * 3 + 0] = point.x
-      positions[i * 3 + 1] = point.y
-      positions[i * 3 + 2] = point.z
-      colorObj.set(point.cluster_color)
-      colors[i * 3 + 0] = colorObj.r
-      colors[i * 3 + 1] = colorObj.g
-      colors[i * 3 + 2] = colorObj.b
-      sizes[i] = sizeFromMinutes(point.minutes, range)
-      indexToPlayerId.push(point.galaxy_player_id)
-    })
-
-    return { positions, colors, sizes, indexToPlayerId }
-  }, [points])
-
-  const coloredHalo = useMemo(
-    () =>
-      new THREE.PointsMaterial({
-        size: 0.65,
-        map: texture,
-        vertexColors: true,
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        sizeAttenuation: true,
-      }),
-    [texture],
-  )
-
-  const whiteCore = useMemo(
-    () =>
-      new THREE.PointsMaterial({
-        size: 0.22,
-        map: texture,
-        color: 0xffffff,
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        sizeAttenuation: true,
-      }),
-    [texture],
-  )
-
-  function handleClick(event: ThreeEvent<MouseEvent>) {
-    event.stopPropagation()
-    const index = event.index
-    if (typeof index !== 'number') return
-    const playerId = indexToPlayerId[index]
-    if (playerId != null) onSelect(playerId)
-  }
-
-  // `onPointerMove` on a Points object fires with `event.index` set to the
-  // nearest point the raycaster hit. We translate that back to a player id
-  // and surface it upward. `onPointerOut` fires when the pointer leaves the
-  // entire Points object so we clear hover state there.
-  function handlePointerMove(event: ThreeEvent<PointerEvent>) {
-    event.stopPropagation()
-    const index = event.index
-    if (typeof index !== 'number') return
-    const playerId = indexToPlayerId[index]
-    if (playerId != null) onHover(playerId)
-  }
-
-  function handlePointerOut() {
-    onHover(null)
-  }
-
-  return (
-    <group>
-      {/* Halo layer: colored, larger, picks up click events */}
-      <points
-        material={coloredHalo}
-        onClick={handleClick}
-        onPointerMove={handlePointerMove}
-        onPointerOut={handlePointerOut}
-      >
-        <bufferGeometry>
-          <bufferAttribute
-            attach="attributes-position"
-            args={[positions, 3]}
-          />
-          <bufferAttribute
-            attach="attributes-color"
-            args={[colors, 3]}
-          />
-          <bufferAttribute
-            attach="attributes-size"
-            args={[sizes, 1]}
-          />
-        </bufferGeometry>
-      </points>
-
-      {/* Core layer: bright white center, non-interactive */}
-      <points material={whiteCore} raycast={() => null}>
-        <bufferGeometry>
-          <bufferAttribute
-            attach="attributes-position"
-            args={[positions, 3]}
-          />
-        </bufferGeometry>
-      </points>
-    </group>
-  )
-}
-
-// ─── Selected-player highlight ────────────────────────────────────────────────
-
-function SelectedHighlight({ point }: { point: GalaxyPoint }) {
-  return (
-    <group position={[point.x, point.y, point.z]}>
-      <mesh>
-        <ringGeometry args={[0.55, 0.62, 48]} />
-        <meshBasicMaterial color={point.cluster_color} transparent opacity={0.9} side={THREE.DoubleSide} />
-      </mesh>
-    </group>
-  )
-}
-
-// ─── Hover pulse ─────────────────────────────────────────────────────────────
-// A ring that sits on the hovered star and gently breathes in/out. We animate
-// scale rather than geometry so the ring mesh is built once and we just push a
-// scalar per frame. `useFrame` runs inside the R3F render loop — cheap.
-
-function HoverPulse({ point }: { point: GalaxyPoint }) {
-  const ringRef = useRef<THREE.Mesh>(null)
-  useFrame(state => {
-    if (!ringRef.current) return
-    const t = state.clock.elapsedTime
-    const pulse = 1 + Math.sin(t * 3.2) * 0.18
-    ringRef.current.scale.setScalar(pulse)
-  })
-  return (
-    <group position={[point.x, point.y, point.z]}>
-      <mesh ref={ringRef}>
-        <ringGeometry args={[0.45, 0.52, 48]} />
-        <meshBasicMaterial
-          color={point.cluster_color}
-          transparent
-          opacity={0.75}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-    </group>
-  )
-}
-
-// ─── Floating player label ───────────────────────────────────────────────────
-// Renders a DOM element via `<Html>` positioned in 3D space. Used both for the
-// hovered star and for the selected player + its linked comps. `variant` lets
-// us visually distinguish "network" labels (the selected player and its top-5
-// similars) from a plain hover.
-
-function PlayerLabel({
-  point,
-  variant = 'hover',
-}: {
-  point: GalaxyPoint
-  variant?: 'hover' | 'selected' | 'linked'
-}) {
-  // Each variant's bracket tone matches its border — selected is the boldest,
-  // linked is a softened electric, hover is the dimmest. This lets a user
-  // scan a clicked player's network at a glance while still getting a light
-  // readout on casual hover.
-  const bracketClass = cn(
-    'absolute size-1 pointer-events-none',
-    variant === 'selected' && 'border-electric',
-    variant === 'linked' && 'border-electric/70',
-    variant === 'hover' && 'border-electric/50',
-  )
-
-  return (
-    <Html
-      position={[point.x, point.y + 0.55, point.z]}
-      center
-      distanceFactor={12}
-      zIndexRange={[50, 0]}
-      style={{ pointerEvents: 'none' }}
-    >
-      <div
-        className={cn(
-          'relative px-1.5 py-0.5 text-[11px] whitespace-nowrap backdrop-blur border',
-          variant === 'selected' &&
-            'border-electric bg-electric/20 text-ink font-medium tracking-wide',
-          variant === 'linked' &&
-            'border-electric/60 bg-panel/80 text-ink',
-          variant === 'hover' &&
-            'border-electric/40 bg-panel/90 text-ink',
-        )}
-      >
-        <span className={cn(bracketClass, '-top-px -left-px border-t border-l')} />
-        <span className={cn(bracketClass, '-top-px -right-px border-t border-r')} />
-        <span className={cn(bracketClass, '-bottom-px -left-px border-b border-l')} />
-        <span className={cn(bracketClass, '-bottom-px -right-px border-b border-r')} />
-        {point.canonical_player_name}
-      </div>
-    </Html>
-  )
-}
-
-// ─── Camera focus animation ──────────────────────────────────────────────────
-// When `target` changes, smoothly slide the camera AND the OrbitControls
-// pivot toward the selected star. We preserve the current view direction so
-// the user's rotation isn't thrown out — we just translate the orbit origin
-// and pull the camera closer. OrbitControls is registered with `makeDefault`
-// below so `useThree(state => state.controls)` returns it.
-//
-// Note: we lerp every frame while `animating` is true; once the camera is
-// within an epsilon of its goal we stop updating so idle frames do no work.
-
-const FOCUS_DISTANCE = 5.5
-const FOCUS_LERP = 0.1
-const FOCUS_EPSILON = 0.02
-
-function CameraFocus({ target }: { target: GalaxyPoint | null }) {
-  const { camera } = useThree()
-  const controls = useThree(state => state.controls as OrbitControlsImpl | null)
-
-  const goalTarget = useRef(new THREE.Vector3())
-  const goalCamera = useRef(new THREE.Vector3())
-  const animating = useRef(false)
-  const lastTargetId = useRef<string | null>(null)
-
-  useFrame(() => {
-    if (!controls) return
-    const targetId = target?.galaxy_player_id ?? null
-
-    if (targetId !== lastTargetId.current) {
-      lastTargetId.current = targetId
-      if (target) {
-        goalTarget.current.set(target.x, target.y, target.z)
-        // Keep the current view direction; just shorten the distance.
-        const direction = new THREE.Vector3()
-          .subVectors(camera.position, controls.target)
-          .normalize()
-        goalCamera.current
-          .copy(goalTarget.current)
-          .add(direction.multiplyScalar(FOCUS_DISTANCE))
-        animating.current = true
-      } else {
-        animating.current = false
-      }
-    }
-
-    if (!animating.current) return
-    controls.target.lerp(goalTarget.current, FOCUS_LERP)
-    camera.position.lerp(goalCamera.current, FOCUS_LERP)
-    controls.update()
-
-    if (
-      camera.position.distanceTo(goalCamera.current) < FOCUS_EPSILON &&
-      controls.target.distanceTo(goalTarget.current) < FOCUS_EPSILON
-    ) {
-      animating.current = false
-    }
-  })
-
-  return null
-}
-
-// ─── Similarity lines ─────────────────────────────────────────────────────────
-
-function SimilarityLines({
-  edges,
-  pointsById,
-  from,
-}: {
-  edges: GalaxyEdge[]
-  pointsById: Map<string, GalaxyPoint>
-  from: GalaxyPoint
-}) {
-  if (!edges.length) return null
-  return (
-    <>
-      {edges.map(edge => {
-        const to = pointsById.get(edge.to_galaxy_player_id)
-        if (!to) return null
-        return (
-          <Line
-            key={`${edge.from_galaxy_player_id}-${edge.to_galaxy_player_id}`}
-            points={[
-              [from.x, from.y, from.z],
-              [to.x, to.y, to.z],
-            ]}
-            color={to.cluster_color}
-            lineWidth={1.25}
-            transparent
-            opacity={0.8}
-          />
-        )
-      })}
-    </>
-  )
-}
 
 function MinutesInput({
   value,
@@ -701,16 +278,27 @@ export function Galaxy() {
   const [search, setSearch] = useState('')
   const [knownTeams, setKnownTeams] = useState<string[]>([])
 
-  const filters = {
-    competition: scope.competition,
-    season: scope.season,
-    min_minutes: Number(params.get('min_minutes') ?? DEFAULT_FILTERS.min_minutes),
-    position_group: readParamValues(params, 'position_group'),
-    team: readParamValues(params, 'team'),
-  }
+  const rawFilterSearch = params.toString()
+  const filters = useMemo(() => {
+    const nextParams = new URLSearchParams(rawFilterSearch)
+    return {
+      competition: scope.competition,
+      season: scope.season,
+      min_minutes: Number(nextParams.get('min_minutes') ?? DEFAULT_FILTERS.min_minutes),
+      position_group: readParamValues(nextParams, 'position_group'),
+      team: readParamValues(nextParams, 'team'),
+    }
+  }, [rawFilterSearch, scope.competition, scope.season])
 
   const galaxyQuery = useQuery({
-    queryKey: ['galaxy', filters],
+    queryKey: [
+      'galaxy',
+      filters.competition,
+      filters.season,
+      filters.min_minutes,
+      filters.position_group.join(','),
+      filters.team.join(','),
+    ],
     queryFn: () => fetchGalaxy(filters),
     // Changing filters produces a new query key. Without this, React Query
     // would report `isPending = true` and my loader would take over the
@@ -733,7 +321,19 @@ export function Galaxy() {
   // Apply the scale + repulsion pass *once* per galaxy payload. Everything
   // downstream (sprites, highlight ring, similarity lines) reads from these
   // relaxed positions so they all stay in sync.
-  const laidOutPoints = useMemo(() => applyLayout(data?.points ?? []), [data?.points])
+  const [laidOutPoints, setLaidOutPoints] = useState<GalaxyPoint[]>([])
+
+  useEffect(() => {
+    const points = data?.points ?? []
+    const worker = new Worker(new URL('../workers/galaxyLayoutWorker.ts', import.meta.url), {
+      type: 'module',
+    })
+    worker.onmessage = (event: MessageEvent<GalaxyPoint[]>) => {
+      setLaidOutPoints(event.data)
+    }
+    worker.postMessage(points)
+    return () => worker.terminate()
+  }, [data?.points])
 
   const pointsById = useMemo(() => {
     const m = new Map<string, GalaxyPoint>()
@@ -789,6 +389,16 @@ export function Galaxy() {
     }
   }
 
+  const mobileSearchResults = useMemo(() => {
+    if (!mobileSearchOpen) return []
+    const needle = search.trim().toLowerCase()
+    if (!needle) return []
+    return (data?.players ?? [])
+      .filter(player => player.canonical_player_name.toLowerCase().includes(needle))
+      .sort((a, b) => a.canonical_player_name.localeCompare(b.canonical_player_name))
+      .slice(0, 6)
+  }, [data?.players, mobileSearchOpen, search])
+
   if (galaxyQuery.isLoading) {
     return (
       <div className="flex h-[calc(100svh-132px)] items-center justify-center lg:h-[calc(100svh-52px)]">
@@ -814,14 +424,6 @@ export function Galaxy() {
       ? pointsById.get(hoveredPlayerId) ?? null
       : null
   const edges = similarQuery.data?.edges ?? []
-  const mobileSearchResults = (data.players ?? [])
-    .filter(player => {
-      const needle = search.trim().toLowerCase()
-      return needle.length > 0 && player.canonical_player_name.toLowerCase().includes(needle)
-    })
-    .sort((a, b) => a.canonical_player_name.localeCompare(b.canonical_player_name))
-    .slice(0, 6)
-
   // Floating labels are rendered for:
   //   - every star in the selected player's "network" (the selected player +
   //     the top-5 similars they're connected to by a line), so the user sees
@@ -1055,70 +657,25 @@ export function Galaxy() {
         </div>
       )}
 
-      <Canvas
-        onPointerMissed={clearMobileSelectionOnMiss}
-        camera={{ position: [0, 0, 28], fov: 60 }}
-        // Cap DPR at 1.5 to keep the backing buffer small on Retina/hi-DPI
-        // displays. At 1.75–2x, the combination of additively-blended star
-        // sprites, SDF text atlases (archetype labels) and the Stars
-        // background can blow past the GPU's per-context budget on some
-        // machines, which manifests as an immediate "Context Lost".
-        dpr={[1, 1.5]}
-        // `powerPreference: 'high-performance'` asks the browser to use the
-        // discrete GPU when available instead of integrated graphics — the
-        // integrated path is where we saw context loss on macOS.
-        gl={{ powerPreference: 'high-performance', antialias: true }}
-        onCreated={state => {
-          state.raycaster.params.Points = { threshold: 0.3 }
-          // By default, when WebGL loses its context, three.js stops
-          // rendering. Calling `preventDefault()` tells the browser "we'll
-          // handle it" — and three.js has built-in logic to recreate its
-          // resources (textures, buffers, programs) when the context is
-          // restored, so the galaxy just picks back up.
-          const canvas = state.gl.domElement
-          canvas.addEventListener(
-            'webglcontextlost',
-            event => {
-              event.preventDefault()
-            },
-            false,
-          )
-        }}
+      <Suspense
+        fallback={
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Loader2 size={28} className="text-electric animate-spin" />
+          </div>
+        }
       >
-        <color attach="background" args={['#060912']} />
-        <Stars radius={120} depth={60} count={1600} factor={4} saturation={0} fade speed={0.3} />
-        <GalaxyStars
+        <GalaxyScene
           points={laidOutPoints}
+          selectedPoint={selectedPoint}
+          hoveredPoint={hoveredPoint}
+          labeledPoints={labeledPoints}
+          edges={edges}
+          pointsById={pointsById}
           onSelect={setSelectedPlayerId}
           onHover={setHoveredPlayerId}
+          onPointerMissed={clearMobileSelectionOnMiss}
         />
-        {selectedPoint && <SelectedHighlight point={selectedPoint} />}
-        {hoveredPoint && <HoverPulse point={hoveredPoint} />}
-        {labeledPoints.map(({ point, variant }) => (
-          <PlayerLabel
-            key={`label-${point.galaxy_player_id}`}
-            point={point}
-            variant={variant}
-          />
-        ))}
-        {selectedPoint && (
-          <SimilarityLines edges={edges} pointsById={pointsById} from={selectedPoint} />
-        )}
-        <CameraFocus target={selectedPoint} />
-        <OrbitControls
-          makeDefault
-          enablePan
-          enableZoom
-          enableRotate
-          rotateSpeed={0.35}
-          zoomSpeed={0.35}
-          panSpeed={0.4}
-          enableDamping
-          dampingFactor={0.08}
-          minDistance={4}
-          maxDistance={55}
-        />
-      </Canvas>
+      </Suspense>
     </div>
   )
 }

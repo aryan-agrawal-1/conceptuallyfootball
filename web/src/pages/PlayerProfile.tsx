@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, AlertCircle, FileImage } from 'lucide-react'
@@ -13,10 +13,15 @@ import { ProfileStatBars } from '../components/profile/ProfileStatBars'
 import { ProfilePizzaSection } from '../components/profile/ProfilePizzaSection'
 import { ProfileEligibilityBanner } from '../components/profile/ProfileEligibilityBanner'
 import { ProfileScopeSelector } from '../components/profile/ProfileScopeSelector'
-import { PlayerProfileExportModal } from '../components/profile/PlayerProfileExportModal'
 import type { ProfileRateMode } from '../lib/profileMetrics'
 import type { PositionGroup, SearchPlayerMembership } from '../types/api'
 import { scopeIncludesMembership } from '../lib/scopeMembership'
+
+const PlayerProfileExportModal = lazy(() =>
+  import('../components/profile/PlayerProfileExportModal').then(module => ({
+    default: module.PlayerProfileExportModal,
+  })),
+)
 
 const POSITION_COHORT_LABEL: Record<PositionGroup, string> = {
   FWD: 'forwards',
@@ -277,14 +282,16 @@ function ProfileLayout({
       </div>
 
       {exportOpen && (
-        <PlayerProfileExportModal
-          player={player}
-          meta={meta}
-          initialRateMode={rateMode}
-          percentileMap={activePercentileMap}
-          percentileScopeLabel={percentileScopeLabel}
-          onClose={() => setExportOpen(false)}
-        />
+        <Suspense fallback={null}>
+          <PlayerProfileExportModal
+            player={player}
+            meta={meta}
+            initialRateMode={rateMode}
+            percentileMap={activePercentileMap}
+            percentileScopeLabel={percentileScopeLabel}
+            onClose={() => setExportOpen(false)}
+          />
+        </Suspense>
       )}
     </div>
   )

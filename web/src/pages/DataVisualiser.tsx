@@ -83,11 +83,12 @@ export function DataVisualiser() {
     }),
     [state.competition, state.season, state.position],
   )
-  const playerQuery = useStatMatrix(playerFetchFilters)
+  const playerQuery = useStatMatrix(playerFetchFilters, state.tab === 'players')
   const teamQuery = useQuery({
     queryKey: ['team-stat-matrix', state.competition, state.season],
     queryFn: () => fetchTeamStatMatrix({ competition: state.competition, season: state.season, include: 'meta' }),
     staleTime: 10 * 60 * 1000,
+    enabled: state.tab === 'teams',
   })
 
   const playerRows = useMemo(() => {
@@ -224,6 +225,7 @@ export function DataVisualiser() {
     const available = new Set(activeScatterPoints.map(point => point.id))
     return state.pinnedIds.filter(id => available.has(id))
   }, [activeScatterPoints, state.pinnedIds])
+  const validPinnedIdSet = useMemo(() => new Set(validPinnedIds), [validPinnedIds])
 
   const labelIds = useMemo(() => {
     if (!state.labels) return []
@@ -374,7 +376,7 @@ export function DataVisualiser() {
         <VisualiserScatterPlot
           points={activeScatterPoints.map(point => ({
             ...point,
-            highlighted: validPinnedIds.includes(point.id),
+            highlighted: validPinnedIdSet.has(point.id),
           }))}
           xLabel={metricLabel(state.tab, xMetric, playerMeta, teamMeta)}
           yLabel={metricLabel(state.tab, yMetric, playerMeta, teamMeta)}
@@ -394,7 +396,7 @@ export function DataVisualiser() {
         <VisualiserBarChart
           rows={activeBarRows.map(row => ({
             ...row,
-            highlighted: validPinnedIds.includes(row.id),
+            highlighted: validPinnedIdSet.has(row.id),
           }))}
           metricLabel={metricLabel(state.tab, barMetric, playerMeta, teamMeta)}
           exportMode={exportMode}

@@ -14,12 +14,6 @@ import type {
 
 const STALE_MS = 30 * 60 * 1000
 
-export type SearchTeamRow = {
-  canonical_team_id: number
-  canonical_team_name: string
-  totalMinutes?: number
-}
-
 export function playerScopeToken(row: Pick<PlayerRow, 'competition_code' | 'season_label' | 'canonical_player_id'>): string {
   return `${row.competition_code}:${row.season_label}:${row.canonical_player_id}`
 }
@@ -96,19 +90,8 @@ export function useSearchPaletteIndex(enabled: boolean) {
       .sort((a, b) => b.minutes - a.minutes)
   }, [query.data?.players, scope])
 
-  const teamsSorted = useMemo((): SearchTeamRow[] => {
-    return (query.data?.teams ?? [])
-      .filter(entity => membershipForScope(entity.memberships, scope))
-      .map(entity => ({
-        canonical_team_id: entity.canonical_team_id,
-        canonical_team_name: entity.canonical_team_name,
-      }))
-      .sort((a, b) => a.canonical_team_name.localeCompare(b.canonical_team_name))
-  }, [query.data?.teams, scope])
-
   return {
     playersSorted,
-    teamsSorted,
     globalPlayers: query.data?.players ?? [],
     globalTeams: query.data?.teams ?? [],
     isLoading: query.isLoading,

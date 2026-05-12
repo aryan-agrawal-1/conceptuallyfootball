@@ -1,12 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { BarChart3, ChevronDown, GitCompare, Microscope, Orbit, Search, Table2 } from 'lucide-react'
 import { useScope } from '../../context/ScopeContext'
 import { BRAND_LOGO_URL, BRAND_NAME } from '../../lib/brand'
 import { cn } from '../../lib/utils'
 import { HudCornerMarks, HudPopover } from '../hud/Hud'
-import { CommandPalette } from '../search/CommandPalette'
 import type { CompetitionCatalogEntry } from '../../types/api'
+
+const CommandPalette = lazy(() =>
+  import('../search/CommandPalette').then(module => ({ default: module.CommandPalette })),
+)
 
 const NAV_LINKS = [
   { to: '/', label: 'Matrix', shortLabel: 'Matrix', icon: Table2 },
@@ -165,7 +168,11 @@ export function NavBar() {
         </div>
       </div>
 
-      <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
+      {searchOpen && (
+        <Suspense fallback={null}>
+          <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
+        </Suspense>
+      )}
     </nav>
     <nav
       className="fixed bottom-0 left-0 right-0 z-50 grid h-[64px] grid-cols-5 border-t border-electric/25 bg-mat/95 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_28px_-18px_rgba(74,158,245,0.55)] backdrop-blur-md lg:hidden"

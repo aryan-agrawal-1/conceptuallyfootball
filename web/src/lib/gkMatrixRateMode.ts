@@ -2,7 +2,7 @@ import type { ColumnUnit } from './columns'
 import type { PlayerRow } from '../types/api'
 import type { MatrixRateMode, ResolvedMatrixMetric } from './matrixRateMode'
 import {
-  cohortPercentileRank,
+  buildPercentileLookup,
   per90ToSeasonApprox,
   totalToPer90,
 } from './matrixRateMode'
@@ -159,11 +159,13 @@ export function buildGkCohortPercentileMaps(
     const numeric = resolved
       .map(r => r.v)
       .filter((v): v is number => v != null && !Number.isNaN(v))
+    const percentileByValue = buildPercentileLookup(numeric)
 
     const cohortByColumn = new Map<number, number>()
     for (const { id, v } of resolved) {
       if (v == null || Number.isNaN(v)) continue
-      cohortByColumn.set(id, cohortPercentileRank(v, numeric))
+      const percentile = percentileByValue.get(v)
+      if (percentile != null) cohortByColumn.set(id, percentile)
     }
     out.set(colId, cohortByColumn)
   }

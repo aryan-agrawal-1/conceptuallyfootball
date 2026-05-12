@@ -13,7 +13,7 @@ export const DEFAULT_FILTERS: MatrixFilters = {
  * queryKey only contains competition+season — team/position/min_minutes
  * are all handled client-side so changing them never triggers a fetch.
  */
-export function useStatMatrix(filters: MatrixFilters) {
+export function useStatMatrix(filters: MatrixFilters, enabled = true) {
   const isGk = filters.position_group === 'GK'
   return useQuery<MatrixResponse, Error>({
     queryKey: ['stat-matrix', isGk ? 'gk' : 'outfield', filters.competition, filters.season],
@@ -23,6 +23,7 @@ export function useStatMatrix(filters: MatrixFilters) {
         : fetchStatMatrix(filters.competition, filters.season, 'meta'),
     staleTime: 10 * 60 * 1000,
     placeholderData: keepPreviousData,
+    enabled,
   })
 }
 

@@ -105,6 +105,10 @@ function TargetBrackets({ side }: { side: 'left' | 'right' }) {
 
 const helper = createColumnHelper<PlayerRow>()
 type SortValue = number | string | null
+const MATRIX_SORT_COLLATOR = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: 'base',
+})
 
 function getSortValue(
   row: PlayerRow,
@@ -128,7 +132,7 @@ function getSortValue(
 
 function compareSortValues(a: SortValue, b: SortValue): number {
   if (typeof a === 'string' && typeof b === 'string') {
-    return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+    return MATRIX_SORT_COLLATOR.compare(a, b)
   }
   return Number(a) - Number(b)
 }
@@ -562,15 +566,21 @@ export function MatrixTable({
     const [primarySort] = sorting
     if (!primarySort) return players
 
-    const sorted = [...players].sort((a, b) => {
-      const aValue = getSortValue(a, primarySort.id, rateMode, variant)
-      const bValue = getSortValue(b, primarySort.id, rateMode, variant)
+    const sorted = players
+      .map(player => ({
+        player,
+        sortValue: getSortValue(player, primarySort.id, rateMode, variant),
+      }))
+      .sort((a, b) => {
+      const aValue = a.sortValue
+      const bValue = b.sortValue
       if (aValue == null && bValue == null) return 0
       if (aValue == null) return 1
       if (bValue == null) return -1
       const cmp = compareSortValues(aValue, bValue)
       return primarySort.desc ? -cmp : cmp
     })
+      .map(entry => entry.player)
 
     return sorted
   }, [players, sorting, rateMode, variant])
@@ -593,7 +603,7 @@ export function MatrixTable({
     count: sortedPlayers.length,
     getScrollElement: () => scrollParentRef?.current ?? null,
     estimateSize: () => cellSize,
-    overscan: 18,
+    overscan: 10,
     paddingStart: TABLE_HEADER_TOTAL_PX,
     getItemKey: index => String(sortedPlayers[index]?.canonical_player_id ?? index),
   })

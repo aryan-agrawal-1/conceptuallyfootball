@@ -1,6 +1,5 @@
 import { forwardRef, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Download, GripVertical, RotateCcw, Share2, X } from 'lucide-react'
-import { toPng } from 'html-to-image'
 import { HudActionButton, HudCornerMarks, HudPill } from '../hud/Hud'
 import { ProfilePizzaSvg } from './ProfilePizzaSection'
 import { formatValue } from '../../lib/format'
@@ -246,6 +245,7 @@ export function PlayerProfileExportModal({
   async function buildImage(): Promise<string> {
     const node = exportRef.current
     if (!node) throw new Error('Export surface unavailable.')
+    const { toPng } = await import('html-to-image')
     return toPng(node, {
       cacheBust: true,
       pixelRatio: 2,
