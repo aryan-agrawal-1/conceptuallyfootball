@@ -26,6 +26,25 @@ class IngestionRunStatus(models.TextChoices):
     FAILED = "failed", "Failed"
 
 
+class IngestionBatchStatus(models.TextChoices):
+    PLANNED = "planned", "Planned"
+    RUNNING = "running", "Running"
+    SUCCESS = "success", "Success"
+    PARTIAL_SUCCESS = "partial_success", "Partial success"
+    FAILED = "failed", "Failed"
+    SKIPPED = "skipped", "Skipped"
+    CANCELLED = "cancelled", "Cancelled"
+
+
+class IngestionBatchItemStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    RUNNING = "running", "Running"
+    SUCCESS = "success", "Success"
+    FAILED = "failed", "Failed"
+    SKIPPED = "skipped", "Skipped"
+    CANCELLED = "cancelled", "Cancelled"
+
+
 class MatchMethod(models.TextChoices):
     AUTO = "auto", "Automatic"
     MANUAL = "manual", "Manual"
@@ -96,6 +115,7 @@ class CompetitionSeason(models.Model):
     min_team_stats_coverage_count = models.PositiveSmallIntegerField(default=18)
     metric_availability = models.JSONField(default=dict, blank=True)
     is_active = models.BooleanField(default=True)
+    refresh_enabled = models.BooleanField(default=False, db_index=True)
 
     class Meta:
         constraints = [
@@ -151,6 +171,90 @@ class IngestionRun(models.Model):
     def __str__(self) -> str:
         scope = self.competition_season or "global"
         return f"{self.kind} {self.status} {scope}"
+
+
+class IngestionBatch(models.Model):
+    KIND_DAILY_REFRESH = "daily_refresh"
+
+    kind = models.CharField(max_length=32, default=KIND_DAILY_REFRESH, db_index=True)
+    status = models.CharField(
+        max_length=24,
+        choices=IngestionBatchStatus.choices,
+        default=IngestionBatchStatus.PLANNED,
+        db_index=True,
+    )
+    scheduled_for_date = models.DateField(db_index=True)
+    planned_start_at = models.DateTimeField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    manual = models.BooleanField(default=False)
+    summary_stats = models.JSONField(default=dict, blank=True)
+    aggregate_run_ids = models.JSONField(default=dict, blank=True)
+    error_detail = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-scheduled_for_date", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["kind", "scheduled_for_date"],
+                name="uniq_ingestion_batch_kind_date",
+                condition=models.Q(manual=False),
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["kind", "status"], name="ing_batch_kind_status_idx"),
+            models.Index(fields=["status", "planned_start_at"], name="ing_batch_status_start_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.kind} {self.scheduled_for_date} {self.status}"
+
+
+class IngestionBatchItem(models.Model):
+    batch = models.ForeignKey(
+        IngestionBatch,
+        on_delete=models.CASCADE,
+        related_name="items",
+    )
+    competition_season = models.ForeignKey(
+        CompetitionSeason,
+        on_delete=models.CASCADE,
+        related_name="ingestion_batch_items",
+    )
+    status = models.CharField(
+        max_length=24,
+        choices=IngestionBatchItemStatus.choices,
+        default=IngestionBatchItemStatus.PENDING,
+        db_index=True,
+    )
+    planned_order = models.PositiveSmallIntegerField(default=0)
+    eta = models.DateTimeField(null=True, blank=True)
+    current_stage = models.CharField(max_length=32, blank=True)
+    stage_run_ids = models.JSONField(default=dict, blank=True)
+    stage_stats = models.JSONField(default=dict, blank=True)
+    error_detail = models.TextField(blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["batch_id", "planned_order", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["batch", "competition_season"],
+                name="uniq_ingestion_batch_item_slice",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["batch", "status"], name="ing_item_batch_status_idx"),
+            models.Index(fields=["competition_season", "status"], name="ing_item_slice_status_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.batch_id}:{self.competition_season_id} {self.status}"
 
 
 class MaterializedApiPayload(models.Model):

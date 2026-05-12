@@ -5,6 +5,7 @@ Django settings for backend project.
 import os
 from pathlib import Path
 
+from celery.schedules import crontab
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -130,6 +131,7 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", not DEBUG)
@@ -145,6 +147,17 @@ CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://127.0.0.1:6379/
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 60 * 60
+CELERY_TASK_ROUTES = {
+    "ingestion.tasks.task_plan_daily_refresh": {"queue": "ingestion-planner"},
+    "ingestion.tasks.task_refresh_competition_season_item": {"queue": "ingestion"},
+    "ingestion.tasks.task_finalize_daily_refresh_batch": {"queue": "ingestion"},
+}
+CELERY_BEAT_SCHEDULE = {
+    "plan-daily-refresh": {
+        "task": "ingestion.tasks.task_plan_daily_refresh",
+        "schedule": crontab(minute="*/15"),
+    },
+}
 
 REST_FRAMEWORK = {
     "DEFAULT_FILTER_BACKENDS": ["django_filters.rest_framework.DjangoFilterBackend"],
@@ -167,7 +180,7 @@ STATBALLER_INGEST_MIN_ROWS = int(os.environ.get("STATBALLER_INGEST_MIN_ROWS", "2
 # Provider/batch pacing. Keep these conservative so large league refreshes do not
 # hammer Sofascore and trigger IP-level challenges.
 STATBALLER_SOFASCORE_REQUEST_DELAY_SECONDS = float(
-    os.environ.get("STATBALLER_SOFASCORE_REQUEST_DELAY_SECONDS", "1.5")
+    os.environ.get("STATBALLER_SOFASCORE_REQUEST_DELAY_SECONDS", "1.5" if DEBUG else "4.0")
 )
 STATBALLER_SOFASCORE_RETRY_BASE_SLEEP_SECONDS = float(
     os.environ.get("STATBALLER_SOFASCORE_RETRY_BASE_SLEEP_SECONDS", "8.0")
@@ -178,6 +191,24 @@ STATBALLER_BATCH_SLICE_SLEEP_SECONDS = float(
 STATBALLER_BATCH_LEAGUE_SLEEP_SECONDS = float(
     os.environ.get("STATBALLER_BATCH_LEAGUE_SLEEP_SECONDS", "120.0")
 )
+STATBALLER_DAILY_REFRESH_ENABLED = os.environ.get("STATBALLER_DAILY_REFRESH_ENABLED", "1") == "1"
+STATBALLER_DAILY_REFRESH_START_HOUR = int(os.environ.get("STATBALLER_DAILY_REFRESH_START_HOUR", "1"))
+STATBALLER_DAILY_REFRESH_END_HOUR = int(os.environ.get("STATBALLER_DAILY_REFRESH_END_HOUR", "7"))
+STATBALLER_DAILY_REFRESH_TIME_ZONE = os.environ.get(
+    "STATBALLER_DAILY_REFRESH_TIME_ZONE",
+    "Europe/London",
+)
+STATBALLER_DAILY_REFRESH_MIN_LEAGUE_DELAY_SECONDS = int(
+    os.environ.get("STATBALLER_DAILY_REFRESH_MIN_LEAGUE_DELAY_SECONDS", "600")
+)
+STATBALLER_DAILY_REFRESH_MAX_LEAGUE_DELAY_SECONDS = int(
+    os.environ.get("STATBALLER_DAILY_REFRESH_MAX_LEAGUE_DELAY_SECONDS", "1500")
+)
+STATBALLER_SOFASCORE_DAILY_REQUEST_CAP = int(
+    os.environ.get("STATBALLER_SOFASCORE_DAILY_REQUEST_CAP", "1000")
+)
+STATBALLER_SOFASCORE_PROXY_URL = os.environ.get("STATBALLER_SOFASCORE_PROXY_URL", "")
+STATBALLER_HTTP_PROXY_URL = os.environ.get("STATBALLER_HTTP_PROXY_URL", "")
 
 STATBALLER_REEP_DATA_PATH = os.environ.get("STATBALLER_REEP_DATA_PATH", "")
 STATBALLER_REEP_CSV_DIR = os.environ.get("STATBALLER_REEP_CSV_DIR", "")

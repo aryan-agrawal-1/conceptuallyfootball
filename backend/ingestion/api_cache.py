@@ -76,3 +76,8 @@ def get_or_build_payload(
             payload=payload,
         )
     return payload, False
+
+
+def invalidate_materialized_api_payloads() -> int:
+    deleted, _ = MaterializedApiPayload.objects.all().delete()
+    return deleted

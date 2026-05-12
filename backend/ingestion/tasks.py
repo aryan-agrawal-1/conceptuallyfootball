@@ -12,6 +12,11 @@ from ingestion.services.ingest import (
     run_merge_job,
     run_team_merge_job,
 )
+from ingestion.services.orchestration import (
+    enqueue_due_daily_batch,
+    execute_batch_item,
+    finalize_batch_if_complete,
+)
 from ingestion.services.reep_csv import sync_reep_from_csv_dir
 from ingestion.services.reep_sync import default_reep_path, sync_reep_from_path
 
@@ -158,3 +163,18 @@ def task_repair_slice_materializations(competition_season_id: int) -> dict:
     result = _run_player_materialization_chain(cs)
     result["team_merge_run_id"] = team_run.id
     return result
+
+
+@shared_task
+def task_plan_daily_refresh() -> dict:
+    return enqueue_due_daily_batch()
+
+
+@shared_task
+def task_refresh_competition_season_item(batch_item_id: int) -> dict:
+    return execute_batch_item(batch_item_id)
+
+
+@shared_task
+def task_finalize_daily_refresh_batch(batch_id: int) -> dict:
+    return finalize_batch_if_complete(batch_id)

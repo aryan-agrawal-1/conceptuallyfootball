@@ -23,6 +23,7 @@ def _season_row(
     understat_league: str | None = None,
     understat_season_year: str | None = None,
     is_active: bool = True,
+    refresh_enabled: bool = False,
 ) -> dict:
     return {
         "label": label,
@@ -32,6 +33,7 @@ def _season_row(
         "understat_league": understat_league,
         "understat_season_year": understat_season_year,
         "is_active": is_active,
+        "refresh_enabled": refresh_enabled,
     }
 
 
@@ -52,7 +54,7 @@ COMPETITION_SEED_MANIFEST = [
             _season_row("2022-23", sofascore_unique_tournament_id=17, sofascore_season_id=41886, understat_league="EPL", understat_season_year="2022"),
             _season_row("2023-24", sofascore_unique_tournament_id=17, sofascore_season_id=52186, understat_league="EPL", understat_season_year="2023"),
             _season_row("2024-25", sofascore_unique_tournament_id=17, sofascore_season_id=61627, understat_league="EPL", understat_season_year="2024"),
-            _season_row("2025-26", sofascore_unique_tournament_id=17, sofascore_season_id=76986, understat_league="EPL", understat_season_year="2025"),
+            _season_row("2025-26", sofascore_unique_tournament_id=17, sofascore_season_id=76986, understat_league="EPL", understat_season_year="2025", refresh_enabled=True),
         ],
     },
     {
@@ -70,7 +72,7 @@ COMPETITION_SEED_MANIFEST = [
             _season_row("2022-23", sofascore_unique_tournament_id=23, sofascore_season_id=42415, understat_league="Serie_A", understat_season_year="2022"),
             _season_row("2023-24", sofascore_unique_tournament_id=23, sofascore_season_id=52760, understat_league="Serie_A", understat_season_year="2023"),
             _season_row("2024-25", sofascore_unique_tournament_id=23, sofascore_season_id=63515, understat_league="Serie_A", understat_season_year="2024"),
-            _season_row("2025-26", sofascore_unique_tournament_id=23, sofascore_season_id=76457, understat_league="Serie_A", understat_season_year="2025"),
+            _season_row("2025-26", sofascore_unique_tournament_id=23, sofascore_season_id=76457, understat_league="Serie_A", understat_season_year="2025", refresh_enabled=True),
         ],
     },
     {
@@ -88,7 +90,7 @@ COMPETITION_SEED_MANIFEST = [
             _season_row("2022-23", sofascore_unique_tournament_id=8, sofascore_season_id=42409, understat_league="La_liga", understat_season_year="2022"),
             _season_row("2023-24", sofascore_unique_tournament_id=8, sofascore_season_id=52376, understat_league="La_liga", understat_season_year="2023"),
             _season_row("2024-25", sofascore_unique_tournament_id=8, sofascore_season_id=61643, understat_league="La_liga", understat_season_year="2024"),
-            _season_row("2025-26", sofascore_unique_tournament_id=8, sofascore_season_id=77559, understat_league="La_liga", understat_season_year="2025"),
+            _season_row("2025-26", sofascore_unique_tournament_id=8, sofascore_season_id=77559, understat_league="La_liga", understat_season_year="2025", refresh_enabled=True),
         ],
     },
     {
@@ -106,7 +108,7 @@ COMPETITION_SEED_MANIFEST = [
             _season_row("2022-23", sofascore_unique_tournament_id=35, sofascore_season_id=42268, understat_league="Bundesliga", understat_season_year="2022"),
             _season_row("2023-24", sofascore_unique_tournament_id=35, sofascore_season_id=52608, understat_league="Bundesliga", understat_season_year="2023"),
             _season_row("2024-25", sofascore_unique_tournament_id=35, sofascore_season_id=63516, understat_league="Bundesliga", understat_season_year="2024"),
-            _season_row("2025-26", sofascore_unique_tournament_id=35, sofascore_season_id=77333, understat_league="Bundesliga", understat_season_year="2025"),
+            _season_row("2025-26", sofascore_unique_tournament_id=35, sofascore_season_id=77333, understat_league="Bundesliga", understat_season_year="2025", refresh_enabled=True),
         ],
     },
     {
@@ -124,7 +126,7 @@ COMPETITION_SEED_MANIFEST = [
             _season_row("2022-23", sofascore_unique_tournament_id=34, sofascore_season_id=42273, understat_league="Ligue_1", understat_season_year="2022"),
             _season_row("2023-24", sofascore_unique_tournament_id=34, sofascore_season_id=52571, understat_league="Ligue_1", understat_season_year="2023"),
             _season_row("2024-25", sofascore_unique_tournament_id=34, sofascore_season_id=61736, understat_league="Ligue_1", understat_season_year="2024"),
-            _season_row("2025-26", sofascore_unique_tournament_id=34, sofascore_season_id=77356, understat_league="Ligue_1", understat_season_year="2025"),
+            _season_row("2025-26", sofascore_unique_tournament_id=34, sofascore_season_id=77356, understat_league="Ligue_1", understat_season_year="2025", refresh_enabled=True),
         ],
     },
     {
@@ -142,7 +144,7 @@ COMPETITION_SEED_MANIFEST = [
             _season_row("2022-23", sofascore_unique_tournament_id=238, sofascore_season_id=42655),
             _season_row("2023-24", sofascore_unique_tournament_id=238, sofascore_season_id=52769),
             _season_row("2024-25", sofascore_unique_tournament_id=238, sofascore_season_id=63670),
-            _season_row("2025-26", sofascore_unique_tournament_id=238, sofascore_season_id=77806),
+            _season_row("2025-26", sofascore_unique_tournament_id=238, sofascore_season_id=77806, refresh_enabled=True),
         ],
     },
     {
@@ -160,7 +162,7 @@ COMPETITION_SEED_MANIFEST = [
             _season_row("2022-23", sofascore_unique_tournament_id=37, sofascore_season_id=42256),
             _season_row("2023-24", sofascore_unique_tournament_id=37, sofascore_season_id=52554),
             _season_row("2024-25", sofascore_unique_tournament_id=37, sofascore_season_id=61666),
-            _season_row("2025-26", sofascore_unique_tournament_id=37, sofascore_season_id=77012),
+            _season_row("2025-26", sofascore_unique_tournament_id=37, sofascore_season_id=77012, refresh_enabled=True),
         ],
     },
     {
@@ -178,7 +180,7 @@ COMPETITION_SEED_MANIFEST = [
             _season_row("2022-23", sofascore_unique_tournament_id=38, sofascore_season_id=42404),
             _season_row("2023-24", sofascore_unique_tournament_id=38, sofascore_season_id=52383),
             _season_row("2024-25", sofascore_unique_tournament_id=38, sofascore_season_id=61459),
-            _season_row("2025-26", sofascore_unique_tournament_id=38, sofascore_season_id=77040),
+            _season_row("2025-26", sofascore_unique_tournament_id=38, sofascore_season_id=77040, refresh_enabled=True),
         ],
     },
     {
@@ -196,7 +198,7 @@ COMPETITION_SEED_MANIFEST = [
             _season_row("2022-23", sofascore_unique_tournament_id=36, sofascore_season_id=41957),
             _season_row("2023-24", sofascore_unique_tournament_id=36, sofascore_season_id=52588),
             _season_row("2024-25", sofascore_unique_tournament_id=36, sofascore_season_id=62408),
-            _season_row("2025-26", sofascore_unique_tournament_id=36, sofascore_season_id=77128),
+            _season_row("2025-26", sofascore_unique_tournament_id=36, sofascore_season_id=77128, refresh_enabled=True),
         ],
     },
     {
@@ -214,7 +216,7 @@ COMPETITION_SEED_MANIFEST = [
             _season_row("2022-23", sofascore_unique_tournament_id=18, sofascore_season_id=42401),
             _season_row("2023-24", sofascore_unique_tournament_id=18, sofascore_season_id=52367),
             _season_row("2024-25", sofascore_unique_tournament_id=18, sofascore_season_id=61961),
-            _season_row("2025-26", sofascore_unique_tournament_id=18, sofascore_season_id=77347),
+            _season_row("2025-26", sofascore_unique_tournament_id=18, sofascore_season_id=77347, refresh_enabled=True),
         ],
     },
 ]

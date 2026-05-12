@@ -9,6 +9,8 @@ from ingestion.models import (
     GalaxyPlayerEmbedding,
     GalaxySimilarity,
     GalaxySnapshot,
+    IngestionBatch,
+    IngestionBatchItem,
     IngestionRun,
     MergedPlayerSeason,
     MergedTeamSeason,
@@ -57,9 +59,17 @@ class CompetitionSeasonAdmin(admin.ModelAdmin):
         "understat_season_year",
         "sofascore_unique_tournament_id",
         "sofascore_season_id",
+        "refresh_enabled",
         "is_active",
     )
-    list_filter = ("is_active", "competition", "player_data_mode", "has_understat", "has_sofascore")
+    list_filter = (
+        "refresh_enabled",
+        "is_active",
+        "competition",
+        "player_data_mode",
+        "has_understat",
+        "has_sofascore",
+    )
     search_fields = ("season__label", "competition__short_code")
     readonly_fields = ("metric_availability",)
 
@@ -69,6 +79,52 @@ class IngestionRunAdmin(admin.ModelAdmin):
     list_display = ("id", "kind", "status", "competition_season", "started_at", "finished_at")
     list_filter = ("kind", "status")
     readonly_fields = ("stats", "error_detail", "started_at", "finished_at")
+
+
+@admin.register(IngestionBatch)
+class IngestionBatchAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "kind",
+        "scheduled_for_date",
+        "status",
+        "manual",
+        "planned_start_at",
+        "started_at",
+        "finished_at",
+    )
+    list_filter = ("kind", "status", "manual", "scheduled_for_date")
+    readonly_fields = (
+        "summary_stats",
+        "aggregate_run_ids",
+        "error_detail",
+        "created_at",
+        "updated_at",
+    )
+
+
+@admin.register(IngestionBatchItem)
+class IngestionBatchItemAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "batch",
+        "competition_season",
+        "planned_order",
+        "status",
+        "current_stage",
+        "eta",
+        "started_at",
+        "finished_at",
+    )
+    list_filter = ("status", "current_stage", "competition_season")
+    raw_id_fields = ("batch", "competition_season")
+    readonly_fields = (
+        "stage_run_ids",
+        "stage_stats",
+        "error_detail",
+        "created_at",
+        "updated_at",
+    )
 
 
 @admin.register(ReepPlayerRow)

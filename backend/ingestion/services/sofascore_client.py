@@ -37,6 +37,43 @@ except Exception:  # noqa: BLE001
 import requests as plain_requests
 from django.conf import settings
 
+REQUEST_METRICS: dict[str, Any] = {
+    "request_count": 0,
+    "status_counts": {},
+    "retry_count": 0,
+    "blocked_count": 0,
+    "proxy_enabled": False,
+}
+REQUEST_CAP: int | None = None
+
+
+def set_request_cap(cap: int | None) -> None:
+    global REQUEST_CAP
+    REQUEST_CAP = cap
+
+
+def reset_request_metrics() -> None:
+    REQUEST_METRICS.clear()
+    REQUEST_METRICS.update(
+        {
+            "request_count": 0,
+            "status_counts": {},
+            "retry_count": 0,
+            "blocked_count": 0,
+            "proxy_enabled": bool(_sofascore_proxy_url()),
+        }
+    )
+
+
+def snapshot_request_metrics() -> dict[str, Any]:
+    return {
+        "request_count": int(REQUEST_METRICS.get("request_count") or 0),
+        "status_counts": dict(REQUEST_METRICS.get("status_counts") or {}),
+        "retry_count": int(REQUEST_METRICS.get("retry_count") or 0),
+        "blocked_count": int(REQUEST_METRICS.get("blocked_count") or 0),
+        "proxy_enabled": bool(REQUEST_METRICS.get("proxy_enabled")),
+    }
+
 
 @dataclass(frozen=True)
 class SofascoreSeasonConfig:
@@ -182,6 +219,14 @@ def _sofascore_user_agent() -> str:
     return DEFAULT_BROWSER_USER_AGENT
 
 
+def _sofascore_proxy_url() -> str:
+    return (
+        getattr(settings, "STATBALLER_SOFASCORE_PROXY_URL", "")
+        or getattr(settings, "STATBALLER_HTTP_PROXY_URL", "")
+        or ""
+    ).strip()
+
+
 def sofascore_request_headers() -> dict[str, str]:
     return {
         "User-Agent": _sofascore_user_agent(),
@@ -202,6 +247,9 @@ def _request_get(
     timeout: int,
 ):
     headers = sofascore_request_headers()
+    proxy_url = _sofascore_proxy_url()
+    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+    REQUEST_METRICS["proxy_enabled"] = bool(proxy_url)
     transient_statuses = {403, 429, 502, 503, 504}
     last_response = None
     retry_base_sleep_seconds = float(
@@ -209,22 +257,43 @@ def _request_get(
     )
 
     for attempt in range(4):
+        if REQUEST_CAP is not None and int(REQUEST_METRICS.get("request_count") or 0) >= REQUEST_CAP:
+            raise RuntimeError(f"Sofascore daily request cap reached ({REQUEST_CAP}).")
         if browser_requests is not None:
+            kwargs = {
+                "headers": headers,
+                "params": params,
+                "timeout": timeout,
+                "impersonate": "chrome124",
+            }
+            if proxies:
+                kwargs["proxies"] = proxies
             response = browser_requests.get(
+                url,
+                **kwargs,
+            )
+        else:
+            response = plain_requests.get(
                 url,
                 headers=headers,
                 params=params,
                 timeout=timeout,
-                impersonate="chrome124",
+                proxies=proxies,
             )
-        else:
-            response = plain_requests.get(url, headers=headers, params=params, timeout=timeout)
+
+        status_key = str(response.status_code)
+        status_counts = REQUEST_METRICS.setdefault("status_counts", {})
+        status_counts[status_key] = int(status_counts.get(status_key) or 0) + 1
+        REQUEST_METRICS["request_count"] = int(REQUEST_METRICS.get("request_count") or 0) + 1
+        if response.status_code in {403, 429}:
+            REQUEST_METRICS["blocked_count"] = int(REQUEST_METRICS.get("blocked_count") or 0) + 1
 
         if response.status_code not in transient_statuses:
             return response
 
         last_response = response
         if attempt < 3:
+            REQUEST_METRICS["retry_count"] = int(REQUEST_METRICS.get("retry_count") or 0) + 1
             time.sleep(retry_base_sleep_seconds * (attempt + 1))
 
     return last_response

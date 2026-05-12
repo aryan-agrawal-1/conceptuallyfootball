@@ -70,6 +70,7 @@ class Command(BaseCommand):
                     "min_merged_team_count": comp_cfg["min_merged_team_count"],
                     "min_team_stats_coverage_count": comp_cfg["min_team_stats_coverage_count"],
                     "is_active": season_cfg.get("is_active", True),
+                    "refresh_enabled": season_cfg.get("refresh_enabled", False),
                 }
 
                 slice_obj, created = CompetitionSeason.objects.get_or_create(
