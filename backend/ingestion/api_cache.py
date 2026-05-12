@@ -12,11 +12,17 @@ from django.http import HttpRequest
 from ingestion.models import MaterializedApiPayload
 
 
-def canonical_query_params(request: HttpRequest, *, exclude: Iterable[str] = ()) -> str:
+def canonical_query_params(
+    request: HttpRequest,
+    *,
+    include: Iterable[str] | None = None,
+    exclude: Iterable[str] = (),
+) -> str:
+    included = set(include) if include is not None else None
     excluded = set(exclude)
     pairs: list[tuple[str, str]] = []
     for key in sorted(request.GET.keys()):
-        if key in excluded:
+        if key in excluded or (included is not None and key not in included):
             continue
         for value in sorted(request.GET.getlist(key)):
             pairs.append((key, value))

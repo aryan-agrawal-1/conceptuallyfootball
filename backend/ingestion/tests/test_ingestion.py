@@ -1025,17 +1025,16 @@ class ApiTests(TestCase):
     def setUp(self):
         MergeTests.setUp(self)
 
-    def test_list_and_filters(self):
+    def test_internal_bootstrap_api_is_not_publicly_routed(self):
         execute_merge_for_slice(self.cs, merge_run=None)
         c = APIClient()
         r = c.get("/internal/api/merged-player-seasons/")
-        self.assertEqual(r.status_code, 200)
-        self.assertGreaterEqual(len(r.json()), 1)
+        self.assertEqual(r.status_code, 404)
         r2 = c.get(
             "/internal/api/merged-player-seasons/",
             {"competition": "EPL", "season": "2025-26"},
         )
-        self.assertEqual(r2.status_code, 200)
+        self.assertEqual(r2.status_code, 404)
 
 
 class ReattachTests(TestCase):

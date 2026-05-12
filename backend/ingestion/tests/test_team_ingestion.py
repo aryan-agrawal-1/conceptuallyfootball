@@ -276,22 +276,17 @@ class TeamApiTests(TestCase):
             superseded_at=timezone.now(),
         )
 
-    def test_list_filters_search_and_current_only_detail(self):
+    def test_internal_team_bootstrap_api_is_not_publicly_routed(self):
         client = APIClient()
 
         list_response = client.get(
             "/internal/api/merged-team-seasons/",
             {"competition": "EPL", "season": "2025-26", "search": "arse"},
         )
-        self.assertEqual(list_response.status_code, 200)
-        payload = list_response.json()
-        self.assertEqual(len(payload), 1)
-        self.assertEqual(payload[0]["canonical_team_name"], "Arsenal")
-        self.assertEqual(payload[0]["corners"], 196)
+        self.assertEqual(list_response.status_code, 404)
 
         detail_response = client.get(f"/internal/api/merged-team-seasons/{self.current.id}/")
-        self.assertEqual(detail_response.status_code, 200)
-        self.assertEqual(detail_response.json()["canonical_team_name"], "Arsenal")
+        self.assertEqual(detail_response.status_code, 404)
 
         historical_response = client.get(f"/internal/api/merged-team-seasons/{self.historical.id}/")
         self.assertEqual(historical_response.status_code, 404)

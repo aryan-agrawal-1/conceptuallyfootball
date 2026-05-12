@@ -205,7 +205,10 @@ class TeamSeasonDetailApi(APIView):
             {
                 "path": request.path,
                 "team": canonical_team_id,
-                "query": canonical_query_params(request),
+                "query": canonical_query_params(
+                    request,
+                    include={"competition_season", "competition", "season", "include"},
+                ),
             },
         )
         source_version = joined_version(
@@ -283,7 +286,13 @@ class TeamSeasonListApi(APIView):
     def get(self, request):
         cache_key = stable_cache_key(
             "team-season-list",
-            {"path": request.path, "query": canonical_query_params(request)},
+            {
+                "path": request.path,
+                "query": canonical_query_params(
+                    request,
+                    include={"competition_season", "competition", "season", "include"},
+                ),
+            },
         )
         source_version = joined_version(
             "team-season-list",
@@ -365,7 +374,10 @@ class TeamSquadApi(APIView):
             {
                 "path": request.path,
                 "team": canonical_team_id,
-                "query": canonical_query_params(request),
+                "query": canonical_query_params(
+                    request,
+                    include={"competition_season", "competition", "season"},
+                ),
             },
         )
         source_version = joined_version(

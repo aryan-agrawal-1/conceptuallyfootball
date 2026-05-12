@@ -3,12 +3,19 @@ from __future__ import annotations
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import status
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from ingestion.regression_service import fit_player_regression
 
+MAX_REGRESSION_PLAYER_IDS = 500
+MAX_REGRESSION_PREDICTORS = 8
+
 
 class RegressionLabFitApi(APIView):
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "regression_fit"
+
     """
     POST body:
     {
@@ -44,6 +51,11 @@ class RegressionLabFitApi(APIView):
                 {"detail": "canonical_player_ids must be a non-empty list of positive integers."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if len(ids) > MAX_REGRESSION_PLAYER_IDS:
+            return Response(
+                {"detail": f"canonical_player_ids cannot contain more than {MAX_REGRESSION_PLAYER_IDS} players."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if not isinstance(predictor_keys, list) or not predictor_keys:
             return Response(
                 {"detail": "predictor_keys must be a non-empty list of strings."},
@@ -52,6 +64,11 @@ class RegressionLabFitApi(APIView):
         if not all(isinstance(k, str) and k.strip() for k in predictor_keys):
             return Response(
                 {"detail": "Each predictor key must be a non-empty string."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(predictor_keys) > MAX_REGRESSION_PREDICTORS:
+            return Response(
+                {"detail": f"predictor_keys cannot contain more than {MAX_REGRESSION_PREDICTORS} metrics."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         predictor_keys = [k.strip() for k in predictor_keys]

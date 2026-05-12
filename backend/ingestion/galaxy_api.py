@@ -128,7 +128,10 @@ class GalaxyApi(APIView):
             {
                 "path": request.path,
                 "snapshot": snapshot.id,
-                "query": canonical_query_params(request),
+                "query": canonical_query_params(
+                    request,
+                    include={"competition", "season", "position_group", "team", "min_minutes"},
+                ),
             },
         )
         source_version = joined_version(

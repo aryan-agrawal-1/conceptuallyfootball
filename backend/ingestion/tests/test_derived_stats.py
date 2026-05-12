@@ -11,6 +11,7 @@ from ingestion.models import (
     IngestionKind,
     IngestionRun,
     IngestionRunStatus,
+    MaterializedApiPayload,
     PlayerSeasonDerivedStats,
     PlayerSeasonGkDerivedStats,
     PositionGroup,
@@ -278,6 +279,31 @@ class DerivedStatsTests(TestCase):
         self.assertIn("meta", payload)
         self.assertEqual(payload["meta"]["formula_version"], "v3")
         self.assertIn("npxg_per_shot", payload["meta"]["metrics"])
+
+    def test_list_endpoint_cache_key_ignores_unknown_query_params(self):
+        self._materialize()
+
+        common = {
+            "competition": "EPL",
+            "season": "2025-26",
+            "position_group": "FWD",
+        }
+        first = self.client.get(
+            "/api/v1/player-seasons/derived-stats",
+            {**common, "junk": "one"},
+        )
+        second = self.client.get(
+            "/api/v1/player-seasons/derived-stats",
+            {**common, "junk": "two"},
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(first.json(), second.json())
+        self.assertEqual(
+            MaterializedApiPayload.objects.filter(cache_key__startswith="derived-player-season-list:").count(),
+            1,
+        )
 
     def test_detail_endpoint_groups_sections(self):
         self._materialize()

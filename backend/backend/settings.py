@@ -11,18 +11,28 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+def env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 # soccerdata configures logging and cache paths on import; keep everything inside the project.
 _soccerdata_home = Path(os.environ.get("SOCCERDATA_DIR", str(BASE_DIR / ".soccerdata")))
 _soccerdata_home.mkdir(parents=True, exist_ok=True)
 (_soccerdata_home / "logs").mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("SOCCERDATA_DIR", str(_soccerdata_home))
 
-SECRET_KEY = os.environ.get(
-    "DJANGO_SECRET_KEY",
-    "django-insecure-s(ck5)&!!=m)#-7e&!#=g4ty(42q26%+3572p3&6$49w-^^_+0",
-)
+DEBUG = env_bool("DJANGO_DEBUG", True)
 
-DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = "django-insecure-local-development-only-statballer-secret-key"
+    else:
+        raise RuntimeError("DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is disabled.")
 
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
@@ -81,12 +91,18 @@ if USE_SQLITE:
         }
     }
 else:
+    database_password = os.environ.get("STATBALLER_DB_PASSWORD")
+    if not database_password:
+        if DEBUG:
+            database_password = "statballer"
+        else:
+            raise RuntimeError("STATBALLER_DB_PASSWORD must be set when DJANGO_DEBUG is disabled.")
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
             "NAME": os.environ.get("STATBALLER_DB_NAME", "statballer"),
             "USER": os.environ.get("STATBALLER_DB_USER", "statballer"),
-            "PASSWORD": os.environ.get("STATBALLER_DB_PASSWORD", "statballer"),
+            "PASSWORD": database_password,
             "HOST": os.environ.get("STATBALLER_DB_HOST", "127.0.0.1"),
             "PORT": os.environ.get("STATBALLER_DB_PORT", "5432"),
         }
@@ -115,6 +131,15 @@ USE_TZ = True
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", not DEBUG)
+SESSION_COOKIE_SECURE = env_bool("DJANGO_SESSION_COOKIE_SECURE", not DEBUG)
+CSRF_COOKIE_SECURE = env_bool("DJANGO_CSRF_COOKIE_SECURE", not DEBUG)
+SECURE_HSTS_SECONDS = int(os.environ.get("DJANGO_SECURE_HSTS_SECONDS", "0" if DEBUG else "31536000"))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS", not DEBUG)
+SECURE_HSTS_PRELOAD = env_bool("DJANGO_SECURE_HSTS_PRELOAD", False)
+if env_bool("DJANGO_TRUST_X_FORWARDED_PROTO", False):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
 CELERY_TASK_TRACK_STARTED = True
@@ -128,6 +153,12 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.AllowAny",
     ],
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.ScopedRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "regression_fit": os.environ.get("STATBALLER_REGRESSION_FIT_RATE", "30/min"),
+    },
 }
 
 STATBALLER_INGEST_MIN_ROWS = int(os.environ.get("STATBALLER_INGEST_MIN_ROWS", "200"))

@@ -266,7 +266,23 @@ class DerivedPlayerSeasonListApi(APIView):
     def get(self, request):
         cache_key = stable_cache_key(
             "derived-player-season-list",
-            {"path": request.path, "query": canonical_query_params(request)},
+            {
+                "path": request.path,
+                "query": canonical_query_params(
+                    request,
+                    include={
+                        "competition_season",
+                        "competition",
+                        "season",
+                        "team",
+                        "position_group",
+                        "min_minutes",
+                        "sort",
+                        "include",
+                        "percentile_scope",
+                    },
+                ),
+            },
         )
         source_version = joined_version(
             "derived-list",
@@ -332,7 +348,16 @@ class DerivedPlayerSeasonDetailApi(APIView):
             {
                 "path": request.path,
                 "player": canonical_player_id,
-                "query": canonical_query_params(request),
+                "query": canonical_query_params(
+                    request,
+                    include={
+                        "competition_season",
+                        "competition",
+                        "season",
+                        "include",
+                        "percentile_scope",
+                    },
+                ),
             },
         )
         source_version = joined_version(
