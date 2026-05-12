@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { Download, Share2 } from 'lucide-react'
 import { HudPill } from '../hud/Hud'
 import { BRAND_DOMAIN, BRAND_LOGO_URL, BRAND_NAME_UPPER, BRAND_SLUG } from '../../lib/brand'
@@ -36,10 +36,7 @@ export function ChartShareCard({
 }: ChartShareCardProps) {
   const exportRef = useRef<HTMLDivElement>(null)
   const [busy, setBusy] = useState<'share' | 'download' | null>(null)
-  const safeFileName = useMemo(
-    () => `${BRAND_SLUG}-${fileName.replace(/[^a-z0-9-_]+/gi, '-').toLowerCase()}.png`,
-    [fileName],
-  )
+  const safeFileName = `${BRAND_SLUG}-${fileName.replace(/[^a-z0-9-_]+/gi, '-').toLowerCase()}.png`
 
   async function waitForExportSurface() {
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))

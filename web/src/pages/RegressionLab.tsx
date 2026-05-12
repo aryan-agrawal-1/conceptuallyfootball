@@ -100,12 +100,14 @@ export function RegressionLab() {
   const [target, setTarget] = useState<string>(() => searchParams.get('target')?.trim() ?? '')
   const [predictors, setPredictors] = useState<string[]>(() => {
     const raw = searchParams.get('predictors')
-    return raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : []
+    return raw
+      ? raw.split(',').flatMap(s => {
+          const predictor = s.trim()
+          return predictor ? [predictor] : []
+        })
+      : []
   })
-  const [predictorsCustomized, setPredictorsCustomized] = useState(() => {
-    const raw = searchParams.get('predictors')
-    return Boolean(raw?.trim())
-  })
+  const predictorsCustomized = useRef(Boolean(searchParams.get('predictors')?.trim()))
   const [pendingTarget, setPendingTarget] = useState<string | null>(null)
   const [lastFit, setLastFit] = useState<import('../types/api').RegressionLabFitResponse | null>(null)
   const [lastFitKey, setLastFitKey] = useState<string | null>(null)
@@ -136,10 +138,11 @@ export function RegressionLab() {
   const meta: StatMeta | undefined = data?.meta
 
   const teams = useMemo(() => {
-    const names = allPlayers
-      .map(p => p.canonical_team_name)
-      .filter((t): t is string => t !== null)
-    return [...new Set(names)].sort()
+    const names = new Set<string>()
+    for (const player of allPlayers) {
+      if (player.canonical_team_name) names.add(player.canonical_team_name)
+    }
+    return [...names].toSorted()
   }, [allPlayers])
 
   const cohortRows = useMemo(() => {
@@ -187,7 +190,7 @@ export function RegressionLab() {
     if (target && !availableTargetKeys.includes(target)) {
       setTarget('')
       setPredictors([])
-      setPredictorsCustomized(false)
+      predictorsCustomized.current = false
     }
   }, [availableTargetKeys, isLoading, position, target])
 
@@ -196,7 +199,7 @@ export function RegressionLab() {
     const next = predictors.filter(key => availablePredictorKeySet.has(key))
     if (next.length !== predictors.length) {
       setPredictors(next)
-      setPredictorsCustomized(next.length > 0)
+      predictorsCustomized.current = next.length > 0
     }
   }, [availablePredictorKeySet, isLoading, predictors])
 
@@ -211,10 +214,10 @@ export function RegressionLab() {
       c: filters.competition,
       s: filters.season,
       p: filters.position_group,
-      tms: (filters.teams ?? []).slice().sort(),
+      tms: (filters.teams ?? []).toSorted(),
       m: filters.min_minutes,
       target,
-      preds: [...predictors].sort(),
+      preds: predictors.toSorted(),
       ids,
     })
   }, [cohortRows, filters, target, predictors])
@@ -295,11 +298,11 @@ export function RegressionLab() {
 
   function applyTarget(next: string, opts?: { forceReplacePredictors?: boolean }) {
     if (!position) return
-    const replace = opts?.forceReplacePredictors || !predictorsCustomized
+    const replace = opts?.forceReplacePredictors || !predictorsCustomized.current
     setTarget(next)
     if (replace) {
       setPredictors(recommendedPredictorsForTarget(next, position, availablePredictorKeys))
-      setPredictorsCustomized(false)
+      predictorsCustomized.current = false
     }
   }
 
@@ -309,7 +312,7 @@ export function RegressionLab() {
       return
     }
     if (next === target) return
-    if (predictorsCustomized) {
+    if (predictorsCustomized.current) {
       setPendingTarget(next)
       return
     }
@@ -317,7 +320,7 @@ export function RegressionLab() {
   }
 
   function togglePredictor(key: string) {
-    setPredictorsCustomized(true)
+    predictorsCustomized.current = true
     setPredictors(prev =>
       prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key],
     )
@@ -835,7 +838,7 @@ export function RegressionLab() {
                   if (!position || !pendingTarget) return
                   setTarget(pendingTarget)
                   setPredictors(recommendedPredictorsForTarget(pendingTarget, position))
-                  setPredictorsCustomized(false)
+                  predictorsCustomized.current = false
                   setPendingTarget(null)
                 }}
               >
@@ -846,7 +849,7 @@ export function RegressionLab() {
                 className="px-4 py-3 border border-electric/25 text-[11px] uppercase tracking-[0.15em] text-ink-muted hover:text-electric"
                 onClick={() => {
                   if (pendingTarget) setTarget(pendingTarget)
-                  setPredictorsCustomized(true)
+                  predictorsCustomized.current = true
                   setPendingTarget(null)
                 }}
               >

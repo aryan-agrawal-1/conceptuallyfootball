@@ -21,7 +21,7 @@ export interface Scope {
   season: string
 }
 
-export const PREFERRED_DEFAULT_SCOPE: Scope = {
+const PREFERRED_DEFAULT_SCOPE: Scope = {
   competition: 'ENG1',
   season: '2025-26',
 }
@@ -181,8 +181,4 @@ export function useScope() {
   const value = useContext(ScopeContext)
   if (!value) throw new Error('useScope must be used inside ScopeProvider')
   return value
-}
-
-export function scopeMatches(a: Scope, b: Scope) {
-  return a.competition === b.competition && a.season === b.season
 }

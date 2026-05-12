@@ -1,7 +1,7 @@
 import { DEFAULT_FILTERS } from '../hooks/useStatMatrix'
 import type { ProfileRateMode } from './profileMetrics'
 
-export type VisualiserTab = 'players' | 'teams'
+type VisualiserTab = 'players' | 'teams'
 export type VisualiserChartType = 'scatter' | 'bar' | 'radar'
 export type VisualiserPlayerPosition = 'ALL' | 'FWD' | 'MID' | 'DEF' | 'GK'
 export type VisualiserBarWindow = 'top' | 'bottom' | 'all'
@@ -31,17 +31,24 @@ export interface DataVisualiserUrlState {
 export const DEFAULT_BAR_COUNT = 12
 
 function parseCsv(value: string | null): string[] {
-  return value?.split(',').map(part => part.trim()).filter(Boolean) ?? []
+  return value?.split(',').flatMap(part => {
+    const trimmed = part.trim()
+    return trimmed ? [trimmed] : []
+  }) ?? []
 }
 
 function parsePipe(value: string | null): string[] {
-  return value?.split('|').map(part => part.trim()).filter(Boolean) ?? []
+  return value?.split('|').flatMap(part => {
+    const trimmed = part.trim()
+    return trimmed ? [trimmed] : []
+  }) ?? []
 }
 
 function parseIds(value: string | null): number[] {
-  return parseCsv(value)
-    .map(part => Number(part))
-    .filter(id => Number.isFinite(id) && id > 0)
+  return parseCsv(value).flatMap(part => {
+    const id = Number(part)
+    return Number.isFinite(id) && id > 0 ? [id] : []
+  })
 }
 
 function parsePosition(value: string | null): VisualiserPlayerPosition {

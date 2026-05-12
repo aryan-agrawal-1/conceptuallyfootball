@@ -20,6 +20,7 @@ interface ActiveTip {
 export function useMatrixHeaderTooltip() {
   const [active, setActive] = useState<ActiveTip | null>(null)
   const hideTimer = useRef(0)
+  const hideRef = useRef<() => void>(() => {})
 
   const clearScheduledHide = useCallback(() => {
     if (hideTimer.current) {
@@ -32,6 +33,10 @@ export function useMatrixHeaderTooltip() {
     clearScheduledHide()
     setActive(null)
   }, [clearScheduledHide])
+
+  useLayoutEffect(() => {
+    hideRef.current = hide
+  }, [hide])
 
   const show = useCallback(
     (kind: 'group' | 'leaf', columnId: string, el: HTMLElement) => {
@@ -62,12 +67,13 @@ export function useMatrixHeaderTooltip() {
   }, [clearScheduledHide])
 
   useEffect(() => {
-    window.addEventListener('resize', hide)
+    const handleResize = () => hideRef.current()
+    window.addEventListener('resize', handleResize)
     return () => {
-      window.removeEventListener('resize', hide)
+      window.removeEventListener('resize', handleResize)
       clearScheduledHide()
     }
-  }, [hide, clearScheduledHide])
+  }, [clearScheduledHide])
 
   const portal =
     active &&
@@ -88,23 +94,17 @@ const TOOLTIP_VIEWPORT_PAD = 12
 
 function MatrixHeaderTooltipFloater({ active }: { active: ActiveTip }) {
   const { anchor, kind, columnId } = active
+  const wrapRef = useRef<HTMLDivElement>(null)
+
   const tip =
     kind === 'group' ? getGroupHeaderTooltip(columnId) : getStatHeaderTooltip(columnId)
-  if (!tip) return null
-
-  const wrapRef = useRef<HTMLDivElement>(null)
-  /** Horizontal offset so translate(-50% + dx) matches clamped center (avoids clipping). */
-  const [dx, setDx] = useState(0)
 
   const cx = anchor.left + anchor.width / 2
   const top = anchor.top
 
   useLayoutEffect(() => {
     const el = wrapRef.current
-    if (!el) {
-      setDx(0)
-      return
-    }
+    if (!el) return
     const w = el.getBoundingClientRect().width
     const halfW = w / 2
     const vw = window.innerWidth
@@ -114,8 +114,10 @@ function MatrixHeaderTooltipFloater({ active }: { active: ActiveTip }) {
       minCenter <= maxCenter
         ? Math.min(Math.max(cx, minCenter), maxCenter)
         : vw / 2
-    setDx(clamped - cx)
+    el.style.setProperty('--tooltip-dx', `${clamped - cx}px`)
   }, [active.columnId, active.kind, cx])
+
+  if (!tip) return null
 
   return (
     <div
@@ -124,7 +126,7 @@ function MatrixHeaderTooltipFloater({ active }: { active: ActiveTip }) {
       style={{
         left: cx,
         top,
-        transform: `translate(calc(-50% + ${dx}px), calc(-100% - 6px))`,
+        transform: 'translate(calc(-50% + var(--tooltip-dx, 0px)), calc(-100% - 6px))',
       }}
     >
       <div className="relative border border-electric/30 bg-panel/95 backdrop-blur-md shadow-[0_12px_40px_-8px_rgba(74,158,245,0.45)] text-left">

@@ -35,7 +35,7 @@ function lerp(a: number, b: number, t: number) {
 }
 
 /** Smooth blend through all reference stops (0–100 percentile). */
-export function interpolateHeatmapRgb(p: number): RGB {
+function interpolateHeatmapRgb(p: number): RGB {
   const clamped = Math.max(0, Math.min(100, p))
   for (let i = 1; i < P_STOPS.length; i++) {
     if (clamped <= P_STOPS[i]) {
@@ -53,41 +53,11 @@ export function interpolateHeatmapRgb(p: number): RGB {
   return { ...last }
 }
 
-/**
- * Minutes are not part of the API percentile payload. Map raw minutes to 0–100
- * using the min/max of the **currently loaded** table so the column still heatmaps
- * (more minutes → better / toward the cyan end).
- */
-export function minutesHeatPercentile(
-  minutes: number | null | undefined,
-  allMinutes: (number | null | undefined)[],
-): number | null {
-  const range = getMinutesHeatRange(allMinutes)
-  return minutesHeatPercentileFromRange(minutes, range)
-}
-
 export interface MinutesHeatRange {
   min: number
   max: number
 }
 
-export function getMinutesHeatRange(
-  allMinutes: (number | null | undefined)[],
-): MinutesHeatRange | null {
-  let min = Number.POSITIVE_INFINITY
-  let max = Number.NEGATIVE_INFINITY
-
-  for (const minutes of allMinutes) {
-    if (typeof minutes !== 'number' || minutes < 0) continue
-    if (minutes < min) min = minutes
-    if (minutes > max) max = minutes
-  }
-
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return null
-  return { min, max }
-}
-
-/** Same as `getMinutesHeatRange` but avoids allocating a `minutes[]` array first. */
 export function getMinutesHeatRangeFromPlayers(rows: { minutes: number }[]): MinutesHeatRange | null {
   let min = Number.POSITIVE_INFINITY
   let max = Number.NEGATIVE_INFINITY

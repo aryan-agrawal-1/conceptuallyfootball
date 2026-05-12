@@ -9,7 +9,7 @@ import { formatValue } from '../../lib/format'
 import { COMPARISON_SLOT_STROKES } from '../../lib/comparisonConstants'
 import { cn } from '../../lib/utils'
 
-export interface CompareStatTablePlayer {
+interface CompareStatTablePlayer {
   row: PlayerRow
   slot: number
 }

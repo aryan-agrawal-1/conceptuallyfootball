@@ -87,13 +87,9 @@ export const COLUMN_GROUPS: ColGroupDef[] = [
   },
 ]
 
-export const COL_BY_ID: Record<string, ColDef> = Object.fromEntries(
-  COLUMN_GROUPS.flatMap(g => g.cols).map(c => [c.id, c]),
-)
-
 /** Initial column visibility: all metric columns on by default. */
 export function buildDefaultVisibility(): Record<string, boolean> {
   return Object.fromEntries(
-    COLUMN_GROUPS.flatMap(g => g.cols).map(c => [c.id, true]),
+    COLUMN_GROUPS.flatMap(g => g.cols.map(c => [c.id, true])),
   )
 }

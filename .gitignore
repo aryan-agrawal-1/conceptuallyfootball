@@ -53,3 +53,4 @@ pnpm-debug.log*
 allfiles.txt
 src/reep/data/
 .*.swp
+project-spec.md

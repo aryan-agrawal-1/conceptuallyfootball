@@ -105,8 +105,12 @@ export function recommendedPredictorsForTarget(
   if (!available) return [...base]
   const filtered = base.filter(key => available.has(key))
   if (filtered.length >= 2) return filtered
+  const filteredSet = new Set(filtered)
   for (const key of available) {
-    if (!filtered.includes(key) && key !== targetKey) filtered.push(key)
+    if (!filteredSet.has(key) && key !== targetKey) {
+      filtered.push(key)
+      filteredSet.add(key)
+    }
     if (filtered.length >= 5) break
   }
   return filtered

@@ -41,10 +41,11 @@ export function filterMetricGroups<T extends { key: string; items: Array<{ key: 
   usableKeys: string[],
 ): T[] {
   const usable = new Set(usableKeys)
-  return groups
-    .map(group => ({
+  return groups.flatMap(group => {
+    const next = {
       ...group,
       items: group.items.filter(item => usable.has(item.key)),
-    }))
-    .filter(group => group.items.length > 0)
+    }
+    return next.items.length > 0 ? [next] : []
+  })
 }

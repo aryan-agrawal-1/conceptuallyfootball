@@ -30,7 +30,7 @@ export interface ProfileExportPreset {
 }
 
 const EXPORT_PRESET_VERSION = 1
-export const PROFILE_EXPORT_STORAGE_KEY = 'conceptually-football:profile-export:v1'
+const PROFILE_EXPORT_STORAGE_KEY = 'conceptually-football:profile-export:v1'
 
 interface StoredProfileExportPreset extends ProfileExportPreset {
   version: number
@@ -197,7 +197,7 @@ function writeStoredState(state: StoredProfileExportState) {
   window.localStorage.setItem(PROFILE_EXPORT_STORAGE_KEY, JSON.stringify(state))
 }
 
-export function loadProfileExportPreset(position: PositionGroup): ProfileExportPreset | null {
+function loadProfileExportPreset(position: PositionGroup): ProfileExportPreset | null {
   const stored = readStoredState()[storageKeyForPosition(position)]
   if (!stored || stored.version !== EXPORT_PRESET_VERSION) return null
   return {
@@ -227,7 +227,7 @@ function keyForSpec(spec: ProfileBarSpec): string {
   return bar.per90
 }
 
-export function curatedProfileMetricSpecs(position: PositionGroup): ProfileBarSpec[] {
+function curatedProfileMetricSpecs(position: PositionGroup): ProfileBarSpec[] {
   return position === 'GK' ? PROFILE_BAR_SPECS_GK : PROFILE_BAR_SPECS
 }
 
@@ -262,7 +262,7 @@ export function isUsableExportMetric(
   return resolveProfileMetric(player, rateMode, barKindForMetricKey(key), meta).value != null
 }
 
-export function defaultProfileExportStats(
+function defaultProfileExportStats(
   player: PlayerRow,
   meta: StatMeta,
   rateMode: ProfileRateMode,
@@ -291,7 +291,7 @@ export function defaultProfileExportStats(
   return out
 }
 
-export function defaultProfileExportChartKeys(
+function defaultProfileExportChartKeys(
   player: PlayerRow,
   meta: StatMeta,
   rateMode: ProfileRateMode,
@@ -339,16 +339,15 @@ export function hydrateProfileExportPreset(
 
   const fallback = buildDefaultProfileExportPreset(player, meta, stored.rateMode ?? initialRateMode)
   const seen = new Set<string>()
-  const stats = stored.stats
-    .filter(tile => {
-      if (seen.has(tile.key)) return false
-      seen.add(tile.key)
-      return isUsableExportMetric(player, meta, stored.rateMode ?? initialRateMode, tile.key)
-    })
-    .map(tile => ({
+  const stats = stored.stats.flatMap(tile => {
+    if (seen.has(tile.key)) return []
+    seen.add(tile.key)
+    if (!isUsableExportMetric(player, meta, stored.rateMode ?? initialRateMode, tile.key)) return []
+    return [{
       key: tile.key,
       label: tile.label || profileExportLabelForKey(tile.key, meta),
-    }))
+    }]
+  })
   const statKeys = new Set(stats.map(tile => tile.key))
   const paddedStats = [
     ...stats,

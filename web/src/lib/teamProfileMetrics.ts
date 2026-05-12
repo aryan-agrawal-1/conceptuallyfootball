@@ -3,7 +3,7 @@ import type { ProfileRateMode } from './profileMetrics'
 import type { TeamDetailResponse, TeamStatMeta } from '../types/api'
 
 /** No league-rank chip on key tiles for these (position & points are the table itself). */
-export const TEAM_KEY_STATS_WITHOUT_RANK: ReadonlySet<string> = new Set(['rank', 'points'])
+const TEAM_KEY_STATS_WITHOUT_RANK: ReadonlySet<string> = new Set(['rank', 'points'])
 
 /** Layout matches backend `TEAM_STAT_GROUPS` (chances + set pieces merged). */
 export type TeamSectionLayoutRow =
@@ -18,7 +18,7 @@ export const TEAM_SECTION_LAYOUT: readonly TeamSectionLayoutRow[] = [
 ]
 
 /** Key tiles at top of team profile (subset of ranked_keys / stats). */
-export const TEAM_KEY_STAT_KEYS: readonly string[] = [
+const TEAM_KEY_STAT_KEYS: readonly string[] = [
   'rank',
   'points',
   'expected_goals',
@@ -31,13 +31,13 @@ export const TEAM_KEY_STAT_KEYS: readonly string[] = [
   'clean_sheets',
 ]
 
-export type TeamStatFormatUnit =
+type TeamStatFormatUnit =
   | 'integer'
   | 'percentage'
   | 'total'
   | 'delta'
 
-export function teamStatFormatUnit(statKey: string): TeamStatFormatUnit {
+function teamStatFormatUnit(statKey: string): TeamStatFormatUnit {
   if (statKey === 'goal_difference') return 'delta'
   if (
     statKey.includes('percentage') ||
@@ -62,7 +62,7 @@ export function teamStatFormatUnit(statKey: string): TeamStatFormatUnit {
   return 'total'
 }
 
-export function formatTeamStat(statKey: string, value: number | null | undefined): string {
+function formatTeamStat(statKey: string, value: number | null | undefined): string {
   return formatValue(value ?? null, teamStatFormatUnit(statKey))
 }
 
@@ -137,11 +137,15 @@ export function teamKeyStatSpecs(
 }> {
   const matches = team.stats.matches ?? null
   const rankMap = mode === 'full' ? team.ranks : team.ranks_per_match
-  return TEAM_KEY_STAT_KEYS.filter(k => team.stats[k] != null).map(key => ({
-    key,
-    label: teamKeyStatLabel(key, meta),
-    value: formatTeamStatMode(key, team.stats[key], matches, mode),
-    rank: rankMap[key] ?? null,
-    showRankRow: !TEAM_KEY_STATS_WITHOUT_RANK.has(key),
-  }))
+  return TEAM_KEY_STAT_KEYS.flatMap(key =>
+    team.stats[key] == null
+      ? []
+      : [{
+          key,
+          label: teamKeyStatLabel(key, meta),
+          value: formatTeamStatMode(key, team.stats[key], matches, mode),
+          rank: rankMap[key] ?? null,
+          showRankRow: !TEAM_KEY_STATS_WITHOUT_RANK.has(key),
+        }],
+  )
 }

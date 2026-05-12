@@ -54,8 +54,8 @@ export const COLUMN_GROUPS_GK: ColGroupDef[] = [
   },
 ]
 
-export function buildGkDefaultVisibility(): Record<string, boolean> {
-  return Object.fromEntries(COLUMN_GROUPS_GK.flatMap(g => g.cols).map(c => [c.id, true]))
+function buildGkDefaultVisibility(): Record<string, boolean> {
+  return Object.fromEntries(COLUMN_GROUPS_GK.flatMap(g => g.cols.map(c => [c.id, true])))
 }
 
 export function buildMatrixVisibilityAll(): Record<string, boolean> {

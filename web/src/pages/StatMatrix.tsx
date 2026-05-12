@@ -45,12 +45,13 @@ function filterAvailableColumnGroups(
   availability: MetricAvailability | undefined,
   position: MatrixFilters['position_group'],
 ): ColGroupDef[] {
-  return groups
-    .map(group => ({
+  return groups.flatMap(group => {
+    const next = {
       ...group,
       cols: group.cols.filter(col => columnAvailable(col, availability, position)),
-    }))
-    .filter(group => group.cols.length > 0)
+    }
+    return next.cols.length > 0 ? [next] : []
+  })
 }
 
 export function StatMatrix() {
@@ -99,10 +100,11 @@ export function StatMatrix() {
 
   // Derived from ALL players so the club list doesn't shrink when you filter by position/minutes
   const teams = useMemo(() => {
-    const names = allPlayers
-      .map(p => p.canonical_team_name)
-      .filter((t): t is string => t !== null)
-    return [...new Set(names)].sort()
+    const names = new Set<string>()
+    for (const player of allPlayers) {
+      if (player.canonical_team_name) names.add(player.canonical_team_name)
+    }
+    return [...names].toSorted()
   }, [allPlayers])
 
   const activeColumnGroups = useMemo(

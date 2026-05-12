@@ -1,6 +1,6 @@
 export type PositionGroup = 'FWD' | 'MID' | 'DEF' | 'GK' | 'UNK'
 
-export interface ScoreAvailabilityDetail {
+interface ScoreAvailabilityDetail {
   available?: boolean
   positions?: Partial<Record<PositionGroup, boolean>>
   missing_components?: Partial<Record<PositionGroup, string[]>>
@@ -39,7 +39,7 @@ export interface CompetitionSeasonsCatalogResponse {
   competitions: CompetitionCatalogEntry[]
 }
 
-export interface SearchScopeMembership {
+interface SearchScopeMembership {
   competition: string
   season: string
   competition_season_id: number
@@ -78,7 +78,7 @@ export interface SearchEntitiesResponse {
   teams: SearchTeamEntity[]
 }
 
-export interface Eligibility {
+interface Eligibility {
   percentiles_eligible: boolean
   percentiles_ineligibility_reason: string | null
   scores_eligible: boolean
@@ -117,7 +117,7 @@ export interface PlayerRow {
   score_raw: Record<string, number | null>
 }
 
-export interface ScopePercentileContext {
+interface ScopePercentileContext {
   competition_code: string
   season_label: string
   competition_season_ids?: number[]
@@ -133,7 +133,7 @@ export interface MetricDefinition {
   availability_note?: string
 }
 
-export interface ScoreDefinition {
+interface ScoreDefinition {
   label: string
   description: string
   group: string
@@ -166,7 +166,7 @@ export interface PlayerDetailResponse extends PlayerRow {
   sections?: ProfileSectionsPayload
 }
 
-export interface ProfileSectionsPayload {
+interface ProfileSectionsPayload {
   [groupKey: string]: {
     label: string
     metrics: Array<{
@@ -186,7 +186,7 @@ export interface MatrixFilters {
   min_minutes: number
 }
 
-export interface GalaxyArchetype {
+interface GalaxyArchetype {
   archetype_key: string
   cluster_id: number
   position_group?: PositionGroup
@@ -253,7 +253,7 @@ export interface GalaxyEdge {
   rank: number
 }
 
-export interface GalaxyModelMeta {
+interface GalaxyModelMeta {
   snapshot_id: number
   model_version: string
   scope_code: string
@@ -372,20 +372,20 @@ export interface TeamSquadResponse {
   results: TeamSquadPlayer[]
 }
 
-export interface RegressionLabSample {
+interface RegressionLabSample {
   cohort_rows: number
   usable_rows: number
   dropped_rows: number
 }
 
-export interface RegressionLabFitMetrics {
+interface RegressionLabFitMetrics {
   r2_cv: number
   mae_cv: number
   rmse_cv: number
   r2_train: number
 }
 
-export interface RegressionLabCoefficient {
+interface RegressionLabCoefficient {
   key: string
   label: string
   coefficient_std: number

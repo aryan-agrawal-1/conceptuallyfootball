@@ -1,7 +1,7 @@
 import type { SearchPlayerMembership, SearchTeamMembership } from '../types/api'
 import type { Scope } from '../context/ScopeContext'
 
-export const BIG_FIVE_COMPETITION_CODES = new Set(['ENG1', 'GER1', 'SPA1', 'FRA1', 'ITA1'])
+const BIG_FIVE_COMPETITION_CODES = new Set(['ENG1', 'GER1', 'SPA1', 'FRA1', 'ITA1'])
 
 type Membership = Pick<SearchPlayerMembership | SearchTeamMembership, 'competition' | 'season'>
 

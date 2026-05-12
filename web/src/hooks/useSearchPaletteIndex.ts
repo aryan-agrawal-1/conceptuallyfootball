@@ -8,15 +8,10 @@ import type {
   SearchEntitiesResponse,
   SearchPlayerEntity,
   SearchPlayerMembership,
-  SearchTeamEntity,
   SearchTeamMembership,
 } from '../types/api'
 
 const STALE_MS = 30 * 60 * 1000
-
-export function playerScopeToken(row: Pick<PlayerRow, 'competition_code' | 'season_label' | 'canonical_player_id'>): string {
-  return `${row.competition_code}:${row.season_label}:${row.canonical_player_id}`
-}
 
 function membershipForScope<T extends { competition: string; season: string }>(
   memberships: T[],
@@ -87,7 +82,7 @@ export function useSearchPaletteIndex(enabled: boolean) {
               )
         return memberships.map(membership => toPlayerRow(entity, membership))
       })
-      .sort((a, b) => b.minutes - a.minutes)
+      .toSorted((a, b) => b.minutes - a.minutes)
   }, [query.data?.players, scope])
 
   return {
@@ -99,5 +94,3 @@ export function useSearchPaletteIndex(enabled: boolean) {
     error: query.error,
   }
 }
-
-export type { SearchPlayerEntity, SearchTeamEntity }

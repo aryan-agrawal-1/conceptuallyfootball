@@ -10,7 +10,7 @@ export interface StatHeaderTooltip {
   description: string
 }
 
-export const STAT_HEADER_TOOLTIPS: Record<string, StatHeaderTooltip> = {
+const STAT_HEADER_TOOLTIPS: Record<string, StatHeaderTooltip> = {
   canonical_player_name: {
     fullName: 'Player',
     description:
@@ -282,7 +282,7 @@ export const STAT_HEADER_TOOLTIPS: Record<string, StatHeaderTooltip> = {
   },
 }
 
-export const GROUP_HEADER_TOOLTIPS: Record<string, StatHeaderTooltip> = {
+const GROUP_HEADER_TOOLTIPS: Record<string, StatHeaderTooltip> = {
   meta: {
     fullName: 'Player metadata',
     description: 'Name, club, and minutes for each row. Minutes drive rate denominators and heatmap eligibility.',

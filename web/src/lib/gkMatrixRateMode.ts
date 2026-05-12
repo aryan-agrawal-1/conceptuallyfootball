@@ -129,13 +129,6 @@ export function resolveGkMatrixMetric(
   }
 }
 
-export function columnGkUsesCohortPercentile(columnId: string, rateMode: MatrixRateMode): boolean {
-  if (rateMode === 'per90') return columnId in GK_TOTAL_RATE_TOGGLE
-  const def = GK_RATE_TOGGLE[columnId]
-  if (!def) return false
-  return def.full.kind === 'derived'
-}
-
 const GK_COHORT_FULL_COLUMN_IDS = Object.keys(GK_RATE_TOGGLE).filter(
   id => GK_RATE_TOGGLE[id].full.kind === 'derived',
 )
@@ -156,9 +149,9 @@ export function buildGkCohortPercentileMaps(
       v: resolveGkMatrixMetric(p, colId, 'full').value,
     }))
 
-    const numeric = resolved
-      .map(r => r.v)
-      .filter((v): v is number => v != null && !Number.isNaN(v))
+    const numeric = resolved.flatMap(r =>
+      r.v != null && !Number.isNaN(r.v) ? [r.v] : [],
+    )
     const percentileByValue = buildPercentileLookup(numeric)
 
     const cohortByColumn = new Map<number, number>()

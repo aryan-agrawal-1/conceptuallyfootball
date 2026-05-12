@@ -190,11 +190,7 @@ export function PlayerProfileExportModal({
           : null
   const canExport = !invalidReason && !busy
 
-  const fileName = useMemo(
-    () =>
-      `${BRAND_SLUG}-player-profile-${slugify(title || player.canonical_player_name)}-${slugify(player.season_label)}-${preset.theme}.png`,
-    [player.canonical_player_name, player.season_label, preset.theme, title],
-  )
+  const fileName = `${BRAND_SLUG}-player-profile-${slugify(title || player.canonical_player_name)}-${slugify(player.season_label)}-${preset.theme}.png`
 
   function updatePreset(next: Partial<ProfileExportPreset>) {
     setPreset(prev => ({ ...prev, ...next }))

@@ -32,7 +32,7 @@ function playerRowKey(row: PlayerRow): string {
   return `${row.competition_code}:${row.season_label}:${row.canonical_player_id}`
 }
 
-export interface CompareRadarPlayer {
+interface CompareRadarPlayer {
   row: PlayerRow
   slot: number
 }

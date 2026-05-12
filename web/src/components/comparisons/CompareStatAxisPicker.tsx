@@ -120,9 +120,9 @@ function CompareStatAddDropdown({
   const available = useMemo(() => {
     const sel = new Set(selectedKeys)
     return sectionOrder.flatMap(sec =>
-      (grouped[sec] ?? [])
-        .filter(({ key }) => !sel.has(key))
-        .map(item => ({ ...item, section: sec })),
+      (grouped[sec] ?? []).flatMap(item =>
+        sel.has(item.key) ? [] : [{ ...item, section: sec }],
+      ),
     )
   }, [grouped, sectionOrder, selectedKeys])
 

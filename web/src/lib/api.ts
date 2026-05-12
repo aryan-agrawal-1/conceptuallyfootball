@@ -166,7 +166,9 @@ export async function fetchGalaxy(filters: GalaxyFilters): Promise<GalaxyRespons
 function appendFilterValues(p: URLSearchParams, key: string, value?: string | string[]) {
   if (!value) return
   const values = Array.isArray(value) ? value : [value]
-  values.filter(Boolean).forEach(entry => p.append(key, entry))
+  for (const entry of values) {
+    if (entry) p.append(key, entry)
+  }
 }
 
 export async function fetchGalaxySimilar(

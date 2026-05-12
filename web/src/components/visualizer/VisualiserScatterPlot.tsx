@@ -4,7 +4,7 @@ import { cn } from '../../lib/utils'
 
 function quantile(values: number[], q: number): number {
   if (!values.length) return 0
-  const sorted = [...values].sort((left, right) => left - right)
+  const sorted = values.toSorted((left, right) => left - right)
   const pos = (sorted.length - 1) * q
   const base = Math.floor(pos)
   const rest = pos - base

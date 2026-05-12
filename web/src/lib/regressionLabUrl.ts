@@ -37,13 +37,19 @@ export function parseRegressionLabParams(search: URLSearchParams): RegressionLab
   const teamsRaw = search.get('teams')
   const teams =
     teamsRaw && teamsRaw.length
-      ? teamsRaw.split('|').map(s => s.trim()).filter(Boolean)
+      ? teamsRaw.split('|').flatMap(s => {
+          const team = s.trim()
+          return team ? [team] : []
+        })
       : undefined
   const target = search.get('target')?.trim() || undefined
   const predRaw = search.get('predictors')
   const predictors =
     predRaw && predRaw.length
-      ? predRaw.split(',').map(s => s.trim()).filter(Boolean)
+      ? predRaw.split(',').flatMap(s => {
+          const predictor = s.trim()
+          return predictor ? [predictor] : []
+        })
       : undefined
   const autoRun = search.get('run') === '1'
 

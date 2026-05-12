@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { cn } from '../../lib/utils'
 
-export interface VisualiserRadarSeries {
+interface VisualiserRadarSeries {
   id: number
   label: string
   sublabel?: string

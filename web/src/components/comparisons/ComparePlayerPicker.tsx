@@ -40,7 +40,7 @@ export function ComparePlayerPicker({
       if (lockPosition && p.position_group !== lockPosition) return false
       return true
     })
-    const sorted = [...cohort].sort((a, b) => b.minutes - a.minutes)
+    const sorted = cohort.toSorted((a, b) => b.minutes - a.minutes)
     const trimmed = q.trim()
     if (!trimmed) return sorted
     const needle = foldForSearch(trimmed)

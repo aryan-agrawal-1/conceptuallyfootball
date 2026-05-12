@@ -3,20 +3,8 @@ import type { PlayerRow } from '../types/api'
 
 export type MatrixRateMode = 'per90' | 'full'
 
-/** Match backend `_percentile_rank` for a value against a cohort (same formula as ingestion `derived.py`). */
-export function cohortPercentileRank(value: number, cohort: number[]): number {
-  if (!cohort.length) return 0
-  let less = 0
-  let lessOrEqual = 0
-  for (const other of cohort) {
-    if (other < value) less += 1
-    if (other <= value) lessOrEqual += 1
-  }
-  return ((less + lessOrEqual) / 2 / cohort.length) * 100
-}
-
 export function buildPercentileLookup(values: number[]): Map<number, number> {
-  const sorted = [...values].sort((left, right) => left - right)
+  const sorted = values.toSorted((left, right) => left - right)
   const percentileByValue = new Map<number, number>()
   const total = sorted.length
   let start = 0
@@ -249,13 +237,6 @@ const GUESS_UNIT: Partial<Record<string, ColumnUnit>> = {
   goals_minus_npxg: 'delta',
 }
 
-export function columnUsesCohortPercentile(columnId: string, rateMode: MatrixRateMode): boolean {
-  if (rateMode === 'per90') return columnId in TOTAL_RATE_TOGGLE
-  const def = RATE_TOGGLE[columnId]
-  if (!def) return false
-  return def.full.kind === 'derived'
-}
-
 const COHORT_FULL_COLUMN_IDS = Object.keys(RATE_TOGGLE).filter(
   id => RATE_TOGGLE[id].full.kind === 'derived',
 )
@@ -277,9 +258,9 @@ export function buildCohortPercentileMaps(
       v: resolveMatrixMetric(p, colId, 'full').value,
     }))
 
-    const numeric = resolved
-      .map(r => r.v)
-      .filter((v): v is number => v != null && !Number.isNaN(v))
+    const numeric = resolved.flatMap(r =>
+      r.v != null && !Number.isNaN(r.v) ? [r.v] : [],
+    )
     const percentileByValue = buildPercentileLookup(numeric)
 
     const cohortByColumn = new Map<number, number>()

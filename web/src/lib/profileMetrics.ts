@@ -70,13 +70,13 @@ export const PROFILE_BAR_SPECS_GK: ProfileBarSpec[] = [
   },
 ]
 
-export const PROFILE_SECTION_ORDER_OUTFIELD: ProfileUiSection[] = [
+const PROFILE_SECTION_ORDER_OUTFIELD: ProfileUiSection[] = [
   'attacking',
   'passing_creative',
   'defending',
 ]
 
-export const PROFILE_SECTION_ORDER_GK: ProfileUiSection[] = [
+const PROFILE_SECTION_ORDER_GK: ProfileUiSection[] = [
   'shot_stopping',
   'sweeper',
   'distribution',
@@ -130,8 +130,6 @@ export const PROFILE_BAR_SPECS: ProfileBarSpec[] = [
   { id: 'aerial_duels', section: 'defending', bar: { kind: 'paired', per90: 'aerial_duels_won_per_90', full: 'aerial_duels_won' } },
   { id: 'fouls', section: 'defending', bar: { kind: 'paired', per90: 'fouls_per_90', full: 'fouls' } },
 ]
-
-export const PROFILE_BARS_ORDERED: ProfileBarSpec[] = PROFILE_BAR_SPECS
 
 function per90ToSeasonApprox(
   per90: number | null | undefined,
@@ -364,16 +362,6 @@ export const PIZZA_STORAGE_KEY = 'conceptually-football:pizza-axes:v1'
 
 export function defaultPizzaMetricKeys(position: PositionGroup): string[] {
   return [...(PIZZA_DEFAULT_KEYS[position] ?? PIZZA_DEFAULT_KEYS.UNK)]
-}
-
-/** Map backend definition group to profile UI section for the axis picker. */
-export function metricUiSection(defGroup: string): ProfileUiSection {
-  if (defGroup === 'defending') return 'defending'
-  if (defGroup === 'attack') return 'attacking'
-  if (defGroup === 'shot_stopping') return 'shot_stopping'
-  if (defGroup === 'sweeper') return 'sweeper'
-  if (defGroup === 'distribution') return 'distribution'
-  return 'passing_creative'
 }
 
 const ALL_PROFILE_BAR_SPECS: ProfileBarSpec[] = [...PROFILE_BAR_SPECS, ...PROFILE_BAR_SPECS_GK]

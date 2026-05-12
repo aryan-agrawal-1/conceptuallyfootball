@@ -30,11 +30,12 @@ const POSITION_FILTER_OPTIONS = [
 ]
 
 function readParamValues(params: URLSearchParams, key: string): string[] {
-  return params
-    .getAll(key)
-    .flatMap(value => value.split(','))
-    .map(value => value.trim())
-    .filter(Boolean)
+  return params.getAll(key).flatMap(value =>
+    value.split(',').flatMap(part => {
+      const trimmed = part.trim()
+      return trimmed ? [trimmed] : []
+    }),
+  )
 }
 
 // ─── Layout pass ─────────────────────────────────────────────────────────────
@@ -342,16 +343,17 @@ export function Galaxy() {
   }, [laidOutPoints])
 
   const teams = useMemo(() => {
-    const names = (data?.points ?? [])
-      .map(point => point.canonical_team_name)
-      .filter((team): team is string => Boolean(team))
-    return [...new Set(names)].sort((a, b) => a.localeCompare(b))
+    const names = new Set<string>()
+    for (const point of data?.points ?? []) {
+      if (point.canonical_team_name) names.add(point.canonical_team_name)
+    }
+    return [...names].toSorted((a, b) => a.localeCompare(b))
   }, [data?.points])
 
   useEffect(() => {
     if (teams.length === 0) return
     setKnownTeams(current => {
-      const next = [...new Set([...current, ...teams])].sort((a, b) => a.localeCompare(b))
+      const next = [...new Set([...current, ...teams])].toSorted((a, b) => a.localeCompare(b))
       return next.length === current.length && next.every((team, index) => team === current[index]) ? current : next
     })
   }, [teams])

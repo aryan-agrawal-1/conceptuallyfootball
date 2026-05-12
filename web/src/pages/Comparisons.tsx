@@ -155,12 +155,10 @@ export function Comparisons() {
   }, [urlStats, cohortPosition, meta])
 
   const radarPlayers = useMemo(() => {
-    return playerRefs
-      .map((_, i) => {
+    return playerRefs.flatMap((_, i) => {
         const d = detailsOrdered[i]
-        return d ? { row: d, slot: i as 0 | 1 | 2 } : null
+        return d ? [{ row: d, slot: i as 0 | 1 | 2 }] : []
       })
-      .filter((x): x is { row: PlayerDetailResponse; slot: 0 | 1 | 2 } => x != null)
   }, [playerRefs, detailsOrdered])
 
   const detailsLoading = detailQueries.some(q => q.isLoading)

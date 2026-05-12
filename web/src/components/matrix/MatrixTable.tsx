@@ -286,18 +286,18 @@ function buildTableColumns(
   cohortMaps: Map<string, Map<number, number>>,
   resolveMetricFn: (row: PlayerRow, columnId: string, rateMode: MatrixRateMode) => ResolvedMatrixMetric,
 ): ColumnDef<PlayerRow, unknown>[] {
-  return columnGroups
-    .filter(g => g.cols.some(c => visibleCols[c.id]))
-    .map(group => ({
+  return columnGroups.flatMap(group => {
+    const visibleGroupCols = group.cols.filter(c => visibleCols[c.id])
+    if (!visibleGroupCols.length) return []
+    return [{
       id: `group_${group.id}`,
       header: group.label.toUpperCase(),
-      columns: group.cols
-        .filter(c => visibleCols[c.id])
-        .map((col): ColumnDef<PlayerRow, unknown> => {
-          if (col.isMeta) return buildMetaColumn(col)
-          return buildMetricColumn(col, rateMode, cohortMaps, resolveMetricFn)
-        }),
-    }))
+      columns: visibleGroupCols.map((col): ColumnDef<PlayerRow, unknown> => {
+        if (col.isMeta) return buildMetaColumn(col)
+        return buildMetricColumn(col, rateMode, cohortMaps, resolveMetricFn)
+      }),
+    }]
+  })
 }
 
 // ── Meta columns ─────────────────────────────────────────────────────────────
@@ -513,9 +513,11 @@ export function MatrixTable({
 
   const visibleFlexColumnCount = useMemo(
     () =>
-      rawColumnGroups
-        .flatMap(g => g.cols)
-        .filter(c => c.id !== 'canonical_player_name' && visibleCols[c.id]).length,
+      rawColumnGroups.reduce(
+        (count, group) =>
+          count + group.cols.filter(c => c.id !== 'canonical_player_name' && visibleCols[c.id]).length,
+        0,
+      ),
     [rawColumnGroups, visibleCols],
   )
 

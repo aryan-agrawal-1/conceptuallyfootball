@@ -2,7 +2,7 @@
  * Maps canonical team ids/names from the backend to locally served logo paths.
  * Generated with scripts/sync-team-logos.mjs.
  */
-export const TEAM_LOGOS_BY_ID: Record<number, string> = {
+const TEAM_LOGOS_BY_ID: Record<number, string> = {
   25: '/logos/teams/25.png',
   26: '/logos/teams/26.png',
   27: '/logos/teams/27.png',
@@ -360,7 +360,7 @@ export const TEAM_LOGOS_BY_ID: Record<number, string> = {
   396: '/logos/teams/396.png',
 }
 
-export const TEAM_LOGOS: Record<string, string> = {
+const TEAM_LOGOS: Record<string, string> = {
   'Arsenal F.C.':                   '/logos/PL/arsenal.svg',
   'Aston Villa F.C.':               '/logos/PL/avfc.svg',
   'Bournemouth F.C.':               '/logos/PL/bournemouth-footballlogos-org.svg',

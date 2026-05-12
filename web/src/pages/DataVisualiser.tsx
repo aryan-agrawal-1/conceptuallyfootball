@@ -63,10 +63,6 @@ const RADAR_FILLS = ['rgba(74,158,245,0.18)', 'rgba(255,190,92,0.18)', 'rgba(127
 
 type PickerKind = 'compare' | 'pins' | null
 
-function isPresent<T>(value: T | null | undefined): value is T {
-  return value != null
-}
-
 export function DataVisualiser() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -102,7 +98,11 @@ export function DataVisualiser() {
 
   const playerTeamOptions = useMemo(() => {
     const all = playerQuery.data?.results ?? []
-    return [...new Set(all.map(row => row.canonical_team_name).filter((name): name is string => Boolean(name)))].sort()
+    const names = new Set<string>()
+    for (const row of all) {
+      if (row.canonical_team_name) names.add(row.canonical_team_name)
+    }
+    return [...names].toSorted()
   }, [playerQuery.data?.results])
 
   const activeLoading = state.tab === 'players' ? playerQuery.isLoading : teamQuery.isLoading
@@ -182,12 +182,12 @@ export function DataVisualiser() {
 
   const playerScatterPoints = useMemo(() => {
     if (!playerMeta || !xMetric || !yMetric) return []
-    return playerRows
-      .map<VisualiserScatterDatum | null>(row => {
-        const x = resolveProfileMetric(row, state.mode, barKindForMetricKey(xMetric), playerMeta)
-        const y = resolveProfileMetric(row, state.mode, barKindForMetricKey(yMetric), playerMeta)
-        if (x.value == null || y.value == null) return null
-        return {
+    return playerRows.flatMap<VisualiserScatterDatum>(row => {
+      const x = resolveProfileMetric(row, state.mode, barKindForMetricKey(xMetric), playerMeta)
+      const y = resolveProfileMetric(row, state.mode, barKindForMetricKey(yMetric), playerMeta)
+      if (x.value == null || y.value == null) return []
+      return [
+        {
           id: row.canonical_player_id,
           label: row.canonical_player_name,
           sublabel: row.canonical_team_name ?? undefined,
@@ -195,28 +195,28 @@ export function DataVisualiser() {
           y: y.value,
           xText: formatValue(x.value, x.formatUnit),
           yText: formatValue(y.value, y.formatUnit),
-        }
-      })
-      .filter(isPresent)
+        },
+      ]
+    })
   }, [playerMeta, playerRows, state.mode, xMetric, yMetric])
 
   const teamScatterPoints = useMemo(() => {
     if (!xMetric || !yMetric) return []
-    return (teamQuery.data?.results ?? [])
-      .map<VisualiserScatterDatum | null>(row => {
-        const xValue = teamStatValueForMode(xMetric, row.stats[xMetric], row.stats.matches ?? null, state.mode)
-        const yValue = teamStatValueForMode(yMetric, row.stats[yMetric], row.stats.matches ?? null, state.mode)
-        if (xValue == null || yValue == null) return null
-        return {
+    return (teamQuery.data?.results ?? []).flatMap<VisualiserScatterDatum>(row => {
+      const xValue = teamStatValueForMode(xMetric, row.stats[xMetric], row.stats.matches ?? null, state.mode)
+      const yValue = teamStatValueForMode(yMetric, row.stats[yMetric], row.stats.matches ?? null, state.mode)
+      if (xValue == null || yValue == null) return []
+      return [
+        {
           id: row.canonical_team_id,
           label: row.canonical_team_name,
           x: xValue,
           y: yValue,
           xText: formatTeamStatMode(xMetric, row.stats[xMetric], row.stats.matches ?? null, state.mode),
           yText: formatTeamStatMode(yMetric, row.stats[yMetric], row.stats.matches ?? null, state.mode),
-        }
-      })
-      .filter(isPresent)
+        },
+      ]
+    })
   }, [teamQuery.data?.results, state.mode, xMetric, yMetric])
 
   const activeScatterPoints = state.tab === 'players' ? playerScatterPoints : teamScatterPoints
@@ -235,36 +235,36 @@ export function DataVisualiser() {
 
   const playerBarRows = useMemo(() => {
     if (!playerMeta || !barMetric) return []
-    const rows = playerRows
-      .map<VisualiserBarDatum | null>(row => {
-        const resolved = resolveProfileMetric(row, state.mode, barKindForMetricKey(barMetric), playerMeta)
-        if (resolved.value == null) return null
-        return {
+    const rows = playerRows.flatMap<VisualiserBarDatum>(row => {
+      const resolved = resolveProfileMetric(row, state.mode, barKindForMetricKey(barMetric), playerMeta)
+      if (resolved.value == null) return []
+      return [
+        {
           id: row.canonical_player_id,
           label: row.canonical_player_name,
           sublabel: row.canonical_team_name ?? undefined,
           value: resolved.value,
           valueText: formatValue(resolved.value, resolved.formatUnit),
-        }
-      })
-      .filter(isPresent)
+        },
+      ]
+    })
     return finalizeBarRows(rows, state.barWindow, state.barCount, validPinnedIds)
   }, [barMetric, playerMeta, playerRows, state.mode, state.barWindow, state.barCount, validPinnedIds])
 
   const teamBarRows = useMemo(() => {
     if (!barMetric) return []
-    const rows = (teamQuery.data?.results ?? [])
-      .map<VisualiserBarDatum | null>(row => {
-        const value = teamStatValueForMode(barMetric, row.stats[barMetric], row.stats.matches ?? null, state.mode)
-        if (value == null) return null
-        return {
+    const rows = (teamQuery.data?.results ?? []).flatMap<VisualiserBarDatum>(row => {
+      const value = teamStatValueForMode(barMetric, row.stats[barMetric], row.stats.matches ?? null, state.mode)
+      if (value == null) return []
+      return [
+        {
           id: row.canonical_team_id,
           label: row.canonical_team_name,
           value,
           valueText: formatTeamStatMode(barMetric, row.stats[barMetric], row.stats.matches ?? null, state.mode),
-        }
-      })
-      .filter(isPresent)
+        },
+      ]
+    })
     return finalizeBarRows(rows, state.barWindow, state.barCount, validPinnedIds)
   }, [barMetric, state.barCount, state.barWindow, state.mode, teamQuery.data?.results, validPinnedIds])
 
@@ -810,12 +810,18 @@ function buildChartSubtitle(state: DataVisualiserUrlState): string {
 
 function resolvePlayerCompareRows(rows: PlayerRow[], compareIds: number[]): PlayerRow[] {
   const map = new Map(rows.map(row => [row.canonical_player_id, row]))
-  return compareIds.map(id => map.get(id)).filter((row): row is PlayerRow => row != null)
+  return compareIds.flatMap(id => {
+    const row = map.get(id)
+    return row ? [row] : []
+  })
 }
 
 function resolveTeamCompareRows(rows: TeamSeasonRow[], compareIds: number[]): TeamSeasonRow[] {
   const map = new Map(rows.map(row => [row.canonical_team_id, row]))
-  return compareIds.map(id => map.get(id)).filter((row): row is TeamSeasonRow => row != null)
+  return compareIds.flatMap(id => {
+    const row = map.get(id)
+    return row ? [row] : []
+  })
 }
 
 function metricLabel(
@@ -847,9 +853,8 @@ function buildTeamMetricGroups(meta: TeamStatMeta | undefined): MetricGroup[] {
     key: groupKey,
     label: meta.stat_groups[groupKey] ?? groupKey,
     items: Object.entries(meta.stats)
-      .filter(([, def]) => def.group === groupKey)
-      .map(([key, def]) => ({ key, label: def.label }))
-      .sort((left, right) => left.label.localeCompare(right.label)),
+      .flatMap(([key, def]) => (def.group === groupKey ? [{ key, label: def.label }] : []))
+      .toSorted((left, right) => left.label.localeCompare(right.label)),
   }))
 }
 
@@ -962,13 +967,14 @@ function finalizeBarRows(
   count: number,
   pinnedIds: number[],
 ): VisualiserBarDatum[] {
-  const sorted = [...rows].sort((left, right) => right.value - left.value)
+  const sorted = rows.toSorted((left, right) => right.value - left.value)
   let base = sorted
   if (window === 'top') base = sorted.slice(0, count)
-  if (window === 'bottom') base = [...sorted].reverse().slice(0, count)
+  if (window === 'bottom') base = sorted.toReversed().slice(0, count)
   if (window === 'all') base = sorted
   const baseIds = new Set(base.map(row => row.id))
-  const extras = sorted.filter(row => pinnedIds.includes(row.id) && !baseIds.has(row.id))
+  const pinnedIdSet = new Set(pinnedIds)
+  const extras = sorted.filter(row => pinnedIdSet.has(row.id) && !baseIds.has(row.id))
   return [...base, ...extras]
 }
 

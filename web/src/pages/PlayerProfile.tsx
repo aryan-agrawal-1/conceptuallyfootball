@@ -160,10 +160,7 @@ function ProfileLayout({
   const navigate = useNavigate()
   const { scope, buildScopedPath } = useScope()
 
-  const showLowSampleBanner = useMemo(
-    () => !player.eligibility.percentiles_eligible,
-    [player.eligibility.percentiles_eligible],
-  )
+  const showLowSampleBanner = !player.eligibility.percentiles_eligible
   const isAggregateScope = scope.competition === 'BIG5' || scope.competition === 'ALL'
   const canUseScopePercentiles = isAggregateScope && player.scope_percentiles != null
   const activePercentileMap =

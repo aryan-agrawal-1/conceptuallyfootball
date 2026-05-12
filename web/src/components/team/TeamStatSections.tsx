@@ -55,10 +55,11 @@ function TeamSectionCard({
             )}
           >
             <div className="flex flex-col pb-1">
-              {section.metrics.filter(m => m.value != null).map(m => {
+              {section.metrics.flatMap(m => {
+                if (m.value == null) return []
                 const formatted = formatTeamStatMode(m.key, m.value, matches, rateMode)
                 const rk = rateMode === 'full' ? m.rank : m.rank_per_match
-                return (
+                return [(
                   <div
                     key={m.key}
                     className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 items-center border-b border-electric/5 py-1.5 last:border-b-0"
@@ -78,7 +79,7 @@ function TeamSectionCard({
                       {rk != null ? `#${rk}` : '—'}
                     </span>
                   </div>
-                )
+                )]
               })}
             </div>
           </div>

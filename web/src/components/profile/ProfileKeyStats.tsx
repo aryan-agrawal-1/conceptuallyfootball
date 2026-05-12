@@ -20,26 +20,27 @@ interface ProfileKeyStatsProps {
 }
 
 export function ProfileKeyStats({ player, rateMode, meta, percentileMap = player.percentiles }: ProfileKeyStatsProps) {
-  const primarySpecs = headerSpecsForPosition(player.position_group)
-    .map(spec => ({ spec, resolved: resolveHeaderCard(player, rateMode, spec, meta, percentileMap) }))
-    .filter(({ resolved }) => resolved.value != null)
+  const primarySpecs = headerSpecsForPosition(player.position_group).flatMap(spec => {
+    const resolved = resolveHeaderCard(player, rateMode, spec, meta, percentileMap)
+    return resolved.value == null ? [] : [{ spec, resolved }]
+  })
   const usedMetricKeys = new Set(primarySpecs.map(({ resolved }) => resolved.metricKey))
-  const fallbackSpecs = Object.entries(meta.metrics)
-    .map(([key, def]) => {
-      if (usedMetricKeys.has(key)) return null
-      if (player.position_group === 'GK' && key === 'rating') return null
-      const resolved = resolveProfileMetric(player, rateMode, barKindForMetricKey(key), meta, percentileMap)
-      if (resolved.value == null) return null
-      return {
+  const fallbackSpecs = Object.entries(meta.metrics).flatMap(([key, def]) => {
+    if (usedMetricKeys.has(key)) return []
+    if (player.position_group === 'GK' && key === 'rating') return []
+    const resolved = resolveProfileMetric(player, rateMode, barKindForMetricKey(key), meta, percentileMap)
+    if (resolved.value == null) return []
+    return [
+      {
         spec: {
           id: `fallback-${key}`,
           label: stripPer90Suffix(def.label),
           bar: barKindForMetricKey(key),
         },
         resolved: { ...resolved, label: stripPer90Suffix(def.label) },
-      }
-    })
-    .filter((entry): entry is NonNullable<typeof entry> => entry != null)
+      },
+    ]
+  })
   const specs = [...primarySpecs, ...fallbackSpecs].slice(0, 4)
   const rawOnly = !player.eligibility.percentiles_eligible
 

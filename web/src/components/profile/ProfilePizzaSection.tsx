@@ -479,10 +479,9 @@ function PizzaAxisPicker({
   const available = useMemo(() => {
     const sel = new Set(selectedKeys)
     return sectionOrder.flatMap(sec =>
-      (grouped[sec] ?? [])
-        .filter(({ key }) => !sel.has(key))
-        .filter(({ key }) => usableKeys.has(key))
-        .map(item => ({ ...item, section: sec })),
+      (grouped[sec] ?? []).flatMap(item =>
+        !sel.has(item.key) && usableKeys.has(item.key) ? [{ ...item, section: sec }] : [],
+      ),
     )
   }, [grouped, sectionOrder, selectedKeys, usableKeys])
 
