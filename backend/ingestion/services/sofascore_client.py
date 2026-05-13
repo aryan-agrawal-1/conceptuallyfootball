@@ -42,6 +42,7 @@ REQUEST_METRICS: dict[str, Any] = {
     "status_counts": {},
     "retry_count": 0,
     "blocked_count": 0,
+    "transport_error_count": 0,
     "proxy_enabled": False,
 }
 REQUEST_CAP: int | None = None
@@ -60,6 +61,7 @@ def reset_request_metrics() -> None:
             "status_counts": {},
             "retry_count": 0,
             "blocked_count": 0,
+            "transport_error_count": 0,
             "proxy_enabled": bool(_sofascore_proxy_url()),
         }
     )
@@ -71,6 +73,7 @@ def snapshot_request_metrics() -> dict[str, Any]:
         "status_counts": dict(REQUEST_METRICS.get("status_counts") or {}),
         "retry_count": int(REQUEST_METRICS.get("retry_count") or 0),
         "blocked_count": int(REQUEST_METRICS.get("blocked_count") or 0),
+        "transport_error_count": int(REQUEST_METRICS.get("transport_error_count") or 0),
         "proxy_enabled": bool(REQUEST_METRICS.get("proxy_enabled")),
     }
 
@@ -259,27 +262,23 @@ def _request_get(
     for attempt in range(4):
         if REQUEST_CAP is not None and int(REQUEST_METRICS.get("request_count") or 0) >= REQUEST_CAP:
             raise RuntimeError(f"Sofascore daily request cap reached ({REQUEST_CAP}).")
-        if browser_requests is not None:
-            kwargs = {
-                "headers": headers,
-                "params": params,
-                "timeout": timeout,
-                "impersonate": "chrome124",
-            }
-            if proxies:
-                kwargs["proxies"] = proxies
-            response = browser_requests.get(
-                url,
-                **kwargs,
-            )
-        else:
-            response = plain_requests.get(
+        try:
+            response = _attempt_request(
                 url,
                 headers=headers,
                 params=params,
                 timeout=timeout,
                 proxies=proxies,
             )
+        except Exception:
+            REQUEST_METRICS["transport_error_count"] = int(
+                REQUEST_METRICS.get("transport_error_count") or 0
+            ) + 1
+            if attempt < 3:
+                REQUEST_METRICS["retry_count"] = int(REQUEST_METRICS.get("retry_count") or 0) + 1
+                time.sleep(retry_base_sleep_seconds * (attempt + 1))
+                continue
+            raise
 
         status_key = str(response.status_code)
         status_counts = REQUEST_METRICS.setdefault("status_counts", {})
@@ -297,6 +296,40 @@ def _request_get(
             time.sleep(retry_base_sleep_seconds * (attempt + 1))
 
     return last_response
+
+
+def _attempt_request(
+    url: str,
+    *,
+    headers: dict[str, str],
+    params: dict[str, Any],
+    timeout: int,
+    proxies: dict[str, str] | None,
+):
+    if browser_requests is not None:
+        kwargs = {
+            "headers": headers,
+            "params": params,
+            "timeout": timeout,
+            "impersonate": "chrome124",
+        }
+        if proxies:
+            kwargs["proxies"] = proxies
+        try:
+            return browser_requests.get(
+                url,
+                **kwargs,
+            )
+        except Exception:
+            if not proxies:
+                raise
+    return plain_requests.get(
+        url,
+        headers=headers,
+        params=params,
+        timeout=timeout,
+        proxies=proxies,
+    )
 
 
 def fetch_statistics_page(
