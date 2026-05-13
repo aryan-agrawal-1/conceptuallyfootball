@@ -135,17 +135,17 @@ def ingest_understat_slice(competition_season: CompetitionSeason, *, run: Ingest
                 cplayer = resolve_canonical_player(
                     competition_season=competition_season,
                     provider=Provider.UNDERSTAT,
-                    provider_player_id=pid,
+                    provider_player_id=src.provider_player_id,
                     display_name=src.player_name,
                     run=run,
                 )
                 cteam = None
-                if team_id:
+                if src.provider_team_id:
                     cteam = resolve_canonical_team(
                         competition_season=competition_season,
                         provider=Provider.UNDERSTAT,
-                        provider_team_id=team_id,
-                        team_name=team_title,
+                        provider_team_id=src.provider_team_id,
+                        team_name=src.team_name,
                         run=run,
                     )
                 src.canonical_player = cplayer
@@ -258,7 +258,7 @@ def ingest_sofascore_slice(competition_season: CompetitionSeason, *, run: Ingest
                 cplayer = resolve_canonical_player(
                     competition_season=competition_season,
                     provider=Provider.SOFASCORE,
-                    provider_player_id=pid,
+                    provider_player_id=src.provider_player_id,
                     display_name=src.player_name,
                     run=run,
                 )

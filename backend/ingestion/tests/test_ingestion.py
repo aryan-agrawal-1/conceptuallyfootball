@@ -873,6 +873,89 @@ class ManagementCommandSharedLogicTests(TestCase):
             {
                 "id": "1",
                 "player_name": "A",
+                "team_title": "T1",
+                "team_id": "101",
+                "provider_team_ids": ["101"],
+                "games": "38",
+                "time": "3000",
+            },
+            {
+                "id": "2",
+                "player_name": "B",
+                "team_title": "T2",
+                "team_id": "102",
+                "provider_team_ids": ["102"],
+                "games": "30",
+                "time": "2400",
+            },
+        ],
+    )
+    @patch(
+        "ingestion.services.ingest.fetch_full_season_statistics",
+        return_value={
+            10: {
+                "_player": {"id": 10, "name": "A", "position": "M"},
+                "_team": {"id": 201, "name": "T1"},
+                "summary:rating": 6.8,
+                "defence:tackles": 10,
+            },
+            20: {
+                "_player": {"id": 20, "name": "B", "position": "F"},
+                "_team": {"id": 202, "name": "T2"},
+                "summary:rating": 7.1,
+                "defence:tackles": 5,
+            },
+        },
+    )
+    def test_provider_ingestion_resolves_each_source_row_with_its_own_provider_id(
+        self,
+        _mock_fetch_full,
+        _mock_fetch_league,
+        _mock_validate_ss,
+        _mock_validate_us,
+    ):
+        cs = _slice()
+        from ingestion.services.ingest import ingest_sofascore_slice, ingest_understat_slice
+
+        understat_run = IngestionRun.objects.create(
+            kind=IngestionKind.UNDERSTAT,
+            competition_season=cs,
+            status=IngestionRunStatus.PENDING,
+        )
+        sofascore_run = IngestionRun.objects.create(
+            kind=IngestionKind.SOFASCORE,
+            competition_season=cs,
+            status=IngestionRunStatus.PENDING,
+        )
+
+        ingest_understat_slice(cs, run=understat_run)
+        ingest_sofascore_slice(cs, run=sofascore_run)
+
+        understat_players = set(
+            UnderstatPlayerSeasonSource.objects.filter(competition_season=cs).values_list(
+                "canonical_player_id",
+                flat=True,
+            )
+        )
+        sofascore_players = set(
+            SofascorePlayerSeasonSource.objects.filter(competition_season=cs).values_list(
+                "canonical_player_id",
+                flat=True,
+            )
+        )
+
+        self.assertEqual(len(understat_players), 2)
+        self.assertEqual(len(sofascore_players), 2)
+
+    @override_settings(STATBALLER_INGEST_MIN_ROWS=1)
+    @patch("ingestion.services.ingest.validate_understat_slice", return_value=ValidationResult(True, ""))
+    @patch("ingestion.services.ingest.validate_sofascore_slice", return_value=ValidationResult(True, ""))
+    @patch(
+        "ingestion.services.ingest.fetch_league_players",
+        return_value=[
+            {
+                "id": "1",
+                "player_name": "A",
                 "team_title": "T",
                 "team_id": "",
                 "provider_team_ids": [],
