@@ -13,6 +13,8 @@ from ingestion.models import (
     IngestionBatchItem,
     IngestionBatchItemStatus,
     IngestionBatchStatus,
+    IngestionKind,
+    IngestionRun,
     IngestionRunStatus,
     MaterializedApiPayload,
     PlayerDataMode,
@@ -187,3 +189,71 @@ class DailyRefreshCommandTests(TestCase):
         _slice("ENG1", refresh_enabled=True)
 
         call_command("orchestrate_daily_refresh", "--no-jitter")
+
+
+class BackfillHistoryCommandTests(TestCase):
+    @patch("ingestion.services.galaxy.materialize_galaxy_embeddings", side_effect=_succeed_stage)
+    @patch("ingestion.services.derived.materialize_derived_stats", side_effect=_succeed_stage)
+    @patch("ingestion.management.commands.backfill_history.run_merge_job", side_effect=_succeed_stage)
+    @patch("ingestion.management.commands.backfill_history.run_team_merge_job", side_effect=_succeed_stage)
+    @patch("ingestion.management.commands.backfill_history.ingest_understat_slice", side_effect=_succeed_stage)
+    @patch("ingestion.management.commands.backfill_history.ingest_sofascore_team_slice", side_effect=_succeed_stage)
+    @patch("ingestion.management.commands.backfill_history.ingest_sofascore_slice", side_effect=_succeed_stage)
+    def test_command_runs_full_slice_chain(
+        self,
+        mock_sofa,
+        mock_team,
+        mock_understat,
+        mock_team_merge,
+        mock_merge,
+        mock_derived,
+        mock_galaxy,
+    ):
+        cs = _slice("ENG1", player_data_mode=PlayerDataMode.FULL_MERGE, has_understat=True)
+
+        call_command(
+            "backfill_history",
+            "--skip-seed",
+            "--no-sleep",
+            "--competitions",
+            "ENG1",
+            "--seasons",
+            cs.season.label,
+            "--output",
+            "/tmp/statballer-backfill-test.json",
+        )
+
+        self.assertEqual(mock_sofa.call_count, 1)
+        self.assertEqual(mock_team.call_count, 1)
+        self.assertEqual(mock_understat.call_count, 1)
+        self.assertEqual(mock_team_merge.call_count, 1)
+        self.assertEqual(mock_merge.call_count, 1)
+        self.assertEqual(mock_derived.call_count, 1)
+        self.assertEqual(mock_galaxy.call_count, 1)
+
+    @patch("ingestion.management.commands.backfill_history.run_team_merge_job", side_effect=_succeed_stage)
+    @patch("ingestion.management.commands.backfill_history.ingest_sofascore_team_slice", side_effect=_succeed_stage)
+    @patch("ingestion.management.commands.backfill_history.ingest_sofascore_slice", side_effect=_succeed_stage)
+    def test_command_skips_successful_provider_runs_without_force(self, mock_sofa, mock_team, _mock_team_merge):
+        cs = _slice("ENG1")
+        for kind in (IngestionKind.SOFASCORE, IngestionKind.SOFASCORE_TEAM):
+            IngestionRun.objects.create(
+                competition_season=cs,
+                kind=kind,
+                status=IngestionRunStatus.SUCCESS,
+                finished_at=timezone.now(),
+            )
+
+        call_command(
+            "backfill_history",
+            "--skip-seed",
+            "--providers-only",
+            "--no-sleep",
+            "--competitions",
+            "ENG1",
+            "--output",
+            "/tmp/statballer-backfill-skip-test.json",
+        )
+
+        mock_sofa.assert_not_called()
+        mock_team.assert_not_called()
