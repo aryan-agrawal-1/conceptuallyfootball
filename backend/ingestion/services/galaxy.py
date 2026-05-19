@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import heapq
 import math
 from dataclasses import dataclass, field
 from statistics import median
 from typing import Any
 
 import numpy as np
+from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
@@ -506,6 +508,9 @@ def _project_to_3d(matrix: np.ndarray) -> np.ndarray:
 
     if len(matrix) < 4:
         return PCA(n_components=min(3, matrix.shape[1]), random_state=42).fit_transform(matrix)
+    umap_max_rows = int(getattr(settings, "STATBALLER_GALAXY_UMAP_MAX_ROWS", 1200) or 0)
+    if umap_max_rows > 0 and len(matrix) > umap_max_rows:
+        return PCA(n_components=3, random_state=42).fit_transform(matrix)
     try:
         from umap import UMAP
     except Exception:  # noqa: BLE001
@@ -815,20 +820,10 @@ def _materialize_similarity_rows(
     groups: dict[str, str],
 ) -> list[GalaxySimilarity]:
     weights_vector = np.array([weights.get(name, 0.0) for name in feature_names])
-    all_ranked: list[list[tuple[int, float, float, float, str]]] = []
     top_distances: list[float] = []
-    for i, source in enumerate(rows):
-        ranked: list[tuple[int, float, float, float, str]] = []
-        for j, target in enumerate(rows):
-            if i == j:
-                continue
-            base_distance = _weighted_manhattan(matrix[i], matrix[j], weights_vector)
-            multiplier = _position_multiplier(source.derived.position_group, target.derived.position_group)
-            distance = base_distance * multiplier
-            ranked.append((j, base_distance, distance, multiplier, _match_context(source.derived.position_group, target.derived.position_group)))
-        ranked.sort(key=lambda item: item[2])
-        all_ranked.append(ranked)
-        top_distances.extend(item[2] for item in ranked[:5])
+    for i in range(len(rows)):
+        ranked = _top_similarity_candidates(i, rows, matrix, weights_vector, limit=5)
+        top_distances.extend(item[2] for item in ranked)
 
     # The absolute-fit score is a guardrail, not the main ranking signal. Use a
     # loose scale from known-near top-five distances so plausible matches are
@@ -837,8 +832,9 @@ def _materialize_similarity_rows(
     if scale <= 0:
         scale = 1.0
     similarities: list[GalaxySimilarity] = []
-    for source_idx, ranked in enumerate(all_ranked):
-        total_candidates = len(ranked)
+    for source_idx in range(len(rows)):
+        ranked = _top_similarity_candidates(source_idx, rows, matrix, weights_vector, limit=TOP_K_SIMILARS)
+        total_candidates = max(len(rows) - 1, 0)
         for rank, (target_idx, base_distance, distance, multiplier, context) in enumerate(ranked[:TOP_K_SIMILARS], start=1):
             if total_candidates <= 1:
                 candidate_score = 100.0
@@ -873,7 +869,34 @@ def _materialize_similarity_rows(
     return similarities
 
 
-@transaction.atomic
+def _top_similarity_candidates(
+    source_idx: int,
+    rows: list[GalaxyRow],
+    matrix: np.ndarray,
+    weights_vector: np.ndarray,
+    *,
+    limit: int,
+) -> list[tuple[int, float, float, float, str]]:
+    source = rows[source_idx]
+
+    def candidates():
+        for target_idx, target in enumerate(rows):
+            if source_idx == target_idx:
+                continue
+            base_distance = _weighted_manhattan(matrix[source_idx], matrix[target_idx], weights_vector)
+            multiplier = _position_multiplier(source.derived.position_group, target.derived.position_group)
+            distance = base_distance * multiplier
+            yield (
+                target_idx,
+                base_distance,
+                distance,
+                multiplier,
+                _match_context(source.derived.position_group, target.derived.position_group),
+            )
+
+    return heapq.nsmallest(limit, candidates(), key=lambda item: item[2])
+
+
 def materialize_galaxy_scope(
     scope_code: str,
     season_label: str,
@@ -916,96 +939,97 @@ def materialize_galaxy_scope(
 
         archetype_payloads = _assign_archetypes(rows, feature_names, matrix, groups, weights)
 
-        now = timezone.now()
-        GalaxySnapshot.objects.filter(
-            scope_code=scope,
-            season_label=season_label,
-            is_current=True,
-        ).update(is_current=False, superseded_at=now)
-        snapshot = GalaxySnapshot.objects.create(
-            scope_code=scope,
-            season_label=season_label,
-            ingestion_run=run,
-            model_version=MODEL_VERSION,
-            feature_profile=profile,
-            min_minutes=min_minutes,
-            default_min_minutes=DEFAULT_MIN_MINUTES,
-            top_k=TOP_K_SIMILARS,
-            included_competition_season_ids=sorted({row.derived.competition_season_id for row in rows}),
-            excluded_competitions=excluded_competitions,
-            feature_names=feature_names,
-            feature_weights={key: round(value, 8) for key, value in weights.items()},
-            feature_groups=groups,
-            imputation_values={key: round(value, 6) for key, value in imputation_values.items()},
-            scaling=scaling,
-            position_penalties={f"{a}:{b}": value for (a, b), value in POSITION_DISTANCE_MULTIPLIERS.items()},
-            diagnostics={
-                "coverage": {key: round(value, 4) for key, value in coverage.items()},
-                "eligible_players": len(rows),
-                "eligible_competitions": sorted({row.competition_code for row in rows}),
-                "excluded_players": {
-                    "missing_sofascore_source": len(excluded_players),
-                    "examples": excluded_players[:25],
+        with transaction.atomic():
+            now = timezone.now()
+            GalaxySnapshot.objects.filter(
+                scope_code=scope,
+                season_label=season_label,
+                is_current=True,
+            ).update(is_current=False, superseded_at=now)
+            snapshot = GalaxySnapshot.objects.create(
+                scope_code=scope,
+                season_label=season_label,
+                ingestion_run=run,
+                model_version=MODEL_VERSION,
+                feature_profile=profile,
+                min_minutes=min_minutes,
+                default_min_minutes=DEFAULT_MIN_MINUTES,
+                top_k=TOP_K_SIMILARS,
+                included_competition_season_ids=sorted({row.derived.competition_season_id for row in rows}),
+                excluded_competitions=excluded_competitions,
+                feature_names=feature_names,
+                feature_weights={key: round(value, 8) for key, value in weights.items()},
+                feature_groups=groups,
+                imputation_values={key: round(value, 6) for key, value in imputation_values.items()},
+                scaling=scaling,
+                position_penalties={f"{a}:{b}": value for (a, b), value in POSITION_DISTANCE_MULTIPLIERS.items()},
+                diagnostics={
+                    "coverage": {key: round(value, 4) for key, value in coverage.items()},
+                    "eligible_players": len(rows),
+                    "eligible_competitions": sorted({row.competition_code for row in rows}),
+                    "excluded_players": {
+                        "missing_sofascore_source": len(excluded_players),
+                        "examples": excluded_players[:25],
+                    },
                 },
-            },
-            is_current=True,
-        )
-
-        archetype_objects: dict[str, GalaxyArchetype] = {}
-        for key, payload in archetype_payloads.items():
-            archetype_objects[key] = GalaxyArchetype.objects.create(
-                snapshot=snapshot,
-                archetype_key=key,
-                position_group=payload["position_group"],
-                cluster_id=payload["cluster_id"],
-                label=payload["label"],
-                color=payload["color"],
-                size=payload["size"],
-                centroid=payload["centroid"],
-                feature_signature=payload["feature_signature"],
-                representative_players=payload["representative_players"],
-                diagnostics=payload["diagnostics"],
+                is_current=True,
             )
 
-        embedding_objects = [
-            GalaxyPlayerEmbedding(
-                snapshot=snapshot,
-                galaxy_player_id=row.galaxy_player_id,
-                competition_season=row.derived.competition_season,
-                canonical_player=row.derived.canonical_player,
-                canonical_display_team=row.derived.canonical_display_team,
-                derived_stats=row.derived,
-                primary_archetype=archetype_objects.get(row.archetype_key),
-                secondary_archetype=archetype_objects.get(row.secondary_archetype_key),
-                position_group=row.derived.position_group,
-                native_position=row.derived.native_position,
-                minutes=row.derived.minutes,
-                primary_archetype_label=row.archetype_label,
-                primary_archetype_confidence=row.archetype_confidence,
-                secondary_archetype_label=row.secondary_archetype_label,
-                secondary_archetype_confidence=row.secondary_archetype_confidence,
-                archetype_margin=row.archetype_margin,
-                archetype_diagnostics=row.archetype_diagnostics,
-                feature_values={key: row.values.get(key) for key in [spec.name for spec in specs]},
-                scaled_features={key: round(value, 6) for key, value in row.scaled_values.items()},
-                imputed_features=row.imputed_features,
-                umap_x=row.x,
-                umap_y=row.y,
-                umap_z=row.z,
+            archetype_objects: dict[str, GalaxyArchetype] = {}
+            for key, payload in archetype_payloads.items():
+                archetype_objects[key] = GalaxyArchetype.objects.create(
+                    snapshot=snapshot,
+                    archetype_key=key,
+                    position_group=payload["position_group"],
+                    cluster_id=payload["cluster_id"],
+                    label=payload["label"],
+                    color=payload["color"],
+                    size=payload["size"],
+                    centroid=payload["centroid"],
+                    feature_signature=payload["feature_signature"],
+                    representative_players=payload["representative_players"],
+                    diagnostics=payload["diagnostics"],
+                )
+
+            embedding_objects = [
+                GalaxyPlayerEmbedding(
+                    snapshot=snapshot,
+                    galaxy_player_id=row.galaxy_player_id,
+                    competition_season=row.derived.competition_season,
+                    canonical_player=row.derived.canonical_player,
+                    canonical_display_team=row.derived.canonical_display_team,
+                    derived_stats=row.derived,
+                    primary_archetype=archetype_objects.get(row.archetype_key),
+                    secondary_archetype=archetype_objects.get(row.secondary_archetype_key),
+                    position_group=row.derived.position_group,
+                    native_position=row.derived.native_position,
+                    minutes=row.derived.minutes,
+                    primary_archetype_label=row.archetype_label,
+                    primary_archetype_confidence=row.archetype_confidence,
+                    secondary_archetype_label=row.secondary_archetype_label,
+                    secondary_archetype_confidence=row.secondary_archetype_confidence,
+                    archetype_margin=row.archetype_margin,
+                    archetype_diagnostics=row.archetype_diagnostics,
+                    feature_values={key: row.values.get(key) for key in [spec.name for spec in specs]},
+                    scaled_features={key: round(value, 6) for key, value in row.scaled_values.items()},
+                    imputed_features=row.imputed_features,
+                    umap_x=row.x,
+                    umap_y=row.y,
+                    umap_z=row.z,
+                )
+                for row in rows
+            ]
+            embeddings = GalaxyPlayerEmbedding.objects.bulk_create(embedding_objects)
+            similarity_objects = _materialize_similarity_rows(
+                snapshot,
+                embeddings,
+                rows,
+                feature_names,
+                matrix,
+                weights,
+                groups,
             )
-            for row in rows
-        ]
-        embeddings = GalaxyPlayerEmbedding.objects.bulk_create(embedding_objects)
-        similarity_objects = _materialize_similarity_rows(
-            snapshot,
-            embeddings,
-            rows,
-            feature_names,
-            matrix,
-            weights,
-            groups,
-        )
-        GalaxySimilarity.objects.bulk_create(similarity_objects)
+            GalaxySimilarity.objects.bulk_create(similarity_objects)
     except Exception as exc:  # noqa: BLE001
         _mark_run_failed(run, str(exc))
         return None
