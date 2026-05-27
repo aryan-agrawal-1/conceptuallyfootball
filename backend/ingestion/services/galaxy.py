@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import heapq
 import math
 from dataclasses import dataclass, field
 from statistics import median
@@ -503,19 +502,16 @@ def _weighted_matrix(matrix: np.ndarray, feature_names: list[str], weights: dict
     return matrix * factors
 
 
-def _project_to_3d(matrix: np.ndarray) -> np.ndarray:
+def _pca_project_to_3d(matrix: np.ndarray) -> np.ndarray:
     from sklearn.decomposition import PCA
 
-    if len(matrix) < 4:
-        return PCA(n_components=min(3, matrix.shape[1]), random_state=42).fit_transform(matrix)
-    umap_max_rows = int(getattr(settings, "STATBALLER_GALAXY_UMAP_MAX_ROWS", 1200) or 0)
-    if umap_max_rows > 0 and len(matrix) > umap_max_rows:
-        return PCA(n_components=3, random_state=42).fit_transform(matrix)
-    try:
-        from umap import UMAP
-    except Exception:  # noqa: BLE001
-        return PCA(n_components=3, random_state=42).fit_transform(matrix)
-    n_neighbors = min(20, max(3, len(matrix) - 1))
+    return PCA(n_components=min(3, matrix.shape[1]), random_state=42).fit_transform(matrix)
+
+
+def _umap_model(row_count: int):
+    from umap import UMAP
+
+    n_neighbors = min(20, max(3, row_count - 1))
     return UMAP(
         n_components=3,
         n_neighbors=n_neighbors,
@@ -523,7 +519,56 @@ def _project_to_3d(matrix: np.ndarray) -> np.ndarray:
         spread=2.0,
         metric="manhattan",
         random_state=42,
-    ).fit_transform(matrix)
+        low_memory=True,
+        transform_queue_size=1.0,
+        verbose=bool(getattr(settings, "STATBALLER_GALAXY_UMAP_VERBOSE", False)),
+    )
+
+
+def _landmark_indices(row_count: int, sample_size: int) -> np.ndarray:
+    rng = np.random.default_rng(42)
+    return np.sort(rng.choice(row_count, size=sample_size, replace=False))
+
+
+def _project_to_3d(matrix: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
+    row_count = len(matrix)
+    if len(matrix) < 4:
+        return _pca_project_to_3d(matrix), {"projection_method": "pca", "projection_reason": "too_few_rows"}
+
+    mode = (getattr(settings, "STATBALLER_GALAXY_PROJECTION_MODE", "auto") or "auto").strip().lower()
+    if mode == "pca":
+        return _pca_project_to_3d(matrix), {"projection_method": "pca", "projection_reason": "configured"}
+
+    try:
+        full_max_rows = int(getattr(settings, "STATBALLER_GALAXY_UMAP_FULL_MAX_ROWS", 2500) or 0)
+        landmark_rows = int(getattr(settings, "STATBALLER_GALAXY_UMAP_LANDMARK_ROWS", 1200) or 0)
+
+        if mode == "umap" or full_max_rows <= 0 or row_count <= full_max_rows:
+            projection = _umap_model(row_count).fit_transform(matrix)
+            return projection, {
+                "projection_method": "umap",
+                "projection_rows": row_count,
+                "umap_full_max_rows": full_max_rows,
+            }
+
+        sample_size = min(max(4, landmark_rows), row_count)
+        indices = _landmark_indices(row_count, sample_size)
+        model = _umap_model(sample_size).fit(matrix[indices])
+        projection = model.transform(matrix)
+        return projection, {
+            "projection_method": "landmark_umap",
+            "projection_rows": row_count,
+            "landmark_rows": sample_size,
+            "umap_full_max_rows": full_max_rows,
+        }
+    except Exception as exc:  # noqa: BLE001
+        projection = _pca_project_to_3d(matrix)
+        return projection, {
+            "projection_method": "pca",
+            "projection_reason": "umap_failed",
+            "projection_error": f"{type(exc).__name__}: {exc}",
+            "projection_rows": row_count,
+        }
 
 
 def _position_multiplier(a: str, b: str) -> float:
@@ -878,23 +923,33 @@ def _top_similarity_candidates(
     limit: int,
 ) -> list[tuple[int, float, float, float, str]]:
     source = rows[source_idx]
+    candidate_count = max(0, len(rows) - 1)
+    if candidate_count == 0 or limit <= 0:
+        return []
 
-    def candidates():
-        for target_idx, target in enumerate(rows):
-            if source_idx == target_idx:
-                continue
-            base_distance = _weighted_manhattan(matrix[source_idx], matrix[target_idx], weights_vector)
-            multiplier = _position_multiplier(source.derived.position_group, target.derived.position_group)
-            distance = base_distance * multiplier
-            yield (
-                target_idx,
-                base_distance,
-                distance,
-                multiplier,
-                _match_context(source.derived.position_group, target.derived.position_group),
-            )
+    denom = float(weights_vector.sum()) or 1.0
+    base_distances = np.sum(np.abs(matrix - matrix[source_idx]) * weights_vector, axis=1) / denom
+    multipliers = np.array(
+        [_position_multiplier(source.derived.position_group, target.derived.position_group) for target in rows],
+        dtype=np.float64,
+    )
+    distances = base_distances * multipliers
+    distances[source_idx] = np.inf
 
-    return heapq.nsmallest(limit, candidates(), key=lambda item: item[2])
+    selected_count = min(limit, candidate_count)
+    selected_indices = np.argpartition(distances, selected_count - 1)[:selected_count]
+    selected_indices = selected_indices[np.argsort(distances[selected_indices])]
+
+    return [
+        (
+            int(target_idx),
+            float(base_distances[target_idx]),
+            float(distances[target_idx]),
+            float(multipliers[target_idx]),
+            _match_context(source.derived.position_group, rows[int(target_idx)].derived.position_group),
+        )
+        for target_idx in selected_indices
+    ]
 
 
 def materialize_galaxy_scope(
@@ -927,7 +982,7 @@ def materialize_galaxy_scope(
         weights = {name: value / total_weight for name, value in weights.items()}
 
         projection_matrix = _weighted_matrix(matrix, feature_names, weights)
-        projection = _project_to_3d(projection_matrix)
+        projection, projection_diagnostics = _project_to_3d(projection_matrix)
         if projection.shape[1] < 3:
             projection = np.pad(projection, ((0, 0), (0, 3 - projection.shape[1])))
         for idx, row in enumerate(rows):
@@ -964,6 +1019,7 @@ def materialize_galaxy_scope(
                 scaling=scaling,
                 position_penalties={f"{a}:{b}": value for (a, b), value in POSITION_DISTANCE_MULTIPLIERS.items()},
                 diagnostics={
+                    **projection_diagnostics,
                     "coverage": {key: round(value, 4) for key, value in coverage.items()},
                     "eligible_players": len(rows),
                     "eligible_competitions": sorted({row.competition_code for row in rows}),
@@ -1045,6 +1101,7 @@ def materialize_galaxy_scope(
             "players": len(rows),
             "features": len(feature_names),
             "top_k": TOP_K_SIMILARS,
+            **projection_diagnostics,
             "archetypes": len(archetype_payloads),
             "included_competition_season_ids": snapshot.included_competition_season_ids,
             "excluded_competitions": excluded_competitions,
