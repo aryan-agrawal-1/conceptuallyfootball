@@ -530,6 +530,16 @@ def _landmark_indices(row_count: int, sample_size: int) -> np.ndarray:
     return np.sort(rng.choice(row_count, size=sample_size, replace=False))
 
 
+def _chunked_umap_transform(model, matrix: np.ndarray) -> np.ndarray:
+    chunk_rows = int(getattr(settings, "STATBALLER_GALAXY_UMAP_TRANSFORM_CHUNK_ROWS", 400) or 0)
+    if chunk_rows <= 0 or len(matrix) <= chunk_rows:
+        return model.transform(matrix)
+    chunks = []
+    for start in range(0, len(matrix), chunk_rows):
+        chunks.append(model.transform(matrix[start : start + chunk_rows]))
+    return np.vstack(chunks)
+
+
 def _project_to_3d(matrix: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
     row_count = len(matrix)
     if len(matrix) < 4:
@@ -541,7 +551,7 @@ def _project_to_3d(matrix: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
 
     try:
         full_max_rows = int(getattr(settings, "STATBALLER_GALAXY_UMAP_FULL_MAX_ROWS", 2500) or 0)
-        landmark_rows = int(getattr(settings, "STATBALLER_GALAXY_UMAP_LANDMARK_ROWS", 1200) or 0)
+        landmark_rows = int(getattr(settings, "STATBALLER_GALAXY_UMAP_LANDMARK_ROWS", 800) or 0)
 
         if mode == "umap" or full_max_rows <= 0 or row_count <= full_max_rows:
             projection = _umap_model(row_count).fit_transform(matrix)
@@ -554,11 +564,14 @@ def _project_to_3d(matrix: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
         sample_size = min(max(4, landmark_rows), row_count)
         indices = _landmark_indices(row_count, sample_size)
         model = _umap_model(sample_size).fit(matrix[indices])
-        projection = model.transform(matrix)
+        projection = _chunked_umap_transform(model, matrix)
         return projection, {
             "projection_method": "landmark_umap",
             "projection_rows": row_count,
             "landmark_rows": sample_size,
+            "transform_chunk_rows": int(
+                getattr(settings, "STATBALLER_GALAXY_UMAP_TRANSFORM_CHUNK_ROWS", 400) or 0
+            ),
             "umap_full_max_rows": full_max_rows,
         }
     except Exception as exc:  # noqa: BLE001
