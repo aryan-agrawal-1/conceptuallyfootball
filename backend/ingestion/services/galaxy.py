@@ -530,14 +530,45 @@ def _landmark_indices(row_count: int, sample_size: int) -> np.ndarray:
     return np.sort(rng.choice(row_count, size=sample_size, replace=False))
 
 
-def _chunked_umap_transform(model, matrix: np.ndarray) -> np.ndarray:
-    chunk_rows = int(getattr(settings, "STATBALLER_GALAXY_UMAP_TRANSFORM_CHUNK_ROWS", 400) or 0)
-    if chunk_rows <= 0 or len(matrix) <= chunk_rows:
-        return model.transform(matrix)
-    chunks = []
+def _interpolate_from_landmarks(
+    matrix: np.ndarray,
+    landmark_indices: np.ndarray,
+    landmark_projection: np.ndarray,
+) -> np.ndarray:
+    """Project non-landmark rows by blending nearest projected landmarks.
+
+    UMAP's transform path can allocate enough neighbor-search state to OOM small
+    production boxes. This keeps the UMAP structure from the landmark sample and
+    uses lightweight feature-space interpolation for the full cohort.
+    """
+    projection = np.zeros((len(matrix), landmark_projection.shape[1]), dtype=np.float64)
+    projection[landmark_indices] = landmark_projection
+
+    landmark_matrix = matrix[landmark_indices]
+    landmark_lookup = {int(row_idx): pos for pos, row_idx in enumerate(landmark_indices)}
+    neighbor_count = min(
+        int(getattr(settings, "STATBALLER_GALAXY_LANDMARK_NEIGHBORS", 8) or 8),
+        len(landmark_indices),
+    )
+    chunk_rows = int(getattr(settings, "STATBALLER_GALAXY_LANDMARK_CHUNK_ROWS", 400) or 400)
+    if chunk_rows <= 0:
+        chunk_rows = len(matrix)
+
     for start in range(0, len(matrix), chunk_rows):
-        chunks.append(model.transform(matrix[start : start + chunk_rows]))
-    return np.vstack(chunks)
+        stop = min(start + chunk_rows, len(matrix))
+        chunk = matrix[start:stop]
+        distances = np.sum(np.abs(chunk[:, None, :] - landmark_matrix[None, :, :]), axis=2)
+        for offset, row_idx in enumerate(range(start, stop)):
+            landmark_pos = landmark_lookup.get(row_idx)
+            if landmark_pos is not None:
+                projection[row_idx] = landmark_projection[landmark_pos]
+                continue
+            nearest = np.argpartition(distances[offset], neighbor_count - 1)[:neighbor_count]
+            nearest = nearest[np.argsort(distances[offset][nearest])]
+            nearest_distances = distances[offset][nearest]
+            weights = 1.0 / np.maximum(nearest_distances, 1e-6)
+            projection[row_idx] = np.average(landmark_projection[nearest], axis=0, weights=weights)
+    return projection
 
 
 def _project_to_3d(matrix: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
@@ -563,15 +594,15 @@ def _project_to_3d(matrix: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
 
         sample_size = min(max(4, landmark_rows), row_count)
         indices = _landmark_indices(row_count, sample_size)
-        model = _umap_model(sample_size).fit(matrix[indices])
-        projection = _chunked_umap_transform(model, matrix)
+        landmark_projection = _umap_model(sample_size).fit_transform(matrix[indices])
+        projection = _interpolate_from_landmarks(matrix, indices, landmark_projection)
         return projection, {
             "projection_method": "landmark_umap",
+            "landmark_projection_method": "nearest_landmark_interpolation",
             "projection_rows": row_count,
             "landmark_rows": sample_size,
-            "transform_chunk_rows": int(
-                getattr(settings, "STATBALLER_GALAXY_UMAP_TRANSFORM_CHUNK_ROWS", 400) or 0
-            ),
+            "landmark_neighbors": int(getattr(settings, "STATBALLER_GALAXY_LANDMARK_NEIGHBORS", 8) or 8),
+            "landmark_chunk_rows": int(getattr(settings, "STATBALLER_GALAXY_LANDMARK_CHUNK_ROWS", 400) or 400),
             "umap_full_max_rows": full_max_rows,
         }
     except Exception as exc:  # noqa: BLE001
