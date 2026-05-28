@@ -30,6 +30,7 @@ from ingestion.services.ingest import (
     run_merge_job,
     run_team_merge_job,
 )
+from ingestion.services.position_resolution import run_position_resolution_job
 from ingestion.services.sofascore_client import (
     reset_request_metrics,
     set_request_cap,
@@ -374,13 +375,21 @@ def execute_batch_item(item_id: int) -> dict[str, Any]:
     try:
         _run_stage(item, "sofascore", IngestionKind.SOFASCORE, ingest_sofascore_slice)
         _run_stage(item, "sofascore_team", IngestionKind.SOFASCORE_TEAM, ingest_sofascore_team_slice)
-        _save_sofascore_metrics(item)
-        set_request_cap(None)
 
         if cs.supports_understat:
             _run_stage(item, "understat", IngestionKind.UNDERSTAT, ingest_understat_slice)
         _run_stage(item, "team_merge", IngestionKind.TEAM_MERGE, run_team_merge_job)
         _run_stage(item, "merge", IngestionKind.MERGE, run_merge_job)
+        position_run = _run_stage(
+            item,
+            "position_resolution",
+            IngestionKind.POSITION_RESOLUTION,
+            run_position_resolution_job,
+        )
+        if int((position_run.stats or {}).get("written") or 0) > 0:
+            _run_stage(item, "merge_after_position_resolution", IngestionKind.MERGE, run_merge_job)
+        _save_sofascore_metrics(item)
+        set_request_cap(None)
 
         from ingestion.services.derived import materialize_derived_stats
         from ingestion.services.galaxy import materialize_galaxy_embeddings

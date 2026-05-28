@@ -19,6 +19,7 @@ from ingestion.services.ingest import (
     run_merge_job,
     run_team_merge_job,
 )
+from ingestion.services.position_resolution import run_position_resolution_job
 
 
 DEFAULT_OUTPUT_PATH = settings.BASE_DIR / "history_backfill_report.json"
@@ -185,6 +186,20 @@ class Command(BaseCommand):
                     (IngestionKind.MERGE, run_merge_job),
                 ):
                     report["steps"].append(self._run_required_step(competition_season, kind, fn))
+                    self._raise_if_failed(report["steps"][-1])
+
+                report["steps"].append(
+                    self._run_required_step(
+                        competition_season,
+                        IngestionKind.POSITION_RESOLUTION,
+                        run_position_resolution_job,
+                    )
+                )
+                self._raise_if_failed(report["steps"][-1])
+                if int((report["steps"][-1]["stats"] or {}).get("written") or 0) > 0:
+                    report["steps"].append(
+                        self._run_required_step(competition_season, IngestionKind.MERGE, run_merge_job)
+                    )
                     self._raise_if_failed(report["steps"][-1])
 
                 from ingestion.services.derived import materialize_derived_stats

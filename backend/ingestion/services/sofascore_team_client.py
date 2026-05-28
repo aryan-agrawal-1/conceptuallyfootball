@@ -73,6 +73,16 @@ def fetch_team_overall_statistics(
     return resp.json()
 
 
+def fetch_team_players(
+    team_id: int | str,
+    timeout: int = 45,
+) -> list[dict[str, Any]]:
+    url = f"https://www.sofascore.com/api/v1/team/{team_id}/players"
+    resp = _request_get(url, params={}, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json().get("players") or []
+
+
 def build_team_season_rows(
     config: SofascoreSeasonConfig,
     *,

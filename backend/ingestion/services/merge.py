@@ -11,6 +11,7 @@ from ingestion.models import (
     MetadataAuthority,
     MergedPlayerSeason,
     PlayerDataMode,
+    PlayerPositionResolution,
     PositionGroup,
     Provider,
     ReepPlayerRow,
@@ -110,6 +111,7 @@ def _resolve_position_metadata(
     us: UnderstatPlayerSeasonSource | None,
     ss: SofascorePlayerSeasonSource | None,
     reep_rows_by_id: dict[str, ReepPlayerRow] | None = None,
+    position_resolution: PlayerPositionResolution | None = None,
 ) -> tuple[str, str]:
     candidates: list[str] = []
     if ss and ss.position_raw:
@@ -137,6 +139,10 @@ def _resolve_position_metadata(
         group = normalize_position_group(raw)
         if group != PositionGroup.UNKNOWN:
             return _canonical_native_position(raw), group
+
+    if position_resolution and position_resolution.position_group != PositionGroup.UNKNOWN:
+        raw = position_resolution.raw_position or position_resolution.position_group
+        return _canonical_native_position(raw), position_resolution.position_group
 
     fallback_raw = candidates[0] if candidates else ""
     return _canonical_native_position(fallback_raw), normalize_position_group(fallback_raw)
@@ -184,6 +190,13 @@ def execute_merge_for_slice(
         for row in ReepPlayerRow.objects.filter(reep_id__in=reep_ids)
     }
     secondary_team_cache: dict[str, CanonicalTeam | None] = {}
+    position_resolutions = {
+        row.canonical_player_id: row
+        for row in PlayerPositionResolution.objects.filter(
+            competition_season=competition_season,
+            canonical_player_id__in=player_ids,
+        )
+    }
 
     MergedPlayerSeason.objects.filter(
         competition_season=competition_season,
@@ -217,6 +230,7 @@ def execute_merge_for_slice(
             us=us,
             ss=ss,
             reep_rows_by_id=reep_rows_by_id,
+            position_resolution=position_resolutions.get(cid),
         )
 
         to_create.append(

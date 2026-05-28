@@ -162,6 +162,7 @@ class DailyRefreshExecutionTests(TestCase):
             "understat",
             "team_merge",
             "merge",
+            "position_resolution",
             "derived",
             "galaxy",
         ):

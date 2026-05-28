@@ -18,6 +18,7 @@ from ingestion.models import (
     MetadataAuthority,
     MergedPlayerSeason,
     PlayerDataMode,
+    PlayerPositionResolution,
     Provider,
     ProviderPlayerMapping,
     ProviderTeamMapping,
@@ -25,6 +26,7 @@ from ingestion.models import (
     ReepTeamRow,
     Season,
     SofascorePlayerSeasonSource,
+    SofascoreTeamSeasonSource,
     UnderstatPlayerSeasonSource,
     UnmatchedProviderPlayer,
 )
@@ -32,6 +34,7 @@ from ingestion.services.identity import reattach_slice_identities, resolve_canon
 from ingestion.services.ingest import run_merge_job
 from ingestion.services.merge import execute_merge_for_slice
 from ingestion.position import normalize_position_group
+from ingestion.services.position_resolution import resolve_unknown_positions
 from ingestion.services.validation import ValidationResult
 
 
@@ -717,6 +720,39 @@ class MergeTests(TestCase):
         self.assertEqual(row.position_group, "DEF")
         self.assertEqual(row.native_position, "Centre-Back")
 
+    def test_merge_uses_position_resolution_when_sources_are_unknown(self):
+        cp = CanonicalPlayer.objects.create(display_name="Roster Forward")
+        UnderstatPlayerSeasonSource.objects.create(
+            competition_season=self.cs,
+            ingestion_run=self.us_run,
+            provider_player_id="77",
+            provider_team_id="100",
+            player_name="Roster Forward",
+            team_name="Alpha FC",
+            position_raw="S",
+            canonical_player=cp,
+            canonical_team=self.ct,
+        )
+        PlayerPositionResolution.objects.create(
+            competition_season=self.cs,
+            canonical_player=cp,
+            canonical_team=self.ct,
+            source="sofascore_roster",
+            raw_position="LW",
+            position_group="FWD",
+            confidence=0.9,
+            evidence_json={"provider_player_id": "777"},
+        )
+
+        execute_merge_for_slice(self.cs, merge_run=None)
+        row = MergedPlayerSeason.objects.get(
+            competition_season=self.cs,
+            canonical_player=cp,
+            is_current=True,
+        )
+        self.assertEqual(row.position_group, "FWD")
+        self.assertEqual(row.native_position, "Left Winger")
+
     def test_merge_sofascore_primary_team_and_secondary_from_understat(self):
         merge_run = IngestionRun.objects.create(
             kind=IngestionKind.MERGE,
@@ -787,6 +823,100 @@ class PositionNormalizationTests(TestCase):
 
     def test_normalize_position_group_leaves_plain_substitute_unknown(self):
         self.assertEqual(normalize_position_group("S"), "UNK")
+
+
+class PositionResolutionTests(TestCase):
+    def test_resolves_unknown_from_historical_player_position_across_seasons(self):
+        cs = _slice()
+        prior_season = Season.objects.create(label="2024-25", sort_order=2025)
+        prior_cs = CompetitionSeason.objects.create(
+            competition=cs.competition,
+            season=prior_season,
+            understat_league="EPL",
+            understat_season_year="2024",
+            sofascore_unique_tournament_id=17,
+            sofascore_season_id=61627,
+        )
+        cp = CanonicalPlayer.objects.create(display_name="History Player")
+        team = CanonicalTeam.objects.create(name="Alpha FC")
+        MergedPlayerSeason.objects.create(
+            competition_season=prior_cs,
+            canonical_player=cp,
+            canonical_display_team=team,
+            position_group="MID",
+            native_position="Central Midfield",
+            is_current=True,
+        )
+        MergedPlayerSeason.objects.create(
+            competition_season=cs,
+            canonical_player=cp,
+            canonical_display_team=team,
+            position_group="UNK",
+            native_position="S",
+            is_current=True,
+        )
+
+        stats = resolve_unknown_positions(
+            season="2025-26",
+            use_roster=False,
+            use_profile=False,
+            sleep_seconds=0,
+        )
+
+        self.assertEqual(stats.historical_player, 1)
+        resolution = PlayerPositionResolution.objects.get(competition_season=cs, canonical_player=cp)
+        self.assertEqual(resolution.position_group, "MID")
+        self.assertEqual(resolution.raw_position, "Central Midfield")
+
+    @patch("ingestion.services.position_resolution.fetch_team_players")
+    def test_resolves_unknown_from_sofascore_team_roster(self, fetch_team_players_mock):
+        cs = _slice()
+        cp = CanonicalPlayer.objects.create(display_name="Alysson Edward")
+        team = CanonicalTeam.objects.create(name="Aston Villa F.C.")
+        MergedPlayerSeason.objects.create(
+            competition_season=cs,
+            canonical_player=cp,
+            canonical_display_team=team,
+            position_group="UNK",
+            native_position="S",
+            is_current=True,
+        )
+        team_run = IngestionRun.objects.create(
+            kind=IngestionKind.SOFASCORE_TEAM,
+            competition_season=cs,
+            status=IngestionRunStatus.SUCCESS,
+        )
+        SofascoreTeamSeasonSource.objects.create(
+            competition_season=cs,
+            ingestion_run=team_run,
+            provider_team_id="40",
+            team_name="Aston Villa",
+            canonical_team=team,
+        )
+        fetch_team_players_mock.return_value = [
+            {
+                "player": {
+                    "id": 1631879,
+                    "name": "Alysson M",
+                    "shortName": "Alysson M",
+                    "position": "F",
+                    "positionsDetailed": ["RW"],
+                }
+            }
+        ]
+
+        stats = resolve_unknown_positions(
+            season="2025-26",
+            use_profile=False,
+            sleep_seconds=0,
+        )
+
+        self.assertEqual(stats.sofascore_roster, 1)
+        resolution = PlayerPositionResolution.objects.get(competition_season=cs, canonical_player=cp)
+        self.assertEqual(resolution.source, "sofascore_roster")
+        self.assertEqual(resolution.position_group, "FWD")
+        self.assertEqual(resolution.raw_position, "RW")
+        fetch_team_players_mock.assert_called_once_with("40")
 
 
 class ManualOverrideTests(TestCase):

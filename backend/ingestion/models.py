@@ -13,6 +13,7 @@ class IngestionKind(models.TextChoices):
     UNDERSTAT = "understat", "Understat"
     SOFASCORE = "sofascore", "Sofascore"
     SOFASCORE_TEAM = "sofascore_team", "Sofascore team"
+    POSITION_RESOLUTION = "position_resolution", "Position resolution"
     MERGE = "merge", "Merge"
     TEAM_MERGE = "team_merge", "Team merge"
     DERIVED = "derived", "Derived stats"
@@ -66,6 +67,14 @@ class PositionGroup(models.TextChoices):
     MID = "MID", "Midfielder"
     FWD = "FWD", "Forward"
     UNKNOWN = "UNK", "Unknown"
+
+
+class PositionResolutionSource(models.TextChoices):
+    EXISTING_SOURCE = "existing_source", "Existing source"
+    HISTORICAL_PLAYER = "historical_player", "Historical player"
+    SOFASCORE_ROSTER = "sofascore_roster", "Sofascore roster"
+    SOFASCORE_PROFILE = "sofascore_profile", "Sofascore profile"
+    MANUAL = "manual", "Manual"
 
 
 class Competition(models.Model):
@@ -786,6 +795,56 @@ class PlayerSeasonClubSpell(models.Model):
         indexes = [
             models.Index(fields=["competition_season", "canonical_player"]),
         ]
+
+
+class PlayerPositionResolution(models.Model):
+    """
+    Provenance-backed position fallback used only when normal source metadata
+    still normalizes to UNK during merge.
+    """
+
+    competition_season = models.ForeignKey(
+        CompetitionSeason,
+        on_delete=models.CASCADE,
+        related_name="position_resolutions",
+    )
+    canonical_player = models.ForeignKey(
+        CanonicalPlayer,
+        on_delete=models.CASCADE,
+        related_name="position_resolutions",
+    )
+    canonical_team = models.ForeignKey(
+        CanonicalTeam,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="player_position_resolutions",
+    )
+    source = models.CharField(
+        max_length=32,
+        choices=PositionResolutionSource.choices,
+    )
+    raw_position = models.CharField(max_length=64)
+    position_group = models.CharField(max_length=8, choices=PositionGroup.choices)
+    confidence = models.FloatField(default=1.0)
+    evidence_json = models.JSONField(default=dict, blank=True)
+    fetched_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["competition_season", "canonical_player"],
+                name="uniq_position_resolution_per_player_slice",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["competition_season", "position_group"]),
+            models.Index(fields=["source", "fetched_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.canonical_player} @ {self.competition_season}: {self.position_group}"
 
 
 class MergedPlayerSeason(models.Model):
