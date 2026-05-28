@@ -931,15 +931,12 @@ def _assign_archetypes(
     return archetypes
 
 
-def _materialize_similarity_rows(
-    snapshot: GalaxySnapshot,
-    embeddings: list[GalaxyPlayerEmbedding],
+def _similarity_scale(
     rows: list[GalaxyRow],
     feature_names: list[str],
     matrix: np.ndarray,
     weights: dict[str, float],
-    groups: dict[str, str],
-) -> list[GalaxySimilarity]:
+) -> float:
     weights_vector = np.array([weights.get(name, 0.0) for name in feature_names])
     top_distances: list[float] = []
     for i in range(len(rows)):
@@ -952,7 +949,20 @@ def _materialize_similarity_rows(
     scale = (median(top_distances) * 4.0) if top_distances else 1.0
     if scale <= 0:
         scale = 1.0
-    similarities: list[GalaxySimilarity] = []
+    return scale
+
+
+def _iter_similarity_rows(
+    snapshot: GalaxySnapshot,
+    embeddings: list[GalaxyPlayerEmbedding],
+    rows: list[GalaxyRow],
+    feature_names: list[str],
+    matrix: np.ndarray,
+    weights: dict[str, float],
+    groups: dict[str, str],
+    scale: float,
+):
+    weights_vector = np.array([weights.get(name, 0.0) for name in feature_names])
     for source_idx in range(len(rows)):
         ranked = _top_similarity_candidates(source_idx, rows, matrix, weights_vector, limit=TOP_K_SIMILARS)
         total_candidates = max(len(rows) - 1, 0)
@@ -964,30 +974,52 @@ def _materialize_similarity_rows(
             absolute_score = 100.0 * math.exp(-distance / scale)
             profile_score = min(candidate_score, absolute_score)
             weak_absolute_fit = absolute_score < candidate_score - 10.0
-            similarities.append(
-                GalaxySimilarity(
-                    snapshot=snapshot,
-                    source_embedding=embeddings[source_idx],
-                    similar_embedding=embeddings[target_idx],
-                    rank=rank,
-                    base_distance=base_distance,
-                    distance=distance,
-                    position_multiplier=multiplier,
-                    candidate_percentile_score=candidate_score,
-                    absolute_fit_score=absolute_score,
-                    profile_match_score=profile_score,
-                    weak_absolute_fit=weak_absolute_fit,
-                    match_context=context,
-                    explanation=_similarity_explanation(
-                        rows[source_idx],
-                        rows[target_idx],
-                        feature_names,
-                        weights,
-                        groups,
-                    ),
-                )
+            yield GalaxySimilarity(
+                snapshot=snapshot,
+                source_embedding=embeddings[source_idx],
+                similar_embedding=embeddings[target_idx],
+                rank=rank,
+                base_distance=base_distance,
+                distance=distance,
+                position_multiplier=multiplier,
+                candidate_percentile_score=candidate_score,
+                absolute_fit_score=absolute_score,
+                profile_match_score=profile_score,
+                weak_absolute_fit=weak_absolute_fit,
+                match_context=context,
+                explanation=_similarity_explanation(
+                    rows[source_idx],
+                    rows[target_idx],
+                    feature_names,
+                    weights,
+                    groups,
+                ),
             )
-    return similarities
+
+
+def _bulk_create_similarity_rows(
+    snapshot: GalaxySnapshot,
+    embeddings: list[GalaxyPlayerEmbedding],
+    rows: list[GalaxyRow],
+    feature_names: list[str],
+    matrix: np.ndarray,
+    weights: dict[str, float],
+    groups: dict[str, str],
+    scale: float,
+) -> int:
+    batch_size = _setting_int("STATBALLER_GALAXY_SIMILARITY_BATCH_SIZE", 1000) or 1000
+    batch: list[GalaxySimilarity] = []
+    total = 0
+    for similarity in _iter_similarity_rows(snapshot, embeddings, rows, feature_names, matrix, weights, groups, scale):
+        batch.append(similarity)
+        if len(batch) >= batch_size:
+            GalaxySimilarity.objects.bulk_create(batch, batch_size=batch_size)
+            total += len(batch)
+            batch.clear()
+    if batch:
+        GalaxySimilarity.objects.bulk_create(batch, batch_size=batch_size)
+        total += len(batch)
+    return total
 
 
 def _top_similarity_candidates(
@@ -1093,6 +1125,15 @@ def materialize_galaxy_scope(
 
         archetype_payloads = _assign_archetypes(rows, feature_names, matrix, groups, weights)
         _mark_run_progress(run, {"stage": "archetypes_done", "archetypes": len(archetype_payloads)})
+        similarity_scale = _similarity_scale(rows, feature_names, matrix, weights)
+        _mark_run_progress(
+            run,
+            {
+                "stage": "similarity_scale_done",
+                "similarity_scale": round(similarity_scale, 6),
+                "similarity_batch_size": _setting_int("STATBALLER_GALAXY_SIMILARITY_BATCH_SIZE", 1000),
+            },
+        )
 
         with transaction.atomic():
             now = timezone.now()
@@ -1176,7 +1217,8 @@ def materialize_galaxy_scope(
                 for row in rows
             ]
             embeddings = GalaxyPlayerEmbedding.objects.bulk_create(embedding_objects)
-            similarity_objects = _materialize_similarity_rows(
+            _mark_run_progress(run, {"stage": "embeddings_written", "embeddings": len(embeddings)})
+            similarities = _bulk_create_similarity_rows(
                 snapshot,
                 embeddings,
                 rows,
@@ -1184,8 +1226,9 @@ def materialize_galaxy_scope(
                 matrix,
                 weights,
                 groups,
+                similarity_scale,
             )
-            GalaxySimilarity.objects.bulk_create(similarity_objects)
+            _mark_run_progress(run, {"stage": "similarities_written", "similarities": similarities})
     except Exception as exc:  # noqa: BLE001
         _mark_run_failed(run, str(exc))
         return None
