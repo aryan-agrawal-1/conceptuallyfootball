@@ -124,9 +124,12 @@ export function NavBar() {
                   primary={competitionDisplay(c.code, c)}
                   secondary={c.code === 'BIG5' || c.code === 'ALL' ? undefined : c.name}
                   onSelect={() => {
+                    const nextSeason = c.seasons.some(season => season.label === scope.season)
+                      ? scope.season
+                      : c.seasons[0]?.label ?? scope.season
                     setScope({
                       competition: c.code,
-                      season: c.seasons[0]?.label ?? scope.season,
+                      season: nextSeason,
                     })
                     setCompetitionOpen(false)
                   }}

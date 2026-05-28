@@ -155,18 +155,6 @@ class CompetitionSeasonsCatalogApi(APIView):
                 big_five_season_availability.setdefault(cs.season.label, []).append(cs.metric_availability)
 
         aggregate_entries = []
-        if big_five_seasons:
-            for label, payload in big_five_seasons.items():
-                payload["metric_availability"] = _aggregate_metric_availability(
-                    big_five_season_availability.get(label) or []
-                )
-            aggregate_entries.append(
-                {
-                    "code": "BIG5",
-                    "name": "Big 5",
-                    "seasons": list(big_five_seasons.values()),
-                }
-            )
         if all_seasons:
             for label, payload in all_seasons.items():
                 payload["metric_availability"] = _aggregate_metric_availability(
@@ -177,6 +165,18 @@ class CompetitionSeasonsCatalogApi(APIView):
                     "code": "ALL",
                     "name": "All",
                     "seasons": list(all_seasons.values()),
+                }
+            )
+        if big_five_seasons:
+            for label, payload in big_five_seasons.items():
+                payload["metric_availability"] = _aggregate_metric_availability(
+                    big_five_season_availability.get(label) or []
+                )
+            aggregate_entries.append(
+                {
+                    "code": "BIG5",
+                    "name": "Big 5",
+                    "seasons": list(big_five_seasons.values()),
                 }
             )
         return {"competitions": aggregate_entries + list(by_code.values())}
