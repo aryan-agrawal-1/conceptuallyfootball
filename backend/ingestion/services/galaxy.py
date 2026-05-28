@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass, field
 from statistics import median
 from typing import Any
@@ -205,6 +206,37 @@ def _mark_run_failed(run: IngestionRun, message: str) -> None:
     run.finished_at = timezone.now()
     run.error_detail = message[:8000]
     run.save(update_fields=["status", "finished_at", "error_detail"])
+
+
+def _mark_run_progress(run: IngestionRun, stats: dict) -> None:
+    run.stats = {**(run.stats or {}), **stats}
+    run.save(update_fields=["stats"])
+
+
+def _setting_str(name: str, default: str) -> str:
+    value = os.environ.get(name)
+    if value is not None:
+        return value
+    return str(getattr(settings, name, default))
+
+
+def _setting_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        raw = getattr(settings, name, default)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _setting_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        raw = getattr(settings, name, default)
+    if isinstance(raw, bool):
+        return raw
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def resolve_galaxy_competition_seasons(scope_code: str, season_label: str) -> list[CompetitionSeason]:
@@ -521,7 +553,7 @@ def _umap_model(row_count: int):
         random_state=42,
         low_memory=True,
         transform_queue_size=1.0,
-        verbose=bool(getattr(settings, "STATBALLER_GALAXY_UMAP_VERBOSE", False)),
+        verbose=_setting_bool("STATBALLER_GALAXY_UMAP_VERBOSE", False),
     )
 
 
@@ -547,10 +579,10 @@ def _interpolate_from_landmarks(
     landmark_matrix = matrix[landmark_indices]
     landmark_lookup = {int(row_idx): pos for pos, row_idx in enumerate(landmark_indices)}
     neighbor_count = min(
-        int(getattr(settings, "STATBALLER_GALAXY_LANDMARK_NEIGHBORS", 8) or 8),
+        _setting_int("STATBALLER_GALAXY_LANDMARK_NEIGHBORS", 8) or 8,
         len(landmark_indices),
     )
-    chunk_rows = int(getattr(settings, "STATBALLER_GALAXY_LANDMARK_CHUNK_ROWS", 400) or 400)
+    chunk_rows = _setting_int("STATBALLER_GALAXY_LANDMARK_CHUNK_ROWS", 400) or 400
     if chunk_rows <= 0:
         chunk_rows = len(matrix)
 
@@ -576,13 +608,13 @@ def _project_to_3d(matrix: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
     if len(matrix) < 4:
         return _pca_project_to_3d(matrix), {"projection_method": "pca", "projection_reason": "too_few_rows"}
 
-    mode = (getattr(settings, "STATBALLER_GALAXY_PROJECTION_MODE", "auto") or "auto").strip().lower()
+    mode = (_setting_str("STATBALLER_GALAXY_PROJECTION_MODE", "auto") or "auto").strip().lower()
     if mode == "pca":
         return _pca_project_to_3d(matrix), {"projection_method": "pca", "projection_reason": "configured"}
 
     try:
-        full_max_rows = int(getattr(settings, "STATBALLER_GALAXY_UMAP_FULL_MAX_ROWS", 2500) or 0)
-        landmark_rows = int(getattr(settings, "STATBALLER_GALAXY_UMAP_LANDMARK_ROWS", 800) or 0)
+        full_max_rows = _setting_int("STATBALLER_GALAXY_UMAP_FULL_MAX_ROWS", 2500) or 0
+        landmark_rows = _setting_int("STATBALLER_GALAXY_UMAP_LANDMARK_ROWS", 400) or 0
 
         if mode == "umap" or full_max_rows <= 0 or row_count <= full_max_rows:
             projection = _umap_model(row_count).fit_transform(matrix)
@@ -601,8 +633,8 @@ def _project_to_3d(matrix: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
             "landmark_projection_method": "nearest_landmark_interpolation",
             "projection_rows": row_count,
             "landmark_rows": sample_size,
-            "landmark_neighbors": int(getattr(settings, "STATBALLER_GALAXY_LANDMARK_NEIGHBORS", 8) or 8),
-            "landmark_chunk_rows": int(getattr(settings, "STATBALLER_GALAXY_LANDMARK_CHUNK_ROWS", 400) or 400),
+            "landmark_neighbors": _setting_int("STATBALLER_GALAXY_LANDMARK_NEIGHBORS", 8) or 8,
+            "landmark_chunk_rows": _setting_int("STATBALLER_GALAXY_LANDMARK_CHUNK_ROWS", 400) or 400,
             "umap_full_max_rows": full_max_rows,
         }
     except Exception as exc:  # noqa: BLE001
@@ -1015,6 +1047,17 @@ def materialize_galaxy_scope(
             )
         profile, specs, coverage = _choose_profile(rows)
         feature_names, imputation_values, scaling, matrix, groups = _prepare_matrix(rows, specs)
+        _mark_run_progress(
+            run,
+            {
+                "stage": "matrix_prepared",
+                "scope_code": scope,
+                "season_label": season_label,
+                "players": len(rows),
+                "features": len(feature_names),
+                "feature_profile": profile,
+            },
+        )
 
         base_feature_weights = _feature_weights(specs, GROUP_WEIGHTS)
         weights = dict(base_feature_weights)
@@ -1026,7 +1069,19 @@ def materialize_galaxy_scope(
         weights = {name: value / total_weight for name, value in weights.items()}
 
         projection_matrix = _weighted_matrix(matrix, feature_names, weights)
+        _mark_run_progress(
+            run,
+            {
+                "stage": "projection",
+                "projection_rows": len(rows),
+                "projection_mode": _setting_str("STATBALLER_GALAXY_PROJECTION_MODE", "auto"),
+                "umap_full_max_rows": _setting_int("STATBALLER_GALAXY_UMAP_FULL_MAX_ROWS", 2500),
+                "landmark_rows": _setting_int("STATBALLER_GALAXY_UMAP_LANDMARK_ROWS", 400),
+                "landmark_neighbors": _setting_int("STATBALLER_GALAXY_LANDMARK_NEIGHBORS", 8),
+            },
+        )
         projection, projection_diagnostics = _project_to_3d(projection_matrix)
+        _mark_run_progress(run, {"stage": "projection_done", **projection_diagnostics})
         if projection.shape[1] < 3:
             projection = np.pad(projection, ((0, 0), (0, 3 - projection.shape[1])))
         for idx, row in enumerate(rows):
@@ -1037,6 +1092,7 @@ def materialize_galaxy_scope(
             row.z = float(projection[idx][2])
 
         archetype_payloads = _assign_archetypes(rows, feature_names, matrix, groups, weights)
+        _mark_run_progress(run, {"stage": "archetypes_done", "archetypes": len(archetype_payloads)})
 
         with transaction.atomic():
             now = timezone.now()
