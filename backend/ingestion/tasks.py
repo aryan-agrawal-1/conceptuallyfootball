@@ -1,6 +1,6 @@
 from celery import shared_task
 
-from ingestion.models import CompetitionSeason, IngestionKind, IngestionRun, IngestionRunStatus
+from ingestion.models import CompetitionSeason, IngestionKind, IngestionRun, IngestionRunStatus, PlayerDataMode
 from pathlib import Path
 
 from django.conf import settings
@@ -52,10 +52,15 @@ def _run_player_materialization_chain(cs: CompetitionSeason) -> dict:
     )
     materialize_galaxy_embeddings(cs, run=galaxy_run)
     galaxy_run.refresh_from_db()
+    galaxy_nonfatal = (
+        cs.player_data_mode == PlayerDataMode.SOFASCORE_ONLY
+        and galaxy_run.status != IngestionRunStatus.SUCCESS
+    )
     return {
-        "ok": galaxy_run.status == IngestionRunStatus.SUCCESS,
+        "ok": galaxy_run.status == IngestionRunStatus.SUCCESS or galaxy_nonfatal,
         "run_id": galaxy_run.id,
         "error": galaxy_run.error_detail,
+        "galaxy_nonfatal": galaxy_nonfatal,
     }
 
 

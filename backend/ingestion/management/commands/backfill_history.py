@@ -11,7 +11,7 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from ingestion.models import CompetitionSeason, IngestionKind, IngestionRun, IngestionRunStatus
+from ingestion.models import CompetitionSeason, IngestionKind, IngestionRun, IngestionRunStatus, PlayerDataMode
 from ingestion.services.ingest import (
     ingest_sofascore_slice,
     ingest_sofascore_team_slice,
@@ -205,12 +205,34 @@ class Command(BaseCommand):
                 from ingestion.services.derived import materialize_derived_stats
                 from ingestion.services.galaxy import materialize_galaxy_embeddings
 
-                for kind, fn in (
-                    (IngestionKind.DERIVED, materialize_derived_stats),
-                    (IngestionKind.GALAXY, materialize_galaxy_embeddings),
-                ):
-                    report["steps"].append(self._run_required_step(competition_season, kind, fn))
-                    self._raise_if_failed(report["steps"][-1])
+                report["steps"].append(
+                    self._run_required_step(
+                        competition_season,
+                        IngestionKind.DERIVED,
+                        materialize_derived_stats,
+                    )
+                )
+                self._raise_if_failed(report["steps"][-1])
+
+                report["steps"].append(
+                    self._run_required_step(
+                        competition_season,
+                        IngestionKind.GALAXY,
+                        materialize_galaxy_embeddings,
+                    )
+                )
+                galaxy_step = report["steps"][-1]
+                if galaxy_step["status"] != IngestionRunStatus.SUCCESS:
+                    if competition_season.player_data_mode == PlayerDataMode.SOFASCORE_ONLY:
+                        galaxy_step["nonfatal"] = True
+                        self.stderr.write(
+                            self.style.WARNING(
+                                "Galaxy materialization failed for Sofascore-only slice; "
+                                "continuing after derived stats."
+                            )
+                        )
+                    else:
+                        self._raise_if_failed(galaxy_step)
         except Exception as exc:  # noqa: BLE001
             report["status"] = "failed"
             report["error_detail"] = str(exc)

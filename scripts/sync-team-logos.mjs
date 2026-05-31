@@ -9,15 +9,23 @@ const TEAM_LOGOS_TS = path.join(ROOT, 'web/src/lib/teamLogos.ts')
 
 const COMPETITION_COUNTRY = {
   BEL1: 'belgium',
+  CYP1: 'cyprus',
+  CZE1: 'czech-republic',
+  DEN1: 'denmark',
   ENG1: 'england',
   ENG2: 'england',
+  EST1: 'estonia',
   FRA1: 'france',
   GER1: 'germany',
+  GRE1: 'greece',
   ITA1: 'italy',
   NED1: 'netherlands',
+  NOR1: 'norway',
+  POL1: 'poland',
   POR1: 'portugal',
   SCO1: 'scotland',
   SPA1: 'spain',
+  TUR1: 'turkey',
 }
 
 const MANUAL_ALIASES = new Map(Object.entries({

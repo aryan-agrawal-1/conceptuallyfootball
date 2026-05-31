@@ -9,9 +9,10 @@ function filterValidMetricKeys(
   keys: string[],
   meta: StatMeta,
   positionGroup: PositionGroup,
+  isUsable?: (key: string) => boolean,
 ): string[] {
   return keys.filter(
-    k => k in meta.metrics && !(positionGroup === 'GK' && k === 'rating'),
+    k => k in meta.metrics && !(positionGroup === 'GK' && k === 'rating') && (isUsable?.(k) ?? true),
   )
 }
 
@@ -24,25 +25,27 @@ export function resolveComparisonStatKeys(
   urlStats: string[] | null,
   positionGroup: PositionGroup,
   meta: StatMeta,
+  isUsable?: (key: string) => boolean,
 ): string[] {
   const excludeGkRating = (k: string) => !(positionGroup === 'GK' && k === 'rating')
+  const usable = (k: string) => isUsable?.(k) ?? true
 
   if (urlStats?.length) {
-    const v = filterValidMetricKeys(urlStats, meta, positionGroup)
+    const v = filterValidMetricKeys(urlStats, meta, positionGroup, isUsable)
     if (v.length >= COMPARISON_STAT_MIN) {
       return v.slice(0, COMPARISON_STAT_MAX)
     }
   }
 
   const defaults = defaultPizzaMetricKeys(positionGroup).filter(
-    k => k in meta.metrics && excludeGkRating(k),
+    k => k in meta.metrics && excludeGkRating(k) && usable(k),
   )
 
-  let out = defaults.slice(0, COMPARISON_STAT_MAX)
+  const out = defaults.slice(0, COMPARISON_STAT_MAX)
 
   if (out.length < COMPARISON_STAT_MIN) {
     const rest = Object.keys(meta.metrics)
-      .filter(k => excludeGkRating(k) && !out.includes(k))
+      .filter(k => excludeGkRating(k) && usable(k) && !out.includes(k))
       .sort((a, b) => a.localeCompare(b))
     for (const k of rest) {
       out.push(k)

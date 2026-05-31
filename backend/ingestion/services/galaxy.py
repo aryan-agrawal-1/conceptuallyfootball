@@ -31,6 +31,7 @@ MODEL_VERSION = "galaxy_v2"
 DEFAULT_MIN_MINUTES = 900
 TOP_K_SIMILARS = 15
 MIN_COMPETITION_ELIGIBLE_PLAYERS = 10
+MIN_POSITION_FAMILY_PLAYERS = 3
 MIN_CLUSTER_SIZE = 12
 MIN_CLUSTER_FAMILY_PLAYERS = MIN_CLUSTER_SIZE * 2
 CORE_COVERAGE_THRESHOLD = 0.8
@@ -383,23 +384,44 @@ def _build_rows(
             for row in cs_rows
         ]
         broad_specs = _profile_specs("broad_sofascore")
-        cs_coverage = _coverage(candidate_rows, broad_specs)
-        low_required = [
-            spec.name
-            for spec in broad_specs
-            if spec.required and cs_coverage.get(spec.name, 0.0) < BROAD_COMPETITION_COVERAGE_THRESHOLD
-        ]
-        if low_required:
-            excluded.append(
-                {
-                    "competition_season_id": cs.id,
-                    "competition": cs.competition.short_code,
-                    "reason": "low_broad_profile_coverage",
-                    "low_features": low_required,
-                }
-            )
-            continue
-        rows.extend(candidate_rows)
+        accepted_rows: list[GalaxyRow] = []
+        for position_group in [PositionGroup.DEF, PositionGroup.MID, PositionGroup.FWD]:
+            position_rows = [
+                row for row in candidate_rows if row.derived.position_group == position_group
+            ]
+            if not position_rows:
+                continue
+            if len(position_rows) < MIN_POSITION_FAMILY_PLAYERS:
+                excluded.append(
+                    {
+                        "competition_season_id": cs.id,
+                        "competition": cs.competition.short_code,
+                        "position_group": position_group,
+                        "reason": "insufficient_position_family_players",
+                        "eligible_players": len(position_rows),
+                    }
+                )
+                continue
+            position_coverage = _coverage(position_rows, broad_specs)
+            low_required = [
+                spec.name
+                for spec in broad_specs
+                if spec.required
+                and position_coverage.get(spec.name, 0.0) < BROAD_COMPETITION_COVERAGE_THRESHOLD
+            ]
+            if low_required:
+                excluded.append(
+                    {
+                        "competition_season_id": cs.id,
+                        "competition": cs.competition.short_code,
+                        "position_group": position_group,
+                        "reason": "low_broad_profile_coverage",
+                        "low_features": low_required,
+                    }
+                )
+                continue
+            accepted_rows.extend(position_rows)
+        rows.extend(accepted_rows)
     return rows, excluded, excluded_players
 
 
@@ -430,14 +452,19 @@ def _format_exclusion_summary(excluded_competitions: list[dict]) -> str:
     parts: list[str] = []
     for item in excluded_competitions[:5]:
         competition = item.get("competition", "unknown")
+        label = (
+            f"{competition} {item['position_group']}"
+            if item.get("position_group")
+            else competition
+        )
         reason = item.get("reason", "unknown")
         if reason == "low_broad_profile_coverage":
             low_features = ", ".join(item.get("low_features", []))
-            parts.append(f"{competition}: low broad feature coverage ({low_features})")
+            parts.append(f"{label}: low broad feature coverage ({low_features})")
         elif "eligible_players" in item:
-            parts.append(f"{competition}: {reason} ({item['eligible_players']} eligible players)")
+            parts.append(f"{label}: {reason} ({item['eligible_players']} eligible players)")
         else:
-            parts.append(f"{competition}: {reason}")
+            parts.append(f"{label}: {reason}")
     remaining = len(excluded_competitions) - len(parts)
     if remaining > 0:
         parts.append(f"{remaining} more excluded competitions")
@@ -551,6 +578,7 @@ def _umap_model(row_count: int):
         spread=2.0,
         metric="manhattan",
         random_state=42,
+        n_jobs=1,
         low_memory=True,
         transform_queue_size=1.0,
         verbose=_setting_bool("STATBALLER_GALAXY_UMAP_VERBOSE", False),

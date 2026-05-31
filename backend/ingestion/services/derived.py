@@ -5,12 +5,15 @@ from math import floor
 from statistics import mean, pstdev
 
 from django.db import transaction
+from django.db.models import Count
 from django.utils import timezone
 
+from ingestion.api_cache import invalidate_materialized_api_payloads
 from ingestion.derived_definitions import (
     CORE_METRIC_MIN_COVERAGE,
     ELIGIBLE_OUTFIELD_POSITIONS,
     FORMULA_VERSION,
+    METRIC_DEFINITIONS,
     METRIC_FIELDS,
     MIN_ELIGIBLE_MINUTES,
     SCORE_COMPONENT_METRICS,
@@ -37,6 +40,38 @@ from ingestion.services.gk_derived import materialize_gk_derived_stats
 
 # Shrinkage prior for finishing score: shots / (shots + prior)
 FINISHING_SHOT_PRIOR = 35.0
+SOFASCORE_SOURCE_FIELDS = (
+    "summary_goals",
+    "summary_assists",
+    "summary_expected_goals",
+    "summary_expected_assists",
+    "total_shots",
+    "summary_successful_dribbles",
+    "summary_accurate_passes_percentage",
+    "tackles",
+    "interceptions",
+    "clearances",
+    "error_lead_to_goal",
+    "outfielder_blocks",
+    "big_chances_created",
+    "accurate_passes",
+    "inaccurate_passes",
+    "total_passes",
+    "key_passes",
+    "tackles_won",
+    "tackles_won_percentage",
+    "shots_on_target",
+    "shots_off_target",
+    "aerial_duels_won",
+    "ground_duels_won",
+    "ball_recoveries",
+    "successful_dribbles_percentage",
+    "fouls",
+    "offsides",
+    "accurate_passes_percentage",
+    "accurate_crosses",
+    "accurate_long_balls",
+)
 
 
 def _finishing_shrunk_delta_per_shot(
@@ -51,14 +86,18 @@ def _finishing_shrunk_delta_per_shot(
     return delta_per_shot * reliability
 
 
-def _sot_rate(merged: MergedPlayerSeason, sot: float, off: float) -> float | None:
+def _sot_rate(
+    sot: int | float | None,
+    off: int | float | None,
+    shots: int | float | None,
+) -> float | None:
     """On-target share; fallback to on-target ÷ Understat shots when split is missing."""
-    denom = sot + off
-    if denom > 0:
-        return sot / denom
-    us_shots = merged.us_shots
-    if us_shots and us_shots > 0 and sot > 0:
-        return min(1.0, sot / float(us_shots))
+    if sot is not None and off is not None:
+        denom = float(sot) + float(off)
+        if denom > 0:
+            return float(sot) / denom
+    if sot is not None and shots and shots > 0:
+        return min(1.0, float(sot) / float(shots))
     return None
 
 
@@ -96,6 +135,41 @@ def _ratio(numerator: int | float | None, denominator: int | float | None) -> fl
     if numerator is None or denominator in (None, 0):
         return None
     return float(numerator) / float(denominator)
+
+
+def _available_sofascore_fields(competition_season: CompetitionSeason) -> set[str]:
+    rows = SofascorePlayerSeasonSource.objects.filter(
+        competition_season=competition_season,
+        canonical_player__isnull=False,
+    )
+    counts = rows.aggregate(**{field: Count(field) for field in SOFASCORE_SOURCE_FIELDS})
+    return {field for field, count in counts.items() if count}
+
+
+def _source_count(
+    value: int | float | None,
+    source_field: str,
+    available_fields: set[str],
+) -> int | float | None:
+    if source_field not in available_fields:
+        return None
+    return value if value is not None else 0
+
+
+def _source_measure(
+    value: int | float | None,
+    source_field: str,
+    available_fields: set[str],
+) -> int | float | None:
+    if source_field not in available_fields:
+        return None
+    return value
+
+
+def _sum_required(*values: int | float | None) -> int | float | None:
+    if any(value is None for value in values):
+        return None
+    return sum(float(value) for value in values)
 
 
 def _quantile(values: list[float], q: float) -> float:
@@ -151,53 +225,118 @@ def _eligibility(minutes: int | None, position_group: str) -> tuple[bool, str]:
 def _build_metric_row(
     merged: MergedPlayerSeason,
     sofascore: SofascorePlayerSeasonSource | None,
+    sofascore_available_fields: set[str],
 ) -> dict[str, float | None]:
     minutes = merged.minutes
-    blocks = merged.ss_outfielder_blocks or 0
-    tackles = merged.ss_tackles or 0
-    interceptions = merged.ss_interceptions or 0
-    clearances = merged.ss_clearances or 0
+    sofascore_available_fields = sofascore_available_fields if sofascore is not None else set()
+    blocks = _source_count(merged.ss_outfielder_blocks, "outfielder_blocks", sofascore_available_fields)
+    tackles = _source_count(merged.ss_tackles, "tackles", sofascore_available_fields)
+    interceptions = _source_count(merged.ss_interceptions, "interceptions", sofascore_available_fields)
+    clearances = _source_count(merged.ss_clearances, "clearances", sofascore_available_fields)
+    shots_on_target = _source_count(merged.ss_shots_on_target, "shots_on_target", sofascore_available_fields)
+    shots_off_target = _source_count(merged.ss_shots_off_target, "shots_off_target", sofascore_available_fields)
+    ss_total_shots = _source_count(merged.ss_total_shots, "total_shots", sofascore_available_fields)
     shots = merged.us_shots
     if shots is None:
-        shots = merged.ss_total_shots
-    if shots is None and (
-        merged.ss_shots_on_target is not None or merged.ss_shots_off_target is not None
-    ):
-        shots = (merged.ss_shots_on_target or 0) + (merged.ss_shots_off_target or 0)
-    goals = merged.us_goals if merged.us_goals is not None else merged.ss_goals
-    assists = merged.us_assists if merged.us_assists is not None else merged.ss_assists
-    key_passes = merged.us_key_passes if merged.us_key_passes is not None else merged.ss_key_passes
-    xg = merged.us_xg if merged.us_xg is not None else merged.ss_expected_goals
-    xa = merged.us_xa if merged.us_xa is not None else merged.ss_expected_assists
-    ss_key_passes = merged.ss_key_passes or 0
-    big_chances_created = merged.ss_big_chances_created or 0
-    successful_dribbles = (sofascore.summary_successful_dribbles if sofascore else None) or 0
-    completed_passes = merged.ss_accurate_passes or 0
-    accurate_crosses = merged.ss_accurate_crosses or 0
-    accurate_long_balls = merged.ss_accurate_long_balls or 0
-    accurate_passes_total = merged.ss_accurate_passes or 0
-    inaccurate_passes = merged.ss_inaccurate_passes or 0
-    total_passes = merged.ss_total_passes
-    if total_passes is None:
+        shots = ss_total_shots
+    if shots is None and shots_on_target is not None and shots_off_target is not None:
+        shots = shots_on_target + shots_off_target
+    goals = (
+        merged.us_goals
+        if merged.us_goals is not None
+        else _source_count(merged.ss_goals, "summary_goals", sofascore_available_fields)
+    )
+    assists = (
+        merged.us_assists
+        if merged.us_assists is not None
+        else _source_count(merged.ss_assists, "summary_assists", sofascore_available_fields)
+    )
+    ss_key_passes = _source_count(merged.ss_key_passes, "key_passes", sofascore_available_fields)
+    key_passes = merged.us_key_passes if merged.us_key_passes is not None else ss_key_passes
+    xg = (
+        merged.us_xg
+        if merged.us_xg is not None
+        else _source_measure(merged.ss_expected_goals, "summary_expected_goals", sofascore_available_fields)
+    )
+    xa = (
+        merged.us_xa
+        if merged.us_xa is not None
+        else _source_measure(merged.ss_expected_assists, "summary_expected_assists", sofascore_available_fields)
+    )
+    big_chances_created = _source_count(
+        merged.ss_big_chances_created,
+        "big_chances_created",
+        sofascore_available_fields,
+    )
+    successful_dribbles = _source_count(
+        sofascore.summary_successful_dribbles if sofascore else None,
+        "summary_successful_dribbles",
+        sofascore_available_fields,
+    )
+    completed_passes = _source_count(merged.ss_accurate_passes, "accurate_passes", sofascore_available_fields)
+    accurate_crosses = _source_count(merged.ss_accurate_crosses, "accurate_crosses", sofascore_available_fields)
+    accurate_long_balls = _source_count(
+        merged.ss_accurate_long_balls,
+        "accurate_long_balls",
+        sofascore_available_fields,
+    )
+    accurate_passes_total = _source_count(merged.ss_accurate_passes, "accurate_passes", sofascore_available_fields)
+    inaccurate_passes = _source_count(
+        merged.ss_inaccurate_passes,
+        "inaccurate_passes",
+        sofascore_available_fields,
+    )
+    total_passes = _source_count(merged.ss_total_passes, "total_passes", sofascore_available_fields)
+    if total_passes is None and accurate_passes_total is not None and inaccurate_passes is not None:
         total_passes = accurate_passes_total + inaccurate_passes
-    ball_recoveries = merged.ss_ball_recoveries or 0
-    ground_duels_won = merged.ss_ground_duels_won or 0
-    aerial_duels_won = merged.ss_aerial_duels_won or 0
-    fouls = merged.ss_fouls or 0
-    offsides = merged.ss_offsides or 0
-    errors_lead_to_goal = merged.ss_error_lead_to_goal or 0
+    pass_accuracy = _source_measure(
+        merged.ss_accurate_passes_percentage,
+        "accurate_passes_percentage",
+        sofascore_available_fields,
+    )
+    if pass_accuracy is None:
+        pass_accuracy = _source_measure(
+            sofascore.summary_accurate_passes_percentage if sofascore else None,
+            "summary_accurate_passes_percentage",
+            sofascore_available_fields,
+        )
+    if pass_accuracy is None:
+        pass_accuracy_ratio = _ratio(accurate_passes_total, total_passes)
+        pass_accuracy = None if pass_accuracy_ratio is None else pass_accuracy_ratio * 100.0
 
-    defensive_total = tackles + interceptions + clearances + blocks
+    tackles_won = _source_count(merged.ss_tackles_won, "tackles_won", sofascore_available_fields)
+    tackles_won_percentage = _source_measure(
+        merged.ss_tackles_won_percentage,
+        "tackles_won_percentage",
+        sofascore_available_fields,
+    )
+    if tackles_won_percentage is None:
+        tackles_won_ratio = _ratio(tackles_won, tackles)
+        tackles_won_percentage = None if tackles_won_ratio is None else tackles_won_ratio * 100.0
+    aerial_duels_won = _source_count(merged.ss_aerial_duels_won, "aerial_duels_won", sofascore_available_fields)
+    ground_duels_won = _source_count(merged.ss_ground_duels_won, "ground_duels_won", sofascore_available_fields)
+    ball_recoveries = _source_count(merged.ss_ball_recoveries, "ball_recoveries", sofascore_available_fields)
+    successful_dribbles_percentage = _source_measure(
+        merged.ss_successful_dribbles_percentage,
+        "successful_dribbles_percentage",
+        sofascore_available_fields,
+    )
+    fouls = _source_count(merged.ss_fouls, "fouls", sofascore_available_fields)
+    offsides = _source_count(merged.ss_offsides, "offsides", sofascore_available_fields)
+    errors_lead_to_goal = _source_count(
+        merged.ss_error_lead_to_goal,
+        "error_lead_to_goal",
+        sofascore_available_fields,
+    )
 
-    chance_actions = None if None in (shots, key_passes) else shots + key_passes + big_chances_created
+    defensive_total = _sum_required(tackles, interceptions, clearances, blocks)
+    chance_actions = _sum_required(shots, key_passes, big_chances_created)
 
     goals_minus_npxg_val = (
         None
         if merged.us_npg is None or merged.us_npxg is None
         else float(merged.us_npg) - float(merged.us_npxg)
     )
-    sot_f = float(merged.ss_shots_on_target) if merged.ss_shots_on_target is not None else 0.0
-    off_f = float(merged.ss_shots_off_target) if merged.ss_shots_off_target is not None else 0.0
 
     return {
         "xg": xg,
@@ -222,31 +361,27 @@ def _build_metric_row(
         else float(goals) - float(xg),
         "goals_minus_npxg": goals_minus_npxg_val,
         "finishing_shrunk_delta_per_shot": _finishing_shrunk_delta_per_shot(goals_minus_npxg_val, shots),
-        "sot_rate": _sot_rate(merged, sot_f, off_f),
+        "sot_rate": _sot_rate(shots_on_target, shots_off_target, shots),
         "npxg_per_shot": _ratio(merged.us_npxg, shots),
         "xa_per_key_pass": _ratio(xa, key_passes),
         "buildup_share": _ratio(merged.us_xgbuildup, merged.us_xgchain),
         "chance_involvement_per_90": _per90(chance_actions, minutes),
-        "pass_accuracy": merged.ss_accurate_passes_percentage if merged.ss_accurate_passes_percentage is not None else 0.0,
+        "pass_accuracy": pass_accuracy,
         "tackles_per_90": _per90(tackles, minutes),
         "interceptions_per_90": _per90(interceptions, minutes),
         "clearances_per_90": _per90(clearances, minutes),
         "blocks_per_90": _per90(blocks, minutes),
         "defensive_action_density": _per90(defensive_total, minutes),
-        "tackles_won": merged.ss_tackles_won if merged.ss_tackles_won is not None else 0.0,
-        "tackles_won_percentage": merged.ss_tackles_won_percentage
-        if merged.ss_tackles_won_percentage is not None
-        else (_ratio(merged.ss_tackles_won or 0, tackles) or 0.0) * 100.0,
-        "shots_on_target": merged.ss_shots_on_target if merged.ss_shots_on_target is not None else 0.0,
-        "shots_off_target": merged.ss_shots_off_target if merged.ss_shots_off_target is not None else 0.0,
-        "aerial_duels_won": merged.ss_aerial_duels_won if merged.ss_aerial_duels_won is not None else 0.0,
-        "ground_duels_won": merged.ss_ground_duels_won if merged.ss_ground_duels_won is not None else 0.0,
-        "ball_recoveries": merged.ss_ball_recoveries if merged.ss_ball_recoveries is not None else 0.0,
-        "successful_dribbles_percentage": merged.ss_successful_dribbles_percentage
-        if merged.ss_successful_dribbles_percentage is not None
-        else 0.0,
-        "fouls": merged.ss_fouls if merged.ss_fouls is not None else 0.0,
-        "offsides": merged.ss_offsides if merged.ss_offsides is not None else 0.0,
+        "tackles_won": tackles_won,
+        "tackles_won_percentage": tackles_won_percentage,
+        "shots_on_target": shots_on_target,
+        "shots_off_target": shots_off_target,
+        "aerial_duels_won": aerial_duels_won,
+        "ground_duels_won": ground_duels_won,
+        "ball_recoveries": ball_recoveries,
+        "successful_dribbles_percentage": successful_dribbles_percentage,
+        "fouls": fouls,
+        "offsides": offsides,
         "accurate_crosses_per_90": _per90(accurate_crosses, minutes),
         "accurate_long_balls_per_90": _per90(accurate_long_balls, minutes),
         "ball_recoveries_per_90": _per90(ball_recoveries, minutes),
@@ -285,6 +420,18 @@ def _coverage_failures(coverage_report: dict[str, float]) -> list[str]:
 
 def _metric_minimum_coverage(metric_name: str) -> float:
     return STYLE_METRIC_MIN_COVERAGE if metric_name in STYLE_PROXY_METRICS else CORE_METRIC_MIN_COVERAGE
+
+
+def _metric_supported_by_slice(competition_season: CompetitionSeason, metric_name: str) -> bool:
+    sources = set(METRIC_DEFINITIONS.get(metric_name, {}).get("sources_used") or [])
+    if not sources:
+        return True
+    supported_sources = set()
+    if competition_season.supports_understat:
+        supported_sources.add("understat")
+    if competition_season.supports_sofascore:
+        supported_sources.add("sofascore")
+    return bool(sources & supported_sources)
 
 
 def _build_position_coverage_report(metric_rows: list[dict]) -> dict[str, dict[str, float]]:
@@ -351,15 +498,20 @@ def _slice_metric_availability(
     position_coverage_report: dict[str, dict[str, float]],
 ) -> dict:
     available_metrics = sorted(
-        metric_name for metric_name, coverage in coverage_report.items() if coverage > 0.0
+        metric_name
+        for metric_name, coverage in coverage_report.items()
+        if _metric_supported_by_slice(competition_season, metric_name) and coverage > 0.0
     )
     unavailable_metrics = sorted(
-        metric_name for metric_name, coverage in coverage_report.items() if coverage <= 0.0
+        metric_name
+        for metric_name, coverage in coverage_report.items()
+        if not _metric_supported_by_slice(competition_season, metric_name) or coverage <= 0.0
     )
     ui_available_metrics = sorted(
         metric_name
         for metric_name, coverage in coverage_report.items()
-        if coverage >= _metric_minimum_coverage(metric_name)
+        if _metric_supported_by_slice(competition_season, metric_name)
+        and coverage >= _metric_minimum_coverage(metric_name)
     )
     low_coverage_metrics = {
         metric_name: {
@@ -367,7 +519,8 @@ def _slice_metric_availability(
             "minimum": _metric_minimum_coverage(metric_name),
         }
         for metric_name, coverage in sorted(coverage_report.items())
-        if 0.0 < coverage < _metric_minimum_coverage(metric_name)
+        if _metric_supported_by_slice(competition_season, metric_name)
+        and 0.0 < coverage < _metric_minimum_coverage(metric_name)
     }
     score_availability = _score_availability(position_coverage_report)
     return {
@@ -542,6 +695,7 @@ def materialize_derived_stats(
                 canonical_player__isnull=False,
             )
         }
+        sofascore_available_fields = _available_sofascore_fields(competition_season)
 
         metric_rows: list[dict] = []
         eligible_player_ids: set[int] = set()
@@ -567,7 +721,13 @@ def materialize_derived_stats(
                 "scores_ineligibility_reason": score_reason,
                 "canonical_player_id": merged.canonical_player_id,
             }
-            row.update(_build_metric_row(merged, sofascore_sources.get(merged.canonical_player_id)))
+            row.update(
+                _build_metric_row(
+                    merged,
+                    sofascore_sources.get(merged.canonical_player_id),
+                    sofascore_available_fields,
+                )
+            )
             metric_rows.append(row)
 
         coverage_report = _build_coverage_report(metric_rows, eligible_player_ids)
@@ -603,6 +763,7 @@ def materialize_derived_stats(
             metric_availability["coverage_warnings"] = coverage_warnings
         competition_season.metric_availability = metric_availability
         competition_season.save(update_fields=["metric_availability"])
+        invalidate_materialized_api_payloads()
     except Exception as exc:  # noqa: BLE001
         _mark_run_failed(run, str(exc))
         return

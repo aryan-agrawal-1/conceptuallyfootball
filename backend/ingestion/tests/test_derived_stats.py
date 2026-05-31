@@ -198,6 +198,7 @@ class DerivedStatsTests(TestCase):
         )
         sot = max(1, int(shots * 0.42))
         off_tgt = max(0, shots - sot)
+        total_passes = max(accurate_passes, round(accurate_passes / (pass_accuracy / 100.0)))
         SofascorePlayerSeasonSource.objects.create(
             competition_season=self.cs,
             ingestion_run=self.ss_run,
@@ -213,10 +214,20 @@ class DerivedStatsTests(TestCase):
             outfielder_blocks=blocks,
             big_chances_created=big_chances_created,
             accurate_passes=accurate_passes,
+            inaccurate_passes=max(0, total_passes - accurate_passes),
+            total_passes=total_passes,
             accurate_passes_percentage=pass_accuracy,
             key_passes=key_passes,
             shots_on_target=sot,
             shots_off_target=off_tgt,
+            accurate_crosses=max(1, key_passes // 6),
+            accurate_long_balls=max(1, accurate_passes // 24),
+            ball_recoveries=max(1, tackles + interceptions),
+            aerial_duels_won=max(1, clearances),
+            successful_dribbles_percentage=55.0,
+            fouls=max(1, tackles // 4),
+            offsides=1 if position == "F" else 0,
+            error_lead_to_goal=0,
             canonical_player=player,
             canonical_team=self.team,
         )
@@ -257,6 +268,26 @@ class DerivedStatsTests(TestCase):
         self.assertEqual(delta_row.percentiles_ineligibility_reason, "below_minutes_threshold")
         self.assertFalse(delta_row.scores_eligible)
         self.assertIsNone(delta_row.creation_score)
+
+    def test_absent_sofascore_fields_remain_null_and_hidden(self):
+        self._materialize()
+
+        row = PlayerSeasonDerivedStats.objects.get(
+            competition_season=self.cs,
+            canonical_player=self.alpha,
+            is_current=True,
+        )
+        self.assertIsNone(row.tackles_won)
+        self.assertIsNone(row.tackles_won_percentage)
+        self.assertIsNone(row.ground_duels_won)
+        self.assertIsNone(row.ground_duels_won_per_90)
+
+        self.cs.refresh_from_db()
+        availability = self.cs.metric_availability
+        self.assertIn("tackles_won", availability["unavailable_metrics"])
+        self.assertIn("ground_duels_won", availability["unavailable_metrics"])
+        self.assertNotIn("tackles_won", availability["ui_available_metrics"])
+        self.assertNotIn("ground_duels_won", availability["ui_available_metrics"])
 
     def test_list_endpoint_returns_sorted_rows_and_optional_meta(self):
         self._materialize()

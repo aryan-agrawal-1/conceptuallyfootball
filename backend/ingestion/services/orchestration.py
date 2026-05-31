@@ -22,6 +22,7 @@ from ingestion.models import (
     IngestionKind,
     IngestionRun,
     IngestionRunStatus,
+    PlayerDataMode,
 )
 from ingestion.services.ingest import (
     ingest_sofascore_slice,
@@ -315,14 +316,14 @@ def _fail_item(item: IngestionBatchItem, stage: str, message: str) -> dict[str, 
     return {"ok": False, "item_id": item.id, "stage": stage, "error": message}
 
 
-def _run_stage(item: IngestionBatchItem, stage: str, kind: str, fn) -> IngestionRun:
+def _run_stage(item: IngestionBatchItem, stage: str, kind: str, fn, *, required: bool = True) -> IngestionRun:
     cs = item.competition_season
     _record_stage(item, stage)
     run = _create_run(kind, cs)
     fn(cs, run=run)
     _record_stage(item, stage, run)
     run.refresh_from_db()
-    if run.status != IngestionRunStatus.SUCCESS:
+    if required and run.status != IngestionRunStatus.SUCCESS:
         raise RuntimeError(run.error_detail or f"{stage} failed")
     return run
 
@@ -395,7 +396,13 @@ def execute_batch_item(item_id: int) -> dict[str, Any]:
         from ingestion.services.galaxy import materialize_galaxy_embeddings
 
         _run_stage(item, "derived", IngestionKind.DERIVED, materialize_derived_stats)
-        _run_stage(item, "galaxy", IngestionKind.GALAXY, materialize_galaxy_embeddings)
+        _run_stage(
+            item,
+            "galaxy",
+            IngestionKind.GALAXY,
+            materialize_galaxy_embeddings,
+            required=cs.player_data_mode != PlayerDataMode.SOFASCORE_ONLY,
+        )
         item.current_stage = "api_cache"
         item.save(update_fields=["current_stage", "updated_at"])
         cache_deleted = invalidate_materialized_api_payloads()

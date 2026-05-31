@@ -258,6 +258,38 @@ class GalaxyV2Tests(TestCase):
             1,
         )
 
+    def test_low_coverage_position_family_is_excluded_without_dropping_league(self):
+        PlayerSeasonDerivedStats.objects.filter(
+            competition_season=self.spa,
+            position_group=PositionGroup.DEF,
+        ).update(tackles_per_90=None)
+
+        snapshot = self._materialize_scope("SPA1")
+
+        self.assertTrue(
+            GalaxyPlayerEmbedding.objects.filter(
+                snapshot=snapshot,
+                competition_season=self.spa,
+                position_group=PositionGroup.FWD,
+            ).exists()
+        )
+        self.assertFalse(
+            GalaxyPlayerEmbedding.objects.filter(
+                snapshot=snapshot,
+                competition_season=self.spa,
+                position_group=PositionGroup.DEF,
+            ).exists()
+        )
+        self.assertIn(self.spa.id, snapshot.included_competition_season_ids)
+        self.assertTrue(
+            any(
+                item.get("competition") == "SPA1"
+                and item.get("position_group") == PositionGroup.DEF
+                and item.get("reason") == "low_broad_profile_coverage"
+                for item in snapshot.excluded_competitions
+            )
+        )
+
     def test_partial_missing_values_are_imputed_not_treated_as_zero_performance(self):
         partial_player = CanonicalPlayer.objects.create(display_name="Partial Missing Player")
         self._create_player_row(

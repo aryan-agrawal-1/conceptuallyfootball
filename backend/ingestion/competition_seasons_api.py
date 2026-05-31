@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ingestion.api_cache import get_or_build_payload, joined_version, model_version, stable_cache_key
+from ingestion.derived_definitions import CORE_METRIC_MIN_COVERAGE, STYLE_METRIC_MIN_COVERAGE, STYLE_PROXY_METRICS
 from ingestion.derived_api import BIG_FIVE_COMPETITION_CODES
 from ingestion.models import CompetitionSeason
 
@@ -20,6 +21,14 @@ COMPETITION_ORDER = {
     "NED1": 7,
     "POR1": 8,
     "ENG2": 9,
+    "TUR1": 10,
+    "POL1": 11,
+    "CZE1": 12,
+    "DEN1": 13,
+    "GRE1": 14,
+    "CYP1": 15,
+    "NOR1": 16,
+    "EST1": 17,
 }
 
 
@@ -28,11 +37,8 @@ def _aggregate_metric_availability(items):
     if not payloads:
         return None
 
-    def intersect_list(key):
-        sets = [set(payload.get(key) or []) for payload in payloads]
-        if not sets:
-            return []
-        return sorted(set.intersection(*sets))
+    def metric_minimum_coverage(metric_name):
+        return STYLE_METRIC_MIN_COVERAGE if metric_name in STYLE_PROXY_METRICS else CORE_METRIC_MIN_COVERAGE
 
     def union_list(key):
         out = set()
@@ -40,9 +46,43 @@ def _aggregate_metric_availability(items):
             out.update(payload.get(key) or [])
         return sorted(out)
 
-    low_coverage_metrics = {}
+    aggregate_coverage = {}
+    coverage_metrics = set()
+    total_weight = 0
     for payload in payloads:
-        low_coverage_metrics.update(payload.get("low_coverage_metrics") or {})
+        coverage_metrics.update((payload.get("coverage") or {}).keys())
+        total_weight += int(((payload.get("player_rows") or {}).get("eligible_outfield") or 0))
+    for metric_name in coverage_metrics:
+        weighted_total = 0.0
+        for payload in payloads:
+            weight = int(((payload.get("player_rows") or {}).get("eligible_outfield") or 0))
+            weighted_total += float((payload.get("coverage") or {}).get(metric_name) or 0.0) * weight
+        aggregate_coverage[metric_name] = weighted_total / total_weight if total_weight else 0.0
+
+    if aggregate_coverage:
+        available_metrics = sorted(metric for metric, coverage in aggregate_coverage.items() if coverage > 0.0)
+        ui_available_metrics = sorted(
+            metric
+            for metric, coverage in aggregate_coverage.items()
+            if coverage >= metric_minimum_coverage(metric)
+        )
+        unavailable_metrics = sorted(metric for metric, coverage in aggregate_coverage.items() if coverage <= 0.0)
+    else:
+        available_metrics = union_list("available_metrics")
+        ui_available_metrics = available_metrics
+        unavailable_metrics = union_list("unavailable_metrics")
+
+    low_coverage_metrics = {
+        metric_name: {
+            "coverage": round(coverage, 4),
+            "minimum": metric_minimum_coverage(metric_name),
+        }
+        for metric_name, coverage in sorted(aggregate_coverage.items())
+        if 0.0 < coverage < metric_minimum_coverage(metric_name)
+    }
+    for payload in payloads:
+        for metric_name, detail in (payload.get("low_coverage_metrics") or {}).items():
+            low_coverage_metrics.setdefault(metric_name, detail)
 
     scores = {}
     score_names = set()
@@ -60,11 +100,12 @@ def _aggregate_metric_availability(items):
 
     return {
         "player_data_mode": "aggregate",
-        "available_metrics": union_list("available_metrics"),
-        "ui_available_metrics": intersect_list("ui_available_metrics"),
-        "default_metrics": intersect_list("default_metrics"),
+        "available_metrics": available_metrics,
+        "ui_available_metrics": ui_available_metrics,
+        "default_metrics": ui_available_metrics,
         "low_coverage_metrics": low_coverage_metrics,
-        "unavailable_metrics": union_list("unavailable_metrics"),
+        "unavailable_metrics": unavailable_metrics,
+        "coverage": {key: round(value, 4) for key, value in sorted(aggregate_coverage.items())},
         "scores": scores,
         "available_scores": sorted(
             score_name for score_name, payload in scores.items() if payload.get("available")

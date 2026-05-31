@@ -139,6 +139,22 @@ export function Comparisons() {
 
   const cohortPosition: PositionGroup | null = anchorRow?.position_group ?? null
 
+  const loadedDetails = useMemo(
+    () => detailsOrdered.filter((row): row is PlayerDetailResponse => Boolean(row)),
+    [detailsOrdered],
+  )
+
+  const metricUsableForComparison = useCallback(
+    (key: string) => {
+      if (!loadedDetails.length) return true
+      return loadedDetails.some(row => {
+        const percentileSource = isAggregateScope ? row.scope_percentiles : row.percentiles
+        return row.metrics[key] != null || percentileSource?.[key] != null
+      })
+    },
+    [isAggregateScope, loadedDetails],
+  )
+
   const pickerLockPosition: PositionGroup | null =
     playerRefs.length === 0 ? null : cohortPosition
 
@@ -151,8 +167,8 @@ export function Comparisons() {
 
   const statKeys = useMemo(() => {
     if (!meta || !cohortPosition) return []
-    return resolveComparisonStatKeys(urlStats, cohortPosition, meta)
-  }, [urlStats, cohortPosition, meta])
+    return resolveComparisonStatKeys(urlStats, cohortPosition, meta, metricUsableForComparison)
+  }, [urlStats, cohortPosition, meta, metricUsableForComparison])
 
   const radarPlayers = useMemo(() => {
     return playerRefs.flatMap((_, i) => {
