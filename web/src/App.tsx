@@ -1,6 +1,7 @@
-import { lazy, Suspense } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { lazy, Suspense, useEffect } from 'react'
+import { Routes, Route, useLocation } from 'react-router-dom'
 import { Layout } from './components/layout/Layout'
+import { initializeAnalytics, trackPageView } from './lib/analytics'
 
 const StatMatrix = lazy(() =>
   import('./pages/StatMatrix').then(m => ({ default: m.StatMatrix })),
@@ -36,9 +37,24 @@ function RouteFallback() {
   )
 }
 
+function AnalyticsPageViews() {
+  const location = useLocation()
+
+  useEffect(() => {
+    initializeAnalytics()
+  }, [])
+
+  useEffect(() => {
+    trackPageView(`${location.pathname}${location.search}`)
+  }, [location.pathname, location.search])
+
+  return null
+}
+
 export default function App() {
   return (
     <Layout>
+      <AnalyticsPageViews />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<StatMatrix />} />

@@ -63,6 +63,8 @@ The frontend dev server proxies API requests to the Django backend at `http://lo
 
 Runtime configuration lives in environment variables. Use `backend/.env.example` as the starting point for local development.
 
+The frontend accepts `VITE_GA_MEASUREMENT_ID` for Google Analytics. Set this only in the production frontend environment so local development does not send analytics events.
+
 Do not commit real secrets, local databases, private CSVs, generated reports, or deployment runbooks. The repository ignore rules are configured to keep those local-only files out of Git.
 
 ## Data
