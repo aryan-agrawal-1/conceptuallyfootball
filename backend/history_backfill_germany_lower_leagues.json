@@ -1,0 +1,1665 @@
+{
+  "filters": {
+    "competitions": [
+      "GER2",
+      "GER3"
+    ],
+    "force": false,
+    "providers_only": false,
+    "seasons": [
+      "2021-22",
+      "2022-23",
+      "2023-24",
+      "2024-25",
+      "2025-26"
+    ]
+  },
+  "generated_at": "2026-06-01T22:43:36.952953+00:00",
+  "slices": [
+    {
+      "competition": "GER2",
+      "competition_season_id": 94,
+      "season": "2021-22",
+      "status": "success",
+      "steps": [
+        {
+          "error_detail": "",
+          "kind": "sofascore",
+          "run_id": 1865,
+          "skipped": false,
+          "stats": {
+            "players": 516
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "sofascore_team",
+          "run_id": 1866,
+          "skipped": false,
+          "stats": {
+            "overall_stats_coverage": 18,
+            "teams": 19
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "team_merge",
+          "run_id": 1867,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 19
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1868,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 516
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "position_resolution",
+          "run_id": 1869,
+          "skipped": false,
+          "stats": {
+            "affected_competition_season_ids": [
+              94
+            ],
+            "existing_resolution": 0,
+            "existing_source": 0,
+            "historical_player": 12,
+            "scanned_rows": 96,
+            "sofascore_profile": 74,
+            "sofascore_roster": 10,
+            "unresolved": 0,
+            "unresolved_examples": [],
+            "would_write": 0,
+            "written": 96
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1870,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 516
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "derived",
+          "run_id": 1871,
+          "skipped": false,
+          "stats": {
+            "coverage": {
+              "accurate_crosses_per_90": 1.0,
+              "accurate_long_balls_per_90": 1.0,
+              "aerial_duels_won": 1.0,
+              "aerial_duels_won_per_90": 1.0,
+              "assists_per_90": 1.0,
+              "ball_recoveries": 0.0,
+              "ball_recoveries_per_90": 0.0,
+              "big_chances_created_per_90": 1.0,
+              "blocks_per_90": 0.0,
+              "buildup_share": 0.0,
+              "chance_involvement_per_90": 1.0,
+              "clearances_per_90": 1.0,
+              "completed_passes_per_90": 1.0,
+              "defensive_action_density": 0.0,
+              "errors_lead_to_goal_per_90": 1.0,
+              "finishing_shrunk_delta_per_shot": 0.0,
+              "fouls": 1.0,
+              "fouls_per_90": 1.0,
+              "goals_minus_npxg": 0.0,
+              "goals_minus_xg": 0.0,
+              "goals_per_90": 1.0,
+              "ground_duels_won": 1.0,
+              "ground_duels_won_per_90": 1.0,
+              "inaccurate_pass_rate": 1.0,
+              "interceptions_per_90": 1.0,
+              "key_passes_per_90": 1.0,
+              "kp_share_per90": 1.0,
+              "npxg": 0.0,
+              "npxg_per_90": 0.0,
+              "npxg_per_shot": 0.0,
+              "offsides": 1.0,
+              "offsides_per_90": 1.0,
+              "pass_accuracy": 1.0,
+              "shots_off_target": 1.0,
+              "shots_on_target": 1.0,
+              "shots_per_90": 1.0,
+              "sot_rate": 0.9941,
+              "successful_dribbles_per_90": 1.0,
+              "successful_dribbles_percentage": 1.0,
+              "tackles_per_90": 1.0,
+              "tackles_won": 1.0,
+              "tackles_won_percentage": 1.0,
+              "xa": 0.0,
+              "xa_per_90": 0.0,
+              "xa_per_key_pass": 0.0,
+              "xg": 0.0,
+              "xg_per_90": 0.0,
+              "xgbuildup": 0.0,
+              "xgbuildup_per_90": 0.0,
+              "xgchain": 0.0,
+              "xgchain_per_90": 0.0
+            },
+            "coverage_warnings": [],
+            "derived_rows": 474,
+            "eligible_rows": 340,
+            "formula_version": "v3",
+            "gk_derived_rows": 42,
+            "minimum_eligible_minutes": 450
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "At least 3 eligible outfield players are required to materialize Galaxy after quality gates: GER2 DEF: low broad feature coverage (blocks_per_90, ball_recoveries_per_90); GER2 MID: low broad feature coverage (blocks_per_90, ball_recoveries_per_90); GER2 FWD: low broad feature coverage (blocks_per_90, ball_recoveries_per_90).",
+          "kind": "galaxy",
+          "nonfatal": true,
+          "run_id": 1872,
+          "skipped": false,
+          "stats": {},
+          "status": "failed"
+        }
+      ]
+    },
+    {
+      "competition": "GER2",
+      "competition_season_id": 95,
+      "season": "2022-23",
+      "status": "success",
+      "steps": [
+        {
+          "error_detail": "",
+          "kind": "sofascore",
+          "run_id": 1873,
+          "skipped": false,
+          "stats": {
+            "players": 501
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "sofascore_team",
+          "run_id": 1874,
+          "skipped": false,
+          "stats": {
+            "overall_stats_coverage": 18,
+            "teams": 19
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "team_merge",
+          "run_id": 1875,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 19
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1876,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 501
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "position_resolution",
+          "run_id": 1877,
+          "skipped": false,
+          "stats": {
+            "affected_competition_season_ids": [
+              95
+            ],
+            "existing_resolution": 0,
+            "existing_source": 0,
+            "historical_player": 43,
+            "scanned_rows": 79,
+            "sofascore_profile": 29,
+            "sofascore_roster": 7,
+            "unresolved": 0,
+            "unresolved_examples": [],
+            "would_write": 0,
+            "written": 79
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1878,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 501
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "derived",
+          "run_id": 1879,
+          "skipped": false,
+          "stats": {
+            "coverage": {
+              "accurate_crosses_per_90": 1.0,
+              "accurate_long_balls_per_90": 1.0,
+              "aerial_duels_won": 1.0,
+              "aerial_duels_won_per_90": 1.0,
+              "assists_per_90": 1.0,
+              "ball_recoveries": 0.0,
+              "ball_recoveries_per_90": 0.0,
+              "big_chances_created_per_90": 1.0,
+              "blocks_per_90": 0.0,
+              "buildup_share": 0.0,
+              "chance_involvement_per_90": 1.0,
+              "clearances_per_90": 1.0,
+              "completed_passes_per_90": 1.0,
+              "defensive_action_density": 0.0,
+              "errors_lead_to_goal_per_90": 1.0,
+              "finishing_shrunk_delta_per_shot": 0.0,
+              "fouls": 1.0,
+              "fouls_per_90": 1.0,
+              "goals_minus_npxg": 0.0,
+              "goals_minus_xg": 0.0,
+              "goals_per_90": 1.0,
+              "ground_duels_won": 1.0,
+              "ground_duels_won_per_90": 1.0,
+              "inaccurate_pass_rate": 1.0,
+              "interceptions_per_90": 1.0,
+              "key_passes_per_90": 1.0,
+              "kp_share_per90": 1.0,
+              "npxg": 0.0,
+              "npxg_per_90": 0.0,
+              "npxg_per_shot": 0.0,
+              "offsides": 1.0,
+              "offsides_per_90": 1.0,
+              "pass_accuracy": 1.0,
+              "shots_off_target": 1.0,
+              "shots_on_target": 1.0,
+              "shots_per_90": 1.0,
+              "sot_rate": 0.9969,
+              "successful_dribbles_per_90": 1.0,
+              "successful_dribbles_percentage": 1.0,
+              "tackles_per_90": 1.0,
+              "tackles_won": 1.0,
+              "tackles_won_percentage": 1.0,
+              "xa": 0.0,
+              "xa_per_90": 0.0,
+              "xa_per_key_pass": 0.0,
+              "xg": 0.0,
+              "xg_per_90": 0.0,
+              "xgbuildup": 0.0,
+              "xgbuildup_per_90": 0.0,
+              "xgchain": 0.0,
+              "xgchain_per_90": 0.0
+            },
+            "coverage_warnings": [],
+            "derived_rows": 460,
+            "eligible_rows": 327,
+            "formula_version": "v3",
+            "gk_derived_rows": 41,
+            "minimum_eligible_minutes": 450
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "At least 3 eligible outfield players are required to materialize Galaxy after quality gates: GER2 DEF: low broad feature coverage (blocks_per_90, ball_recoveries_per_90); GER2 MID: low broad feature coverage (blocks_per_90, ball_recoveries_per_90); GER2 FWD: low broad feature coverage (blocks_per_90, ball_recoveries_per_90).",
+          "kind": "galaxy",
+          "nonfatal": true,
+          "run_id": 1880,
+          "skipped": false,
+          "stats": {},
+          "status": "failed"
+        }
+      ]
+    },
+    {
+      "competition": "GER2",
+      "competition_season_id": 96,
+      "season": "2023-24",
+      "status": "success",
+      "steps": [
+        {
+          "error_detail": "",
+          "kind": "sofascore",
+          "run_id": 1881,
+          "skipped": false,
+          "stats": {
+            "players": 500
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "sofascore_team",
+          "run_id": 1882,
+          "skipped": false,
+          "stats": {
+            "overall_stats_coverage": 18,
+            "teams": 19
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "team_merge",
+          "run_id": 1883,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 19
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1884,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 500
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "position_resolution",
+          "run_id": 1885,
+          "skipped": false,
+          "stats": {
+            "affected_competition_season_ids": [
+              96
+            ],
+            "existing_resolution": 0,
+            "existing_source": 0,
+            "historical_player": 42,
+            "scanned_rows": 86,
+            "sofascore_profile": 27,
+            "sofascore_roster": 17,
+            "unresolved": 0,
+            "unresolved_examples": [],
+            "would_write": 0,
+            "written": 86
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1886,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 500
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "derived",
+          "run_id": 1887,
+          "skipped": false,
+          "stats": {
+            "coverage": {
+              "accurate_crosses_per_90": 1.0,
+              "accurate_long_balls_per_90": 1.0,
+              "aerial_duels_won": 1.0,
+              "aerial_duels_won_per_90": 1.0,
+              "assists_per_90": 1.0,
+              "ball_recoveries": 1.0,
+              "ball_recoveries_per_90": 1.0,
+              "big_chances_created_per_90": 1.0,
+              "blocks_per_90": 0.0,
+              "buildup_share": 0.0,
+              "chance_involvement_per_90": 1.0,
+              "clearances_per_90": 1.0,
+              "completed_passes_per_90": 1.0,
+              "defensive_action_density": 0.0,
+              "errors_lead_to_goal_per_90": 1.0,
+              "finishing_shrunk_delta_per_shot": 0.0,
+              "fouls": 1.0,
+              "fouls_per_90": 1.0,
+              "goals_minus_npxg": 0.0,
+              "goals_minus_xg": 0.0,
+              "goals_per_90": 1.0,
+              "ground_duels_won": 1.0,
+              "ground_duels_won_per_90": 1.0,
+              "inaccurate_pass_rate": 1.0,
+              "interceptions_per_90": 1.0,
+              "key_passes_per_90": 1.0,
+              "kp_share_per90": 1.0,
+              "npxg": 0.0,
+              "npxg_per_90": 0.0,
+              "npxg_per_shot": 0.0,
+              "offsides": 1.0,
+              "offsides_per_90": 1.0,
+              "pass_accuracy": 1.0,
+              "shots_off_target": 1.0,
+              "shots_on_target": 1.0,
+              "shots_per_90": 1.0,
+              "sot_rate": 1.0,
+              "successful_dribbles_per_90": 1.0,
+              "successful_dribbles_percentage": 1.0,
+              "tackles_per_90": 1.0,
+              "tackles_won": 1.0,
+              "tackles_won_percentage": 1.0,
+              "xa": 0.0,
+              "xa_per_90": 0.0,
+              "xa_per_key_pass": 0.0,
+              "xg": 0.0,
+              "xg_per_90": 0.0,
+              "xgbuildup": 0.0,
+              "xgbuildup_per_90": 0.0,
+              "xgchain": 0.0,
+              "xgchain_per_90": 0.0
+            },
+            "coverage_warnings": [],
+            "derived_rows": 458,
+            "eligible_rows": 329,
+            "formula_version": "v3",
+            "gk_derived_rows": 42,
+            "minimum_eligible_minutes": 450
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "At least 3 eligible outfield players are required to materialize Galaxy after quality gates: GER2 DEF: low broad feature coverage (blocks_per_90); GER2 MID: low broad feature coverage (blocks_per_90); GER2 FWD: low broad feature coverage (blocks_per_90).",
+          "kind": "galaxy",
+          "nonfatal": true,
+          "run_id": 1888,
+          "skipped": false,
+          "stats": {},
+          "status": "failed"
+        }
+      ]
+    },
+    {
+      "competition": "GER2",
+      "competition_season_id": 97,
+      "season": "2024-25",
+      "status": "success",
+      "steps": [
+        {
+          "error_detail": "",
+          "kind": "sofascore",
+          "run_id": 1889,
+          "skipped": false,
+          "stats": {
+            "players": 522
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "sofascore_team",
+          "run_id": 1890,
+          "skipped": false,
+          "stats": {
+            "overall_stats_coverage": 18,
+            "teams": 19
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "team_merge",
+          "run_id": 1891,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 19
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1892,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 522
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "position_resolution",
+          "run_id": 1893,
+          "skipped": false,
+          "stats": {
+            "affected_competition_season_ids": [
+              97
+            ],
+            "existing_resolution": 0,
+            "existing_source": 0,
+            "historical_player": 56,
+            "scanned_rows": 130,
+            "sofascore_profile": 42,
+            "sofascore_roster": 32,
+            "unresolved": 0,
+            "unresolved_examples": [],
+            "would_write": 0,
+            "written": 130
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1894,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 522
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "derived",
+          "run_id": 1895,
+          "skipped": false,
+          "stats": {
+            "coverage": {
+              "accurate_crosses_per_90": 1.0,
+              "accurate_long_balls_per_90": 1.0,
+              "aerial_duels_won": 1.0,
+              "aerial_duels_won_per_90": 1.0,
+              "assists_per_90": 1.0,
+              "ball_recoveries": 1.0,
+              "ball_recoveries_per_90": 1.0,
+              "big_chances_created_per_90": 1.0,
+              "blocks_per_90": 0.0,
+              "buildup_share": 0.0,
+              "chance_involvement_per_90": 1.0,
+              "clearances_per_90": 1.0,
+              "completed_passes_per_90": 1.0,
+              "defensive_action_density": 0.0,
+              "errors_lead_to_goal_per_90": 1.0,
+              "finishing_shrunk_delta_per_shot": 0.0,
+              "fouls": 1.0,
+              "fouls_per_90": 1.0,
+              "goals_minus_npxg": 0.0,
+              "goals_minus_xg": 0.0,
+              "goals_per_90": 1.0,
+              "ground_duels_won": 1.0,
+              "ground_duels_won_per_90": 1.0,
+              "inaccurate_pass_rate": 1.0,
+              "interceptions_per_90": 1.0,
+              "key_passes_per_90": 1.0,
+              "kp_share_per90": 1.0,
+              "npxg": 0.0,
+              "npxg_per_90": 0.0,
+              "npxg_per_shot": 0.0,
+              "offsides": 1.0,
+              "offsides_per_90": 1.0,
+              "pass_accuracy": 1.0,
+              "shots_off_target": 1.0,
+              "shots_on_target": 1.0,
+              "shots_per_90": 1.0,
+              "sot_rate": 0.997,
+              "successful_dribbles_per_90": 1.0,
+              "successful_dribbles_percentage": 1.0,
+              "tackles_per_90": 1.0,
+              "tackles_won": 1.0,
+              "tackles_won_percentage": 1.0,
+              "xa": 0.0,
+              "xa_per_90": 0.0,
+              "xa_per_key_pass": 0.0,
+              "xg": 0.0,
+              "xg_per_90": 0.0,
+              "xgbuildup": 0.0,
+              "xgbuildup_per_90": 0.0,
+              "xgchain": 0.0,
+              "xgchain_per_90": 0.0
+            },
+            "coverage_warnings": [],
+            "derived_rows": 487,
+            "eligible_rows": 332,
+            "formula_version": "v3",
+            "gk_derived_rows": 35,
+            "minimum_eligible_minutes": 450
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "At least 3 eligible outfield players are required to materialize Galaxy after quality gates: GER2 DEF: low broad feature coverage (blocks_per_90); GER2 MID: low broad feature coverage (blocks_per_90); GER2 FWD: low broad feature coverage (blocks_per_90).",
+          "kind": "galaxy",
+          "nonfatal": true,
+          "run_id": 1896,
+          "skipped": false,
+          "stats": {},
+          "status": "failed"
+        }
+      ]
+    },
+    {
+      "competition": "GER2",
+      "competition_season_id": 98,
+      "season": "2025-26",
+      "status": "success",
+      "steps": [
+        {
+          "error_detail": "",
+          "kind": "sofascore",
+          "run_id": 1897,
+          "skipped": false,
+          "stats": {
+            "players": 537
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "sofascore_team",
+          "run_id": 1898,
+          "skipped": false,
+          "stats": {
+            "overall_stats_coverage": 18,
+            "teams": 19
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "team_merge",
+          "run_id": 1899,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 19
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1900,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 537
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "position_resolution",
+          "run_id": 1901,
+          "skipped": false,
+          "stats": {
+            "affected_competition_season_ids": [
+              98
+            ],
+            "existing_resolution": 0,
+            "existing_source": 0,
+            "historical_player": 80,
+            "scanned_rows": 155,
+            "sofascore_profile": 8,
+            "sofascore_roster": 67,
+            "unresolved": 0,
+            "unresolved_examples": [],
+            "would_write": 0,
+            "written": 155
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1902,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 537
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "derived",
+          "run_id": 1903,
+          "skipped": false,
+          "stats": {
+            "coverage": {
+              "accurate_crosses_per_90": 1.0,
+              "accurate_long_balls_per_90": 1.0,
+              "aerial_duels_won": 1.0,
+              "aerial_duels_won_per_90": 1.0,
+              "assists_per_90": 1.0,
+              "ball_recoveries": 1.0,
+              "ball_recoveries_per_90": 1.0,
+              "big_chances_created_per_90": 1.0,
+              "blocks_per_90": 1.0,
+              "buildup_share": 0.0,
+              "chance_involvement_per_90": 1.0,
+              "clearances_per_90": 1.0,
+              "completed_passes_per_90": 1.0,
+              "defensive_action_density": 1.0,
+              "errors_lead_to_goal_per_90": 1.0,
+              "finishing_shrunk_delta_per_shot": 0.0,
+              "fouls": 1.0,
+              "fouls_per_90": 1.0,
+              "goals_minus_npxg": 0.0,
+              "goals_minus_xg": 0.9971,
+              "goals_per_90": 1.0,
+              "ground_duels_won": 1.0,
+              "ground_duels_won_per_90": 1.0,
+              "inaccurate_pass_rate": 1.0,
+              "interceptions_per_90": 1.0,
+              "key_passes_per_90": 1.0,
+              "kp_share_per90": 1.0,
+              "npxg": 0.0,
+              "npxg_per_90": 0.0,
+              "npxg_per_shot": 0.0,
+              "offsides": 1.0,
+              "offsides_per_90": 1.0,
+              "pass_accuracy": 1.0,
+              "shots_off_target": 1.0,
+              "shots_on_target": 1.0,
+              "shots_per_90": 1.0,
+              "sot_rate": 0.9971,
+              "successful_dribbles_per_90": 1.0,
+              "successful_dribbles_percentage": 1.0,
+              "tackles_per_90": 1.0,
+              "tackles_won": 1.0,
+              "tackles_won_percentage": 1.0,
+              "xa": 1.0,
+              "xa_per_90": 1.0,
+              "xa_per_key_pass": 0.9971,
+              "xg": 0.9971,
+              "xg_per_90": 0.9971,
+              "xgbuildup": 0.0,
+              "xgbuildup_per_90": 0.0,
+              "xgchain": 0.0,
+              "xgchain_per_90": 0.0
+            },
+            "coverage_warnings": [],
+            "derived_rows": 503,
+            "eligible_rows": 341,
+            "formula_version": "v3",
+            "gk_derived_rows": 34,
+            "minimum_eligible_minutes": 450
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "galaxy",
+          "run_id": 1904,
+          "skipped": false,
+          "stats": {
+            "archetypes": 9,
+            "excluded_competitions": [],
+            "excluded_players": {
+              "missing_sofascore_source": 0
+            },
+            "feature_profile": "broad_sofascore",
+            "features": 25,
+            "galaxy_prune": {
+              "archetypes": 0,
+              "dry_run": false,
+              "embeddings": 0,
+              "retain_superseded_per_scope": 0,
+              "similarities": 0,
+              "snapshots": 0
+            },
+            "included_competition_season_ids": [
+              98
+            ],
+            "minimum_minutes": 450,
+            "model_version": "galaxy_v2",
+            "players": 341,
+            "projection_method": "umap",
+            "projection_rows": 341,
+            "scope_code": "GER2",
+            "season_label": "2025-26",
+            "top_k": 15,
+            "umap_full_max_rows": 2500
+          },
+          "status": "success"
+        }
+      ]
+    },
+    {
+      "competition": "GER3",
+      "competition_season_id": 99,
+      "season": "2021-22",
+      "status": "success",
+      "steps": [
+        {
+          "error_detail": "",
+          "kind": "sofascore",
+          "run_id": 1905,
+          "skipped": false,
+          "stats": {
+            "players": 578
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "sofascore_team",
+          "run_id": 1906,
+          "skipped": false,
+          "stats": {
+            "overall_stats_coverage": 0,
+            "teams": 20
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "team_merge",
+          "run_id": 1907,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 20
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1908,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 578
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "position_resolution",
+          "run_id": 1909,
+          "skipped": false,
+          "stats": {
+            "affected_competition_season_ids": [
+              99
+            ],
+            "existing_resolution": 0,
+            "existing_source": 0,
+            "historical_player": 39,
+            "scanned_rows": 199,
+            "sofascore_profile": 131,
+            "sofascore_roster": 26,
+            "unresolved": 3,
+            "unresolved_examples": [
+              {
+                "competition": "GER3",
+                "player": "Arvin Mulaj",
+                "season": "2021-22",
+                "team": "VfL Osnabr\u00fcck"
+              },
+              {
+                "competition": "GER3",
+                "player": "Louis Hebbelmann",
+                "season": "2021-22",
+                "team": "SV Meppen"
+              },
+              {
+                "competition": "GER3",
+                "player": "Jannik Looschen",
+                "season": "2021-22",
+                "team": "SV Meppen"
+              }
+            ],
+            "would_write": 0,
+            "written": 196
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1910,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 578
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "derived",
+          "run_id": 1911,
+          "skipped": false,
+          "stats": {
+            "coverage": {
+              "accurate_crosses_per_90": 0.0,
+              "accurate_long_balls_per_90": 0.0,
+              "aerial_duels_won": 0.0,
+              "aerial_duels_won_per_90": 0.0,
+              "assists_per_90": 1.0,
+              "ball_recoveries": 0.0,
+              "ball_recoveries_per_90": 0.0,
+              "big_chances_created_per_90": 0.0,
+              "blocks_per_90": 0.0,
+              "buildup_share": 0.0,
+              "chance_involvement_per_90": 0.0,
+              "clearances_per_90": 0.0,
+              "completed_passes_per_90": 0.0,
+              "defensive_action_density": 0.0,
+              "errors_lead_to_goal_per_90": 0.0,
+              "finishing_shrunk_delta_per_shot": 0.0,
+              "fouls": 0.0,
+              "fouls_per_90": 0.0,
+              "goals_minus_npxg": 0.0,
+              "goals_minus_xg": 0.0,
+              "goals_per_90": 1.0,
+              "ground_duels_won": 0.0,
+              "ground_duels_won_per_90": 0.0,
+              "inaccurate_pass_rate": 0.0,
+              "interceptions_per_90": 0.0,
+              "key_passes_per_90": 0.0,
+              "kp_share_per90": 0.0,
+              "npxg": 0.0,
+              "npxg_per_90": 0.0,
+              "npxg_per_shot": 0.0,
+              "offsides": 0.0,
+              "offsides_per_90": 0.0,
+              "pass_accuracy": 0.0,
+              "shots_off_target": 0.0,
+              "shots_on_target": 0.0,
+              "shots_per_90": 0.0,
+              "sot_rate": 0.0,
+              "successful_dribbles_per_90": 0.0,
+              "successful_dribbles_percentage": 0.0,
+              "tackles_per_90": 0.0,
+              "tackles_won": 0.0,
+              "tackles_won_percentage": 0.0,
+              "xa": 0.0,
+              "xa_per_90": 0.0,
+              "xa_per_key_pass": 0.0,
+              "xg": 0.0,
+              "xg_per_90": 0.0,
+              "xgbuildup": 0.0,
+              "xgbuildup_per_90": 0.0,
+              "xgchain": 0.0,
+              "xgchain_per_90": 0.0
+            },
+            "coverage_warnings": [],
+            "derived_rows": 531,
+            "eligible_rows": 380,
+            "formula_version": "v3",
+            "gk_derived_rows": 47,
+            "minimum_eligible_minutes": 450
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "At least 3 eligible outfield players are required to materialize Galaxy after quality gates: GER3 DEF: low broad feature coverage (shots_per_90, key_passes_per_90, big_chances_created_per_90, chance_involvement_per_90, completed_passes_per_90, pass_accuracy, accurate_crosses_per_90, accurate_long_balls_per_90, inaccurate_pass_rate, successful_dribbles_per_90, successful_dribbles_percentage, tackles_per_90, interceptions_per_90, clearances_per_90, blocks_per_90, ball_recoveries_per_90, ground_duels_won_per_90, aerial_duels_won_per_90, tackles_won_percentage, fouls_per_90, errors_lead_to_goal_per_90); GER3 MID: low broad feature coverage (shots_per_90, key_passes_per_90, big_chances_created_per_90, chance_involvement_per_90, completed_passes_per_90, pass_accuracy, accurate_crosses_per_90, accurate_long_balls_per_90, inaccurate_pass_rate, successful_dribbles_per_90, successful_dribbles_percentage, tackles_per_90, interceptions_per_90, clearances_per_90, blocks_per_90, ball_recoveries_per_90, ground_duels_won_per_90, aerial_duels_won_per_90, tackles_won_percentage, fouls_per_90, errors_lead_to_goal_per_90); GER3 FWD: low broad feature coverage (shots_per_90, key_passes_per_90, big_chances_created_per_90, chance_involvement_per_90, completed_passes_per_90, pass_accuracy, accurate_crosses_per_90, accurate_long_balls_per_90, inaccurate_pass_rate, successful_dribbles_per_90, successful_dribbles_percentage, tackles_per_90, interceptions_per_90, clearances_per_90, blocks_per_90, ball_recoveries_per_90, ground_duels_won_per_90, aerial_duels_won_per_90, tackles_won_percentage, fouls_per_90, errors_lead_to_goal_per_90).",
+          "kind": "galaxy",
+          "nonfatal": true,
+          "run_id": 1912,
+          "skipped": false,
+          "stats": {},
+          "status": "failed"
+        }
+      ]
+    },
+    {
+      "competition": "GER3",
+      "competition_season_id": 100,
+      "season": "2022-23",
+      "status": "success",
+      "steps": [
+        {
+          "error_detail": "",
+          "kind": "sofascore",
+          "run_id": 1913,
+          "skipped": false,
+          "stats": {
+            "players": 579
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "sofascore_team",
+          "run_id": 1914,
+          "skipped": false,
+          "stats": {
+            "overall_stats_coverage": 0,
+            "teams": 20
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "team_merge",
+          "run_id": 1915,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 20
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1916,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 579
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "position_resolution",
+          "run_id": 1917,
+          "skipped": false,
+          "stats": {
+            "affected_competition_season_ids": [
+              100
+            ],
+            "existing_resolution": 0,
+            "existing_source": 0,
+            "historical_player": 127,
+            "scanned_rows": 219,
+            "sofascore_profile": 70,
+            "sofascore_roster": 22,
+            "unresolved": 0,
+            "unresolved_examples": [],
+            "would_write": 0,
+            "written": 219
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1918,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 579
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "derived",
+          "run_id": 1919,
+          "skipped": false,
+          "stats": {
+            "coverage": {
+              "accurate_crosses_per_90": 0.0,
+              "accurate_long_balls_per_90": 0.0,
+              "aerial_duels_won": 0.0,
+              "aerial_duels_won_per_90": 0.0,
+              "assists_per_90": 1.0,
+              "ball_recoveries": 0.0,
+              "ball_recoveries_per_90": 0.0,
+              "big_chances_created_per_90": 0.0,
+              "blocks_per_90": 0.0,
+              "buildup_share": 0.0,
+              "chance_involvement_per_90": 0.0,
+              "clearances_per_90": 0.0,
+              "completed_passes_per_90": 0.0,
+              "defensive_action_density": 0.0,
+              "errors_lead_to_goal_per_90": 0.0,
+              "finishing_shrunk_delta_per_shot": 0.0,
+              "fouls": 0.0,
+              "fouls_per_90": 0.0,
+              "goals_minus_npxg": 0.0,
+              "goals_minus_xg": 0.0,
+              "goals_per_90": 1.0,
+              "ground_duels_won": 0.0,
+              "ground_duels_won_per_90": 0.0,
+              "inaccurate_pass_rate": 0.0,
+              "interceptions_per_90": 0.0,
+              "key_passes_per_90": 0.0,
+              "kp_share_per90": 0.0,
+              "npxg": 0.0,
+              "npxg_per_90": 0.0,
+              "npxg_per_shot": 0.0,
+              "offsides": 0.0,
+              "offsides_per_90": 0.0,
+              "pass_accuracy": 0.0,
+              "shots_off_target": 0.0,
+              "shots_on_target": 0.0,
+              "shots_per_90": 0.0,
+              "sot_rate": 0.0,
+              "successful_dribbles_per_90": 0.0,
+              "successful_dribbles_percentage": 0.0,
+              "tackles_per_90": 0.0,
+              "tackles_won": 0.0,
+              "tackles_won_percentage": 0.0,
+              "xa": 0.0,
+              "xa_per_90": 0.0,
+              "xa_per_key_pass": 0.0,
+              "xg": 0.0,
+              "xg_per_90": 0.0,
+              "xgbuildup": 0.0,
+              "xgbuildup_per_90": 0.0,
+              "xgchain": 0.0,
+              "xgchain_per_90": 0.0
+            },
+            "coverage_warnings": [],
+            "derived_rows": 527,
+            "eligible_rows": 389,
+            "formula_version": "v3",
+            "gk_derived_rows": 52,
+            "minimum_eligible_minutes": 450
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "At least 3 eligible outfield players are required to materialize Galaxy after quality gates: GER3 DEF: low broad feature coverage (shots_per_90, key_passes_per_90, big_chances_created_per_90, chance_involvement_per_90, completed_passes_per_90, pass_accuracy, accurate_crosses_per_90, accurate_long_balls_per_90, inaccurate_pass_rate, successful_dribbles_per_90, successful_dribbles_percentage, tackles_per_90, interceptions_per_90, clearances_per_90, blocks_per_90, ball_recoveries_per_90, ground_duels_won_per_90, aerial_duels_won_per_90, tackles_won_percentage, fouls_per_90, errors_lead_to_goal_per_90); GER3 MID: low broad feature coverage (shots_per_90, key_passes_per_90, big_chances_created_per_90, chance_involvement_per_90, completed_passes_per_90, pass_accuracy, accurate_crosses_per_90, accurate_long_balls_per_90, inaccurate_pass_rate, successful_dribbles_per_90, successful_dribbles_percentage, tackles_per_90, interceptions_per_90, clearances_per_90, blocks_per_90, ball_recoveries_per_90, ground_duels_won_per_90, aerial_duels_won_per_90, tackles_won_percentage, fouls_per_90, errors_lead_to_goal_per_90); GER3 FWD: low broad feature coverage (shots_per_90, key_passes_per_90, big_chances_created_per_90, chance_involvement_per_90, completed_passes_per_90, pass_accuracy, accurate_crosses_per_90, accurate_long_balls_per_90, inaccurate_pass_rate, successful_dribbles_per_90, successful_dribbles_percentage, tackles_per_90, interceptions_per_90, clearances_per_90, blocks_per_90, ball_recoveries_per_90, ground_duels_won_per_90, aerial_duels_won_per_90, tackles_won_percentage, fouls_per_90, errors_lead_to_goal_per_90).",
+          "kind": "galaxy",
+          "nonfatal": true,
+          "run_id": 1920,
+          "skipped": false,
+          "stats": {},
+          "status": "failed"
+        }
+      ]
+    },
+    {
+      "competition": "GER3",
+      "competition_season_id": 101,
+      "season": "2023-24",
+      "status": "success",
+      "steps": [
+        {
+          "error_detail": "",
+          "kind": "sofascore",
+          "run_id": 1921,
+          "skipped": false,
+          "stats": {
+            "players": 571
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "sofascore_team",
+          "run_id": 1922,
+          "skipped": false,
+          "stats": {
+            "overall_stats_coverage": 20,
+            "teams": 20
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "team_merge",
+          "run_id": 1923,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 20
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1924,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 571
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "position_resolution",
+          "run_id": 1925,
+          "skipped": false,
+          "stats": {
+            "affected_competition_season_ids": [
+              101
+            ],
+            "existing_resolution": 0,
+            "existing_source": 0,
+            "historical_player": 142,
+            "scanned_rows": 230,
+            "sofascore_profile": 62,
+            "sofascore_roster": 25,
+            "unresolved": 1,
+            "unresolved_examples": [
+              {
+                "competition": "GER3",
+                "player": "Nick Kaulfers",
+                "season": "2023-24",
+                "team": "SpVgg Unterhaching"
+              }
+            ],
+            "would_write": 0,
+            "written": 229
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1926,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 571
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "derived",
+          "run_id": 1927,
+          "skipped": false,
+          "stats": {
+            "coverage": {
+              "accurate_crosses_per_90": 1.0,
+              "accurate_long_balls_per_90": 1.0,
+              "aerial_duels_won": 1.0,
+              "aerial_duels_won_per_90": 1.0,
+              "assists_per_90": 1.0,
+              "ball_recoveries": 1.0,
+              "ball_recoveries_per_90": 1.0,
+              "big_chances_created_per_90": 0.0,
+              "blocks_per_90": 0.0,
+              "buildup_share": 0.0,
+              "chance_involvement_per_90": 0.0,
+              "clearances_per_90": 1.0,
+              "completed_passes_per_90": 1.0,
+              "defensive_action_density": 0.0,
+              "errors_lead_to_goal_per_90": 0.0,
+              "finishing_shrunk_delta_per_shot": 0.0,
+              "fouls": 1.0,
+              "fouls_per_90": 1.0,
+              "goals_minus_npxg": 0.0,
+              "goals_minus_xg": 0.0,
+              "goals_per_90": 1.0,
+              "ground_duels_won": 0.0,
+              "ground_duels_won_per_90": 0.0,
+              "inaccurate_pass_rate": 1.0,
+              "interceptions_per_90": 0.0,
+              "key_passes_per_90": 1.0,
+              "kp_share_per90": 1.0,
+              "npxg": 0.0,
+              "npxg_per_90": 0.0,
+              "npxg_per_shot": 0.0,
+              "offsides": 1.0,
+              "offsides_per_90": 1.0,
+              "pass_accuracy": 1.0,
+              "shots_off_target": 0.0,
+              "shots_on_target": 1.0,
+              "shots_per_90": 1.0,
+              "sot_rate": 0.9898,
+              "successful_dribbles_per_90": 1.0,
+              "successful_dribbles_percentage": 1.0,
+              "tackles_per_90": 0.0,
+              "tackles_won": 0.0,
+              "tackles_won_percentage": 0.0,
+              "xa": 0.0,
+              "xa_per_90": 0.0,
+              "xa_per_key_pass": 0.0,
+              "xg": 0.0,
+              "xg_per_90": 0.0,
+              "xgbuildup": 0.0,
+              "xgbuildup_per_90": 0.0,
+              "xgchain": 0.0,
+              "xgchain_per_90": 0.0
+            },
+            "coverage_warnings": [],
+            "derived_rows": 516,
+            "eligible_rows": 391,
+            "formula_version": "v3",
+            "gk_derived_rows": 55,
+            "minimum_eligible_minutes": 450
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "At least 3 eligible outfield players are required to materialize Galaxy after quality gates: GER3 DEF: low broad feature coverage (big_chances_created_per_90, chance_involvement_per_90, tackles_per_90, interceptions_per_90, blocks_per_90, ground_duels_won_per_90, tackles_won_percentage, errors_lead_to_goal_per_90); GER3 MID: low broad feature coverage (big_chances_created_per_90, chance_involvement_per_90, tackles_per_90, interceptions_per_90, blocks_per_90, ground_duels_won_per_90, tackles_won_percentage, errors_lead_to_goal_per_90); GER3 FWD: low broad feature coverage (big_chances_created_per_90, chance_involvement_per_90, tackles_per_90, interceptions_per_90, blocks_per_90, ground_duels_won_per_90, tackles_won_percentage, errors_lead_to_goal_per_90).",
+          "kind": "galaxy",
+          "nonfatal": true,
+          "run_id": 1928,
+          "skipped": false,
+          "stats": {},
+          "status": "failed"
+        }
+      ]
+    },
+    {
+      "competition": "GER3",
+      "competition_season_id": 102,
+      "season": "2024-25",
+      "status": "success",
+      "steps": [
+        {
+          "error_detail": "",
+          "kind": "sofascore",
+          "run_id": 1929,
+          "skipped": false,
+          "stats": {
+            "players": 595
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "sofascore_team",
+          "run_id": 1930,
+          "skipped": false,
+          "stats": {
+            "overall_stats_coverage": 20,
+            "teams": 20
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "team_merge",
+          "run_id": 1931,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 20
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1932,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 595
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "position_resolution",
+          "run_id": 1933,
+          "skipped": false,
+          "stats": {
+            "affected_competition_season_ids": [
+              102
+            ],
+            "existing_resolution": 0,
+            "existing_source": 0,
+            "historical_player": 146,
+            "scanned_rows": 267,
+            "sofascore_profile": 67,
+            "sofascore_roster": 53,
+            "unresolved": 1,
+            "unresolved_examples": [
+              {
+                "competition": "GER3",
+                "player": "Maruan Saidi Solanes",
+                "season": "2024-25",
+                "team": "FC Viktoria K\u00f6ln"
+              }
+            ],
+            "would_write": 0,
+            "written": 266
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1934,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 595
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "derived",
+          "run_id": 1935,
+          "skipped": false,
+          "stats": {
+            "coverage": {
+              "accurate_crosses_per_90": 1.0,
+              "accurate_long_balls_per_90": 1.0,
+              "aerial_duels_won": 1.0,
+              "aerial_duels_won_per_90": 1.0,
+              "assists_per_90": 1.0,
+              "ball_recoveries": 1.0,
+              "ball_recoveries_per_90": 1.0,
+              "big_chances_created_per_90": 0.0,
+              "blocks_per_90": 1.0,
+              "buildup_share": 0.0,
+              "chance_involvement_per_90": 0.0,
+              "clearances_per_90": 1.0,
+              "completed_passes_per_90": 1.0,
+              "defensive_action_density": 0.0,
+              "errors_lead_to_goal_per_90": 0.0,
+              "finishing_shrunk_delta_per_shot": 0.0,
+              "fouls": 1.0,
+              "fouls_per_90": 1.0,
+              "goals_minus_npxg": 0.0,
+              "goals_minus_xg": 0.0,
+              "goals_per_90": 1.0,
+              "ground_duels_won": 0.0,
+              "ground_duels_won_per_90": 0.0,
+              "inaccurate_pass_rate": 1.0,
+              "interceptions_per_90": 0.0,
+              "key_passes_per_90": 1.0,
+              "kp_share_per90": 1.0,
+              "npxg": 0.0,
+              "npxg_per_90": 0.0,
+              "npxg_per_shot": 0.0,
+              "offsides": 1.0,
+              "offsides_per_90": 1.0,
+              "pass_accuracy": 1.0,
+              "shots_off_target": 0.0,
+              "shots_on_target": 1.0,
+              "shots_per_90": 1.0,
+              "sot_rate": 0.9878,
+              "successful_dribbles_per_90": 1.0,
+              "successful_dribbles_percentage": 1.0,
+              "tackles_per_90": 0.0,
+              "tackles_won": 0.0,
+              "tackles_won_percentage": 0.0,
+              "xa": 0.0,
+              "xa_per_90": 0.0,
+              "xa_per_key_pass": 0.0,
+              "xg": 0.0,
+              "xg_per_90": 0.0,
+              "xgbuildup": 0.0,
+              "xgbuildup_per_90": 0.0,
+              "xgchain": 0.0,
+              "xgchain_per_90": 0.0
+            },
+            "coverage_warnings": [],
+            "derived_rows": 546,
+            "eligible_rows": 409,
+            "formula_version": "v3",
+            "gk_derived_rows": 49,
+            "minimum_eligible_minutes": 450
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "At least 3 eligible outfield players are required to materialize Galaxy after quality gates: GER3 DEF: low broad feature coverage (big_chances_created_per_90, chance_involvement_per_90, tackles_per_90, interceptions_per_90, ground_duels_won_per_90, tackles_won_percentage, errors_lead_to_goal_per_90); GER3 MID: low broad feature coverage (big_chances_created_per_90, chance_involvement_per_90, tackles_per_90, interceptions_per_90, ground_duels_won_per_90, tackles_won_percentage, errors_lead_to_goal_per_90); GER3 FWD: low broad feature coverage (big_chances_created_per_90, chance_involvement_per_90, tackles_per_90, interceptions_per_90, ground_duels_won_per_90, tackles_won_percentage, errors_lead_to_goal_per_90).",
+          "kind": "galaxy",
+          "nonfatal": true,
+          "run_id": 1936,
+          "skipped": false,
+          "stats": {},
+          "status": "failed"
+        }
+      ]
+    },
+    {
+      "competition": "GER3",
+      "competition_season_id": 103,
+      "season": "2025-26",
+      "status": "success",
+      "steps": [
+        {
+          "error_detail": "",
+          "kind": "sofascore",
+          "run_id": 1937,
+          "skipped": false,
+          "stats": {
+            "players": 606
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "sofascore_team",
+          "run_id": 1938,
+          "skipped": false,
+          "stats": {
+            "overall_stats_coverage": 20,
+            "teams": 20
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "team_merge",
+          "run_id": 1939,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 20
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1940,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 606
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "position_resolution",
+          "run_id": 1941,
+          "skipped": false,
+          "stats": {
+            "affected_competition_season_ids": [
+              103
+            ],
+            "existing_resolution": 0,
+            "existing_source": 0,
+            "historical_player": 173,
+            "scanned_rows": 307,
+            "sofascore_profile": 9,
+            "sofascore_roster": 125,
+            "unresolved": 0,
+            "unresolved_examples": [],
+            "would_write": 0,
+            "written": 307
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "merge",
+          "run_id": 1942,
+          "skipped": false,
+          "stats": {
+            "merged_rows": 606
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "",
+          "kind": "derived",
+          "run_id": 1943,
+          "skipped": false,
+          "stats": {
+            "coverage": {
+              "accurate_crosses_per_90": 1.0,
+              "accurate_long_balls_per_90": 1.0,
+              "aerial_duels_won": 1.0,
+              "aerial_duels_won_per_90": 1.0,
+              "assists_per_90": 1.0,
+              "ball_recoveries": 1.0,
+              "ball_recoveries_per_90": 1.0,
+              "big_chances_created_per_90": 0.0,
+              "blocks_per_90": 1.0,
+              "buildup_share": 0.0,
+              "chance_involvement_per_90": 0.0,
+              "clearances_per_90": 1.0,
+              "completed_passes_per_90": 1.0,
+              "defensive_action_density": 0.0,
+              "errors_lead_to_goal_per_90": 0.0,
+              "finishing_shrunk_delta_per_shot": 0.0,
+              "fouls": 1.0,
+              "fouls_per_90": 1.0,
+              "goals_minus_npxg": 0.0,
+              "goals_minus_xg": 0.0,
+              "goals_per_90": 1.0,
+              "ground_duels_won": 0.0,
+              "ground_duels_won_per_90": 0.0,
+              "inaccurate_pass_rate": 1.0,
+              "interceptions_per_90": 0.0,
+              "key_passes_per_90": 1.0,
+              "kp_share_per90": 1.0,
+              "npxg": 0.0,
+              "npxg_per_90": 0.0,
+              "npxg_per_shot": 0.0,
+              "offsides": 1.0,
+              "offsides_per_90": 1.0,
+              "pass_accuracy": 1.0,
+              "shots_off_target": 0.0,
+              "shots_on_target": 1.0,
+              "shots_per_90": 1.0,
+              "sot_rate": 0.9899,
+              "successful_dribbles_per_90": 1.0,
+              "successful_dribbles_percentage": 1.0,
+              "tackles_per_90": 0.0,
+              "tackles_won": 0.0,
+              "tackles_won_percentage": 0.0,
+              "xa": 0.0,
+              "xa_per_90": 0.0,
+              "xa_per_key_pass": 0.0,
+              "xg": 0.0,
+              "xg_per_90": 0.0,
+              "xgbuildup": 0.0,
+              "xgbuildup_per_90": 0.0,
+              "xgchain": 0.0,
+              "xgchain_per_90": 0.0
+            },
+            "coverage_warnings": [],
+            "derived_rows": 554,
+            "eligible_rows": 398,
+            "formula_version": "v3",
+            "gk_derived_rows": 52,
+            "minimum_eligible_minutes": 450
+          },
+          "status": "success"
+        },
+        {
+          "error_detail": "At least 3 eligible outfield players are required to materialize Galaxy after quality gates: GER3 DEF: low broad feature coverage (big_chances_created_per_90, chance_involvement_per_90, tackles_per_90, interceptions_per_90, ground_duels_won_per_90, tackles_won_percentage, errors_lead_to_goal_per_90); GER3 MID: low broad feature coverage (big_chances_created_per_90, chance_involvement_per_90, tackles_per_90, interceptions_per_90, ground_duels_won_per_90, tackles_won_percentage, errors_lead_to_goal_per_90); GER3 FWD: low broad feature coverage (big_chances_created_per_90, chance_involvement_per_90, tackles_per_90, interceptions_per_90, ground_duels_won_per_90, tackles_won_percentage, errors_lead_to_goal_per_90).",
+          "kind": "galaxy",
+          "nonfatal": true,
+          "run_id": 1944,
+          "skipped": false,
+          "stats": {},
+          "status": "failed"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "failed_slices": 0,
+    "successful_slices": 10,
+    "total_slices_processed": 10
+  }
+}

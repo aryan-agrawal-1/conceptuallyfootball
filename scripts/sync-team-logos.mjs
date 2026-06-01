@@ -17,6 +17,8 @@ const COMPETITION_COUNTRY = {
   EST1: 'estonia',
   FRA1: 'france',
   GER1: 'germany',
+  GER2: 'germany',
+  GER3: 'germany',
   GRE1: 'greece',
   ITA1: 'italy',
   NED1: 'netherlands',
