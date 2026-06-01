@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
 
 from ingestion.derived_api import BIG_FIVE_COMPETITION_CODES
@@ -30,6 +30,7 @@ from ingestion.models import (
 MODEL_VERSION = "galaxy_v2"
 DEFAULT_MIN_MINUTES = 900
 TOP_K_SIMILARS = 15
+DEFAULT_RETAIN_SUPERSEDED_SNAPSHOTS = 0
 MIN_COMPETITION_ELIGIBLE_PLAYERS = 10
 MIN_POSITION_FAMILY_PLAYERS = 3
 MIN_CLUSTER_SIZE = 12
@@ -266,6 +267,98 @@ def latest_galaxy_snapshot(scope_code: str, season_label: str) -> GalaxySnapshot
         .order_by("-created_at", "-id")
         .first()
     )
+
+
+def prune_galaxy_snapshots(
+    *,
+    retain_superseded_per_scope: int = DEFAULT_RETAIN_SUPERSEDED_SNAPSHOTS,
+    dry_run: bool = True,
+) -> dict[str, int | bool]:
+    """Delete superseded Galaxy snapshots and their large dependent tables."""
+
+    retain = max(0, int(retain_superseded_per_scope))
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            WITH ranked AS (
+                SELECT
+                    id,
+                    row_number() OVER (
+                        PARTITION BY scope_code, season_label
+                        ORDER BY created_at DESC, id DESC
+                    ) AS retained_rank
+                FROM ingestion_galaxysnapshot
+                WHERE NOT is_current
+            )
+            SELECT id
+            FROM ranked
+            WHERE retained_rank > %s
+            """,
+            [retain],
+        )
+        snapshot_ids = [row[0] for row in cursor.fetchall()]
+
+    if not snapshot_ids:
+        return {
+            "dry_run": dry_run,
+            "retain_superseded_per_scope": retain,
+            "snapshots": 0,
+            "similarities": 0,
+            "embeddings": 0,
+            "archetypes": 0,
+        }
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT count(*) FROM ingestion_galaxysimilarity WHERE snapshot_id = ANY(%s)",
+            [snapshot_ids],
+        )
+        similarities = int(cursor.fetchone()[0])
+        cursor.execute(
+            "SELECT count(*) FROM ingestion_galaxyplayerembedding WHERE snapshot_id = ANY(%s)",
+            [snapshot_ids],
+        )
+        embeddings = int(cursor.fetchone()[0])
+        cursor.execute(
+            "SELECT count(*) FROM ingestion_galaxyarchetype WHERE snapshot_id = ANY(%s)",
+            [snapshot_ids],
+        )
+        archetypes = int(cursor.fetchone()[0])
+
+    stats: dict[str, int | bool] = {
+        "dry_run": dry_run,
+        "retain_superseded_per_scope": retain,
+        "snapshots": len(snapshot_ids),
+        "similarities": similarities,
+        "embeddings": embeddings,
+        "archetypes": archetypes,
+    }
+    if dry_run:
+        return stats
+
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(
+            "DELETE FROM ingestion_galaxysimilarity WHERE snapshot_id = ANY(%s)",
+            [snapshot_ids],
+        )
+        stats["deleted_similarities"] = cursor.rowcount
+        cursor.execute(
+            "DELETE FROM ingestion_galaxyplayerembedding WHERE snapshot_id = ANY(%s)",
+            [snapshot_ids],
+        )
+        stats["deleted_embeddings"] = cursor.rowcount
+        cursor.execute(
+            "DELETE FROM ingestion_galaxyarchetype WHERE snapshot_id = ANY(%s)",
+            [snapshot_ids],
+        )
+        stats["deleted_archetypes"] = cursor.rowcount
+        cursor.execute(
+            "DELETE FROM ingestion_galaxysnapshot WHERE id = ANY(%s)",
+            [snapshot_ids],
+        )
+        stats["deleted_snapshots"] = cursor.rowcount
+
+    return stats
 
 
 def _profile_specs(profile: str) -> list[FeatureSpec]:
@@ -1280,6 +1373,18 @@ def materialize_galaxy_scope(
             },
         },
     )
+    if _setting_bool("STATBALLER_GALAXY_PRUNE_AFTER_MATERIALIZE", True):
+        try:
+            retention_stats = prune_galaxy_snapshots(
+                retain_superseded_per_scope=_setting_int(
+                    "STATBALLER_GALAXY_RETAIN_SUPERSEDED_SNAPSHOTS",
+                    DEFAULT_RETAIN_SUPERSEDED_SNAPSHOTS,
+                ),
+                dry_run=False,
+            )
+            _mark_run_progress(run, {"galaxy_prune": retention_stats})
+        except Exception as exc:  # noqa: BLE001
+            _mark_run_progress(run, {"galaxy_prune_error": str(exc)[:1000]})
     return snapshot
 
 

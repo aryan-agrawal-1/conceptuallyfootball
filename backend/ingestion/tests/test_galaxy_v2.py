@@ -19,7 +19,7 @@ from ingestion.models import (
     Season,
     SofascorePlayerSeasonSource,
 )
-from ingestion.services.galaxy import materialize_galaxy_scope
+from ingestion.services.galaxy import materialize_galaxy_scope, prune_galaxy_snapshots
 
 
 class GalaxyV2Tests(TestCase):
@@ -205,6 +205,24 @@ class GalaxyV2Tests(TestCase):
             GalaxySimilarity.objects.filter(snapshot=snapshot).values("source_embedding").distinct().count(),
             GalaxyPlayerEmbedding.objects.filter(snapshot=snapshot).count(),
         )
+
+    def test_prunes_superseded_galaxy_snapshots(self):
+        old_snapshot = self._materialize_all()
+        new_snapshot = self._materialize_all()
+
+        self.assertFalse(GalaxySnapshot.objects.filter(pk=old_snapshot.pk).exists())
+        self.assertTrue(GalaxySnapshot.objects.filter(pk=new_snapshot.pk, is_current=True).exists())
+        self.assertFalse(GalaxyPlayerEmbedding.objects.filter(snapshot=old_snapshot).exists())
+        self.assertFalse(GalaxySimilarity.objects.filter(snapshot=old_snapshot).exists())
+
+    def test_prune_dry_run_preserves_superseded_galaxy_snapshots(self):
+        old_snapshot = self._materialize_scope("ENG1")
+        GalaxySnapshot.objects.filter(pk=old_snapshot.pk).update(is_current=False)
+
+        stats = prune_galaxy_snapshots(dry_run=True)
+
+        self.assertEqual(stats["snapshots"], 1)
+        self.assertTrue(GalaxySnapshot.objects.filter(pk=old_snapshot.pk).exists())
 
     def test_api_requires_galaxy_player_id_when_canonical_player_is_ambiguous(self):
         snapshot = self._materialize_all()
