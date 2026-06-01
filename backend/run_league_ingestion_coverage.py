@@ -168,8 +168,7 @@ def is_metric_relevant_for_mode(metric_name: str, player_data_mode: str) -> bool
         return False
 
     intentionally_skipped_sofascore_only = {
-        # Current formula depends on Understat shots/key passes even though it
-        # also uses Sofascore big-chance data.
+        # current formula depends on Understat shots/key passes even though it also uses Sofascore big-chance data.
         "chance_involvement_per_90",
     }
     if metric_name in intentionally_skipped_sofascore_only:

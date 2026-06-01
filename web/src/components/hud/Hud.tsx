@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { cn } from '../../lib/utils'
 
-// ─── HUD primitives ──────────────────────────────────────────────────────────
+// HUD primitives
 // A small set of building blocks for the "HUD" aesthetic used across the app.
 // The goal is a consistent readout-style: electric-tinted borders, small
 // L-brackets at corners, uppercase tracking-wide micro-labels, and a soft

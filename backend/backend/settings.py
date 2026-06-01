@@ -20,7 +20,7 @@ def env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
-# soccerdata configures logging and cache paths on import; keep everything inside the project.
+# soccerdata configures logging and cache paths on import; keep everything inside proj
 _soccerdata_home = Path(os.environ.get("SOCCERDATA_DIR", str(BASE_DIR / ".soccerdata")))
 _soccerdata_home.mkdir(parents=True, exist_ok=True)
 (_soccerdata_home / "logs").mkdir(parents=True, exist_ok=True)
@@ -177,8 +177,7 @@ REST_FRAMEWORK = {
 
 STATBALLER_INGEST_MIN_ROWS = int(os.environ.get("STATBALLER_INGEST_MIN_ROWS", "200"))
 
-# Provider/batch pacing. Keep these conservative so large league refreshes do not
-# hammer Sofascore and trigger IP-level challenges.
+# I got ip blocked lets do this instead
 STATBALLER_SOFASCORE_REQUEST_DELAY_SECONDS = float(
     os.environ.get("STATBALLER_SOFASCORE_REQUEST_DELAY_SECONDS", "1.5" if DEBUG else "4.0")
 )

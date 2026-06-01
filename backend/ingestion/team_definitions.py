@@ -113,7 +113,7 @@ _LOWER_IS_BETTER = (
 for _f in _LOWER_IS_BETTER:
     TEAM_STAT_DIRECTION[_f] = "lower"
 
-# Section groupings for `meta` + `sections` (aligned with HUD stat blocks).
+# Section groupings for meta + sections
 TEAM_STAT_GROUPS: dict[str, str] = {
     "table": "Table",
     "shooting": "Shooting",

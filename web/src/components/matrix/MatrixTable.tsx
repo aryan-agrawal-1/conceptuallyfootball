@@ -227,8 +227,7 @@ function MatrixLeafHeaderInner({
   )
 }
 
-// Shared shell for numeric cells. Centered value, optional heatmap fill, and
-// the value color flips to black when a background is painted so it stays
+// Shared shell for numeric cells. Centered value, optional heatmap fill, and the value color flips to black when a background is painted so it stays
 // readable against the bright heatmap palette.
 function StatCellBody({
   hStyle,
@@ -300,7 +299,7 @@ function buildTableColumns(
   })
 }
 
-// ── Meta columns ─────────────────────────────────────────────────────────────
+// ── Meta columns
 
 function buildMetaColumn(col: ColDef): ColumnDef<PlayerRow, unknown> {
   switch (col.id) {
@@ -412,7 +411,7 @@ function buildMetaColumn(col: ColDef): ColumnDef<PlayerRow, unknown> {
   }
 }
 
-// ── Metric columns ────────────────────────────────────────────────────────────
+// Metric columns
 
 function buildMetricColumn(
   col: ColDef,
@@ -454,7 +453,7 @@ function buildMetricColumn(
   ) as ColumnDef<PlayerRow, unknown>
 }
 
-// ── Table ─────────────────────────────────────────────────────────────────────
+// Table time
 
 interface MatrixTableProps {
   players: PlayerRow[]
@@ -498,8 +497,8 @@ export function MatrixTable({
 
   const rawColumnGroups = columnGroupsOverride ?? (variant === 'gk' ? COLUMN_GROUPS_GK : COLUMN_GROUPS)
 
-  // Measure the scroll container so the GK matrix (far fewer columns) can stretch to fill the
-  // viewport while keeping every cell a square. Outfield already overflows, so we leave it alone.
+  // Measure the scroll container so the GK matrix (far fewer columns) can stretch to fill the viewport while keeping every cell a square. Outfield already overflows, so we leave it alone.
+  // I kinda hate this idk what to do tho
   const [containerWidth, setContainerWidth] = useState(0)
   useLayoutEffect(() => {
     const el = scrollParentRef?.current
@@ -610,8 +609,7 @@ export function MatrixTable({
     getItemKey: index => String(sortedPlayers[index]?.canonical_player_id ?? index),
   })
 
-  // Invalidate the virtualizer's cached row metrics when the dynamic cell size changes so the
-  // total scroll height and row offsets recompute from the new `estimateSize`.
+  // Invalidate the virtualizer's cached row metrics when the dynamic cell size changes so the total scroll height and row offsets recompute from the new `estimateSize`.
   useLayoutEffect(() => {
     virtualizer.measure()
   }, [cellSize, virtualizer])

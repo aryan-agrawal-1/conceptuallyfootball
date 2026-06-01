@@ -217,7 +217,6 @@ def execute_merge_for_slice(
         else:
             continue
 
-        # Primary display club: SofaScore when present (current roster), else Understat.
         display_team = None
         if ss:
             display_team = ss.canonical_team

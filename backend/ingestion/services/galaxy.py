@@ -971,8 +971,7 @@ def _similarity_scale(
         ranked = _top_similarity_candidates(i, rows, matrix, weights_vector, limit=5)
         top_distances.extend(item[2] for item in ranked)
 
-    # The absolute-fit score is a guardrail, not the main ranking signal. Use a
-    # loose scale from known-near top-five distances so plausible matches are
+    # The absolute-fit score is a guardrail, not the main ranking signal. Use a loose scale from known-near top-five distances so plausible matches are
     # not crushed while genuine outliers still get capped.
     scale = (median(top_distances) * 4.0) if top_distances else 1.0
     if scale <= 0:

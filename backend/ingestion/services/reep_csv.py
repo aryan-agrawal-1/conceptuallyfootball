@@ -35,8 +35,8 @@ TEAM_CSV_PROVIDER_OVERRIDES: dict[str, dict[str, str | None]] = {
 }
 
 PLAYER_CSV_PROVIDER_OVERRIDES: dict[str, dict[str, str | None]] = {
-    # Upstream currently has this player as "Yamil yamil" with only a SofaScore key.
-    # Keep the SofaScore key, attach the known Understat key, and expose the real name.
+    # Upstream currently has this player as "Yamil yamil" with only a SofaScore key i cant stop laughing
+    # Keep SofaScore key, attach the known Understat key, and show real name.
     "reep_p9aa62ce3": {
         "full_name": "Lamine Yamal",
         "name": "Lamine Yamal",

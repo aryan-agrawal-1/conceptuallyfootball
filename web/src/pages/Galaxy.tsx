@@ -38,7 +38,7 @@ function readParamValues(params: URLSearchParams, key: string): string[] {
   )
 }
 
-// ─── Layout pass ─────────────────────────────────────────────────────────────
+// Layout pass
 // UMAP can land similar players *extremely* close together — often overlapping
 // within a single sprite. We do two things to fix that without touching the
 // backend:
@@ -47,7 +47,7 @@ function readParamValues(params: URLSearchParams, key: string): string[] {
 //      ended up within `MIN_SEPARATION` of each other apart. This preserves
 //      the overall shape of the embedding but guarantees no overlap.
 //
-// N is small (~hundreds of players) so an O(N^2) pass per iteration is fine.
+// N is small (~hundreds of players) so an O(N^2) pass per iteration is fine (I hope)
 
 function MinutesInput({
   value,
@@ -93,7 +93,7 @@ function PositionBadge({ position }: { position: PositionGroup }) {
   )
 }
 
-// ─── Bottom-center player HUD ───────────────────────────────────────────────
+// Bottom-center player HUD
 // Appears when a star is selected. Three columns:
 //   1. Identity: large player name + team/position/archetype/minutes readout
 //   2. Top comps list (the same edges drawn in the scene)
@@ -267,7 +267,7 @@ function PlayerHud({
   )
 }
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
+// Page
 
 export function Galaxy() {
   const [params, setParams] = useSearchParams()

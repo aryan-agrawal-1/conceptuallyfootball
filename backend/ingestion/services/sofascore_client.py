@@ -415,7 +415,7 @@ def merge_player_wide_stat_dicts(target: dict[int, dict[str, Any]], page_rows: l
         for k, v in row.items():
             if k in ("player", "team"):
                 continue
-            # Keep wide stats in group_stats without requiring schema changes.
+            # Keep wide stats in group_stats without needing schema changes
             bucket[f"league_stats:{k}"] = v
 
 

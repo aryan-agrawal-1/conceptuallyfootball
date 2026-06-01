@@ -198,7 +198,6 @@ export function FilterBar({
   )
 }
 
-// ─── Readout ─────────────────────────────────────────────────────────────────
 
 function MatrixReadout({
   playerCount,
@@ -227,7 +226,7 @@ function MatrixReadout({
   )
 }
 
-// ─── Position filter ─────────────────────────────────────────────────────────
+// Position filter 
 
 function MobileSingleDropdown({
   containerRef,
@@ -324,7 +323,7 @@ function PositionGroupPicker({
   )
 }
 
-// ─── Min minutes filter ──────────────────────────────────────────────────────
+// Min minutes filter
 
 function MinMinutesPicker({
   value,
@@ -349,7 +348,6 @@ function MinMinutesPicker({
   )
 }
 
-// ─── Rate mode toggle ────────────────────────────────────────────────────────
 
 function RateModeToggle({
   value,
@@ -406,7 +404,6 @@ function RateModeButton({
   )
 }
 
-// ─── Heatmap toggle ──────────────────────────────────────────────────────────
 
 function HeatmapToggle({
   enabled,
@@ -437,7 +434,7 @@ function HeatmapToggle({
   )
 }
 
-// ─── Team picker ─────────────────────────────────────────────────────────────
+// Team picker
 
 interface TeamPickerProps {
   containerRef: React.RefObject<HTMLDivElement | null>
@@ -580,7 +577,6 @@ function TeamPicker({
   )
 }
 
-// ─── Columns dropdown ────────────────────────────────────────────────────────
 
 interface ColumnsDropdownProps {
   containerRef: React.RefObject<HTMLDivElement | null>
@@ -673,7 +669,7 @@ function ColumnPicker({ groups, visibleCols, onGroupToggle }: ColumnPickerProps)
   )
 }
 
-// ─── Popover chrome ──────────────────────────────────────────────────────────
+// Popover chrome 
 // A shared dropdown surface with the same look as HudFrame, but positioned
 // below a trigger button. `align` decides which edge of the trigger the
 // popover snaps to — use `end` when the trigger sits near the right edge
