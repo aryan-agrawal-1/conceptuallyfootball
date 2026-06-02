@@ -147,6 +147,17 @@ CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://127.0.0.1:6379/
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 60 * 60
+CELERY_WORKER_PREFETCH_MULTIPLIER = int(os.environ.get("CELERY_WORKER_PREFETCH_MULTIPLIER", "4"))
+CELERY_WORKER_MAX_TASKS_PER_CHILD = (
+    int(os.environ["CELERY_WORKER_MAX_TASKS_PER_CHILD"])
+    if os.environ.get("CELERY_WORKER_MAX_TASKS_PER_CHILD")
+    else None
+)
+CELERY_WORKER_MAX_MEMORY_PER_CHILD = (
+    int(os.environ["CELERY_WORKER_MAX_MEMORY_PER_CHILD"])
+    if os.environ.get("CELERY_WORKER_MAX_MEMORY_PER_CHILD")
+    else None
+)
 CELERY_TASK_ROUTES = {
     "ingestion.tasks.task_plan_daily_refresh": {"queue": "ingestion-planner"},
     "ingestion.tasks.task_refresh_competition_season_item": {"queue": "ingestion"},

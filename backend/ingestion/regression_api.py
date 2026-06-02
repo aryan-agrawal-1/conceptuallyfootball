@@ -6,8 +6,6 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from ingestion.regression_service import fit_player_regression
-
 MAX_REGRESSION_PLAYER_IDS = 500
 MAX_REGRESSION_PREDICTORS = 8
 
@@ -74,6 +72,8 @@ class RegressionLabFitApi(APIView):
         predictor_keys = [k.strip() for k in predictor_keys]
 
         try:
+            from ingestion.regression_service import fit_player_regression
+
             result = fit_player_regression(
                 competition=competition,
                 season=season,
