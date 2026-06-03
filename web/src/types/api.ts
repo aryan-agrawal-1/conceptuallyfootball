@@ -49,7 +49,7 @@ export interface SearchPlayerMembership extends SearchScopeMembership {
   canonical_team_id: number | null
   canonical_team_name: string | null
   position_group: PositionGroup
-  minutes: number
+  minutes: number | null
 }
 
 export interface SearchTeamMembership extends SearchScopeMembership {

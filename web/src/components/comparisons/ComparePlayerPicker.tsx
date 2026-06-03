@@ -100,7 +100,8 @@ export function ComparePlayerPicker({
                 <li className="px-3 py-6 text-center text-[12px] text-ink-muted">No matching players.</li>
               ) : (
                 filtered.map(p => {
-                  const lowMins = p.minutes < COMPARISON_MIN_MINUTES_WARNING
+                  const minutes = p.minutes ?? 0
+                  const lowMins = minutes < COMPARISON_MIN_MINUTES_WARNING
                   const token = `${p.competition_code}:${p.season_label}:${p.canonical_player_id}`
                   return (
                     <li key={token}>
@@ -122,7 +123,7 @@ export function ComparePlayerPicker({
                           </span>
                         )}
                         <span className="shrink-0 text-[11px] font-mono tabular-nums text-ink-muted">
-                          {p.minutes.toLocaleString()}′
+                          {minutes.toLocaleString()}′
                         </span>
                         {lowMins && (
                           <span className="shrink-0 text-[9px] uppercase tracking-wide px-1.5 py-0.5 border border-ember/40 text-ember/90">

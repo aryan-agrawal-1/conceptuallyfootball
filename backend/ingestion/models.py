@@ -272,6 +272,8 @@ class MaterializedApiPayload(models.Model):
     cache_key = models.CharField(max_length=255, unique=True, db_index=True)
     source_version = models.CharField(max_length=128, db_index=True)
     payload = models.JSONField(default=dict)
+    payload_json = models.TextField(blank=True, default="")
+    payload_etag = models.CharField(max_length=80, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

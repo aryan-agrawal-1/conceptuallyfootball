@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from collections import OrderedDict
 
-from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ingestion.api_cache import get_or_build_payload, joined_version, model_version, stable_cache_key
+from ingestion.api_cache import get_or_build_payload_response, joined_version, model_version, stable_cache_key
 from ingestion.derived_definitions import CORE_METRIC_MIN_COVERAGE, STYLE_METRIC_MIN_COVERAGE, STYLE_PROXY_METRICS
 from ingestion.derived_api import BIG_FIVE_COMPETITION_CODES
 from ingestion.models import CompetitionSeason
@@ -128,12 +127,12 @@ class CompetitionSeasonsCatalogApi(APIView):
         cache_key = stable_cache_key("competition-seasons", {"path": request.path})
         source_version = joined_version("competition-seasons", model_version(CompetitionSeason))
 
-        payload, _ = get_or_build_payload(
+        response, _ = get_or_build_payload_response(
             cache_key=cache_key,
             source_version=source_version,
             builder=self._build_payload,
         )
-        return Response(payload)
+        return response
 
     def _build_payload(self) -> dict:
         rows = (

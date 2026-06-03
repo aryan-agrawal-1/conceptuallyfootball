@@ -21,6 +21,8 @@ function membershipForScope<T extends { competition: string; season: string }>(
 }
 
 function toPlayerRow(entity: SearchPlayerEntity, membership: SearchPlayerMembership): PlayerRow {
+  const minutes = membership.minutes ?? 0
+
   return {
     canonical_player_id: entity.canonical_player_id,
     canonical_player_name: entity.canonical_player_name,
@@ -31,7 +33,7 @@ function toPlayerRow(entity: SearchPlayerEntity, membership: SearchPlayerMembers
     season_label: membership.season,
     position_group: membership.position_group,
     native_position: null,
-    minutes: membership.minutes,
+    minutes,
     formula_version: '',
     derived_run_id: null,
     eligibility: {

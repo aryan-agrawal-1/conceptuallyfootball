@@ -335,6 +335,9 @@ class DerivedStatsTests(TestCase):
             MaterializedApiPayload.objects.filter(cache_key__startswith="derived-player-season-list:").count(),
             1,
         )
+        cached = MaterializedApiPayload.objects.get(cache_key__startswith="derived-player-season-list:")
+        self.assertTrue(cached.payload_json)
+        self.assertTrue(cached.payload_etag)
 
     def test_detail_endpoint_groups_sections(self):
         self._materialize()
@@ -459,6 +462,7 @@ class DerivedStatsTests(TestCase):
         self.assertEqual(defender_response.status_code, 200)
         self.assertAlmostEqual(forward_response.json()["scope_percentiles"]["xg_per_90"], 25.0)
         self.assertAlmostEqual(defender_response.json()["scope_percentiles"]["xg_per_90"], 25.0)
+        self.assertFalse(MaterializedApiPayload.objects.filter(cache_key__startswith="scope-percentiles:").exists())
 
     def test_big5_scope_percentiles_work_for_goalkeepers(self):
         season = Season.objects.create(label="2027-28", sort_order=2028)

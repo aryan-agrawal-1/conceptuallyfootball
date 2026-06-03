@@ -3,7 +3,7 @@ from __future__ import annotations
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ingestion.api_cache import get_or_build_payload, joined_version, model_version, stable_cache_key
+from ingestion.api_cache import get_or_build_payload_response, joined_version, model_version, stable_cache_key
 from ingestion.models import (
     MergedTeamSeason,
     PlayerSeasonDerivedStats,
@@ -28,12 +28,12 @@ class SearchEntitiesApi(APIView):
             model_version(PlayerSeasonGkDerivedStats, {"is_current": True}),
             model_version(MergedTeamSeason, {"is_current": True}),
         )
-        payload, _ = get_or_build_payload(
+        response, _ = get_or_build_payload_response(
             cache_key=cache_key,
             source_version=source_version,
             builder=self._build_payload,
         )
-        return Response(payload)
+        return response
 
     def _build_payload(self) -> dict:
         players: dict[int, dict] = {}

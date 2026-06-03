@@ -79,11 +79,21 @@ def build_scope_percentiles(
     if not row_list or not relevant_positions:
         return {}
 
+    has_position_group = True
     try:
         scope_queryset.model._meta.get_field("position_group")
         scope_queryset = scope_queryset.filter(position_group__in=relevant_positions)
     except FieldDoesNotExist:
-        pass
+        has_position_group = False
+
+    if len(row_list) <= 10:
+        return _build_selected_scope_percentiles(
+            scope_queryset=scope_queryset,
+            rows=row_list,
+            fields=fields,
+            fields_with_percentiles=fields_with_percentiles,
+            has_position_group=has_position_group,
+        )
 
     season_ids = list(scope_queryset.order_by("competition_season_id").values_list("competition_season_id", flat=True).distinct())
     cache_key = stable_cache_key(
@@ -115,6 +125,48 @@ def build_scope_percentiles(
         row_id: cached_payload.get(str(row_id), {field: None for field in fields})
         for row_id in row_ids
     }
+
+
+def _build_selected_scope_percentiles(
+    *,
+    scope_queryset: QuerySet,
+    rows: list,
+    fields: list[str],
+    fields_with_percentiles: set[str],
+    has_position_group: bool,
+) -> dict[int, dict[str, float | None]]:
+    base_fields = ["id", "percentiles_eligible"]
+    if has_position_group:
+        base_fields.append("position_group")
+    value_fields = list(dict.fromkeys([*base_fields, *fields]))
+    distributions: dict[tuple[str, str], list[float]] = defaultdict(list)
+    for scope_row in scope_queryset.values(*value_fields).iterator(chunk_size=2000):
+        if not scope_row["percentiles_eligible"]:
+            continue
+        position_group = scope_row.get("position_group", "GK")
+        for field in fields:
+            if field not in fields_with_percentiles:
+                continue
+            value = scope_row.get(field)
+            if value is not None:
+                distributions[(position_group, field)].append(float(value))
+
+    out: dict[int, dict[str, float | None]] = {}
+    for row in rows:
+        payload: dict[str, float | None] = {}
+        position_group = getattr(row, "position_group", "GK")
+        eligible = getattr(row, "percentiles_eligible", False)
+        for field in fields:
+            payload[field] = None
+            if field not in fields_with_percentiles or not eligible:
+                continue
+            value = getattr(row, field)
+            values = distributions.get((position_group, field)) or []
+            if value is None or not values:
+                continue
+            payload[field] = percentile_rank(float(value), values)
+        out[row.id] = payload
+    return out
 
 
 def _build_all_scope_percentiles(

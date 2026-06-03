@@ -6,7 +6,14 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ingestion.api_cache import canonical_query_params, get_or_build_payload, joined_version, model_version, stable_cache_key
+from ingestion.api_cache import (
+    canonical_query_params,
+    get_or_build_payload,
+    get_or_build_payload_response,
+    joined_version,
+    model_version,
+    stable_cache_key,
+)
 from ingestion.derived_definitions import MIN_ELIGIBLE_MINUTES
 from ingestion.gk_definitions import (
     FORMULA_VERSION_GK,
@@ -223,14 +230,14 @@ class GkDerivedPlayerSeasonListApi(APIView):
             model_version(PlayerSeasonGkDerivedStats, {"is_current": True}),
         )
         try:
-            payload, _ = get_or_build_payload(
+            response, _ = get_or_build_payload_response(
                 cache_key=cache_key,
                 source_version=source_version,
                 builder=lambda: self._build_payload(request),
             )
         except DjangoValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(payload)
+        return response
 
     def _build_payload(self, request) -> dict:
         try:
