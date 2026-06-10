@@ -1,10 +1,11 @@
 import { useDeferredValue, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Command } from 'cmdk'
-import { Loader2 } from 'lucide-react'
+import { BarChart3, GitCompare, Loader2, Microscope, Orbit, type LucideIcon } from 'lucide-react'
 import { useSearchPaletteIndex } from '../../hooks/useSearchPaletteIndex'
 import { resolveEntityMembership, resolveEntityScope } from '../../hooks/useSearchPaletteIndex'
 import { foldForSearch } from '../../lib/foldAccents'
+import { CREATE_CHARTS_PATH } from '../../lib/createChartsUrl'
 import { cn } from '../../lib/utils'
 import { useScope, type Scope } from '../../context/ScopeContext'
 import type { SearchPlayerEntity, SearchTeamEntity } from '../../types/api'
@@ -13,6 +14,50 @@ import { membershipPriority } from '../../lib/scopeMembership'
 
 const DEFAULT_VISIBLE = 5
 const SEARCH_VISIBLE_LIMIT = 12
+
+type SearchAction = {
+  id: string
+  label: string
+  description: string
+  href: string
+  icon: LucideIcon
+  aliases: string[]
+}
+
+const SEARCH_ACTIONS: SearchAction[] = [
+  {
+    id: 'create-charts',
+    label: 'Create chart',
+    description: 'Build scatter, bar, and radar graphics',
+    href: CREATE_CHARTS_PATH,
+    icon: BarChart3,
+    aliases: ['charts', 'visualiser', 'visualizer', 'scatter', 'bar', 'radar', 'share', 'export', 'png'],
+  },
+  {
+    id: 'compare-players',
+    label: 'Compare players',
+    description: 'Open the same-position radar comparison tool',
+    href: '/comparisons',
+    icon: GitCompare,
+    aliases: ['compare', 'comparison', 'radar', 'players', 'versus', 'vs'],
+  },
+  {
+    id: 'regression-lab',
+    label: 'Open Regression Lab',
+    description: 'Explore metric relationships and model fit',
+    href: '/regression-lab',
+    icon: Microscope,
+    aliases: ['lab', 'regression', 'model', 'predict', 'coefficients', 'fit'],
+  },
+  {
+    id: 'galaxy',
+    label: 'Open Galaxy',
+    description: 'Explore similarity maps and archetypes',
+    href: '/galaxy',
+    icon: Orbit,
+    aliases: ['similar', 'similarity', 'archetypes', 'network', 'map'],
+  },
+]
 
 type SearchIndexEntry<T> = {
   entity: T
@@ -69,6 +114,20 @@ function pickMatches<T>(index: Array<SearchIndexEntry<T>>, q: string, limit: num
   return matches
 }
 
+function pickActionMatches(q: string): SearchAction[] {
+  const trimmed = q.trim()
+  if (!trimmed) return SEARCH_ACTIONS
+  const needle = foldForSearch(trimmed)
+  return SEARCH_ACTIONS.filter(action => {
+    const haystack = [
+      action.label,
+      action.description,
+      ...action.aliases,
+    ].map(foldForSearch)
+    return haystack.some(value => value.includes(needle))
+  })
+}
+
 export function CommandPalette({
   open,
   onOpenChange,
@@ -105,10 +164,15 @@ export function CommandPalette({
     () => pickMatches(teamIndex, deferredSearch, SEARCH_VISIBLE_LIMIT),
     [deferredSearch, teamIndex],
   )
+  const visibleActions = useMemo(
+    () => pickActionMatches(deferredSearch),
+    [deferredSearch],
+  )
 
   const showEmpty =
     !isLoading &&
     !isError &&
+    visibleActions.length === 0 &&
     visiblePlayers.length === 0 &&
     visibleTeams.length === 0 &&
     deferredSearch.trim() !== '' &&
@@ -126,11 +190,16 @@ export function CommandPalette({
     navigate(buildScopedPath(`/team/${entity.canonical_team_id}`, nextScope ?? undefined))
   }
 
+  const handleSelectAction = (action: SearchAction) => {
+    handleOpenChange(false)
+    navigate(buildScopedPath(action.href))
+  }
+
   return (
     <Command.Dialog
       open={open}
       onOpenChange={handleOpenChange}
-      label="Search players and teams"
+      label="Search actions, players, and teams"
       shouldFilter={false}
       loop
       className="rounded-none border border-electric/25 bg-panel/95 text-ink shadow-[0_0_48px_-12px_rgba(74,158,245,0.35)] backdrop-blur-md outline-none overflow-hidden"
@@ -154,7 +223,7 @@ export function CommandPalette({
         <Command.Input
           value={search}
           onValueChange={setSearch}
-          placeholder="Player or team name…"
+          placeholder="Action, player, or team name..."
           className={cn(
             'w-full bg-transparent px-4 py-3 text-[13px] text-ink placeholder:text-ink-muted',
             'outline-none border-none',
@@ -163,6 +232,21 @@ export function CommandPalette({
         />
 
         <Command.List className="max-h-[min(55vh,420px)] overflow-y-auto px-1 pb-2 outline-none">
+          {visibleActions.length > 0 && (
+            <Command.Group
+              heading="Actions"
+              className="px-2 pt-2 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:pb-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.2em] [&_[cmdk-group-heading]]:text-electric/80"
+            >
+              {visibleActions.map(action => (
+                <SearchActionItem
+                  key={action.id}
+                  action={action}
+                  onSelect={() => handleSelectAction(action)}
+                />
+              ))}
+            </Command.Group>
+          )}
+
           {isLoading && (
             <Command.Loading
               className="flex items-center justify-center gap-2 py-10 text-ink-muted"
@@ -184,7 +268,7 @@ export function CommandPalette({
               {visiblePlayers.length > 0 && (
                 <Command.Group
                   heading="Players"
-                  className="px-2 pt-2 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:pb-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.2em] [&_[cmdk-group-heading]]:text-electric/80"
+                  className="px-2 pt-3 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:pb-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.2em] [&_[cmdk-group-heading]]:text-electric/80"
                 >
                   {visiblePlayers.map((p) => (
                     <SearchPlayerItem
@@ -228,6 +312,35 @@ export function CommandPalette({
         </div>
       </div>
     </Command.Dialog>
+  )
+}
+
+function SearchActionItem({
+  action,
+  onSelect,
+}: {
+  action: SearchAction
+  onSelect: () => void
+}) {
+  const Icon = action.icon
+  return (
+    <Command.Item
+      value={`action-${action.id}`}
+      keywords={[action.label, action.description, ...action.aliases]}
+      onSelect={onSelect}
+      className={cn(
+        'flex cursor-pointer items-center gap-3 rounded-none border border-transparent px-3 py-2 text-[13px]',
+        'text-ink aria-selected:bg-electric/15 aria-selected:border-electric/30 aria-selected:text-electric',
+      )}
+    >
+      <span className="flex size-7 shrink-0 items-center justify-center border border-electric/20 bg-electric/5 text-electric/80">
+        <Icon size={15} strokeWidth={2} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium">{action.label}</span>
+        <span className="block truncate text-[11px] text-ink-muted">{action.description}</span>
+      </span>
+    </Command.Item>
   )
 }
 

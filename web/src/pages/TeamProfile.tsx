@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, AlertCircle } from 'lucide-react'
+import { BarChart3, Loader2, AlertCircle } from 'lucide-react'
 import { fetchTeamDetail, fetchTeamSquad } from '../lib/api'
 import type { TeamDetailResponse, TeamSquadPlayer } from '../types/api'
 import { useScope } from '../context/ScopeContext'
@@ -12,6 +12,7 @@ import { TeamKeyStats } from '../components/team/TeamKeyStats'
 import { TeamStatSections } from '../components/team/TeamStatSections'
 import { TeamSquadList } from '../components/team/TeamSquadList'
 import { ProfileScopeSelector } from '../components/profile/ProfileScopeSelector'
+import { buildTeamCreateChartsPath } from '../lib/createChartsUrl'
 import type { SearchTeamMembership } from '../types/api'
 
 export function TeamProfile() {
@@ -165,6 +166,13 @@ function TeamLayout({
               navigate(buildScopedPath(`/team/${team.canonical_team_id}`, nextScope))
             }}
           />
+          <Link
+            to={buildTeamCreateChartsPath(team, rateMode)}
+            className="relative flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80 whitespace-nowrap"
+          >
+            <BarChart3 size={13} />
+            Create Chart
+          </Link>
           <ProfileRateToggle value={rateMode} onChange={setRateMode} />
         </div>
       </div>

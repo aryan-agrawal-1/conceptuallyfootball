@@ -1,7 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { Download, Share2 } from 'lucide-react'
-import { HudPill } from '../hud/Hud'
 import { BRAND_DOMAIN, BRAND_LOGO_URL, BRAND_NAME_UPPER, BRAND_SLUG } from '../../lib/brand'
+import { ShareActions, type ShareActionBusy } from '../share/ShareActions'
 
 type ExportAspect = 'square' | 'landscape'
 
@@ -11,6 +10,7 @@ interface ChartShareCardProps {
   contextLabel: string
   fileName: string
   aspect?: ExportAspect
+  copyUrl?: string
   renderContent: (opts: { exportMode: boolean }) => ReactNode
   renderExportLegend?: () => ReactNode
 }
@@ -31,11 +31,12 @@ export function ChartShareCard({
   contextLabel,
   fileName,
   aspect = 'landscape',
+  copyUrl,
   renderContent,
   renderExportLegend,
 }: ChartShareCardProps) {
   const exportRef = useRef<HTMLDivElement>(null)
-  const [busy, setBusy] = useState<'share' | 'download' | null>(null)
+  const [busy, setBusy] = useState<ShareActionBusy>(null)
   const safeFileName = `${BRAND_SLUG}-${fileName.replace(/[^a-z0-9-_]+/gi, '-').toLowerCase()}.png`
 
   async function waitForExportSurface() {
@@ -95,20 +96,29 @@ export function ChartShareCard({
     }
   }
 
+  async function handleCopyLink() {
+    if (!copyUrl) return
+    try {
+      setBusy('copy')
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(copyUrl)
+      }
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2">
-        <HudPill active={false} onClick={handleShare} className="flex items-center gap-1.5">
-          <Share2 className="size-3.5" />
-          {busy === 'share' ? 'Preparing…' : 'Share'}
-        </HudPill>
-        <HudPill active={false} onClick={handleDownload} className="flex items-center gap-1.5">
-          <Download className="size-3.5" />
-          {busy === 'download' ? 'Rendering…' : 'PNG'}
-        </HudPill>
-      </div>
+      <ShareActions
+        busy={busy}
+        onShare={handleShare}
+        onDownload={handleDownload}
+        onCopyLink={copyUrl ? handleCopyLink : undefined}
+        compact
+      />
 
-      {busy && <div className="fixed left-[-20000px] top-0 pointer-events-none opacity-0" aria-hidden="true">
+      {(busy === 'share' || busy === 'download') && <div className="fixed left-[-20000px] top-0 pointer-events-none opacity-0" aria-hidden="true">
         <div
           ref={exportRef}
           className={`relative overflow-hidden border border-electric/30 bg-[#070810] text-ink shadow-[0_0_80px_-12px_rgba(74,158,245,0.3)] ${aspectClass(aspect)}`}

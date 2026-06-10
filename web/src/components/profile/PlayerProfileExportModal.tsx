@@ -1,7 +1,8 @@
 import { forwardRef, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Download, GripVertical, RotateCcw, Share2, X } from 'lucide-react'
-import { HudActionButton, HudCornerMarks, HudPill } from '../hud/Hud'
+import { GripVertical, RotateCcw, X } from 'lucide-react'
+import { HudCornerMarks, HudPill } from '../hud/Hud'
 import { ProfilePizzaSvg } from './ProfilePizzaSection'
+import { ShareActions, type ShareActionBusy } from '../share/ShareActions'
 import { formatValue } from '../../lib/format'
 import { getPercentileTextColor } from '../../lib/heatmap'
 import {
@@ -107,7 +108,7 @@ export function PlayerProfileExportModal({
   )
   const [title, setTitle] = useState(player.canonical_player_name)
   const [notes, setNotes] = useState('')
-  const [busy, setBusy] = useState<'share' | 'download' | null>(null)
+  const [busy, setBusy] = useState<ShareActionBusy>(null)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
 
   useEffect(() => {
@@ -514,23 +515,13 @@ export function PlayerProfileExportModal({
                   <RotateCcw size={14} />
                   Reset defaults
                 </button>
-                <button
-                  type="button"
-                  onClick={handleShare}
+                <ShareActions
+                  busy={busy}
                   disabled={!canExport}
-                  title={invalidReason ?? undefined}
-                  className={cn(
-                    'relative flex items-center gap-1.5 border border-electric/15 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.15em] text-ink-muted transition-colors hover:border-electric/40 hover:text-electric/80',
-                    !canExport && 'pointer-events-none opacity-40',
-                  )}
-                >
-                  <Share2 className="size-3.5" />
-                  {busy === 'share' ? 'Preparing...' : 'Share'}
-                </button>
-                <HudActionButton onClick={handleDownload} disabled={!canExport} className="px-4 py-2.5">
-                  <Download size={15} />
-                  {busy === 'download' ? 'Rendering...' : 'Download PNG'}
-                </HudActionButton>
+                  disabledReason={invalidReason}
+                  onShare={handleShare}
+                  onDownload={handleDownload}
+                />
               </div>
             </div>
           </main>

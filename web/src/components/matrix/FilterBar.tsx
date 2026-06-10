@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, ChevronDown, X, Loader2 } from 'lucide-react'
+import { BarChart3, Search, ChevronDown, X, Loader2 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { MatrixFilters, PositionGroup } from '../../types/api'
 import type { ColGroupDef } from '../../lib/columns'
@@ -42,6 +42,8 @@ interface FilterBarProps {
   refetching?: boolean
   /** Hand off current cohort to Regression Lab (outfield position only). */
   regressionLabHref?: string | null
+  /** Hand off current cohort to Create Charts. */
+  createChartHref?: string | null
 }
 
 export function FilterBar({
@@ -59,6 +61,7 @@ export function FilterBar({
   totalCount,
   refetching = false,
   regressionLabHref = null,
+  createChartHref = null,
 }: FilterBarProps) {
   const [teamOpen, setTeamOpen] = useState(false)
   const [colPickerOpen, setColPickerOpen] = useState(false)
@@ -174,6 +177,22 @@ export function FilterBar({
             )}
           >
             Lab
+          </Link>
+        </>
+      )}
+
+      {createChartHref && (
+        <>
+          <HudVSep className="hidden lg:block" />
+          <Link
+            to={createChartHref}
+            className={cn(
+              'relative flex shrink-0 items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border',
+              'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
+            )}
+          >
+            <BarChart3 size={13} />
+            Create Chart
           </Link>
         </>
       )}

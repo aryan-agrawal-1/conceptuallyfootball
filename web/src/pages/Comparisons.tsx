@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQueries } from '@tanstack/react-query'
-import { Loader2 } from 'lucide-react'
+import { BarChart3, Loader2 } from 'lucide-react'
 import { fetchPlayerDetail } from '../lib/api'
 import { useSearchPaletteIndex } from '../hooks/useSearchPaletteIndex'
 import { useScope } from '../context/ScopeContext'
@@ -30,6 +30,7 @@ import { ComparePlayerPicker } from '../components/comparisons/ComparePlayerPick
 import { ProfileEligibilityBanner } from '../components/profile/ProfileEligibilityBanner'
 import { ChartShareCard } from '../components/visualizer/ChartShareCard'
 import { scopeIncludesMembership } from '../lib/scopeMembership'
+import { buildComparisonCreateChartsPath, CREATE_CHARTS_PATH } from '../lib/createChartsUrl'
 
 const POSITION_COHORT_LABEL: Record<PositionGroup, string> = {
   FWD: 'Forwards',
@@ -314,6 +315,17 @@ export function Comparisons() {
     const cohort = cohortPosition ? POSITION_COHORT_LABEL[cohortPosition] : 'Players'
     return `${scopeLabel} · Percentiles vs ${cohort.toLowerCase()} · ${rateMode === 'per90' ? 'per 90' : 'season'} · ${statKeys.length} axes`
   }, [cohortPosition, rateMode, scopeLabel, statKeys.length])
+  const createChartHref = useMemo(() => {
+    if (!playerRefs.length) return buildScopedPath(CREATE_CHARTS_PATH)
+    return buildComparisonCreateChartsPath({
+      competition: scope.competition,
+      season: scope.season,
+      playerIds: playerRefs.map(ref => ref.id),
+      metricKeys: statKeys,
+      mode: rateMode,
+    })
+  }, [buildScopedPath, playerRefs, rateMode, scope.competition, scope.season, statKeys])
+  const pageShareUrl = typeof window !== 'undefined' ? window.location.href : undefined
 
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-5 pb-24 sm:px-6 sm:py-8 lg:px-10 lg:pb-20">
@@ -337,7 +349,16 @@ export function Comparisons() {
             more. Chart nodes use percentiles against the selected scope and position.
           </p>
         </div>
-        <ProfileRateToggle value={rateMode} onChange={setRateMode} />
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to={createChartHref}
+            className="relative flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80 whitespace-nowrap"
+          >
+            <BarChart3 size={13} />
+            Create Chart
+          </Link>
+          <ProfileRateToggle value={rateMode} onChange={setRateMode} />
+        </div>
       </div>
 
       {anyLowMinutesOrIneligible && !empty && (
@@ -495,6 +516,7 @@ export function Comparisons() {
                         contextLabel="Comparisons · Radar"
                         fileName={compareTitle}
                         aspect="square"
+                        copyUrl={pageShareUrl}
                         renderContent={({ exportMode }) => (
                           <CompareRadarChart
                             metricKeys={statKeys}

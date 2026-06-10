@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { AlertCircle, ArrowUpRight, Loader2, Search, X } from 'lucide-react'
+import { AlertCircle, ArrowUpRight, BarChart3, Loader2, Search, X } from 'lucide-react'
 import { fetchGalaxy, fetchGalaxySimilar } from '../lib/api'
 import type { GalaxyEdge, GalaxyPoint, PositionGroup } from '../types/api'
 import { cn } from '../lib/utils'
@@ -12,6 +12,7 @@ import {
 } from '../components/hud/Hud'
 import { HudMultiSelectDropdown } from '../components/hud/HudDropdown'
 import { useScope } from '../context/ScopeContext'
+import { buildGalaxyCreateChartsPath } from '../lib/createChartsUrl'
 
 const GalaxyScene = lazy(() =>
   import('../components/galaxy/GalaxyScene').then(module => ({ default: module.GalaxyScene })),
@@ -123,6 +124,7 @@ function PlayerHud({
   onHoverEdge,
   onClear,
   onOpenProfile,
+  createChartHref,
 }: {
   point: GalaxyPoint
   edges: GalaxyEdge[]
@@ -131,6 +133,7 @@ function PlayerHud({
   onHoverEdge: (id: string | null) => void
   onClear: () => void
   onOpenProfile: () => void
+  createChartHref: string
 }) {
   const { buildScopedPath } = useScope()
   const header = (
@@ -257,6 +260,13 @@ function PlayerHud({
             <X size={12} />
             Clear
           </button>
+          <Link
+            to={createChartHref}
+            className="flex items-center gap-1 border border-electric/25 px-2 py-1.5 text-[10px] uppercase tracking-[0.18em] text-electric/80 transition-colors hover:border-electric/45 hover:text-electric lg:w-full lg:justify-center"
+          >
+            <BarChart3 size={13} />
+            Chart
+          </Link>
           <HudActionButton onClick={onOpenProfile} className="hidden w-auto px-3 py-2 text-[10px] lg:flex lg:w-full lg:px-4 lg:py-3 lg:text-[12px]">
             <span>Open Profile</span>
             <ArrowUpRight size={14} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
@@ -426,6 +436,12 @@ export function Galaxy() {
       ? pointsById.get(hoveredPlayerId) ?? null
       : null
   const edges = similarQuery.data?.edges ?? []
+  const createChartHref = buildGalaxyCreateChartsPath({
+    competition: filters.competition,
+    season: filters.season,
+    selectedPoint,
+    edges,
+  })
   // Floating labels are rendered for:
   //   - every star in the selected player's "network" (the selected player +
   //     the top-5 similars they're connected to by a line), so the user sees
@@ -496,6 +512,14 @@ export function Galaxy() {
             emptyLabel="All Teams"
             searchPlaceholder="Search club..."
           />
+          <HudDivider />
+          <Link
+            to={createChartHref}
+            className="flex items-center justify-center gap-1.5 border border-electric/25 px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-electric/80 transition-colors hover:border-electric/45 hover:bg-electric/10 hover:text-electric"
+          >
+            <BarChart3 size={13} />
+            {selectedPoint ? 'Chart Network' : 'Create Chart'}
+          </Link>
           <HudDivider />
           <div className="max-h-72 overflow-auto border border-electric/15 bg-mat/40">
             {(data.players ?? [])
@@ -595,6 +619,13 @@ export function Galaxy() {
             <p className="text-[10px] uppercase tracking-[0.16em] text-electric/50">
               Model floor: {data.model_meta.min_minutes} minutes
             </p>
+            <Link
+              to={createChartHref}
+              className="flex items-center justify-center gap-1.5 border border-electric/25 px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-electric/80 transition-colors hover:border-electric/45 hover:bg-electric/10 hover:text-electric"
+            >
+              <BarChart3 size={13} />
+              {selectedPoint ? 'Chart Network' : 'Create Chart'}
+            </Link>
             {search.trim() && (
               <div className="border border-electric/15 bg-mat/50">
                 {mobileSearchResults.length ? (
@@ -655,6 +686,7 @@ export function Galaxy() {
             onOpenProfile={() =>
               navigate(buildScopedPath(`/player/${selectedPoint.canonical_player_id}`))
             }
+            createChartHref={createChartHref}
           />
         </div>
       )}

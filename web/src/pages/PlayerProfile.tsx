@@ -1,7 +1,7 @@
 import { Fragment, lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, AlertCircle, FileImage } from 'lucide-react'
+import { BarChart3, Loader2, AlertCircle, FileImage } from 'lucide-react'
 import { fetchPlayerDetail } from '../lib/api'
 import type { PlayerDetailResponse, SecondaryTeamBadge } from '../types/api'
 import { useScope } from '../context/ScopeContext'
@@ -14,6 +14,7 @@ import { ProfilePizzaSection } from '../components/profile/ProfilePizzaSection'
 import { ProfileEligibilityBanner } from '../components/profile/ProfileEligibilityBanner'
 import { ProfileScopeSelector } from '../components/profile/ProfileScopeSelector'
 import type { ProfileRateMode } from '../lib/profileMetrics'
+import { buildPlayerCreateChartsPath } from '../lib/createChartsUrl'
 import type { PositionGroup, SearchPlayerMembership } from '../types/api'
 import { scopeIncludesMembership } from '../lib/scopeMembership'
 
@@ -213,6 +214,13 @@ function ProfileLayout({
               navigate(buildScopedPath(`/player/${player.canonical_player_id}`, nextScope))
             }}
           />
+          <Link
+            to={buildPlayerCreateChartsPath(player, rateMode)}
+            className="relative flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80 whitespace-nowrap"
+          >
+            <BarChart3 size={13} />
+            Create Chart
+          </Link>
           <Link
             to={buildScopedPath(
               `/comparisons?players=${player.competition_code}:${player.season_label}:${player.canonical_player_id}`,

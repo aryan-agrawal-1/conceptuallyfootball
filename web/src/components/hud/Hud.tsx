@@ -144,12 +144,14 @@ export function HudActionButton({
   onClick,
   children,
   className,
+  title,
   type = 'button',
   disabled = false,
 }: {
   onClick?: () => void
   children: ReactNode
   className?: string
+  title?: string
   type?: 'button' | 'submit'
   disabled?: boolean
 }) {
@@ -158,6 +160,7 @@ export function HudActionButton({
       type={type}
       onClick={onClick}
       disabled={disabled}
+      title={title}
       className={cn(
         'group relative px-4 py-3 border border-electric bg-electric/15 hover:bg-electric/30 text-electric hover:text-ink transition-colors',
         'flex items-center justify-center gap-2 font-bold tracking-[0.15em] uppercase text-[12px]',

@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom'
 import { BarChart3, ChevronDown, GitCompare, Microscope, Orbit, Search, Table2 } from 'lucide-react'
 import { useScope } from '../../context/ScopeContext'
 import { BRAND_LOGO_URL, BRAND_NAME } from '../../lib/brand'
+import { CREATE_CHARTS_PATH } from '../../lib/createChartsUrl'
 import { cn } from '../../lib/utils'
 import { HudCornerMarks, HudPopover } from '../hud/Hud'
 import type { CompetitionCatalogEntry } from '../../types/api'
@@ -14,7 +15,7 @@ const CommandPalette = lazy(() =>
 const NAV_LINKS = [
   { to: '/', label: 'Matrix', shortLabel: 'Matrix', icon: Table2 },
   { to: '/galaxy', label: 'Galaxy', shortLabel: 'Galaxy', icon: Orbit },
-  { to: '/data-visualiser', label: 'Visualiser', shortLabel: 'Visualiser', icon: BarChart3 },
+  { to: CREATE_CHARTS_PATH, label: 'Create Charts', shortLabel: 'Charts', icon: BarChart3 },
   { to: '/comparisons', label: 'Comparisons', shortLabel: 'Compare', icon: GitCompare },
   { to: '/regression-lab', label: 'Lab', shortLabel: 'Lab', icon: Microscope },
 ]

@@ -9,6 +9,7 @@ import { COLUMN_GROUPS_GK, buildMatrixVisibilityAll } from '../lib/gkColumns'
 import { logMatrixPerfPhases } from '../lib/perfDebug'
 import { isLabPosition } from '../lib/regressionLabConfig'
 import { buildRegressionLabHandoff } from '../lib/regressionLabUrl'
+import { buildMatrixCreateChartsPath } from '../lib/createChartsUrl'
 import type { MatrixRateMode } from '../lib/matrixRateMode'
 import type { MatrixFilters, MetricAvailability, PlayerRow } from '../types/api'
 import { useScope } from '../context/ScopeContext'
@@ -121,6 +122,10 @@ export function StatMatrix() {
     if (!filters.position_group || !isLabPosition(filters.position_group)) return null
     return buildRegressionLabHandoff(filters)
   }, [filters])
+  const createChartHref = useMemo(
+    () => buildMatrixCreateChartsPath(filters, rateMode),
+    [filters, rateMode],
+  )
 
   function handleFiltersChange(partial: Partial<MatrixFilters>) {
     filterInteractionStartRef.current = performance.now()
@@ -154,6 +159,7 @@ export function StatMatrix() {
         totalCount={allPlayers.length}
         refetching={isFetching && isPlaceholderData}
         regressionLabHref={regressionLabHref}
+        createChartHref={createChartHref}
       />
 
       <div className="flex-1 min-h-0 flex flex-col">

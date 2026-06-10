@@ -365,6 +365,7 @@ export function DataVisualiser() {
     () => buildChartSubtitle(state),
     [state],
   )
+  const pageShareUrl = typeof window !== 'undefined' ? window.location.href : undefined
 
   function update(next: Partial<DataVisualiserUrlState>) {
     writeState(state, setSearchParams, next)
@@ -422,12 +423,12 @@ export function DataVisualiser() {
       <div className="mb-6 flex flex-col gap-5 lg:mb-8 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
           <div className="mb-3 flex items-center gap-2">
-            <HudLabel>Data Visualiser</HudLabel>
+            <HudLabel>Create Charts</HudLabel>
             <span className="text-[10px] uppercase tracking-[0.22em] text-electric/55">Share-ready charts</span>
           </div>
           <h1 className="text-[28px] font-black leading-tight tracking-tight text-ink sm:text-[40px] sm:leading-none">
-            <span className="sm:hidden">Build player and team charts.</span>
-            <span className="hidden sm:inline">Build player and team charts from the Conceptually Football dataset.</span>
+            <span className="sm:hidden">Create player and team charts.</span>
+            <span className="hidden sm:inline">Create player and team charts from the Conceptually Football dataset.</span>
           </h1>
           <p className="mt-3 max-w-3xl text-[12px] leading-relaxed text-ink-dim">
             Start from a live example, swap chart types, then tune the cohort and metrics. Scatter works best for
@@ -575,9 +576,10 @@ export function DataVisualiser() {
               <ChartShareCard
                 title={chartTitle}
                 subtitle={chartSubtitle}
-                contextLabel={`${state.tab === 'players' ? 'Players' : 'Teams'} · Data Visualiser`}
+                contextLabel={`${state.tab === 'players' ? 'Players' : 'Teams'} · Create Charts`}
                 fileName={chartTitle}
                 aspect={state.chart === 'radar' ? 'square' : 'landscape'}
+                copyUrl={pageShareUrl}
                 renderContent={({ exportMode }) => renderChart(exportMode)}
               />
             </div>

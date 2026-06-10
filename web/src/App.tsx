@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { Layout } from './components/layout/Layout'
 import { initializeAnalytics, trackPageView } from './lib/analytics'
+import { CREATE_CHARTS_PATH, LEGACY_DATA_VISUALISER_PATH } from './lib/createChartsUrl'
 
 const StatMatrix = lazy(() =>
   import('./pages/StatMatrix').then(m => ({ default: m.StatMatrix })),
@@ -63,7 +64,8 @@ export default function App() {
           <Route path="/galaxy" element={<Galaxy />} />
           <Route path="/comparisons" element={<Comparisons />} />
           <Route path="/regression-lab" element={<RegressionLab />} />
-          <Route path="/data-visualiser" element={<DataVisualiser />} />
+          <Route path={CREATE_CHARTS_PATH} element={<DataVisualiser />} />
+          <Route path={LEGACY_DATA_VISUALISER_PATH} element={<DataVisualiser />} />
         </Routes>
       </Suspense>
     </Layout>
