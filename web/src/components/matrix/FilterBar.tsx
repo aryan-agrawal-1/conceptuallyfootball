@@ -5,7 +5,9 @@ import { cn } from '../../lib/utils'
 import type { MatrixFilters, PositionGroup } from '../../types/api'
 import type { ColGroupDef } from '../../lib/columns'
 import type { MatrixRateMode } from '../../lib/matrixRateMode'
-import { HudCornerMarks, HudPill, HudVSep } from '../hud/Hud'
+import type { MatrixStarterView } from '../../lib/matrixStarterViews'
+import { HEATMAP_GRADIENT_CSS } from '../../lib/heatmap'
+import { HudCornerMarks, HudVSep } from '../hud/Hud'
 
 const POSITIONS: { value: PositionGroup | ''; label: string }[] = [
   { value: '',    label: 'All' },
@@ -40,10 +42,11 @@ interface FilterBarProps {
   totalCount: number
   /** True while a new matrix request is in flight but stale rows are still shown. */
   refetching?: boolean
-  /** Hand off current cohort to Regression Lab (outfield position only). */
-  regressionLabHref?: string | null
   /** Hand off current cohort to Create Charts. */
   createChartHref?: string | null
+  starterViews: MatrixStarterView[]
+  activeStarterViewId: string | null
+  onStarterViewApply: (view: MatrixStarterView) => void
 }
 
 export function FilterBar({
@@ -60,8 +63,10 @@ export function FilterBar({
   playerCount,
   totalCount,
   refetching = false,
-  regressionLabHref = null,
   createChartHref = null,
+  starterViews,
+  activeStarterViewId,
+  onStarterViewApply,
 }: FilterBarProps) {
   const [teamOpen, setTeamOpen] = useState(false)
   const [colPickerOpen, setColPickerOpen] = useState(false)
@@ -109,7 +114,7 @@ export function FilterBar({
 
       <HudVSep className="hidden lg:block" />
 
-      <MobileSingleDropdown
+      <FilterDropdown
         containerRef={positionRef}
         label="Position"
         value={positionLabel(filters.position_group)}
@@ -120,11 +125,6 @@ export function FilterBar({
           onFiltersChange({ position_group: pos || undefined })
           setPositionOpen(false)
         }}
-      />
-
-      <PositionGroupPicker
-        value={filters.position_group}
-        onChange={pos => onFiltersChange({ position_group: pos || undefined })}
       />
 
       <HudVSep className="hidden lg:block" />
@@ -144,7 +144,7 @@ export function FilterBar({
 
       <HudVSep className="hidden lg:block" />
 
-      <MobileSingleDropdown
+      <FilterDropdown
         containerRef={minutesRef}
         label="Minutes"
         value={minutesLabel(filters.min_minutes)}
@@ -160,26 +160,6 @@ export function FilterBar({
         }}
         mono
       />
-
-      <MinMinutesPicker
-        value={filters.min_minutes}
-        onChange={mins => onFiltersChange({ min_minutes: mins })}
-      />
-
-      {regressionLabHref && (
-        <>
-          <HudVSep className="hidden lg:block" />
-          <Link
-            to={regressionLabHref}
-            className={cn(
-              'relative shrink-0 px-2.5 py-1 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border',
-              'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
-            )}
-          >
-            Lab
-          </Link>
-        </>
-      )}
 
       {createChartHref && (
         <>
@@ -204,6 +184,7 @@ export function FilterBar({
       <HudVSep className="hidden lg:block" />
 
       <HeatmapToggle enabled={heatmapEnabled} onToggle={onHeatmapToggle} />
+      {heatmapEnabled && <HeatmapLegend />}
 
       <ColumnsDropdown
         containerRef={colRef}
@@ -212,6 +193,9 @@ export function FilterBar({
         columnGroups={columnGroups}
         visibleCols={visibleCols}
         onGroupToggle={onColGroupToggle}
+        starterViews={starterViews}
+        activeStarterViewId={activeStarterViewId}
+        onStarterViewApply={onStarterViewApply}
       />
     </div>
   )
@@ -247,7 +231,7 @@ function MatrixReadout({
 
 // Position filter 
 
-function MobileSingleDropdown({
+function FilterDropdown({
   containerRef,
   label,
   value,
@@ -267,7 +251,7 @@ function MobileSingleDropdown({
   mono?: boolean
 }) {
   return (
-    <div ref={containerRef} className="relative lg:hidden">
+    <div ref={containerRef} className="relative shrink-0">
       <button
         type="button"
         aria-label={label}
@@ -275,7 +259,7 @@ function MobileSingleDropdown({
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
         className={cn(
-          'relative flex items-center gap-1.5 border px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.15em] transition-colors',
+          'relative flex min-w-[116px] items-center justify-between gap-2 border px-2.5 py-1.5 text-[11px] font-medium uppercase tracking-[0.14em] transition-colors',
           open
             ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
             : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
@@ -283,7 +267,8 @@ function MobileSingleDropdown({
         )}
       >
         {open && <HudCornerMarks size="size-1" />}
-        {value}
+        <span className="text-electric/45">{label}</span>
+        <span className={cn('text-ink', open && 'text-electric')}>{value}</span>
         <ChevronDown size={11} className={cn('transition-transform', open && 'rotate-180')} />
       </button>
       {open && (
@@ -313,56 +298,6 @@ function MobileSingleDropdown({
           </div>
         </HudPopover>
       )}
-    </div>
-  )
-}
-
-function PositionGroupPicker({
-  value,
-  onChange,
-}: {
-  value: string | undefined
-  onChange: (value: PositionGroup | '') => void
-}) {
-  return (
-    <div className="hidden items-center gap-1 lg:flex">
-      {POSITIONS.map(({ value: optValue, label }) => {
-        const active = value === optValue || (!value && optValue === '')
-        return (
-          <HudPill
-            key={label}
-            active={active}
-            onClick={() => onChange(optValue)}
-          >
-            {label}
-          </HudPill>
-        )
-      })}
-    </div>
-  )
-}
-
-// Min minutes filter
-
-function MinMinutesPicker({
-  value,
-  onChange,
-}: {
-  value: number | null | undefined
-  onChange: (mins: number) => void
-}) {
-  return (
-    <div className="hidden items-center gap-1 lg:flex">
-      {MIN_MINUTES_OPTIONS.map(mins => (
-        <HudPill
-          key={mins}
-          active={value === mins}
-          onClick={() => onChange(mins)}
-          className="font-mono"
-        >
-          {mins === 0 ? 'All' : `${mins}'`}
-        </HudPill>
-      ))}
     </div>
   )
 }
@@ -433,6 +368,9 @@ function HeatmapToggle({
 }) {
   return (
     <button
+      type="button"
+      aria-label="Heatmap"
+      aria-pressed={enabled}
       onClick={onToggle}
       className={cn(
         'relative flex items-center gap-2 px-3 py-1.5 border text-[11px] font-medium tracking-[0.15em] uppercase transition-colors',
@@ -450,6 +388,19 @@ function HeatmapToggle({
       />
       Heatmap
     </button>
+  )
+}
+
+function HeatmapLegend() {
+  return (
+    <div className="hidden shrink-0 items-center gap-1.5 text-[9px] font-medium uppercase tracking-[0.18em] text-ink-dim xl:flex">
+      <span>Low</span>
+      <span
+        className="h-1.5 w-16 border border-electric/20"
+        style={{ background: HEATMAP_GRADIENT_CSS }}
+      />
+      <span>High</span>
+    </div>
   )
 }
 
@@ -604,6 +555,9 @@ interface ColumnsDropdownProps {
   columnGroups: ColGroupDef[]
   visibleCols: Record<string, boolean>
   onGroupToggle: (groupId: string) => void
+  starterViews: MatrixStarterView[]
+  activeStarterViewId: string | null
+  onStarterViewApply: (view: MatrixStarterView) => void
 }
 
 function ColumnsDropdown({
@@ -613,6 +567,9 @@ function ColumnsDropdown({
   columnGroups,
   visibleCols,
   onGroupToggle,
+  starterViews,
+  activeStarterViewId,
+  onStarterViewApply,
 }: ColumnsDropdownProps) {
   return (
     <div ref={containerRef} className="relative">
@@ -634,6 +591,12 @@ function ColumnsDropdown({
           groups={columnGroups}
           visibleCols={visibleCols}
           onGroupToggle={onGroupToggle}
+          starterViews={starterViews}
+          activeStarterViewId={activeStarterViewId}
+          onStarterViewApply={view => {
+            onStarterViewApply(view)
+            onOpenChange(false)
+          }}
         />
       )}
     </div>
@@ -644,14 +607,56 @@ interface ColumnPickerProps {
   groups: ColGroupDef[]
   visibleCols: Record<string, boolean>
   onGroupToggle: (groupId: string) => void
+  starterViews: MatrixStarterView[]
+  activeStarterViewId: string | null
+  onStarterViewApply: (view: MatrixStarterView) => void
 }
 
-function ColumnPicker({ groups, visibleCols, onGroupToggle }: ColumnPickerProps) {
+function ColumnPicker({
+  groups,
+  visibleCols,
+  onGroupToggle,
+  starterViews,
+  activeStarterViewId,
+  onStarterViewApply,
+}: ColumnPickerProps) {
   const statGroups = groups.filter(g => g.id !== 'meta')
 
   return (
-    <HudPopover className="w-64" align="end">
+    <HudPopover className="w-72" align="end">
       <div className="p-3">
+        {starterViews.length > 0 && (
+          <>
+            <p className="flex items-center gap-1.5 text-[10px] font-medium tracking-[0.25em] uppercase text-electric mb-2.5">
+              <span className="size-1 rounded-full bg-electric animate-pulse" />
+              Starter Views
+            </p>
+            <div className="grid grid-cols-1 gap-1">
+              {starterViews.map(view => {
+                const active = view.id === activeStarterViewId
+                return (
+                  <button
+                    key={view.id}
+                    type="button"
+                    onClick={() => onStarterViewApply(view)}
+                    className={cn(
+                      'flex items-center justify-between border px-3 py-2 text-left text-[12px] font-medium transition-colors',
+                      active
+                        ? 'border-electric/45 bg-electric/10 text-electric'
+                        : 'border-transparent text-ink-dim hover:bg-electric/5 hover:text-ink',
+                    )}
+                  >
+                    <span>{view.label}</span>
+                    <span className="text-[10px] font-mono uppercase tracking-[0.16em] text-electric/55">
+                      Sort
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+            <div className="my-3 h-px bg-electric/15" />
+          </>
+        )}
         <p className="flex items-center gap-1.5 text-[10px] font-medium tracking-[0.25em] uppercase text-electric mb-2.5">
           <span className="size-1 rounded-full bg-electric animate-pulse" />
           Column Groups

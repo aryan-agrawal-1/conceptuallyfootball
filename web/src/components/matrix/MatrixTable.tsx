@@ -461,6 +461,8 @@ interface MatrixTableProps {
   columnGroups?: ColGroupDef[]
   heatmapEnabled: boolean
   rateMode: MatrixRateMode
+  sorting: SortingState
+  onSortingChange: (sorting: SortingState) => void
   /** Vertical scroll container (StatMatrix main pane) — hides header tooltip on scroll. */
   scrollParentRef?: RefObject<HTMLDivElement | null>
   /** Outfield stat matrix vs goalkeeper-only columns and metrics. */
@@ -473,14 +475,13 @@ export function MatrixTable({
   columnGroups: columnGroupsOverride,
   heatmapEnabled,
   rateMode,
+  sorting,
+  onSortingChange,
   scrollParentRef,
   variant = 'outfield',
 }: MatrixTableProps) {
   const navigate = useNavigate()
   const sortInteractionStartRef = useRef<number | null>(null)
-  const [sorting, setSorting] = useState<SortingState>([
-    { id: 'minutes', desc: true },
-  ])
 
   const { portal: headerTipPortal, show: showHeaderTip, scheduleHide: scheduleHeaderTipHide, hide: hideHeaderTip } =
     useMatrixHeaderTooltip()
@@ -594,7 +595,8 @@ export function MatrixTable({
     getRowId: row => String(row.canonical_player_id),
     onSortingChange: updater => {
       sortInteractionStartRef.current = performance.now()
-      setSorting(updater)
+      const nextSorting = typeof updater === 'function' ? updater(sorting) : updater
+      onSortingChange(nextSorting)
     },
     getCoreRowModel: getCoreRowModel(),
   })

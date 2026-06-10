@@ -111,3 +111,35 @@
     background: var(--color-ink-muted);
   }
 }
+
+@layer utilities {
+  @keyframes matrix-cta-enter {
+    from {
+      opacity: 0;
+      transform: translateY(10px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes matrix-cta-exit {
+    from {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(8px) scale(0.985);
+    }
+  }
+
+  .matrix-cta-enter {
+    animation: matrix-cta-enter 240ms ease-out both;
+  }
+
+  .matrix-cta-exit {
+    animation: matrix-cta-exit 240ms ease-in both;
+  }
+}

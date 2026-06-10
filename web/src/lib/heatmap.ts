@@ -15,6 +15,8 @@ const HEX_STOPS = [
   '#14b8a6',
 ] as const
 
+export const HEATMAP_GRADIENT_CSS = `linear-gradient(90deg, ${HEX_STOPS.join(', ')})`
+
 const P_STOPS = HEX_STOPS.map((_, i) => (i / (HEX_STOPS.length - 1)) * 100)
 
 interface RGB { r: number; g: number; b: number }

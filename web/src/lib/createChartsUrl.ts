@@ -11,6 +11,7 @@ import {
   DEFAULT_BAR_COUNT,
   writeDataVisualiserParams,
   type DataVisualiserUrlState,
+  type VisualiserBarWindow,
   type VisualiserPlayerPosition,
 } from './dataVisualiserUrl'
 import type { ProfileRateMode } from './profileMetrics'
@@ -68,6 +69,37 @@ export function buildMatrixCreateChartsPath(
     mode,
     labels: true,
   })
+}
+
+export function buildMatrixMetricCreateChartsPath({
+  filters,
+  mode,
+  metric,
+  barWindow,
+}: {
+  filters: MatrixFilters
+  mode: ProfileRateMode
+  metric: string
+  barWindow: Extract<VisualiserBarWindow, 'top' | 'bottom'>
+}): string {
+  const path = buildCreateChartsPath({
+    tab: 'players',
+    chart: 'bar',
+    competition: filters.competition,
+    season: filters.season,
+    position: playerPosition(filters.position_group),
+    playerTeams: filters.teams ?? [],
+    minMinutes: filters.min_minutes,
+    mode,
+    metric,
+    barWindow,
+    barCount: 12,
+  })
+  const [pathname, query] = path.split('?')
+  const params = new URLSearchParams(query)
+  params.set('bar_window', barWindow)
+  params.set('bar_count', '12')
+  return `${pathname}?${params.toString()}`
 }
 
 export function buildPlayerCreateChartsPath(

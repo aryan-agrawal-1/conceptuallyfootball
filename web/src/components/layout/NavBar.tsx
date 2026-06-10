@@ -17,7 +17,7 @@ const NAV_LINKS = [
   { to: '/galaxy', label: 'Galaxy', shortLabel: 'Galaxy', icon: Orbit },
   { to: CREATE_CHARTS_PATH, label: 'Create Charts', shortLabel: 'Charts', icon: BarChart3 },
   { to: '/comparisons', label: 'Comparisons', shortLabel: 'Compare', icon: GitCompare },
-  { to: '/regression-lab', label: 'Lab', shortLabel: 'Lab', icon: Microscope },
+  { to: '/regression-lab', label: 'Regression Lab', shortLabel: 'Lab', icon: Microscope },
 ]
 
 const IS_MAC =
