@@ -30,10 +30,13 @@ const DEFAULT_CHART_STATE: DataVisualiserUrlState = {
   mode: 'per90',
   radarMetrics: [],
   compareIds: [],
+  compareMode: 'auto',
   pinnedIds: [],
+  pinMode: 'auto',
   barWindow: 'top',
   barCount: DEFAULT_BAR_COUNT,
-  labels: false,
+  labels: true,
+  trendline: false,
 }
 
 function playerPosition(position: PositionGroup | string | undefined): VisualiserPlayerPosition {
@@ -114,6 +117,7 @@ export function buildPlayerCreateChartsPath(
     position: playerPosition(player.position_group),
     mode,
     pinnedIds: [player.canonical_player_id],
+    pinMode: 'manual',
     labels: true,
   })
 }
@@ -129,6 +133,7 @@ export function buildTeamCreateChartsPath(
     season: team.season_label,
     mode,
     pinnedIds: [team.canonical_team_id],
+    pinMode: 'manual',
   })
 }
 
@@ -153,7 +158,9 @@ export function buildComparisonCreateChartsPath({
     mode,
     radarMetrics: metricKeys,
     compareIds: playerIds.slice(0, 3),
+    compareMode: 'manual',
     pinnedIds: playerIds.slice(0, 5),
+    pinMode: 'manual',
   })
 }
 
@@ -191,7 +198,9 @@ export function buildGalaxyCreateChartsPath({
     season,
     position: playerPosition(selectedPoint.position_group),
     compareIds: playerIds.slice(0, 3),
+    compareMode: 'manual',
     pinnedIds: playerIds.slice(0, 5),
+    pinMode: 'manual',
     labels: true,
   })
 }

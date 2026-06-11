@@ -119,8 +119,12 @@ export function HudMultiSelectDropdown({
   selected,
   onChange,
   emptyLabel = 'All',
+  triggerLabel,
   searchPlaceholder,
   maxSelected,
+  hideClearButton = false,
+  hideChevron = false,
+  compact = false,
   className,
   align = 'start',
 }: {
@@ -129,8 +133,12 @@ export function HudMultiSelectDropdown({
   selected: string[]
   onChange: (selected: string[]) => void
   emptyLabel?: string
+  triggerLabel?: string
   searchPlaceholder?: string
   maxSelected?: number
+  hideClearButton?: boolean
+  hideChevron?: boolean
+  compact?: boolean
   className?: string
   align?: 'start' | 'end'
 }) {
@@ -143,11 +151,12 @@ export function HudMultiSelectDropdown({
     return options.filter(option => option.label.toLowerCase().includes(needle))
   }, [options, search])
   const displayLabel =
-    selected.length === 0
+    triggerLabel ??
+    (selected.length === 0
       ? emptyLabel
       : selected.length === 1
         ? options.find(option => option.value === selected[0])?.label ?? selected[0]
-        : `${selected.length} ${label}`
+        : `${selected.length} ${label}`)
 
   function toggle(value: string) {
     if (selected.includes(value)) {
@@ -167,7 +176,8 @@ export function HudMultiSelectDropdown({
         aria-expanded={open}
         onClick={() => setOpen(current => !current)}
         className={cn(
-          'relative flex w-full min-w-0 items-center justify-between gap-1.5 border px-3 py-2 text-[11px] font-medium uppercase tracking-[0.15em] transition-colors',
+          'relative flex min-w-0 items-center gap-1.5 border py-2 text-[11px] font-medium uppercase tracking-[0.15em] transition-colors',
+          compact ? 'w-auto justify-center px-2' : 'w-full justify-between px-3',
           selected.length || open
             ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
             : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
@@ -175,7 +185,7 @@ export function HudMultiSelectDropdown({
       >
         {(selected.length > 0 || open) && <HudCornerMarks size="size-1" />}
         <span className="truncate">{displayLabel}</span>
-        {selected.length > 0 ? (
+        {selected.length > 0 && !hideClearButton ? (
           <X
             size={11}
             className="shrink-0 opacity-70"
@@ -184,7 +194,7 @@ export function HudMultiSelectDropdown({
               onChange([])
             }}
           />
-        ) : (
+        ) : hideChevron ? null : (
           <ChevronDown size={11} className={cn('shrink-0 transition-transform', open && 'rotate-180')} />
         )}
       </button>

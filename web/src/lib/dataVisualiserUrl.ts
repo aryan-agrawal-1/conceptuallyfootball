@@ -5,6 +5,7 @@ type VisualiserTab = 'players' | 'teams'
 export type VisualiserChartType = 'scatter' | 'bar' | 'radar'
 export type VisualiserPlayerPosition = 'ALL' | 'FWD' | 'MID' | 'DEF' | 'GK'
 export type VisualiserBarWindow = 'top' | 'bottom' | 'all'
+export type VisualiserSelectionMode = 'auto' | 'manual'
 export const MIN_BAR_COUNT = 5
 export const MAX_BAR_COUNT = 20
 
@@ -22,10 +23,13 @@ export interface DataVisualiserUrlState {
   metric?: string
   radarMetrics: string[]
   compareIds: number[]
+  compareMode: VisualiserSelectionMode
   pinnedIds: number[]
+  pinMode: VisualiserSelectionMode
   barWindow: VisualiserBarWindow
   barCount: number
   labels: boolean
+  trendline: boolean
 }
 
 export const DEFAULT_BAR_COUNT = 12
@@ -90,13 +94,16 @@ export function parseDataVisualiserParams(search: URLSearchParams): DataVisualis
     metric: search.get('metric')?.trim() || undefined,
     radarMetrics: parseCsv(search.get('radar')),
     compareIds: parseIds(search.get('compare')),
+    compareMode: search.get('compare_mode') === 'manual' ? 'manual' : 'auto',
     pinnedIds: parseIds(search.get('pins')),
+    pinMode: search.get('pin_mode') === 'manual' ? 'manual' : 'auto',
     barWindow: parseBarWindow(search.get('bar_window')),
     barCount:
       Number.isFinite(barCountRaw) && barCountRaw > 0
         ? Math.min(Math.max(Math.round(barCountRaw), MIN_BAR_COUNT), MAX_BAR_COUNT)
         : DEFAULT_BAR_COUNT,
-    labels: search.get('labels') === '1',
+    labels: search.get('labels') !== '0',
+    trendline: search.get('trendline') === '1',
   }
 }
 
@@ -121,10 +128,13 @@ export function writeDataVisualiserParams(state: DataVisualiserUrlState): URLSea
   if (state.metric) p.set('metric', state.metric)
   if (state.radarMetrics.length) p.set('radar', state.radarMetrics.join(','))
   if (state.compareIds.length) p.set('compare', state.compareIds.join(','))
+  if (state.compareMode === 'manual') p.set('compare_mode', 'manual')
   if (state.pinnedIds.length) p.set('pins', state.pinnedIds.join(','))
+  if (state.pinMode === 'manual') p.set('pin_mode', 'manual')
   if (state.barWindow !== 'top') p.set('bar_window', state.barWindow)
   if (state.barCount !== DEFAULT_BAR_COUNT) p.set('bar_count', String(state.barCount))
-  if (state.labels) p.set('labels', '1')
+  if (!state.labels) p.set('labels', '0')
+  if (state.trendline) p.set('trendline', '1')
 
   return p
 }

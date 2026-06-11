@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { cn } from '../../lib/utils'
+import { shortEntityLabel } from '../../lib/entityLabels'
 
 interface VisualiserRadarSeries {
   id: number
@@ -17,6 +18,7 @@ interface VisualiserRadarChartProps {
   axisLabels: string[]
   series: VisualiserRadarSeries[]
   exportMode?: boolean
+  shortenLabels?: boolean
 }
 
 function polar(theta: number, radius: number): { x: number; y: number } {
@@ -33,6 +35,7 @@ export function VisualiserRadarChart({
   axisLabels,
   series,
   exportMode = false,
+  shortenLabels = false,
 }: VisualiserRadarChartProps) {
   const [hover, setHover] = useState<{ axisIndex: number; seriesId: number; x: number; y: number } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -197,7 +200,7 @@ export function VisualiserRadarChart({
             <div className="flex items-center gap-2">
               <span className="size-2 rounded-full" style={{ background: item.stroke }} />
               <span className={cn('font-medium text-ink', exportMode ? 'text-[15px]' : 'text-[12px]')}>
-                {item.label}
+                {shortenLabels ? shortEntityLabel(item.label) : item.label}
               </span>
             </div>
             {item.sublabel && (
@@ -218,7 +221,9 @@ export function VisualiserRadarChart({
             transform: 'translate(-50%, calc(-100% - 10px))',
           }}
         >
-          <div className="text-[10px] font-semibold text-ink">{hoveredSeries.label}</div>
+          <div className="text-[10px] font-semibold text-ink">
+            {shortenLabels ? shortEntityLabel(hoveredSeries.label) : hoveredSeries.label}
+          </div>
           <div className="mt-0.5 text-[10px] text-ink-muted">{axis[hover.axisIndex]?.label}</div>
           <div className="mt-1 font-mono text-electric/90">{hoveredValue.text}</div>
         </div>

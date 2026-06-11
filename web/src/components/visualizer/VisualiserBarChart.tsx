@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { cn } from '../../lib/utils'
+import { shortEntityLabel } from '../../lib/entityLabels'
 
 export interface VisualiserBarDatum {
   id: number
@@ -14,6 +15,7 @@ interface VisualiserBarChartProps {
   rows: VisualiserBarDatum[]
   metricLabel: string
   exportMode?: boolean
+  shortenLabels?: boolean
   onSelect?: (id: number) => void
 }
 
@@ -21,6 +23,7 @@ export function VisualiserBarChart({
   rows,
   metricLabel,
   exportMode = false,
+  shortenLabels = false,
   onSelect,
 }: VisualiserBarChartProps) {
   const valueCol = exportMode ? '136px' : '88px'
@@ -67,7 +70,7 @@ export function VisualiserBarChart({
                     {String(index + 1).padStart(2, '0')}
                   </span>
                   <span className={cn('truncate font-medium text-ink', exportMode ? 'text-[16px]' : 'text-[13px]')}>
-                    {row.label}
+                    {shortenLabels ? shortEntityLabel(row.label) : row.label}
                   </span>
                 </div>
                 {row.sublabel && (

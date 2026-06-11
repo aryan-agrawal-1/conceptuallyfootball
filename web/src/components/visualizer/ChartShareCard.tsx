@@ -11,6 +11,7 @@ interface ChartShareCardProps {
   fileName: string
   aspect?: ExportAspect
   copyUrl?: string
+  compact?: boolean
   renderContent: (opts: { exportMode: boolean }) => ReactNode
   renderExportLegend?: () => ReactNode
 }
@@ -32,6 +33,7 @@ export function ChartShareCard({
   fileName,
   aspect = 'landscape',
   copyUrl,
+  compact = true,
   renderContent,
   renderExportLegend,
 }: ChartShareCardProps) {
@@ -100,8 +102,25 @@ export function ChartShareCard({
     if (!copyUrl) return
     try {
       setBusy('copy')
+      let copied = false
       if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(copyUrl)
+        try {
+          await navigator.clipboard.writeText(copyUrl)
+          copied = true
+        } catch {
+          copied = false
+        }
+      }
+      if (!copied) {
+        const input = document.createElement('textarea')
+        input.value = copyUrl
+        input.setAttribute('readonly', '')
+        input.style.position = 'fixed'
+        input.style.left = '-9999px'
+        document.body.appendChild(input)
+        input.select()
+        document.execCommand('copy')
+        document.body.removeChild(input)
       }
     } finally {
       setBusy(null)
@@ -115,7 +134,7 @@ export function ChartShareCard({
         onShare={handleShare}
         onDownload={handleDownload}
         onCopyLink={copyUrl ? handleCopyLink : undefined}
-        compact
+        compact={compact}
       />
 
       {(busy === 'share' || busy === 'download') && <div className="fixed left-[-20000px] top-0 pointer-events-none opacity-0" aria-hidden="true">

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { fetchTeamStatMatrix } from '../lib/api'
@@ -24,6 +24,7 @@ import {
 } from '../lib/profileMetrics'
 import type {
   PlayerRow,
+  StatMeta,
   TeamSeasonRow,
   TeamStatMeta,
 } from '../types/api'
@@ -54,9 +55,8 @@ const PLAYER_POSITION_OPTIONS: Array<{ value: VisualiserPlayerPosition; label: s
   { value: 'GK', label: 'GK' },
 ]
 const BAR_WINDOWS: Array<{ value: VisualiserBarWindow; label: string }> = [
-  { value: 'top', label: 'Top' },
-  { value: 'bottom', label: 'Bottom' },
-  { value: 'all', label: 'All' },
+  { value: 'top', label: 'Top performers' },
+  { value: 'bottom', label: 'Bottom performers' },
 ]
 const RADAR_STROKES = ['#4A9EF5', '#FFBE5C', '#7FE2B8']
 const RADAR_FILLS = ['rgba(74,158,245,0.18)', 'rgba(255,190,92,0.18)', 'rgba(127,226,184,0.18)']
@@ -195,6 +195,7 @@ export function DataVisualiser() {
           y: y.value,
           xText: formatValue(x.value, x.formatUnit),
           yText: formatValue(y.value, y.formatUnit),
+          tieBreak: row.minutes,
         },
       ]
     })
@@ -214,6 +215,7 @@ export function DataVisualiser() {
           y: yValue,
           xText: formatTeamStatMode(xMetric, row.stats[xMetric], row.stats.matches ?? null, state.mode),
           yText: formatTeamStatMode(yMetric, row.stats[yMetric], row.stats.matches ?? null, state.mode),
+          tieBreak: row.stats.matches ?? 0,
         },
       ]
     })
@@ -221,17 +223,27 @@ export function DataVisualiser() {
 
   const activeScatterPoints = state.tab === 'players' ? playerScatterPoints : teamScatterPoints
 
-  const validPinnedIds = useMemo(() => {
+  const autoHighlightItems = useMemo(
+    () => rankHighHighPoints(activeScatterPoints).slice(0, 3),
+    [activeScatterPoints],
+  )
+  const autoPinnedIds = useMemo(
+    () => autoHighlightItems.map(item => item.point.id),
+    [autoHighlightItems],
+  )
+
+  const validManualPinnedIds = useMemo(() => {
     const available = new Set(activeScatterPoints.map(point => point.id))
     return state.pinnedIds.filter(id => available.has(id))
   }, [activeScatterPoints, state.pinnedIds])
-  const validPinnedIdSet = useMemo(() => new Set(validPinnedIds), [validPinnedIds])
+  const effectivePinnedIds = state.pinMode === 'manual' ? validManualPinnedIds : autoPinnedIds
+  const effectivePinnedIdSet = useMemo(() => new Set(effectivePinnedIds), [effectivePinnedIds])
 
   const labelIds = useMemo(() => {
     if (!state.labels) return []
     if (activeScatterPoints.length <= 20) return activeScatterPoints.map(point => point.id)
-    return validPinnedIds
-  }, [activeScatterPoints, state.labels, validPinnedIds])
+    return effectivePinnedIds
+  }, [activeScatterPoints, state.labels, effectivePinnedIds])
 
   const playerBarRows = useMemo(() => {
     if (!playerMeta || !barMetric) return []
@@ -248,8 +260,8 @@ export function DataVisualiser() {
         },
       ]
     })
-    return finalizeBarRows(rows, state.barWindow, state.barCount, validPinnedIds)
-  }, [barMetric, playerMeta, playerRows, state.mode, state.barWindow, state.barCount, validPinnedIds])
+    return finalizeBarRows(rows, state.barWindow, state.barCount, effectivePinnedIds)
+  }, [barMetric, playerMeta, playerRows, state.mode, state.barWindow, state.barCount, effectivePinnedIds])
 
   const teamBarRows = useMemo(() => {
     if (!barMetric) return []
@@ -265,18 +277,35 @@ export function DataVisualiser() {
         },
       ]
     })
-    return finalizeBarRows(rows, state.barWindow, state.barCount, validPinnedIds)
-  }, [barMetric, state.barCount, state.barWindow, state.mode, teamQuery.data?.results, validPinnedIds])
+    return finalizeBarRows(rows, state.barWindow, state.barCount, effectivePinnedIds)
+  }, [barMetric, state.barCount, state.barWindow, state.mode, teamQuery.data?.results, effectivePinnedIds])
 
   const activeBarRows = state.tab === 'players' ? playerBarRows : teamBarRows
 
+  const autoPlayerCompareIds = useMemo(() => {
+    if (!playerMeta || !radarMetrics.length) return playerRows.slice(0, 3).map(row => row.canonical_player_id)
+    return rankPlayerRowsByRadar(playerRows, radarMetrics, state.mode, playerMeta).slice(0, 3).map(item => item.id)
+  }, [playerMeta, playerRows, radarMetrics, state.mode])
+  const autoTeamCompareIds = useMemo(() => {
+    if (!teamMeta || !radarMetrics.length) return (teamQuery.data?.results ?? []).slice(0, 3).map(row => row.canonical_team_id)
+    return rankTeamRowsByRadar(teamQuery.data?.results ?? [], radarMetrics, state.mode).slice(0, 3).map(item => item.id)
+  }, [radarMetrics, state.mode, teamMeta, teamQuery.data?.results])
+  const compareIds = useMemo(() => {
+    const available =
+      state.tab === 'players'
+        ? new Set(playerRows.map(row => row.canonical_player_id))
+        : new Set((teamQuery.data?.results ?? []).map(row => row.canonical_team_id))
+    const explicit = state.compareIds.filter(id => available.has(id))
+    if (state.compareMode === 'manual') return explicit.slice(0, 3)
+    return (state.tab === 'players' ? autoPlayerCompareIds : autoTeamCompareIds).filter(id => available.has(id)).slice(0, 3)
+  }, [autoPlayerCompareIds, autoTeamCompareIds, playerRows, state.compareIds, state.compareMode, state.tab, teamQuery.data?.results])
   const playerCompareRows = useMemo(
-    () => resolvePlayerCompareRows(playerRows, state.compareIds),
-    [playerRows, state.compareIds],
+    () => resolvePlayerCompareRows(playerRows, compareIds),
+    [compareIds, playerRows],
   )
   const teamCompareRows = useMemo(
-    () => resolveTeamCompareRows(teamQuery.data?.results ?? [], state.compareIds),
-    [teamQuery.data?.results, state.compareIds],
+    () => resolveTeamCompareRows(teamQuery.data?.results ?? [], compareIds),
+    [compareIds, teamQuery.data?.results],
   )
 
   const playerRadar = useMemo(() => {
@@ -350,13 +379,6 @@ export function DataVisualiser() {
     }))
   }, [playerRows, state.tab, teamQuery.data?.results])
 
-  const compareIds = useMemo(() => {
-    const available = new Set(pickerOptions.map(option => option.id))
-    const explicit = state.compareIds.filter(id => available.has(id))
-    if (explicit.length) return explicit.slice(0, 3)
-    return pickerOptions.slice(0, 3).map(option => option.id)
-  }, [pickerOptions, state.compareIds])
-
   const chartTitle = useMemo(
     () => buildChartTitle(state, xMetric, yMetric, barMetric, radarMetrics, playerMeta, teamMeta),
     [barMetric, playerMeta, radarMetrics, state, teamMeta, xMetric, yMetric],
@@ -377,12 +399,14 @@ export function DataVisualiser() {
         <VisualiserScatterPlot
           points={activeScatterPoints.map(point => ({
             ...point,
-            highlighted: validPinnedIdSet.has(point.id),
+            highlighted: effectivePinnedIdSet.has(point.id),
           }))}
           xLabel={metricLabel(state.tab, xMetric, playerMeta, teamMeta)}
           yLabel={metricLabel(state.tab, yMetric, playerMeta, teamMeta)}
           showLabels={state.labels}
           labelIds={labelIds}
+          shortenLabels={state.tab === 'players'}
+          showTrendline={state.trendline}
           exportMode={exportMode}
           onSelect={
             exportMode
@@ -397,9 +421,10 @@ export function DataVisualiser() {
         <VisualiserBarChart
           rows={activeBarRows.map(row => ({
             ...row,
-            highlighted: validPinnedIdSet.has(row.id),
+            highlighted: effectivePinnedIdSet.has(row.id),
           }))}
           metricLabel={metricLabel(state.tab, barMetric, playerMeta, teamMeta)}
+          shortenLabels={state.tab === 'players'}
           exportMode={exportMode}
           onSelect={
             exportMode
@@ -413,6 +438,7 @@ export function DataVisualiser() {
       <VisualiserRadarChart
         axisLabels={radarModel?.axisLabels ?? []}
         series={radarModel?.series ?? []}
+        shortenLabels={state.tab === 'players'}
         exportMode={exportMode}
       />
     )
@@ -431,16 +457,10 @@ export function DataVisualiser() {
             <span className="hidden sm:inline">Create player and team charts from the Conceptually Football dataset.</span>
           </h1>
           <p className="mt-3 max-w-3xl text-[12px] leading-relaxed text-ink-dim">
-            Start from a live example, swap chart types, then tune the cohort and metrics. Scatter works best for
-            landscape exploration, bar for ranked slices, and radar for 1-3 entity shape comparisons.
+            Pick a chart type, tune the cohort and metrics, then share or export the view. Scatter works best for
+            landscape exploration, bar for top and bottom ranked slices, and radar for 1-3 entity shape comparisons.
           </p>
         </div>
-        <Link
-          to={buildScopedPath('/')}
-          className="text-[10px] uppercase tracking-[0.22em] text-electric/70 hover:text-electric"
-        >
-          {state.tab === 'players' ? 'Back to Matrix' : 'Team profiles'}
-        </Link>
       </div>
 
       <div className="mb-5 flex flex-wrap items-center gap-2 border border-electric/20 bg-panel/70 px-3 py-3 backdrop-blur-md sm:mb-6 sm:gap-3 sm:px-4">
@@ -537,7 +557,7 @@ export function DataVisualiser() {
                 playerMetricGroups={playerMetricGroups}
                 teamMetricGroups={teamMetricGroups}
                 compareIds={compareIds}
-                pinnedIds={validPinnedIds}
+                pinnedIds={effectivePinnedIds}
                 onChange={update}
                 onOpenCompare={() => setPickerKind('compare')}
                 onOpenPins={() => setPickerKind('pins')}
@@ -548,7 +568,10 @@ export function DataVisualiser() {
           <HudFrame header={<span>Readout // Cohort</span>}>
             <div className="grid grid-cols-3 gap-2 p-3 sm:gap-3 sm:p-4">
               <ReadoutCard label="Rows" value={String(state.tab === 'players' ? playerRows.length : teamQuery.data?.count ?? 0)} />
-              <ReadoutCard label="Pinned" value={String(validPinnedIds.length)} />
+              <ReadoutCard
+                label={state.chart === 'radar' ? 'Axes' : 'Pinned'}
+                value={String(state.chart === 'radar' ? radarMetrics.length : effectivePinnedIds.length)}
+              />
               <ReadoutCard label="Radar set" value={String(compareIds.length)} />
             </div>
           </HudFrame>
@@ -580,6 +603,7 @@ export function DataVisualiser() {
                 fileName={chartTitle}
                 aspect={state.chart === 'radar' ? 'square' : 'landscape'}
                 copyUrl={pageShareUrl}
+                compact={false}
                 renderContent={({ exportMode }) => renderChart(exportMode)}
               />
             </div>
@@ -617,9 +641,15 @@ export function DataVisualiser() {
             : 'Pinned entities stay visually distinct across scatter and bar charts. Labels will show only pinned entities on large scatter cohorts.'
         }
         options={pickerOptions}
-        selectedIds={pickerKind === 'compare' ? compareIds : validPinnedIds}
-        maxSelected={pickerKind === 'compare' ? 3 : 5}
-        onChange={ids => update(pickerKind === 'compare' ? { compareIds: ids } : { pinnedIds: ids })}
+        selectedIds={pickerKind === 'compare' ? compareIds : effectivePinnedIds}
+        maxSelected={pickerKind === 'compare' ? 3 : undefined}
+        onChange={ids =>
+          update(
+            pickerKind === 'compare'
+              ? { compareIds: ids, compareMode: 'manual' }
+              : { pinnedIds: ids, pinMode: 'manual' },
+          )
+        }
         onClose={() => setPickerKind(null)}
         closeLabel={pickerKind === 'pins' ? 'Done' : 'Close'}
         isLoading={activeLoading}
@@ -695,6 +725,7 @@ function MetricControls({
               </HudPill>
             ))}
             <ControlSelect
+              label="Rows shown"
               value={String(state.barCount)}
               onChange={value =>
                 onChange({
@@ -706,10 +737,13 @@ function MetricControls({
               }
               options={Array.from({ length: MAX_BAR_COUNT - MIN_BAR_COUNT + 1 }, (_, index) => {
                 const count = MIN_BAR_COUNT + index
-                return { value: String(count), label: `N=${count}` }
+                return { value: String(count), label: `Show ${count}` }
               })}
             />
           </div>
+          <p className="text-[11px] leading-relaxed text-ink-dim">
+            Rows shown controls how many ranked players or teams appear in the selected top or bottom slice.
+          </p>
         </>
       )}
 
@@ -729,19 +763,26 @@ function MetricControls({
         </>
       )}
 
-      <div>
-        <p className="mb-2 text-[10px] uppercase tracking-[0.22em] text-electric/75">Highlights</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <HudPill active={pinnedIds.length > 0} onClick={onOpenPins} className="px-3 py-2">
-            {pinnedIds.length ? `${pinnedIds.length} pinned` : 'Pin entities'}
-          </HudPill>
-          {state.chart === 'scatter' && (
-            <HudPill active={state.labels} onClick={() => onChange({ labels: !state.labels })} className="px-3 py-2">
-              Labels
+      {state.chart !== 'radar' && (
+        <div>
+          <p className="mb-2 text-[10px] uppercase tracking-[0.22em] text-electric/75">Highlights</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <HudPill active={pinnedIds.length > 0} onClick={onOpenPins} className="px-3 py-2">
+              {pinnedIds.length ? `${pinnedIds.length} pinned` : 'Pin entities'}
             </HudPill>
-          )}
+            {state.chart === 'scatter' && (
+              <HudPill active={state.labels} onClick={() => onChange({ labels: !state.labels })} className="px-3 py-2">
+                Labels
+              </HudPill>
+            )}
+            {state.chart === 'scatter' && (
+              <HudPill active={state.trendline} onClick={() => onChange({ trendline: !state.trendline })} className="px-3 py-2">
+                Trendline
+              </HudPill>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="rounded border border-electric/15 bg-panel/45 p-3 text-[11px] leading-relaxed text-ink-dim">
         {state.chart === 'scatter' && (
@@ -762,6 +803,13 @@ function MetricControls({
       </div>
     </>
   )
+}
+
+interface RankedScatterHighlight {
+  point: VisualiserScatterDatum
+  rank: number
+  xRank: number | null
+  yRank: number | null
 }
 
 function buildChartTitle(
@@ -841,6 +889,96 @@ function teamRankToPercent(rank: number | null, teamCount: number): number {
   if (rank == null) return 0
   if (teamCount <= 1) return 100
   return ((teamCount - rank) / (teamCount - 1)) * 100
+}
+
+function rankValuesDescending<T>(
+  items: T[],
+  valueFor: (item: T) => number | null | undefined,
+): Map<T, number> {
+  const ranked = items
+    .flatMap(item => {
+      const value = valueFor(item)
+      return value == null || Number.isNaN(value) ? [] : [{ item, value }]
+    })
+    .toSorted((left, right) => right.value - left.value)
+  return new Map(ranked.map((entry, index) => [entry.item, index + 1]))
+}
+
+function rankHighHighPoints(points: VisualiserScatterDatum[]): RankedScatterHighlight[] {
+  const xRanks = rankValuesDescending(points, point => point.x)
+  const yRanks = rankValuesDescending(points, point => point.y)
+  return points
+    .flatMap(point => {
+      const xRank = xRanks.get(point)
+      const yRank = yRanks.get(point)
+      if (xRank == null || yRank == null) return []
+      return [{
+        point,
+        rank: xRank + yRank,
+        xRank,
+        yRank,
+      }]
+    })
+    .toSorted((left, right) =>
+      left.rank - right.rank ||
+      (right.point.tieBreak ?? 0) - (left.point.tieBreak ?? 0) ||
+      right.point.y - left.point.y ||
+      right.point.x - left.point.x,
+    )
+}
+
+function rankPlayerRowsByRadar(
+  rows: PlayerRow[],
+  keys: string[],
+  mode: DataVisualiserUrlState['mode'],
+  meta: StatMeta,
+): Array<{ id: number; rank: number }> {
+  const rankMaps = keys.map(key =>
+    rankValuesDescending(rows, row => {
+      const resolved = resolveProfileMetric(row, mode, barKindForMetricKey(key), meta)
+      return resolved.percentile ?? resolved.value
+    }),
+  )
+  return rows
+    .flatMap(row => {
+      const ranks = rankMaps.map(map => map.get(row))
+      if (ranks.some(rank => rank == null)) return []
+      const rankValues = ranks as number[]
+      return [{
+        id: row.canonical_player_id,
+        rank: rankValues.reduce((sum, rank) => sum + rank, 0),
+        minutes: row.minutes,
+      }]
+    })
+    .toSorted((left, right) => left.rank - right.rank || right.minutes - left.minutes)
+}
+
+function rankTeamRowsByRadar(
+  rows: TeamSeasonRow[],
+  keys: string[],
+  mode: DataVisualiserUrlState['mode'],
+): Array<{ id: number; rank: number }> {
+  const teamCount = Math.max(rows.length, 1)
+  const rankMaps = keys.map(key =>
+    rankValuesDescending(rows, row => {
+      const rankMap = mode === 'full' ? row.ranks : row.ranks_per_match
+      const rank = rankMap[key] ?? null
+      if (rank != null) return teamRankToPercent(rank, teamCount)
+      return teamStatValueForMode(key, row.stats[key], row.stats.matches ?? null, mode)
+    }),
+  )
+  return rows
+    .flatMap(row => {
+      const ranks = rankMaps.map(map => map.get(row))
+      if (ranks.some(rank => rank == null)) return []
+      const rankValues = ranks as number[]
+      return [{
+        id: row.canonical_team_id,
+        rank: rankValues.reduce((sum, rank) => sum + rank, 0),
+        matches: row.stats.matches ?? 0,
+      }]
+    })
+    .toSorted((left, right) => left.rank - right.rank || right.matches - left.matches)
 }
 
 interface MetricGroup {
@@ -1008,7 +1146,7 @@ function ControlSelect({
       onChange={onChange}
       disabled={disabled}
       groups={[{ key: 'options', label, options }]}
-      className="w-[min(220px,44vw)]"
+      className="w-fit"
     />
   )
 }
@@ -1075,9 +1213,14 @@ function MetricMultiSelect({
         options={options}
         selected={selected}
         onChange={onChange}
-        emptyLabel="Select axes"
+        emptyLabel="+"
+        triggerLabel="+"
         searchPlaceholder="Search metric..."
         maxSelected={8}
+        hideClearButton
+        hideChevron
+        compact
+        className="inline-flex w-auto"
       />
     </div>
   )
