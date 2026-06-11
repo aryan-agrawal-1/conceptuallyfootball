@@ -188,6 +188,23 @@ export async function fetchGalaxySimilar(
   return res.json()
 }
 
+export async function fetchGalaxySimilarForPlayer(
+  playerId: number,
+  competition: string,
+  season: string,
+): Promise<GalaxySimilarResponse> {
+  const p = new URLSearchParams()
+  p.set('competition', competition)
+  p.set('season', season)
+  p.set('player', String(playerId))
+  const res = await fetch(`${BASE}/galaxy/similar?${p}`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.detail ?? `API error ${res.status}`)
+  }
+  return res.json()
+}
+
 export interface RegressionLabFitRequest {
   competition: string
   season: string

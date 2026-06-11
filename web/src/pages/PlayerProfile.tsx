@@ -2,7 +2,7 @@ import { Fragment, lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { BarChart3, Loader2, AlertCircle, FileImage } from 'lucide-react'
-import { fetchPlayerDetail } from '../lib/api'
+import { fetchGalaxySimilarForPlayer, fetchPlayerDetail } from '../lib/api'
 import type { PlayerDetailResponse, SecondaryTeamBadge } from '../types/api'
 import { useScope } from '../context/ScopeContext'
 import { resolveEntityMembership, resolveEntityScope, useSearchPaletteIndex } from '../hooks/useSearchPaletteIndex'
@@ -13,10 +13,12 @@ import { ProfileStatBars } from '../components/profile/ProfileStatBars'
 import { ProfilePizzaSection } from '../components/profile/ProfilePizzaSection'
 import { ProfileEligibilityBanner } from '../components/profile/ProfileEligibilityBanner'
 import { ProfileScopeSelector } from '../components/profile/ProfileScopeSelector'
+import { ProfileSimilarPlayers } from '../components/profile/ProfileSimilarPlayers'
 import type { ProfileRateMode } from '../lib/profileMetrics'
 import { buildPlayerCreateChartsPath } from '../lib/createChartsUrl'
 import type { PositionGroup, SearchPlayerMembership } from '../types/api'
 import { scopeIncludesMembership } from '../lib/scopeMembership'
+import { cn } from '../lib/utils'
 
 const PlayerProfileExportModal = lazy(() =>
   import('../components/profile/PlayerProfileExportModal').then(module => ({
@@ -33,6 +35,12 @@ const POSITION_COHORT_LABEL: Record<PositionGroup, string> = {
 }
 
 type ProfilePercentileMode = 'league' | 'scope'
+
+function aggregateScopeLabel(code: string): string {
+  if (code === 'BIG5') return 'Big 5'
+  if (code === 'ALL') return 'All'
+  return code
+}
 
 function FormerClubsNote({ teams }: { teams: SecondaryTeamBadge[] | undefined }) {
   const { buildScopedPath } = useScope()
@@ -167,13 +175,24 @@ function ProfileLayout({
   const activePercentileMap =
     percentileMode === 'scope' && canUseScopePercentiles ? player.scope_percentiles ?? {} : player.percentiles
   const percentileScopeLabel =
-    percentileMode === 'scope' && canUseScopePercentiles ? scope.competition : player.competition_code
+    percentileMode === 'scope' && canUseScopePercentiles ? aggregateScopeLabel(scope.competition) : player.competition_code
+  const similarScopeLabel = `${player.competition_code} ${player.season_label}`
+  const similarQuery = useQuery({
+    queryKey: ['profile-similar-players', player.competition_code, player.season_label, player.canonical_player_id],
+    queryFn: () =>
+      fetchGalaxySimilarForPlayer(
+        player.canonical_player_id,
+        player.competition_code,
+        player.season_label,
+      ),
+    staleTime: 10 * 60 * 1000,
+  })
 
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-5 pb-24 sm:px-6 sm:py-8 lg:px-10 lg:pb-20">
       <ProfileBreadcrumb playerName={player.canonical_player_name} />
 
-      <div className="mb-6 flex flex-col gap-5 sm:mb-8 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
+      <div className="mb-6 flex flex-col gap-5 sm:mb-8 lg:flex-row lg:items-end lg:justify-between lg:gap-6">
         <div className="min-w-0">
           <h1 className="mb-2 break-words text-[30px] font-black leading-tight tracking-tight text-ink sm:truncate sm:text-[40px] sm:leading-none">
             {player.canonical_player_name}
@@ -205,39 +224,45 @@ function ProfileLayout({
             in {percentileScopeLabel} {player.season_label}.
           </p>
         </div>
-        <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end sm:shrink-0">
-          <ProfileScopeSelector
-            label="player-profile-scope"
-            currentScope={scope}
-            memberships={memberships}
-            onChange={nextScope => {
-              navigate(buildScopedPath(`/player/${player.canonical_player_id}`, nextScope))
-            }}
-          />
-          <Link
-            to={buildPlayerCreateChartsPath(player, rateMode)}
-            className="relative flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80 whitespace-nowrap"
-          >
-            <BarChart3 size={13} />
-            Create Chart
-          </Link>
-          <Link
-            to={buildScopedPath(
-              `/comparisons?players=${player.competition_code}:${player.season_label}:${player.canonical_player_id}`,
-            )}
-            className="relative px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80 whitespace-nowrap"
-          >
-            Compare
-          </Link>
-          <button
-            type="button"
-            onClick={() => setExportOpen(true)}
-            className="relative flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80 whitespace-nowrap"
-          >
-            <FileImage size={13} />
-            Export
-          </button>
-          <ProfileRateToggle value={rateMode} onChange={setRateMode} />
+        <div className="flex w-full flex-col gap-2 lg:w-auto lg:shrink-0 lg:items-end">
+          <div className="flex w-full flex-wrap items-center justify-start gap-2 lg:justify-end">
+            <ProfileScopeSelector
+              label="player-profile-scope"
+              currentScope={scope}
+              memberships={memberships}
+              onChange={nextScope => {
+                navigate(buildScopedPath(`/player/${player.canonical_player_id}`, nextScope))
+              }}
+            />
+            <Link
+              to={buildPlayerCreateChartsPath(player, rateMode)}
+              className="relative flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80 whitespace-nowrap"
+            >
+              <BarChart3 size={13} />
+              Create Chart
+            </Link>
+            <Link
+              to={buildScopedPath(
+                `/comparisons?players=${player.competition_code}:${player.season_label}:${player.canonical_player_id}`,
+              )}
+              className="relative px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80 whitespace-nowrap"
+            >
+              Compare
+            </Link>
+            <ProfileRateToggle value={rateMode} onChange={setRateMode} />
+            <button
+              type="button"
+              onClick={() => setExportOpen(true)}
+              className={cn(
+                'relative flex min-h-[36px] shrink-0 items-center justify-center gap-1.5 border border-electric bg-electric/15 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.15em] text-electric transition-colors',
+                'shadow-[0_0_24px_-8px_rgba(74,158,245,0.8)] hover:bg-electric/25 hover:text-ink',
+                'w-full md:w-auto',
+              )}
+            >
+              <FileImage size={13} />
+              Export
+            </button>
+          </div>
         </div>
       </div>
 
@@ -262,7 +287,9 @@ function ProfileLayout({
                   : 'border border-electric/15 px-3 py-1.5 text-[11px] uppercase tracking-[0.15em] text-ink-muted hover:border-electric/35 hover:text-electric/80'
               }
             >
-              {mode === 'league' ? player.competition_code : scope.competition}
+              {mode === 'league'
+                ? 'Compare in league'
+                : `Compare in ${aggregateScopeLabel(scope.competition)}`}
             </button>
           ))}
         </div>
@@ -275,7 +302,20 @@ function ProfileLayout({
           <h2 id="profile-breakdown-heading" className="sr-only">
             Stat breakdown
           </h2>
-          <ProfileStatBars player={player} rateMode={rateMode} meta={meta} percentileMap={activePercentileMap} />
+          <ProfileStatBars
+            player={player}
+            rateMode={rateMode}
+            meta={meta}
+            percentileMap={activePercentileMap}
+            similarPlayers={
+              <ProfileSimilarPlayers
+                edges={similarQuery.data?.edges ?? []}
+                isLoading={similarQuery.isLoading}
+                isError={similarQuery.isError}
+                scopeLabel={similarScopeLabel}
+              />
+            }
+          />
         </section>
 
         <section aria-labelledby="profile-pizza-heading">
