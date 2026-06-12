@@ -3,6 +3,7 @@ import { HudFrame } from '../hud/Hud'
 import { cn } from '../../lib/utils'
 import type { TeamSquadPlayer } from '../../types/api'
 import { formatValue } from '../../lib/format'
+import { playerNameTitle, shortPlayerName } from '../../lib/entityLabels'
 import { useScope } from '../../context/ScopeContext'
 
 const POSITION_COLORS: Record<string, string> = {
@@ -46,8 +47,11 @@ export function TeamSquadList({ squad }: TeamSquadListProps) {
                 'py-2.5 transition-colors hover:bg-electric/5',
               )}
             >
-              <span className="min-w-0 truncate text-[13px] font-medium text-ink">
-                {p.canonical_player_name}
+              <span
+                className="min-w-0 truncate text-[13px] font-medium text-ink"
+                title={playerNameTitle(p.canonical_player_name)}
+              >
+                {shortPlayerName(p.canonical_player_name)}
               </span>
               <span
                 className="w-9 shrink-0 text-center text-[10px] font-mono uppercase"

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { scaleLinear } from 'd3-scale'
 import type { RegressionLabPredictionRow } from '../../types/api'
+import { shortPlayerName } from '../../lib/entityLabels'
 import { cn } from '../../lib/utils'
 
 const W = 420
@@ -159,7 +160,7 @@ export function RegressionScatterPlot({
             }}
           >
             <span className="block truncate rounded border border-electric/35 bg-mat/95 px-2 py-0.5 text-center text-[10px] font-medium text-ink shadow-md">
-              {hover.name}
+              {shortPlayerName(hover.name)}
             </span>
           </div>
         )}

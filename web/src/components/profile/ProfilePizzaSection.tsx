@@ -18,6 +18,7 @@ import {
 import { loadPizzaMetricKeys, savePizzaMetricKeys } from '../../lib/profilePizzaStorage'
 import { BRAND_LOGO_URL } from '../../lib/brand'
 import { getPercentileTextColor } from '../../lib/heatmap'
+import { shortPlayerName } from '../../lib/entityLabels'
 import { cn } from '../../lib/utils'
 import { ChartShareCard } from '../visualizer/ChartShareCard'
 
@@ -123,7 +124,7 @@ function ProfilePizzaSectionInner({ player, rateMode, meta, percentileMap = play
         <div className="flex-1 flex flex-col gap-4 justify-center w-full min-w-0">
           <div className="flex justify-end">
             <ChartShareCard
-              title={`${player.canonical_player_name} · Polar profile`}
+              title={`${shortPlayerName(player.canonical_player_name)} · Polar profile`}
               subtitle={`${player.season_label} · ${player.canonical_team_name ?? 'No club'} · ${rateMode === 'per90' ? 'per 90 view' : 'season view'} · ${chartKeys.length} axes`}
               contextLabel="Player Profile · Polar chart"
               fileName={`${player.canonical_player_name}-polar-profile`}

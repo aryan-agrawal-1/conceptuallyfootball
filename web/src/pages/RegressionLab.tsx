@@ -24,6 +24,7 @@ import {
 } from '../lib/regressionLabUrl'
 import { cn } from '../lib/utils'
 import { hasMetricCoverage } from '../lib/metricAvailability'
+import { playerNameTitle, shortPlayerName } from '../lib/entityLabels'
 import type {
   MatrixFilters,
   PlayerRow,
@@ -799,7 +800,9 @@ export function RegressionLab() {
                   <tbody>
                     {sortedCohortRows.map(r => (
                       <tr key={r.canonical_player_id} className="border-b border-electric/10 hover:bg-electric/5">
-                        <td className="px-2 py-1.5 text-ink">{r.canonical_player_name}</td>
+                        <td className="px-2 py-1.5 text-ink" title={playerNameTitle(r.canonical_player_name)}>
+                          {shortPlayerName(r.canonical_player_name)}
+                        </td>
                         <td className="px-2 py-1.5 text-ink-dim">{r.canonical_team_name ?? '—'}</td>
                         <td className="px-2 py-1.5 text-right tabular-nums">{r.actual.toFixed(3)}</td>
                         <td className="px-2 py-1.5 text-right tabular-nums text-electric/90">

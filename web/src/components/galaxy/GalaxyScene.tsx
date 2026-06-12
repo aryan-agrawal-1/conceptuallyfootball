@@ -3,6 +3,7 @@ import { Html, Line, OrbitControls, Stars } from '@react-three/drei'
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
+import { shortPlayerName } from '../../lib/entityLabels'
 import { cn } from '../../lib/utils'
 import type { GalaxyEdge, GalaxyPoint } from '../../types/api'
 
@@ -208,7 +209,7 @@ function PlayerLabel({ point, variant = 'hover' }: GalaxyLabel) {
         <span className={cn(bracketClass, '-top-px -right-px border-t border-r')} />
         <span className={cn(bracketClass, '-bottom-px -left-px border-b border-l')} />
         <span className={cn(bracketClass, '-bottom-px -right-px border-b border-r')} />
-        {point.canonical_player_name}
+        {shortPlayerName(point.canonical_player_name)}
       </div>
     </Html>
   )

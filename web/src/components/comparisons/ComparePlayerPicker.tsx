@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react'
 import { foldForSearch } from '../../lib/foldAccents'
 import type { PlayerRow, PositionGroup } from '../../types/api'
 import { COMPARISON_MIN_MINUTES_WARNING } from '../../lib/comparisonConstants'
+import { playerNameTitle, shortPlayerName } from '../../lib/entityLabels'
 import { HudFrame } from '../hud/Hud'
 import { cn } from '../../lib/utils'
 
@@ -116,7 +117,12 @@ export function ComparePlayerPicker({
                           'hover:bg-electric/10 border border-transparent hover:border-electric/25',
                         )}
                       >
-                        <span className="flex-1 min-w-0 truncate text-[13px] text-ink">{p.canonical_player_name}</span>
+                        <span
+                          className="flex-1 min-w-0 truncate text-[13px] text-ink"
+                          title={playerNameTitle(p.canonical_player_name)}
+                        >
+                          {shortPlayerName(p.canonical_player_name)}
+                        </span>
                         {p.canonical_team_name && (
                           <span className="hidden sm:inline shrink-0 truncate text-[11px] text-ink-muted max-w-[140px]">
                             {p.canonical_team_name} · {p.competition_code}

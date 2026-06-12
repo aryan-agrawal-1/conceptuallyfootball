@@ -7,6 +7,7 @@ import {
 } from '../../lib/profileMetrics'
 import { formatValue } from '../../lib/format'
 import { COMPARISON_SLOT_STROKES } from '../../lib/comparisonConstants'
+import { playerNameTitle, shortPlayerName } from '../../lib/entityLabels'
 import { cn } from '../../lib/utils'
 
 interface CompareStatTablePlayer {
@@ -53,7 +54,9 @@ export function CompareStatTable({
                 className="px-3 py-2.5 text-[10px] uppercase tracking-[0.12em] font-mono font-medium"
                 style={{ color: COMPARISON_SLOT_STROKES[slot % COMPARISON_SLOT_STROKES.length] }}
               >
-                <span className="line-clamp-2">{row.canonical_player_name}</span>
+                <span className="line-clamp-2" title={playerNameTitle(row.canonical_player_name)}>
+                  {shortPlayerName(row.canonical_player_name)}
+                </span>
               </th>
             ))}
           </tr>

@@ -31,6 +31,7 @@ import { ProfileEligibilityBanner } from '../components/profile/ProfileEligibili
 import { ChartShareCard } from '../components/visualizer/ChartShareCard'
 import { scopeIncludesMembership } from '../lib/scopeMembership'
 import { buildComparisonCreateChartsPath, CREATE_CHARTS_PATH } from '../lib/createChartsUrl'
+import { playerNameTitle, shortPlayerName } from '../lib/entityLabels'
 
 const POSITION_COHORT_LABEL: Record<PositionGroup, string> = {
   FWD: 'Forwards',
@@ -306,6 +307,13 @@ export function Comparisons() {
   const empty = playerRefs.length === 0
   const compareTitle = useMemo(() => {
     if (!radarPlayers.length) return 'Comparisons · Radar'
+    const names = radarPlayers.map(player => shortPlayerName(player.row.canonical_player_name))
+    if (names.length === 1) return `${names[0]} · Radar profile`
+    if (names.length === 2) return `${names[0]} vs ${names[1]}`
+    return `${names[0]} vs ${names[1]} vs ${names[2]}`
+  }, [radarPlayers])
+  const compareFileName = useMemo(() => {
+    if (!radarPlayers.length) return 'Comparisons · Radar'
     const names = radarPlayers.map(player => player.row.canonical_player_name)
     if (names.length === 1) return `${names[0]} · Radar profile`
     if (names.length === 2) return `${names[0]} vs ${names[1]}`
@@ -412,8 +420,9 @@ export function Comparisons() {
                             <Link
                               to={buildScopedPath(`/player/${ref.id}`, { competition: ref.competition, season: ref.season })}
                               className="text-[13px] font-semibold text-ink truncate block hover:text-electric/90 hover:underline"
+                              title={playerNameTitle(label)}
                             >
-                              {label}
+                              {shortPlayerName(label)}
                             </Link>
                             {team && (
                               <p className="text-[11px] text-ink-muted truncate">
@@ -514,7 +523,7 @@ export function Comparisons() {
                         title={compareTitle}
                         subtitle={compareSubtitle}
                         contextLabel="Comparisons · Radar"
-                        fileName={compareTitle}
+                        fileName={compareFileName}
                         aspect="square"
                         copyUrl={pageShareUrl}
                         renderContent={({ exportMode }) => (

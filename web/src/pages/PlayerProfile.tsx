@@ -334,6 +334,10 @@ function ProfileLayout({
             initialRateMode={rateMode}
             percentileMap={activePercentileMap}
             percentileScopeLabel={percentileScopeLabel}
+            similarEdges={similarQuery.data?.edges ?? []}
+            similarIsLoading={similarQuery.isLoading}
+            similarIsError={similarQuery.isError}
+            similarScopeLabel={similarScopeLabel}
             onClose={() => setExportOpen(false)}
           />
         </Suspense>

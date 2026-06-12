@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { cn } from '../../lib/utils'
-import { shortEntityLabel } from '../../lib/entityLabels'
+import { shortPlayerName } from '../../lib/entityLabels'
 
 interface VisualiserRadarSeries {
   id: number
@@ -200,7 +200,7 @@ export function VisualiserRadarChart({
             <div className="flex items-center gap-2">
               <span className="size-2 rounded-full" style={{ background: item.stroke }} />
               <span className={cn('font-medium text-ink', exportMode ? 'text-[15px]' : 'text-[12px]')}>
-                {shortenLabels ? shortEntityLabel(item.label) : item.label}
+                {shortenLabels ? shortPlayerName(item.label) : item.label}
               </span>
             </div>
             {item.sublabel && (
@@ -222,7 +222,7 @@ export function VisualiserRadarChart({
           }}
         >
           <div className="text-[10px] font-semibold text-ink">
-            {shortenLabels ? shortEntityLabel(hoveredSeries.label) : hoveredSeries.label}
+            {shortenLabels ? shortPlayerName(hoveredSeries.label) : hoveredSeries.label}
           </div>
           <div className="mt-0.5 text-[10px] text-ink-muted">{axis[hover.axisIndex]?.label}</div>
           <div className="mt-1 font-mono text-electric/90">{hoveredValue.text}</div>

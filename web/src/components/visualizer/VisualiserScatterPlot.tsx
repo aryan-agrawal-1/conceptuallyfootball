@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { scaleLinear } from 'd3-scale'
 import { cn } from '../../lib/utils'
-import { shortEntityLabel } from '../../lib/entityLabels'
+import { shortPlayerName } from '../../lib/entityLabels'
 
 function quantile(values: number[], q: number): number {
   if (!values.length) return 0
@@ -244,7 +244,7 @@ export function VisualiserScatterPlot({
                   fontFamily="ui-monospace, SFMono-Regular, monospace"
                   style={{ pointerEvents: 'none' }}
                 >
-                  {shortenLabels ? shortEntityLabel(point.label) : point.label}
+                  {shortenLabels ? shortPlayerName(point.label) : point.label}
                 </text>
               )}
               <circle
@@ -408,7 +408,7 @@ function placeScatterLabels({
     .toSorted((left, right) => Number(Boolean(right.highlighted)) - Number(Boolean(left.highlighted)))
 
   for (const point of labeled) {
-    const label = shortenLabels ? shortEntityLabel(point.label) : point.label
+    const label = shortenLabels ? shortPlayerName(point.label) : point.label
     const approxWidth = Math.min(label.length * fontSize * 0.62 + 8, exportMode ? 220 : 160)
     const approxHeight = fontSize + 6
     let fallback: LabelPlacement | null = null

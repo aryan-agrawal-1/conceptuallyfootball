@@ -41,6 +41,7 @@ import {
 } from '../../lib/matrixRateMode'
 import { getGroupHeaderTooltip, getStatHeaderTooltip } from '../../lib/statTooltips'
 import { logMatrixPerfPhases } from '../../lib/perfDebug'
+import { playerNameTitle, shortPlayerName } from '../../lib/entityLabels'
 import { MatrixDisplayContext, useMatrixDisplay, type MatrixVariant } from './MatrixDisplayContext'
 import { useMatrixHeaderTooltip } from './MatrixHeaderTooltipPortal'
 import type { PlayerRow, PositionGroup } from '../../types/api'
@@ -314,13 +315,14 @@ function buildMetaColumn(col: ColDef): ColumnDef<PlayerRow, unknown> {
           const row = info.row.original
           const pos = row.position_group
           const team = row.canonical_team_name ?? ''
+          const name = info.getValue() as string
           return (
             <div
               className="flex flex-col justify-center px-3 h-full"
               style={{ minHeight: 'var(--matrix-row-h)', gap: 2 }}
             >
-              <span className="text-[12px] font-normal text-ink leading-none truncate">
-                {info.getValue() as string}
+              <span className="text-[12px] font-normal text-ink leading-none truncate" title={playerNameTitle(name)}>
+                {shortPlayerName(name)}
               </span>
               <span className="text-[10px] font-normal leading-none truncate" style={{ color: 'rgba(138,149,184,0.7)' }}>
                 <span style={{ color: POSITION_COLORS[pos] }}>{pos}</span>

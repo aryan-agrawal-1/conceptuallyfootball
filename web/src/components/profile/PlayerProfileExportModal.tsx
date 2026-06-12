@@ -11,6 +11,7 @@ import {
   hydrateProfileExportPreset,
   isUsableExportMetric,
   profileExportLabelForKey,
+  PROFILE_EXPORT_STAT_LIMIT,
   saveProfileExportPreset,
   type ProfileExportPreset,
   type ProfileExportTheme,
@@ -25,8 +26,9 @@ import {
 } from '../../lib/profileMetrics'
 import { getTeamLogoPath } from '../../lib/teamLogos'
 import { BRAND_DOMAIN, BRAND_NAME_UPPER, BRAND_SLUG } from '../../lib/brand'
+import { shortPlayerName } from '../../lib/entityLabels'
 import { cn } from '../../lib/utils'
-import type { PlayerRow, StatMeta } from '../../types/api'
+import type { GalaxyEdge, PlayerRow, StatMeta } from '../../types/api'
 
 interface PlayerProfileExportModalProps {
   player: PlayerRow
@@ -34,6 +36,10 @@ interface PlayerProfileExportModalProps {
   initialRateMode: ProfileRateMode
   percentileMap?: Record<string, number | null>
   percentileScopeLabel?: string
+  similarEdges?: GalaxyEdge[]
+  similarIsLoading?: boolean
+  similarIsError?: boolean
+  similarScopeLabel?: string
   onClose: () => void
 }
 
@@ -46,7 +52,8 @@ interface ResolvedTile extends ProfileExportTile {
 
 const A4_WIDTH = 1240
 const A4_HEIGHT = 1754
-const MIN_STATS = 4
+const MIN_STATS = PROFILE_EXPORT_STAT_LIMIT
+const MAX_STATS = PROFILE_EXPORT_STAT_LIMIT
 
 const POSITION_COHORT_LABEL: Record<PlayerRow['position_group'], string> = {
   FWD: 'forwards',
@@ -61,11 +68,8 @@ const THEME_LABEL: Record<ProfileExportTheme, string> = {
   boring: 'Boring',
 }
 
-function layoutStatCap(chartEnabled: boolean, notesEnabled: boolean): number {
-  if (chartEnabled && notesEnabled) return 8
-  if (chartEnabled) return 10
-  if (notesEnabled) return 18
-  return 24
+function layoutStatCap(): number {
+  return MAX_STATS
 }
 
 function notesLimit(chartEnabled: boolean): number {
@@ -100,13 +104,18 @@ export function PlayerProfileExportModal({
   initialRateMode,
   percentileMap = player.percentiles,
   percentileScopeLabel = player.competition_code,
+  similarEdges = [],
+  similarIsLoading = false,
+  similarIsError = false,
+  similarScopeLabel = `${player.competition_code} ${player.season_label}`,
   onClose,
 }: PlayerProfileExportModalProps) {
   const exportRef = useRef<HTMLDivElement>(null)
+  const defaultTitle = shortPlayerName(player.canonical_player_name)
   const [preset, setPreset] = useState<ProfileExportPreset>(() =>
     hydrateProfileExportPreset(player, meta, initialRateMode),
   )
-  const [title, setTitle] = useState(player.canonical_player_name)
+  const [title, setTitle] = useState(defaultTitle)
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState<ShareActionBusy>(null)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
@@ -159,12 +168,15 @@ export function PlayerProfileExportModal({
 
   const validTiles = useMemo(() => resolvedTiles.filter(tile => tile.available), [resolvedTiles])
   const selectedKeys = useMemo(() => new Set(preset.stats.map(tile => tile.key)), [preset.stats])
+  const statCap = layoutStatCap()
   const availableMetricKeys = useMemo(
     () =>
-      curatedProfileMetricKeys(player.position_group).filter(
-        key => !selectedKeys.has(key) && isUsableExportMetric(player, meta, preset.rateMode, key),
-      ),
-    [meta, player, preset.rateMode, selectedKeys],
+      validTiles.length >= statCap
+        ? []
+        : curatedProfileMetricKeys(player.position_group).filter(
+            key => !selectedKeys.has(key) && isUsableExportMetric(player, meta, preset.rateMode, key),
+          ),
+    [meta, player, preset.rateMode, selectedKeys, statCap, validTiles.length],
   )
   const chartMetricKeys = useMemo(
     () =>
@@ -174,7 +186,6 @@ export function PlayerProfileExportModal({
     [meta, player, preset.chartMetricKeys, preset.rateMode],
   )
 
-  const statCap = layoutStatCap(preset.chartEnabled, preset.notesEnabled)
   const noteMax = notesLimit(preset.chartEnabled)
   const overCap = validTiles.length > statCap
   const underMin = validTiles.length < MIN_STATS
@@ -191,7 +202,7 @@ export function PlayerProfileExportModal({
           : null
   const canExport = !invalidReason && !busy
 
-  const fileName = `${BRAND_SLUG}-player-profile-${slugify(title || player.canonical_player_name)}-${slugify(player.season_label)}-${preset.theme}.png`
+  const fileName = `${BRAND_SLUG}-player-profile-${slugify(player.canonical_player_name)}-${slugify(player.season_label)}-${preset.theme}.png`
 
   function updatePreset(next: Partial<ProfileExportPreset>) {
     setPreset(prev => ({ ...prev, ...next }))
@@ -212,6 +223,7 @@ export function PlayerProfileExportModal({
   }
 
   function addStat(key: string) {
+    if (validTiles.length >= statCap) return
     setPreset(prev => ({
       ...prev,
       stats: [...prev.stats, { key, label: profileExportLabelForKey(key, meta) }],
@@ -225,7 +237,7 @@ export function PlayerProfileExportModal({
 
   function resetDefaults() {
     setPreset(buildDefaultProfileExportPreset(player, meta, initialRateMode))
-    setTitle(player.canonical_player_name)
+    setTitle(defaultTitle)
     setNotes('')
   }
 
@@ -235,6 +247,7 @@ export function PlayerProfileExportModal({
       stats: validTiles.map(tile => ({ key: tile.key, label: tile.label })),
       chartMetricKeys,
       notesEnabled: preset.notesEnabled,
+      similarEnabled: preset.similarEnabled,
       showPercentiles: player.eligibility.percentiles_eligible && preset.showPercentiles,
     })
   }
@@ -302,7 +315,9 @@ export function PlayerProfileExportModal({
         <div className="flex shrink-0 items-center justify-between gap-4 border-b border-electric/20 bg-electric/5 px-4 py-3">
           <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-[0.28em] text-electric/80">Player profile export</p>
-            <h2 className="truncate text-[18px] font-black text-ink">{player.canonical_player_name}</h2>
+            <h2 className="truncate text-[18px] font-black text-ink" title={player.canonical_player_name}>
+              {shortPlayerName(player.canonical_player_name)}
+            </h2>
           </div>
           <button
             type="button"
@@ -425,7 +440,7 @@ export function PlayerProfileExportModal({
                   }}
                   className="w-full border border-electric/20 bg-panel px-3 py-2 text-[12px] text-ink outline-none focus:border-electric/60"
                 >
-                  <option value="">Add available stat...</option>
+                  <option value="">{validTiles.length >= statCap ? 'Maximum stats selected' : 'Add available stat...'}</option>
                   {availableMetricKeys.map(key => (
                     <option key={key} value={key}>
                       {profileExportLabelForKey(key, meta)}
@@ -477,6 +492,22 @@ export function PlayerProfileExportModal({
                   />
                 )}
               </EditorSection>
+
+              <EditorSection title="Similar players" meta={preset.similarEnabled ? 'Top 3' : undefined}>
+                <label className="flex items-center justify-between gap-3 border border-electric/10 bg-electric/[0.03] px-3 py-2 text-[11px] text-ink-dim">
+                  <span>Include similar players</span>
+                  <input
+                    type="checkbox"
+                    checked={preset.similarEnabled}
+                    onChange={e => updatePreset({ similarEnabled: e.target.checked })}
+                  />
+                </label>
+                {preset.similarEnabled && (
+                  <p className="border border-electric/10 bg-panel/45 px-3 py-2 text-[11px] leading-relaxed text-ink-muted">
+                    Uses the same similarity model as the player profile page.
+                  </p>
+                )}
+              </EditorSection>
             </div>
           </aside>
 
@@ -493,6 +524,10 @@ export function PlayerProfileExportModal({
                       tiles={validTiles}
                       chartMetricKeys={chartMetricKeys}
                       notes={notes}
+                      similarEdges={similarEdges}
+                      similarIsLoading={similarIsLoading}
+                      similarIsError={similarIsError}
+                      similarScopeLabel={similarScopeLabel}
                       previewInvalid={invalidReason}
                       percentileMap={percentileMap}
                       percentileScopeLabel={percentileScopeLabel}
@@ -538,6 +573,10 @@ export function PlayerProfileExportModal({
           tiles={validTiles}
           chartMetricKeys={chartMetricKeys}
           notes={notes}
+          similarEdges={similarEdges}
+          similarIsLoading={similarIsLoading}
+          similarIsError={similarIsError}
+          similarScopeLabel={similarScopeLabel}
           percentileMap={percentileMap}
           percentileScopeLabel={percentileScopeLabel}
         />
@@ -666,6 +705,10 @@ interface PlayerProfileExportSurfaceProps {
   tiles: ResolvedTile[]
   chartMetricKeys: string[]
   notes: string
+  similarEdges: GalaxyEdge[]
+  similarIsLoading: boolean
+  similarIsError: boolean
+  similarScopeLabel: string
   percentileMap: Record<string, number | null>
   percentileScopeLabel: string
   previewInvalid?: string | null
@@ -680,6 +723,10 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
     tiles,
     chartMetricKeys,
     notes,
+    similarEdges,
+    similarIsLoading,
+    similarIsError,
+    similarScopeLabel,
     percentileMap,
     percentileScopeLabel,
     previewInvalid,
@@ -698,8 +745,11 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
     ? `Stats: ${player.competition_code} ${player.season_label} · Raw values · Percentiles unavailable`
     : `Stats: ${player.competition_code} ${player.season_label} · ${preset.rateMode === 'per90' ? 'Per 90' : 'Season'} · Percentiles vs ${percentileScopeLabel} ${POSITION_COHORT_LABEL[player.position_group]}`
   const theme = surfaceTheme(preset.theme)
-  const hasSupplement = preset.chartEnabled || preset.notesEnabled
-  const chartScale = preset.notesEnabled ? 0.62 : 1.2
+  const hasLowerPanel = preset.notesEnabled || preset.similarEnabled
+  const hasSupplement = preset.chartEnabled || hasLowerPanel
+  const chartScale = hasLowerPanel ? 0.9 : 1.28
+  const chartViewportSize = 760 * chartScale
+  const shouldTransformChart = !hasLowerPanel
 
   return (
     <div
@@ -718,7 +768,7 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
       <SurfaceBackground theme={preset.theme} />
       <div className="relative z-10 flex h-full flex-col p-[72px]">
         <header className="flex items-start justify-between gap-10">
-          <div className="flex min-w-0 items-start gap-7">
+          <div className="flex min-w-0 items-center gap-7">
             <div
               className="grid size-[142px] shrink-0 place-items-center border"
               style={{
@@ -763,8 +813,6 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
             className={cn(
               'grid gap-4',
               hasSupplement ? 'grid-cols-4' : 'content-start grid-cols-4',
-              hasSupplement && tiles.length > 8 && 'grid-cols-5',
-              !hasSupplement && tiles.length > 16 && 'grid-cols-5',
             )}
           >
             {tiles.map(tile => (
@@ -781,57 +829,101 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
             <div
               className={cn(
                 'grid min-h-0 flex-1 gap-8',
-                preset.chartEnabled && preset.notesEnabled ? 'grid-cols-[0.95fr_1.05fr]' : 'grid-cols-1',
+                preset.chartEnabled && hasLowerPanel
+                  ? 'grid-rows-[minmax(0,760px)_minmax(260px,1fr)]'
+                  : 'grid-rows-1',
               )}
             >
               {preset.chartEnabled && (
               <section
-                className="relative flex min-h-0 flex-col items-center justify-center overflow-hidden border px-4 py-6"
+                className="relative grid min-h-0 place-items-center overflow-hidden border px-4 py-6"
                 style={{ borderColor: theme.border, background: theme.panel }}
               >
                 {preset.theme === 'conceptually-football' && <HudCornerMarks size="size-4" />}
-                <p style={{ color: theme.accent }} className="mb-2 text-[15px] font-bold uppercase tracking-[0.26em]">
-                  Profile chart
-                </p>
-                <div
-                  className={cn(preset.theme === 'boring' && 'brightness-75 contrast-125')}
-                  style={{
-                    width: 760 * chartScale,
-                    height: 760 * chartScale,
-                  }}
-                >
-                  <div style={{ transform: `scale(${chartScale})`, transformOrigin: 'top left' }}>
-                    <ProfilePizzaSvg
-                      player={player}
-                      rateMode={preset.rateMode}
-                      meta={meta}
-                      metricKeys={chartMetricKeys}
-                      percentileMap={percentileMap}
-                      exportMode
-                    />
-                  </div>
-                </div>
-                {rawOnly && (
-                  <p style={{ color: theme.muted }} className="mt-2 text-[13px] uppercase tracking-[0.18em]">
-                    Raw metric profile
+                <div className="flex min-h-0 flex-col items-center">
+                  <p style={{ color: theme.accent }} className="mb-2 text-[15px] font-bold uppercase tracking-[0.26em]">
+                    Profile chart
                   </p>
-                )}
+                  <div
+                    className={cn(
+                      'grid place-items-center overflow-visible',
+                      preset.theme === 'boring' && 'brightness-75 contrast-125',
+                    )}
+                    style={{
+                      width: chartViewportSize,
+                      height: chartViewportSize,
+                    }}
+                  >
+                    {shouldTransformChart ? (
+                      <div
+                        style={{
+                          width: 760,
+                          height: 760,
+                          transform: `scale(${chartScale})`,
+                          transformOrigin: 'center center',
+                        }}
+                      >
+                        <ProfilePizzaSvg
+                          player={player}
+                          rateMode={preset.rateMode}
+                          meta={meta}
+                          metricKeys={chartMetricKeys}
+                          percentileMap={percentileMap}
+                          exportMode
+                        />
+                      </div>
+                    ) : (
+                      <ProfilePizzaSvg
+                        player={player}
+                        rateMode={preset.rateMode}
+                        meta={meta}
+                        metricKeys={chartMetricKeys}
+                        percentileMap={percentileMap}
+                        exportMode
+                      />
+                    )}
+                  </div>
+                  {rawOnly && (
+                    <p style={{ color: theme.muted }} className="mt-2 text-[13px] uppercase tracking-[0.18em]">
+                      Raw metric profile
+                    </p>
+                  )}
+                </div>
               </section>
               )}
 
-              {preset.notesEnabled && (
-              <section
-                className="relative min-h-0 overflow-hidden border p-8"
-                style={{ borderColor: theme.border, background: theme.panel }}
+              {hasLowerPanel && (
+              <div
+                className={cn(
+                  'grid min-h-0 gap-8',
+                  preset.notesEnabled && preset.similarEnabled ? 'grid-cols-2' : 'grid-cols-1',
+                )}
               >
-                {preset.theme === 'conceptually-football' && <HudCornerMarks size="size-4" />}
-                <p style={{ color: theme.accent }} className="mb-5 text-[15px] font-bold uppercase tracking-[0.26em]">
-                  Notes
-                </p>
-                <p style={{ color: theme.text }} className="whitespace-pre-line text-[24px] font-medium leading-[1.45]">
-                  {notes.trim() || ' '}
-                </p>
-              </section>
+                {preset.notesEnabled && (
+                <section
+                  className="relative min-h-0 overflow-hidden border p-8"
+                  style={{ borderColor: theme.border, background: theme.panel }}
+                >
+                  {preset.theme === 'conceptually-football' && <HudCornerMarks size="size-4" />}
+                  <p style={{ color: theme.accent }} className="mb-5 text-[15px] font-bold uppercase tracking-[0.26em]">
+                    Notes
+                  </p>
+                  <p style={{ color: theme.text }} className="whitespace-pre-line text-[24px] font-medium leading-[1.45]">
+                    {notes.trim() || ' '}
+                  </p>
+                </section>
+                )}
+
+                {preset.similarEnabled && (
+                <SimilarPlayersExportPanel
+                  edges={similarEdges}
+                  isLoading={similarIsLoading}
+                  isError={similarIsError}
+                  scopeLabel={similarScopeLabel}
+                  theme={preset.theme}
+                />
+                )}
+              </div>
               )}
             </div>
           )}
@@ -943,5 +1035,102 @@ function ExportStatTile({
         )}
       </div>
     </article>
+  )
+}
+
+function SimilarPlayersExportPanel({
+  edges,
+  isLoading,
+  isError,
+  scopeLabel,
+  theme,
+}: {
+  edges: GalaxyEdge[]
+  isLoading: boolean
+  isError: boolean
+  scopeLabel: string
+  theme: ProfileExportTheme
+}) {
+  const style = surfaceTheme(theme)
+  const topEdges = edges.slice(0, 3)
+
+  return (
+    <section
+      className="relative min-h-0 overflow-hidden border p-8"
+      style={{ borderColor: style.border, background: style.panel }}
+    >
+      {theme === 'conceptually-football' && <HudCornerMarks size="size-4" />}
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <p style={{ color: style.accent }} className="text-[15px] font-bold uppercase tracking-[0.26em]">
+          Similar players
+        </p>
+        <p style={{ color: style.muted }} className="text-right text-[11px] uppercase tracking-[0.2em]">
+          {scopeLabel}
+        </p>
+      </div>
+
+      {isLoading && (
+        <p style={{ color: style.muted }} className="flex min-h-[180px] items-center justify-center text-center text-[18px] font-bold uppercase tracking-[0.18em]">
+          Scanning similarity matrix
+        </p>
+      )}
+
+      {isError && !isLoading && (
+        <p style={{ color: style.muted }} className="flex min-h-[180px] items-center justify-center text-center text-[20px] font-medium leading-relaxed">
+          Similar players are unavailable for this league-season.
+        </p>
+      )}
+
+      {!isLoading && !isError && topEdges.length === 0 && (
+        <p style={{ color: style.muted }} className="flex min-h-[180px] items-center justify-center text-center text-[20px] font-medium leading-relaxed">
+          No similar players found for this profile.
+        </p>
+      )}
+
+      {!isLoading && !isError && topEdges.length > 0 && (
+        <div
+          className="flex flex-col gap-2"
+          style={{
+            background: 'transparent',
+          }}
+        >
+          {topEdges.map(edge => {
+            const score = Math.round(edge.profile_match_score ?? edge.similarity * 100)
+            return (
+              <div
+                key={`${edge.to_galaxy_player_id}-${edge.rank}`}
+                className="grid grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-3 border px-3 py-3 text-left"
+                style={{
+                  borderColor: style.border,
+                  background: theme === 'boring' ? 'rgba(255,255,255,0.34)' : 'rgba(7,8,16,0.26)',
+                }}
+              >
+                <span style={{ color: style.accent }} className="font-mono text-[14px] font-bold opacity-70">
+                  #{edge.rank}
+                </span>
+                <span className="min-w-0">
+                  <span style={{ color: style.text }} className="block truncate text-[21px] font-bold leading-tight">
+                    {shortPlayerName(edge.to_player_name)}
+                  </span>
+                  <span style={{ color: style.muted }} className="mt-1 block truncate text-[14px] font-medium">
+                    {edge.to_team_name ?? edge.to_competition_code ?? '—'}
+                  </span>
+                </span>
+                <span
+                  className="border px-2.5 py-1 text-center font-mono text-[15px] font-black tabular-nums"
+                  style={{
+                    color: theme === 'boring' ? style.text : style.accent,
+                    borderColor: `${style.accent}55`,
+                    background: `${style.accent}18`,
+                  }}
+                >
+                  {score}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </section>
   )
 }

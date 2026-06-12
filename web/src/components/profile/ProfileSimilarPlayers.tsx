@@ -3,6 +3,7 @@ import { ArrowUpRight, Loader2 } from 'lucide-react'
 import { HudFrame } from '../hud/Hud'
 import { useScope } from '../../context/ScopeContext'
 import type { GalaxyEdge } from '../../types/api'
+import { playerNameTitle, shortPlayerName } from '../../lib/entityLabels'
 
 export function ProfileSimilarPlayers({
   edges,
@@ -56,8 +57,11 @@ export function ProfileSimilarPlayers({
                   #{edge.rank}
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate text-[12px] font-semibold text-ink group-hover:text-electric">
-                    {edge.to_player_name}
+                  <span
+                    className="block truncate text-[12px] font-semibold text-ink group-hover:text-electric"
+                    title={playerNameTitle(edge.to_player_name)}
+                  >
+                    {shortPlayerName(edge.to_player_name)}
                   </span>
                   <span className="mt-0.5 block truncate text-[10px] text-ink-muted">
                     {edge.to_team_name ?? edge.to_competition_code ?? '—'}

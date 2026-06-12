@@ -13,6 +13,7 @@ import {
 import { HudMultiSelectDropdown } from '../components/hud/HudDropdown'
 import { useScope } from '../context/ScopeContext'
 import { buildGalaxyCreateChartsPath } from '../lib/createChartsUrl'
+import { playerNameTitle, shortPlayerName } from '../lib/entityLabels'
 
 const GalaxyScene = lazy(() =>
   import('../components/galaxy/GalaxyScene').then(module => ({ default: module.GalaxyScene })),
@@ -169,8 +170,11 @@ function PlayerHud({
             <p className="mb-1 text-[9px] uppercase tracking-[0.22em] text-electric/70 lg:text-[10px] lg:tracking-[0.25em]">
               Player
             </p>
-            <p className="break-words text-[15px] font-bold leading-tight text-ink sm:text-[18px] lg:truncate lg:text-[22px]">
-              {point.canonical_player_name}
+            <p
+              className="break-words text-[15px] font-bold leading-tight text-ink sm:text-[18px] lg:truncate lg:text-[22px]"
+              title={playerNameTitle(point.canonical_player_name)}
+            >
+              {shortPlayerName(point.canonical_player_name)}
             </p>
             <p className="text-[11px] truncate">
               {point.canonical_team_id != null && point.canonical_team_name ? (
@@ -240,7 +244,9 @@ function PlayerHud({
                     <span className="text-electric/50 font-mono">
                       #{edge.rank}
                     </span>
-                    <span className="truncate">{edge.to_player_name}</span>
+                    <span className="truncate" title={playerNameTitle(edge.to_player_name)}>
+                      {shortPlayerName(edge.to_player_name)}
+                    </span>
                   </span>
                   <span className="font-mono text-electric">
                     {Math.round(edge.profile_match_score ?? edge.similarity * 100)}
@@ -559,7 +565,7 @@ export function Galaxy() {
                       {isSelected ? '▸' : '·'}
                     </span>
                     <span className="truncate">
-                      {player.canonical_player_name}
+                      {shortPlayerName(player.canonical_player_name)}
                       {player.competition_code ? ` · ${player.competition_code}` : ''}
                     </span>
                   </button>
@@ -637,7 +643,9 @@ export function Galaxy() {
                       className="flex w-full items-center gap-2 border-b border-electric/10 px-2 py-2 text-left text-[12px] text-ink-dim transition-colors last:border-b-0 hover:bg-electric/10 hover:text-electric"
                     >
                       <span className="text-electric/45 font-mono">·</span>
-                      <span className="min-w-0 flex-1 truncate">{player.canonical_player_name}</span>
+                      <span className="min-w-0 flex-1 truncate" title={playerNameTitle(player.canonical_player_name)}>
+                        {shortPlayerName(player.canonical_player_name)}
+                      </span>
                       <span className="shrink-0 text-[10px] font-mono text-electric/60">
                         {player.competition_code}
                       </span>

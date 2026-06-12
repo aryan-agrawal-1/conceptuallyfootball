@@ -5,8 +5,10 @@ import {
   PROFILE_BAR_SPECS_GK,
   barKindForMetricKey,
   defaultPizzaMetricKeys,
+  headerSpecsForPosition,
   labelForBarSpec,
   resolveProfileMetric,
+  resolveHeaderCard,
   stripPer90Suffix,
   type ProfileBarSpec,
   type ProfileRateMode,
@@ -26,6 +28,7 @@ export interface ProfileExportPreset {
   chartEnabled: boolean
   chartMetricKeys: string[]
   notesEnabled: boolean
+  similarEnabled: boolean
   showPercentiles: boolean
 }
 
@@ -38,143 +41,10 @@ interface StoredProfileExportPreset extends ProfileExportPreset {
 
 type StoredProfileExportState = Partial<Record<string, StoredProfileExportPreset>>
 
-const DEFAULT_TILE_COUNT = 8
+export const PROFILE_EXPORT_STAT_LIMIT = 4
 
-const FULL_COVERAGE_SENTINELS = ['npxg_per_90', 'npxg_per_shot']
-
-const EXPORT_STAT_CANDIDATES_FULL: Record<PositionGroup, string[]> = {
-  FWD: [
-    'goals_per_90',
-    'xg_per_90',
-    'npxg_per_90',
-    'xa_per_90',
-    'shots_per_90',
-    'key_passes_per_90',
-    'successful_dribbles_per_90',
-    'npxg_per_shot',
-    'chance_involvement_per_90',
-    'assists_per_90',
-    'big_chances_created_per_90',
-    'xgchain_per_90',
-  ],
-  MID: [
-    'xa_per_90',
-    'key_passes_per_90',
-    'xgchain_per_90',
-    'xgbuildup_per_90',
-    'completed_passes_per_90',
-    'pass_accuracy',
-    'successful_dribbles_per_90',
-    'chance_involvement_per_90',
-    'xg_per_90',
-    'assists_per_90',
-    'big_chances_created_per_90',
-    'interceptions_per_90',
-  ],
-  DEF: [
-    'tackles_per_90',
-    'interceptions_per_90',
-    'clearances_per_90',
-    'blocks_per_90',
-    'ball_recoveries_per_90',
-    'aerial_duels_won_per_90',
-    'ground_duels_won_per_90',
-    'pass_accuracy',
-    'xgbuildup_per_90',
-    'defensive_action_density',
-    'completed_passes_per_90',
-  ],
-  GK: [
-    'saves_per_90',
-    'clean_sheet_rate',
-    'clean_sheets',
-    'saved_shots_inside_box_per_90',
-    'pass_accuracy',
-    'completed_passes_per_90',
-    'accurate_long_balls_per_90',
-    'runs_out_per_90',
-    'penalty_saves',
-  ],
-  UNK: [
-    'xg_per_90',
-    'xa_per_90',
-    'xgchain_per_90',
-    'pass_accuracy',
-    'tackles_per_90',
-    'interceptions_per_90',
-    'key_passes_per_90',
-    'goals_per_90',
-    'completed_passes_per_90',
-    'shots_per_90',
-  ],
-}
-
-const EXPORT_STAT_CANDIDATES_LIMITED: Record<PositionGroup, string[]> = {
-  FWD: [
-    'goals_per_90',
-    'xg_per_90',
-    'xa_per_90',
-    'shots_per_90',
-    'key_passes_per_90',
-    'successful_dribbles_per_90',
-    'chance_involvement_per_90',
-    'assists_per_90',
-    'big_chances_created_per_90',
-    'xgchain_per_90',
-    'xgbuildup_per_90',
-    'pass_accuracy',
-  ],
-  MID: [
-    'xa_per_90',
-    'key_passes_per_90',
-    'xgchain_per_90',
-    'xgbuildup_per_90',
-    'completed_passes_per_90',
-    'pass_accuracy',
-    'successful_dribbles_per_90',
-    'chance_involvement_per_90',
-    'xg_per_90',
-    'assists_per_90',
-    'big_chances_created_per_90',
-    'interceptions_per_90',
-  ],
-  DEF: [
-    'tackles_per_90',
-    'interceptions_per_90',
-    'clearances_per_90',
-    'blocks_per_90',
-    'ball_recoveries_per_90',
-    'aerial_duels_won_per_90',
-    'ground_duels_won_per_90',
-    'pass_accuracy',
-    'xgbuildup_per_90',
-    'defensive_action_density',
-    'completed_passes_per_90',
-  ],
-  GK: [
-    'saves_per_90',
-    'clean_sheet_rate',
-    'clean_sheets',
-    'saved_shots_inside_box_per_90',
-    'pass_accuracy',
-    'completed_passes_per_90',
-    'accurate_long_balls_per_90',
-    'runs_out_per_90',
-    'penalty_saves',
-  ],
-  UNK: [
-    'xg_per_90',
-    'xa_per_90',
-    'xgchain_per_90',
-    'pass_accuracy',
-    'tackles_per_90',
-    'interceptions_per_90',
-    'key_passes_per_90',
-    'goals_per_90',
-    'completed_passes_per_90',
-    'shots_per_90',
-  ],
-}
+const DEFAULT_TILE_COUNT = PROFILE_EXPORT_STAT_LIMIT
+const DEFAULT_CHART_AXIS_COUNT = 8
 
 function storageKeyForPosition(position: PositionGroup): string {
   return `player:${position}`
@@ -207,6 +77,7 @@ function loadProfileExportPreset(position: PositionGroup): ProfileExportPreset |
     chartEnabled: stored.chartEnabled,
     chartMetricKeys: stored.chartMetricKeys,
     notesEnabled: stored.notesEnabled,
+    similarEnabled: stored.similarEnabled ?? false,
     showPercentiles: stored.showPercentiles,
   }
 }
@@ -267,28 +138,45 @@ function defaultProfileExportStats(
   meta: StatMeta,
   rateMode: ProfileRateMode,
 ): ProfileExportTile[] {
-  const curated = curatedProfileMetricKeys(player.position_group)
-  const curatedSet = new Set(curated)
-  const hasFullCoverage = FULL_COVERAGE_SENTINELS.some(key =>
-    isUsableExportMetric(player, meta, rateMode, key),
-  )
-  const candidateSet = hasFullCoverage ? EXPORT_STAT_CANDIDATES_FULL : EXPORT_STAT_CANDIDATES_LIMITED
-  const candidates = [
-    ...(candidateSet[player.position_group] ?? candidateSet.UNK),
-    ...curated,
-  ]
   const seen = new Set<string>()
-  const out: ProfileExportTile[] = []
+  const standoutStats = curatedProfileMetricSpecs(player.position_group)
+    .flatMap(spec => {
+      const resolved = resolveProfileMetric(player, rateMode, spec.bar, meta)
+      if (resolved.value == null || resolved.percentile == null) return []
+      if (seen.has(resolved.metricKey)) return []
+      seen.add(resolved.metricKey)
+      return [{
+        key: resolved.metricKey,
+        label: labelForBarSpec(spec, meta),
+        value: resolved.value,
+        percentile: resolved.percentile,
+      }]
+    })
+    .toSorted((left, right) =>
+      right.percentile - left.percentile ||
+      right.value - left.value,
+    )
+    .slice(0, DEFAULT_TILE_COUNT)
 
-  for (const key of candidates) {
-    if (seen.has(key) || !curatedSet.has(key)) continue
-    seen.add(key)
-    if (!isUsableExportMetric(player, meta, rateMode, key)) continue
-    out.push({ key, label: profileExportLabelForKey(key, meta) })
-    if (out.length >= DEFAULT_TILE_COUNT) break
+  if (standoutStats.length) {
+    return standoutStats.map(({ key, label }) => ({ key, label }))
   }
 
-  return out
+  const fallbackStats = headerSpecsForPosition(player.position_group).flatMap(spec => {
+    const resolved = resolveHeaderCard(player, rateMode, spec, meta)
+    if (resolved.value == null) return []
+    return [{ key: resolved.metricKey, label: resolved.label }]
+  })
+  const fallbackKeys = new Set(fallbackStats.map(tile => tile.key))
+  const rawFallbackStats = Object.entries(meta.metrics).flatMap(([key, def]) => {
+    if (fallbackKeys.has(key)) return []
+    if (player.position_group === 'GK' && key === 'rating') return []
+    const resolved = resolveProfileMetric(player, rateMode, barKindForMetricKey(key), meta)
+    if (resolved.value == null) return []
+    return [{ key: resolved.metricKey, label: stripPer90Suffix(def.label) }]
+  })
+
+  return [...fallbackStats, ...rawFallbackStats].slice(0, DEFAULT_TILE_COUNT)
 }
 
 function defaultProfileExportChartKeys(
@@ -307,7 +195,7 @@ function defaultProfileExportChartKeys(
     seen.add(key)
     if (!isUsableExportMetric(player, meta, rateMode, key)) continue
     out.push(key)
-    if (out.length >= Math.max(PIZZA_SLICE_MIN, DEFAULT_TILE_COUNT)) break
+    if (out.length >= Math.max(PIZZA_SLICE_MIN, DEFAULT_CHART_AXIS_COUNT)) break
   }
 
   return out
@@ -325,6 +213,7 @@ export function buildDefaultProfileExportPreset(
     chartEnabled: player.eligibility.percentiles_eligible,
     chartMetricKeys: defaultProfileExportChartKeys(player, meta, rateMode),
     notesEnabled: false,
+    similarEnabled: false,
     showPercentiles: player.eligibility.percentiles_eligible,
   }
 }
@@ -352,7 +241,7 @@ export function hydrateProfileExportPreset(
   const paddedStats = [
     ...stats,
     ...fallback.stats.filter(tile => !statKeys.has(tile.key)),
-  ].slice(0, Math.max(DEFAULT_TILE_COUNT, stats.length))
+  ].slice(0, DEFAULT_TILE_COUNT)
   const chartKeys = stored.chartMetricKeys.filter(key =>
     isUsableExportMetric(player, meta, stored.rateMode ?? initialRateMode, key),
   )
@@ -369,6 +258,7 @@ export function hydrateProfileExportPreset(
     chartEnabled: player.eligibility.percentiles_eligible ? stored.chartEnabled : false,
     chartMetricKeys: paddedChartKeys.length ? paddedChartKeys : fallback.chartMetricKeys,
     notesEnabled: stored.notesEnabled,
+    similarEnabled: stored.similarEnabled ?? false,
     showPercentiles: player.eligibility.percentiles_eligible && stored.showPercentiles,
   }
 }

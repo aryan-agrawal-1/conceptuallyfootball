@@ -12,6 +12,7 @@ import {
   COMPARISON_SLOT_FILLS,
   COMPARISON_SLOT_STROKES,
 } from '../../lib/comparisonConstants'
+import { playerNameTitle, shortPlayerName } from '../../lib/entityLabels'
 import { cn } from '../../lib/utils'
 
 const CHART_SIZE = 440
@@ -274,8 +275,11 @@ export function CompareRadarChart({
                   className="size-2 rounded-full"
                   style={{ background: COMPARISON_SLOT_STROKES[slot % COMPARISON_SLOT_STROKES.length] }}
                 />
-                <span className={cn('font-medium text-ink', exportMode ? 'text-[15px]' : 'text-[12px]')}>
-                  {row.canonical_player_name}
+                <span
+                  className={cn('font-medium text-ink', exportMode ? 'text-[15px]' : 'text-[12px]')}
+                  title={playerNameTitle(row.canonical_player_name)}
+                >
+                  {shortPlayerName(row.canonical_player_name)}
                 </span>
               </div>
               {row.canonical_team_name && (
@@ -312,8 +316,9 @@ export function CompareRadarChart({
                   <span
                     className="truncate text-[10px] text-ink-dim"
                     style={{ color: pp.stroke }}
+                    title={playerNameTitle(row.canonical_player_name)}
                   >
-                    {row.canonical_player_name}
+                    {shortPlayerName(row.canonical_player_name)}
                   </span>
                   <span className="shrink-0 text-electric/90">
                     {formatValue(resolved.value, resolved.formatUnit)}
