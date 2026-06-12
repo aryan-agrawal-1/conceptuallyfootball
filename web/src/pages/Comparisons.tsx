@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQueries } from '@tanstack/react-query'
-import { BarChart3, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { fetchPlayerDetail } from '../lib/api'
 import { useSearchPaletteIndex } from '../hooks/useSearchPaletteIndex'
 import { useScope } from '../context/ScopeContext'
@@ -20,6 +20,7 @@ import {
   COMPARISON_STAT_MAX,
   COMPARISON_STAT_MIN,
 } from '../lib/comparisonConstants'
+import { comparisonAxisPacksForPosition } from '../lib/comparisonAxisPacks'
 import type { ProfileRateMode } from '../lib/profileMetrics'
 import { HudActionButton, HudFrame, HudLabel } from '../components/hud/Hud'
 import { ProfileRateToggle } from '../components/profile/ProfileRateToggle'
@@ -30,7 +31,6 @@ import { ComparePlayerPicker } from '../components/comparisons/ComparePlayerPick
 import { ProfileEligibilityBanner } from '../components/profile/ProfileEligibilityBanner'
 import { ChartShareCard } from '../components/visualizer/ChartShareCard'
 import { scopeIncludesMembership } from '../lib/scopeMembership'
-import { buildComparisonCreateChartsPath, CREATE_CHARTS_PATH } from '../lib/createChartsUrl'
 import { playerNameTitle, shortPlayerName } from '../lib/entityLabels'
 
 const POSITION_COHORT_LABEL: Record<PositionGroup, string> = {
@@ -40,6 +40,8 @@ const POSITION_COHORT_LABEL: Record<PositionGroup, string> = {
   GK: 'Goalkeepers',
   UNK: 'Players',
 }
+
+const SUGGESTED_START_POSITIONS: Array<Exclude<PositionGroup, 'UNK'>> = ['FWD', 'MID', 'DEF', 'GK']
 
 type PickerState = { kind: 'add' } | { kind: 'replace'; index: number }
 
@@ -172,6 +174,11 @@ export function Comparisons() {
     return resolveComparisonStatKeys(urlStats, cohortPosition, meta, metricUsableForComparison)
   }, [urlStats, cohortPosition, meta, metricUsableForComparison])
 
+  const axisPacks = useMemo(() => {
+    if (!meta || !cohortPosition) return []
+    return comparisonAxisPacksForPosition(cohortPosition, meta, metricUsableForComparison)
+  }, [cohortPosition, meta, metricUsableForComparison])
+
   const radarPlayers = useMemo(() => {
     return playerRefs.flatMap((_, i) => {
         const d = detailsOrdered[i]
@@ -234,6 +241,8 @@ export function Comparisons() {
       const trimmed = keys.slice(0, COMPARISON_STAT_MAX)
       if (trimmed.length < COMPARISON_STAT_MIN) return
       writeParams({ playerRefs, stats: trimmed, mode: rateMode })
+      setLockedStatIndex(null)
+      setHoveredStatIndex(null)
     },
     [writeParams, playerRefs, rateMode],
   )
@@ -305,6 +314,13 @@ export function Comparisons() {
   const excludeTokens = useMemo(() => new Set(playerTokens), [playerTokens])
 
   const empty = playerRefs.length === 0
+  const suggestedStarts = useMemo(() => {
+    return SUGGESTED_START_POSITIONS.flatMap(position => {
+      const row = playersSorted.find(player => player.position_group === position)
+      return row ? [row] : []
+    })
+  }, [playersSorted])
+
   const compareTitle = useMemo(() => {
     if (!radarPlayers.length) return 'Comparisons · Radar'
     const names = radarPlayers.map(player => shortPlayerName(player.row.canonical_player_name))
@@ -323,16 +339,6 @@ export function Comparisons() {
     const cohort = cohortPosition ? POSITION_COHORT_LABEL[cohortPosition] : 'Players'
     return `${scopeLabel} · Percentiles vs ${cohort.toLowerCase()} · ${rateMode === 'per90' ? 'per 90' : 'season'} · ${statKeys.length} axes`
   }, [cohortPosition, rateMode, scopeLabel, statKeys.length])
-  const createChartHref = useMemo(() => {
-    if (!playerRefs.length) return buildScopedPath(CREATE_CHARTS_PATH)
-    return buildComparisonCreateChartsPath({
-      competition: scope.competition,
-      season: scope.season,
-      playerIds: playerRefs.map(ref => ref.id),
-      metricKeys: statKeys,
-      mode: rateMode,
-    })
-  }, [buildScopedPath, playerRefs, rateMode, scope.competition, scope.season, statKeys])
   const pageShareUrl = typeof window !== 'undefined' ? window.location.href : undefined
 
   return (
@@ -358,13 +364,6 @@ export function Comparisons() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link
-            to={createChartHref}
-            className="relative flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80 whitespace-nowrap"
-          >
-            <BarChart3 size={13} />
-            Create Chart
-          </Link>
           <ProfileRateToggle value={rateMode} onChange={setRateMode} />
         </div>
       </div>
@@ -384,15 +383,50 @@ export function Comparisons() {
       )}
 
       {empty ? (
-        <HudFrame className="w-full max-w-lg" header={<span>Start // Cohort</span>}>
-          <div className="p-6 flex flex-col gap-4">
-            <HudLabel>No players selected</HudLabel>
-            <p className="text-[13px] text-ink-muted leading-relaxed">
-              Select the first player to lock a position group and load default stat axes.
-            </p>
-            <HudActionButton type="button" onClick={() => setPicker({ kind: 'add' })}>
-              Select first player
-            </HudActionButton>
+        <HudFrame className="w-full max-w-3xl" header={<span>Start // Cohort</span>}>
+          <div className="p-6 flex flex-col gap-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <HudLabel>No players selected</HudLabel>
+                <p className="mt-3 max-w-xl text-[13px] text-ink-muted leading-relaxed">
+                  Select the first player to lock a position group and load default stat axes.
+                </p>
+              </div>
+              <HudActionButton type="button" onClick={() => setPicker({ kind: 'add' })}>
+                Select first player
+              </HudActionButton>
+            </div>
+
+            {suggestedStarts.length > 0 && (
+              <div>
+                <p className="mb-2 text-[10px] uppercase tracking-[0.2em] text-electric/80">Suggested starts</p>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  {suggestedStarts.map(row => (
+                    <button
+                      key={rowToken(row)}
+                      type="button"
+                      onClick={() => commitPlayerRefs([playerRowToScopedRef(row)], { clearStats: true })}
+                      className="min-w-0 border border-electric/20 bg-panel/45 p-3 text-left transition-colors hover:border-electric/45 hover:bg-electric/5"
+                    >
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-electric/75">
+                          {POSITION_COHORT_LABEL[row.position_group]}
+                        </span>
+                        <span className="shrink-0 text-[10px] font-mono text-ink-muted tabular-nums">
+                          {row.minutes.toLocaleString()}′
+                        </span>
+                      </div>
+                      <p className="truncate text-[13px] font-semibold text-ink" title={playerNameTitle(row.canonical_player_name)}>
+                        {shortPlayerName(row.canonical_player_name)}
+                      </p>
+                      <p className="mt-1 truncate text-[11px] text-ink-muted">
+                        {row.canonical_team_name ?? row.competition_code}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </HudFrame>
       ) : (
@@ -518,29 +552,32 @@ export function Comparisons() {
               >
                 <div className="flex flex-col items-start gap-5 p-3 sm:p-4 xl:flex-row xl:gap-8">
                   <div className="flex-1 flex flex-col gap-4 justify-center w-full min-w-0">
-                    <div className="flex justify-end">
-                      <ChartShareCard
-                        title={compareTitle}
-                        subtitle={compareSubtitle}
-                        contextLabel="Comparisons · Radar"
-                        fileName={compareFileName}
-                        aspect="square"
-                        copyUrl={pageShareUrl}
-                        renderContent={({ exportMode }) => (
-                          <CompareRadarChart
-                            metricKeys={statKeys}
-                            players={radarPlayers}
-                            meta={meta}
-                            rateMode={rateMode}
-                            hoveredStatIndex={hoveredStatIndex}
-                            lockedStatIndex={lockedStatIndex}
-                            onHoverStat={setHoveredStatIndex}
-                            onClickStat={setLockedStatIndex}
-                            percentileMapForRow={percentileMapForRow}
-                            exportMode={exportMode}
-                          />
-                        )}
-                      />
+                    <div className="flex justify-end border border-electric/15 bg-electric/[0.03] p-3">
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <ChartShareCard
+                          title={compareTitle}
+                          subtitle={compareSubtitle}
+                          contextLabel="Comparisons · Radar"
+                          fileName={compareFileName}
+                          aspect="square"
+                          copyUrl={pageShareUrl}
+                          compact={false}
+                          renderContent={({ exportMode }) => (
+                            <CompareRadarChart
+                              metricKeys={statKeys}
+                              players={radarPlayers}
+                              meta={meta}
+                              rateMode={rateMode}
+                              hoveredStatIndex={hoveredStatIndex}
+                              lockedStatIndex={lockedStatIndex}
+                              onHoverStat={setHoveredStatIndex}
+                              onClickStat={setLockedStatIndex}
+                              percentileMapForRow={percentileMapForRow}
+                              exportMode={exportMode}
+                            />
+                          )}
+                        />
+                      </div>
                     </div>
                     <div className="flex justify-center w-full min-w-0">
                       <CompareRadarChart
@@ -560,7 +597,9 @@ export function Comparisons() {
                     meta={meta}
                     positionGroup={cohortPosition}
                     selectedKeys={statKeys}
+                    axisPacks={axisPacks}
                     onChangeKeys={setStatKeys}
+                    onApplyAxisPack={setStatKeys}
                   />
                 </div>
               </HudFrame>

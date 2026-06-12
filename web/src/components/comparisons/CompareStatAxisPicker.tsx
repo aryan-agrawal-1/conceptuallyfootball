@@ -6,6 +6,7 @@ import {
   COMPARISON_STAT_MAX,
   COMPARISON_STAT_MIN,
 } from '../../lib/comparisonConstants'
+import type { ComparisonAxisPack } from '../../lib/comparisonAxisPacks'
 import { groupMetricsForPizzaPicker, stripPer90Suffix } from '../../lib/profileMetrics'
 import { cn } from '../../lib/utils'
 
@@ -13,14 +14,18 @@ interface CompareStatAxisPickerProps {
   meta: StatMeta
   positionGroup: PositionGroup
   selectedKeys: string[]
+  axisPacks?: ComparisonAxisPack[]
   onChangeKeys: (keys: string[]) => void
+  onApplyAxisPack?: (keys: string[]) => void
 }
 
 export function CompareStatAxisPicker({
   meta,
   positionGroup,
   selectedKeys,
+  axisPacks = [],
   onChangeKeys,
+  onApplyAxisPack,
 }: CompareStatAxisPickerProps) {
   const sectionOrder = useMemo(() => Object.keys(meta.metric_groups), [meta.metric_groups])
 
@@ -40,6 +45,30 @@ export function CompareStatAxisPicker({
 
   return (
     <div className="w-full max-w-sm flex flex-col gap-3">
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.2em] text-electric/80">Axis packs</p>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {axisPacks.map(pack => {
+            const active = pack.keys.length === selectedKeys.length && pack.keys.every((key, index) => key === selectedKeys[index])
+            return (
+              <button
+                key={pack.id}
+                type="button"
+                onClick={() => onApplyAxisPack?.(pack.keys)}
+                className={cn(
+                  'border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.15em] transition-colors',
+                  active
+                    ? 'border-electric bg-electric/15 text-electric'
+                    : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
+                )}
+              >
+                {pack.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
       <p className="text-[10px] uppercase tracking-[0.2em] text-electric/80">Active axes</p>
       <div className="flex flex-wrap gap-1.5">
         {selectedKeys.map(k => {
