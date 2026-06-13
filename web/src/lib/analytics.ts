@@ -2,15 +2,18 @@ const measurementId = import.meta.env.VITE_GA_MEASUREMENT_ID
 
 const isAnalyticsEnabled = import.meta.env.PROD && Boolean(measurementId)
 
-type GtagCommand =
-  | ['js', Date]
-  | ['config', string, Record<string, unknown>?]
-  | ['event', string, Record<string, unknown>?]
+type DataLayerItem = IArguments | Record<string, unknown>
+
+type Gtag = {
+  (command: 'js', date: Date): void
+  (command: 'config', targetId: string, config?: Record<string, unknown>): void
+  (command: 'event', eventName: string, params?: Record<string, unknown>): void
+}
 
 declare global {
   interface Window {
-    dataLayer?: GtagCommand[]
-    gtag?: (...args: GtagCommand) => void
+    dataLayer?: DataLayerItem[]
+    gtag?: Gtag
   }
 }
 
@@ -23,9 +26,9 @@ export function initializeAnalytics() {
 
   hasInitialized = true
   window.dataLayer = window.dataLayer ?? []
-  window.gtag = (...args) => {
-    window.dataLayer?.push(args)
-  }
+  window.gtag = function gtag() {
+    window.dataLayer?.push(arguments)
+  } as Gtag
 
   const script = document.createElement('script')
   script.async = true
