@@ -14,6 +14,7 @@ import { TeamSquadList } from '../components/team/TeamSquadList'
 import { ProfileScopeSelector } from '../components/profile/ProfileScopeSelector'
 import { buildTeamCreateChartsPath } from '../lib/createChartsUrl'
 import type { SearchTeamMembership } from '../types/api'
+import { useSeoMeta } from '../lib/seo'
 
 export function TeamProfile() {
   const { id } = useParams<{ id: string }>()
@@ -122,6 +123,12 @@ function TeamLayout({
   const [rateMode, setRateMode] = useState<ProfileRateMode>('full')
   const navigate = useNavigate()
   const { scope, buildScopedPath } = useScope()
+
+  useSeoMeta({
+    title: `${team.canonical_team_name} Stats | ${team.season_label} Football Data`,
+    description: `${team.canonical_team_name} football team stats for ${team.competition_code} ${team.season_label}: squad data, xG, xA, per-match metrics, rankings and chart tools.`,
+    canonicalPath: `/team/${team.canonical_team_id}`,
+  })
 
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-5 pb-24 sm:px-6 sm:py-8 lg:px-10 lg:pb-20">

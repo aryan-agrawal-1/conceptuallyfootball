@@ -19,6 +19,7 @@ import { buildPlayerCreateChartsPath } from '../lib/createChartsUrl'
 import type { PositionGroup, SearchPlayerMembership } from '../types/api'
 import { scopeIncludesMembership } from '../lib/scopeMembership'
 import { cn } from '../lib/utils'
+import { useSeoMeta } from '../lib/seo'
 
 const PlayerProfileExportModal = lazy(() =>
   import('../components/profile/PlayerProfileExportModal').then(module => ({
@@ -168,6 +169,12 @@ function ProfileLayout({
   const [exportOpen, setExportOpen] = useState(false)
   const navigate = useNavigate()
   const { scope, buildScopedPath } = useScope()
+
+  useSeoMeta({
+    title: `${player.canonical_player_name} Stats | ${player.season_label} Football Data`,
+    description: `${player.canonical_player_name} football stats for ${player.canonical_team_name ?? player.competition_code} in ${player.season_label}: per 90 metrics, percentiles, xG, xA, similar players and comparison tools.`,
+    canonicalPath: `/player/${player.canonical_player_id}`,
+  })
 
   const showLowSampleBanner = !player.eligibility.percentiles_eligible
   const isAggregateScope = scope.competition === 'BIG5' || scope.competition === 'ALL'

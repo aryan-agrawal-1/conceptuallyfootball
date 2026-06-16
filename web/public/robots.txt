@@ -1,0 +1,17 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+Sitemap: https://www.conceptuallyfootball.com/sitemap.xml
