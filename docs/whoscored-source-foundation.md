@@ -41,18 +41,32 @@ The browser integration requires:
 Use `--force` only for an intentional refetch. Normal probes reuse schedule and
 event caches where possible.
 
+WhoScored's `/tournaments/<stage>/data/` endpoint is displayed by current
+Chrome versions as a JSON document inside an HTML page. `soccerdata` 1.9 wraps
+that page a second time before calling `json.load`, which makes an otherwise
+valid response unreadable. The project adapter handles only this exact endpoint
+by reading `document.body.innerText`, validating that it is a JSON object, and
+leaving all other soccerdata page validation unchanged. HTML challenges and
+empty responses still fail closed.
+
 ### Local live-verification status
 
-On 2026-07-27, a bounded headless probe initialized `soccerdata`, installed
-compatible SeleniumBase Chrome drivers, retrieved the Premier League calendar,
-and began monthly fixture discovery. The first fixture request returned an
-empty/non-JSON response (`Expecting value: line 1 column 1`), consistent with a
-provider access-control response. No match payload or raw event cache file was
-produced. This proves that the local browser runtime and calendar path
-initialize, but it does **not** prove completed-match discovery, three-match
-retrieval, reconciliation, or orientation. Run the three-match command above
-from an ingestion environment that can access the fixture and match pages
-before closing the live-source foundation gate.
+On 2026-07-27, two consecutive headed probes completed against
+`ENG-Premier League` `2025-26`. They discovered 380 completed matches and
+selected matches `1903370`, `1903373`, and `1903458`. The payloads contained
+1,481, 1,409, and 1,472 events respectively, with zero coordinate errors.
+All six assessed team sides attacked toward `x=100`; median shot x ranged from
+84.9 to 93.65.
+
+The match payload SHA-256 values were stable across both runs:
+
+- `1903370`: `1bace0aca11b4896fc0bb149a0e127f735789acd2a174d4b9bf3475424f94066`
+- `1903373`: `b7a81f5dd3d58a422ffd3bb50c2bbcefa0af671ca1ac2a6921489580e40cc6e7`
+- `1903458`: `576566787e0bdac5aeabe51c1622ce1b74abc912fcee27e220ab93e6b60f9cfd`
+
+The two sanitized reports were byte-identical and had report SHA-256
+`40775f7e509ce7ef5be3950af128fb97f8f18b9d15caf32672f4d7c206914bbd`.
+Raw payloads remain only in the ignored local soccerdata cache.
 
 ### Full payload requirement
 

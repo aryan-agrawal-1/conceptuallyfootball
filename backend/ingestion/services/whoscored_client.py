@@ -213,6 +213,24 @@ def _default_data_dir() -> Path:
     return soccerdata_home / "data" / "WhoScored"
 
 
+def _validated_json_document(url: str, body_text: Any) -> str:
+    """Return a JSON endpoint body after verifying its response shape.
+
+    Recent Chrome versions expose WhoScored's ``/data/`` response inside an
+    HTML document. soccerdata 1.9 serializes that wrapper and subsequently
+    passes it to ``json.load``. Keep the compatibility workaround local to the
+    exact endpoint and fail closed if WhoScored returns a challenge/error page.
+    """
+    if "/data/" not in url:
+        raise ValueError("JSON document extraction is only valid for WhoScored data endpoints.")
+    if not isinstance(body_text, str) or not body_text.strip():
+        raise ValueError("WhoScored data endpoint returned an empty response.")
+    parsed = json.loads(body_text)
+    if not isinstance(parsed, Mapping):
+        raise ValueError("WhoScored data endpoint did not return a JSON object.")
+    return body_text
+
+
 class SoccerdataWhoScoredClient:
     def __init__(
         self,
@@ -234,7 +252,22 @@ class SoccerdataWhoScoredClient:
             if factory is None:
                 from soccerdata import WhoScored
 
-                factory = WhoScored
+                class CompatibleWhoScored(WhoScored):
+                    @classmethod
+                    def _all_leagues(cls) -> dict[str, str]:
+                        # soccerdata keys its built-in league map by the reader
+                        # class name, so a compatibility subclass must delegate.
+                        return WhoScored._all_leagues()
+
+                    def _validate_page(self, url: str) -> str:
+                        if "/data/" in url:
+                            body_text = self._driver.execute_script(
+                                "return document.body.innerText"
+                            )
+                            return _validated_json_document(url, body_text)
+                        return super()._validate_page(url)
+
+                factory = CompatibleWhoScored
             self._reader = factory(
                 leagues=self.config.league,
                 seasons=self.config.season,

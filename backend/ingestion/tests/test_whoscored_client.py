@@ -23,6 +23,7 @@ from ingestion.services.whoscored_client import (
     shot_orientation_gate,
     shot_orientation_summary,
     summarize_match_payload,
+    _validated_json_document,
 )
 
 
@@ -73,6 +74,24 @@ class WhoScoredClientFoundationTests(SimpleTestCase):
         self.assertEqual(canonical_json_bytes(self.match_one), canonical_json_bytes(reordered))
         self.assertEqual(payload_sha256(self.match_one), payload_sha256(reordered))
         self.assertEqual(len(payload_sha256(self.match_one)), 64)
+
+    def test_data_endpoint_compatibility_extracts_json_and_rejects_html(self) -> None:
+        payload = '{"tournaments":[{"matches":[]}]}'
+
+        self.assertEqual(
+            _validated_json_document(
+                "https://www.whoscored.com/tournaments/24533/data/?d=202508",
+                payload,
+            ),
+            payload,
+        )
+        with self.assertRaises(json.JSONDecodeError):
+            _validated_json_document(
+                "https://www.whoscored.com/tournaments/24533/data/?d=202508",
+                "<html>challenge</html>",
+            )
+        with self.assertRaises(ValueError):
+            _validated_json_document("https://www.whoscored.com/", payload)
 
     def test_fixture_coordinates_and_acting_team_orientation(self) -> None:
         self.assertEqual(coordinate_range_errors(self.match_one), [])
