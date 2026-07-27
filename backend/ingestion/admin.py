@@ -14,9 +14,13 @@ from ingestion.models import (
     IngestionRun,
     MergedPlayerSeason,
     MergedTeamSeason,
-    PlayerSeasonEmbedding,
     PlayerSeasonClubSpell,
+    PlayerSeasonEmbedding,
+    PlayerSeasonEventProfile,
     PlayerSeasonSimilarity,
+    ProviderMatch,
+    ProviderMatchEvent,
+    ProviderMatchPayload,
     ProviderPlayerMapping,
     ProviderTeamMapping,
     ReepPlayerRow,
@@ -24,6 +28,7 @@ from ingestion.models import (
     Season,
     SofascorePlayerSeasonSource,
     SofascoreTeamSeasonSource,
+    TeamSeasonEventProfile,
     UnderstatPlayerSeasonSource,
     UnmatchedProviderPlayer,
     UnmatchedProviderTeam,
@@ -55,10 +60,14 @@ class CompetitionSeasonAdmin(admin.ModelAdmin):
         "player_data_mode",
         "has_understat",
         "has_sofascore",
+        "has_whoscored",
         "understat_league",
         "understat_season_year",
         "sofascore_unique_tournament_id",
         "sofascore_season_id",
+        "whoscored_league",
+        "whoscored_season",
+        "whoscored_expected_match_count",
         "refresh_enabled",
         "is_active",
     )
@@ -69,6 +78,7 @@ class CompetitionSeasonAdmin(admin.ModelAdmin):
         "player_data_mode",
         "has_understat",
         "has_sofascore",
+        "has_whoscored",
     )
     search_fields = ("season__label", "competition__short_code")
     readonly_fields = ("metric_availability",)
@@ -125,6 +135,122 @@ class IngestionBatchItemAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
     )
+
+
+@admin.register(ProviderMatch)
+class ProviderMatchAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "provider",
+        "provider_match_id",
+        "competition_season",
+        "kickoff_at",
+        "status",
+        "home_team",
+        "away_team",
+        "updated_at",
+    )
+    list_filter = ("provider", "status", "competition_season")
+    search_fields = (
+        "provider_match_id",
+        "home_provider_team_id",
+        "away_provider_team_id",
+        "home_team__name",
+        "away_team__name",
+    )
+    raw_id_fields = ("competition_season", "home_team", "away_team")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(ProviderMatchPayload)
+class ProviderMatchPayloadAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "provider_match",
+        "storage_backend",
+        "lifecycle_state",
+        "payload_size_bytes",
+        "uncompressed_size_bytes",
+        "schema_version",
+        "fetched_at",
+    )
+    list_filter = ("storage_backend", "lifecycle_state", "schema_version")
+    search_fields = ("provider_match__provider_match_id", "payload_sha256")
+    raw_id_fields = ("provider_match",)
+    exclude = ("payload_gzip",)
+    readonly_fields = (
+        "payload_sha256",
+        "payload_size_bytes",
+        "uncompressed_size_bytes",
+        "preliminary_sha256",
+        "preliminary_fetched_at",
+        "final_sha256",
+        "final_fetched_at",
+        "source_updated_at",
+        "fetched_at",
+    )
+
+
+@admin.register(ProviderMatchEvent)
+class ProviderMatchEventAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "provider_match",
+        "event_index",
+        "period",
+        "minute",
+        "second",
+        "event_type",
+        "team",
+        "player",
+    )
+    list_filter = ("event_type", "period", "outcome_successful")
+    search_fields = (
+        "provider_match__provider_match_id",
+        "provider_event_id",
+        "provider_team_id",
+        "provider_player_id",
+        "player__display_name",
+    )
+    raw_id_fields = ("provider_match", "team", "player")
+
+
+@admin.register(PlayerSeasonEventProfile)
+class PlayerSeasonEventProfileAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "competition_season",
+        "player",
+        "split_type",
+        "team",
+        "formula_version",
+        "observed_match_count",
+        "is_current",
+        "created_at",
+    )
+    list_filter = ("competition_season", "split_type", "formula_version", "is_current")
+    search_fields = ("player__display_name", "team__name")
+    raw_id_fields = ("competition_season", "player", "team", "materialized_ingestion_run")
+    readonly_fields = ("action_grid", "created_at")
+
+
+@admin.register(TeamSeasonEventProfile)
+class TeamSeasonEventProfileAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "competition_season",
+        "team",
+        "formula_version",
+        "observed_match_count",
+        "expected_match_count",
+        "coverage",
+        "is_current",
+        "created_at",
+    )
+    list_filter = ("competition_season", "formula_version", "is_current")
+    search_fields = ("team__name",)
+    raw_id_fields = ("competition_season", "team", "materialized_ingestion_run")
+    readonly_fields = ("action_grid", "opponent_action_grid", "pass_flow", "created_at")
 
 
 @admin.register(ReepPlayerRow)

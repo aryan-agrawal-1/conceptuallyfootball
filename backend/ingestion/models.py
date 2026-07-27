@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 
 class Provider(models.TextChoices):
     UNDERSTAT = "understat", "Understat"
     SOFASCORE = "sofascore", "Sofascore"
+    WHOSCORED = "whoscored", "WhoScored"
 
 
 class IngestionKind(models.TextChoices):
@@ -18,6 +20,101 @@ class IngestionKind(models.TextChoices):
     TEAM_MERGE = "team_merge", "Team merge"
     DERIVED = "derived", "Derived stats"
     GALAXY = "galaxy", "Galaxy embeddings"
+    WHOSCORED_FETCH = "whoscored_fetch", "WhoScored fetch"
+    EVENT_PROFILES = "event_profiles", "Event profiles"
+
+
+class ProviderMatchStatus(models.TextChoices):
+    SCHEDULED = "scheduled", "Scheduled"
+    LIVE = "live", "Live"
+    COMPLETED = "completed", "Completed"
+    POSTPONED = "postponed", "Postponed"
+    UNKNOWN = "unknown", "Unknown"
+
+
+class ProviderPayloadStorage(models.TextChoices):
+    DATABASE = "db", "Database"
+    OBJECT = "object", "Object storage"
+
+
+class ProviderPayloadLifecycle(models.TextChoices):
+    PRELIMINARY = "preliminary", "Preliminary"
+    FINAL = "final", "Final"
+
+
+class MatchEventPeriod(models.IntegerChoices):
+    UNKNOWN = 0, "Unknown"
+    FIRST_HALF = 1, "First half"
+    SECOND_HALF = 2, "Second half"
+    FIRST_EXTRA_TIME = 3, "First period of extra time"
+    SECOND_EXTRA_TIME = 4, "Second period of extra time"
+    PENALTY_SHOOTOUT = 5, "Penalty shootout"
+    POST_GAME = 6, "Post-game"
+
+
+class MatchEventType(models.IntegerChoices):
+    UNKNOWN = 0, "Unknown"
+    PASS = 1, "Pass"
+    BALL_TOUCH = 2, "Ball touch"
+    TAKE_ON = 3, "Take-on"
+    SHOT = 4, "Shot"
+    BALL_RECOVERY = 5, "Ball recovery"
+    TACKLE = 6, "Tackle"
+    INTERCEPTION = 7, "Interception"
+    CLEARANCE = 8, "Clearance"
+    BLOCKED_PASS = 9, "Blocked pass"
+    AERIAL = 10, "Aerial"
+    CHALLENGE = 11, "Challenge"
+    DISPOSSESSED = 12, "Dispossessed"
+    FOUL = 13, "Foul"
+    SAVE = 14, "Save"
+    OFFSIDE = 15, "Offside"
+    CARD = 16, "Card"
+    SUBSTITUTION = 17, "Substitution"
+    ADMINISTRATIVE = 18, "Administrative"
+
+
+class MatchEventBodyPart(models.IntegerChoices):
+    UNKNOWN = 0, "Unknown"
+    RIGHT_FOOT = 1, "Right foot"
+    LEFT_FOOT = 2, "Left foot"
+    HEAD = 3, "Head"
+    OTHER = 4, "Other"
+
+
+class MatchEventShotSituation(models.IntegerChoices):
+    UNKNOWN = 0, "Unknown"
+    OPEN_PLAY = 1, "Open play"
+    SET_PIECE = 2, "Set piece"
+    CORNER = 3, "Corner"
+    DIRECT_FREE_KICK = 4, "Direct free kick"
+    PENALTY = 5, "Penalty"
+    FAST_BREAK = 6, "Fast break"
+
+
+class MatchEventShotOutcome(models.IntegerChoices):
+    UNKNOWN = 0, "Unknown"
+    GOAL = 1, "Goal"
+    SAVED = 2, "Saved"
+    BLOCKED = 3, "Blocked"
+    OFF_TARGET = 4, "Off target"
+    WOODWORK = 5, "Woodwork"
+
+
+class EventProfileSplitType(models.TextChoices):
+    SEASON_TOTAL = "season_total", "Season total"
+    TEAM = "team", "Team"
+
+
+def _scaled_coordinate_field(**kwargs):
+    """A nullable 0..100 source coordinate stored as an integer scaled to 0..10000."""
+
+    return models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10000)],
+        **kwargs,
+    )
 
 
 class IngestionRunStatus(models.TextChoices):
@@ -119,6 +216,10 @@ class CompetitionSeason(models.Model):
     )
     sofascore_unique_tournament_id = models.PositiveIntegerField(null=True, blank=True)
     sofascore_season_id = models.PositiveIntegerField(null=True, blank=True)
+    has_whoscored = models.BooleanField(default=False)
+    whoscored_league = models.CharField(max_length=32, blank=True, default="")
+    whoscored_season = models.CharField(max_length=32, blank=True, default="")
+    whoscored_expected_match_count = models.PositiveSmallIntegerField(null=True, blank=True)
     expected_team_count = models.PositiveSmallIntegerField(default=20)
     min_merged_team_count = models.PositiveSmallIntegerField(default=18)
     min_team_stats_coverage_count = models.PositiveSmallIntegerField(default=18)
@@ -148,6 +249,10 @@ class CompetitionSeason(models.Model):
             and self.sofascore_unique_tournament_id is not None
             and self.sofascore_season_id is not None
         )
+
+    @property
+    def supports_whoscored(self) -> bool:
+        return self.has_whoscored and bool(self.whoscored_league and self.whoscored_season)
 
     @property
     def requires_dual_provider_merge(self) -> bool:
@@ -493,6 +598,481 @@ class UnmatchedProviderTeam(models.Model):
 
     def __str__(self) -> str:
         return f"{self.provider} {self.provider_team_id}"
+
+
+class ProviderMatch(models.Model):
+    provider = models.CharField(max_length=32, choices=Provider.choices)
+    provider_match_id = models.CharField(max_length=64)
+    competition_season = models.ForeignKey(
+        CompetitionSeason,
+        on_delete=models.CASCADE,
+        related_name="provider_matches",
+    )
+    kickoff_at = models.DateTimeField()
+    status = models.CharField(
+        max_length=16,
+        choices=ProviderMatchStatus.choices,
+        default=ProviderMatchStatus.UNKNOWN,
+    )
+    home_provider_team_id = models.CharField(max_length=64)
+    away_provider_team_id = models.CharField(max_length=64)
+    home_team = models.ForeignKey(
+        CanonicalTeam,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="provider_home_matches",
+    )
+    away_team = models.ForeignKey(
+        CanonicalTeam,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="provider_away_matches",
+    )
+    home_score = models.PositiveSmallIntegerField(null=True, blank=True)
+    away_score = models.PositiveSmallIntegerField(null=True, blank=True)
+    source_updated_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["provider", "provider_match_id"],
+                name="uniq_provider_match",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(home_score__isnull=True, away_score__isnull=True)
+                    | models.Q(home_score__isnull=False, away_score__isnull=False)
+                ),
+                name="provider_match_scores_paired",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["competition_season", "kickoff_at"],
+                name="prov_match_slice_kick_idx",
+            ),
+            models.Index(
+                fields=["competition_season", "status"],
+                name="prov_match_slice_stat_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.provider} match {self.provider_match_id}"
+
+
+class ProviderMatchPayload(models.Model):
+    provider_match = models.OneToOneField(
+        ProviderMatch,
+        on_delete=models.CASCADE,
+        related_name="payload",
+    )
+    storage_backend = models.CharField(
+        max_length=16,
+        choices=ProviderPayloadStorage.choices,
+        default=ProviderPayloadStorage.DATABASE,
+    )
+    payload_gzip = models.BinaryField(null=True, blank=True, editable=False)
+    object_key = models.CharField(max_length=512, null=True, blank=True)
+    payload_sha256 = models.CharField(max_length=64)
+    payload_size_bytes = models.PositiveIntegerField()
+    uncompressed_size_bytes = models.PositiveIntegerField()
+    schema_version = models.PositiveSmallIntegerField(default=1)
+    lifecycle_state = models.CharField(
+        max_length=16,
+        choices=ProviderPayloadLifecycle.choices,
+    )
+    preliminary_sha256 = models.CharField(max_length=64, null=True, blank=True)
+    preliminary_fetched_at = models.DateTimeField(null=True, blank=True)
+    final_sha256 = models.CharField(max_length=64, null=True, blank=True)
+    final_fetched_at = models.DateTimeField(null=True, blank=True)
+    source_updated_at = models.DateTimeField(null=True, blank=True)
+    fetched_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        storage_backend=ProviderPayloadStorage.DATABASE,
+                        payload_gzip__isnull=False,
+                        object_key__isnull=True,
+                    )
+                    | models.Q(
+                        storage_backend=ProviderPayloadStorage.OBJECT,
+                        payload_gzip__isnull=True,
+                        object_key__isnull=False,
+                    )
+                ),
+                name="provider_payload_location",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    (
+                        models.Q(
+                            preliminary_sha256__isnull=True,
+                            preliminary_fetched_at__isnull=True,
+                        )
+                        | models.Q(
+                            preliminary_sha256__isnull=False,
+                            preliminary_fetched_at__isnull=False,
+                        )
+                    )
+                    & (
+                        models.Q(
+                            final_sha256__isnull=True,
+                            final_fetched_at__isnull=True,
+                        )
+                        | models.Q(
+                            final_sha256__isnull=False,
+                            final_fetched_at__isnull=False,
+                        )
+                    )
+                    & (
+                        models.Q(
+                            lifecycle_state=ProviderPayloadLifecycle.PRELIMINARY,
+                            preliminary_sha256__isnull=False,
+                            preliminary_fetched_at__isnull=False,
+                            final_sha256__isnull=True,
+                            final_fetched_at__isnull=True,
+                            payload_sha256=models.F("preliminary_sha256"),
+                        )
+                        | models.Q(
+                            lifecycle_state=ProviderPayloadLifecycle.FINAL,
+                            final_sha256__isnull=False,
+                            final_fetched_at__isnull=False,
+                            payload_sha256=models.F("final_sha256"),
+                        )
+                    )
+                ),
+                name="provider_payload_lifecycle",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    payload_size_bytes__gt=0,
+                    uncompressed_size_bytes__gt=0,
+                ),
+                name="provider_payload_sizes_positive",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"payload for {self.provider_match}"
+
+
+class ProviderMatchEvent(models.Model):
+    provider_match = models.ForeignKey(
+        ProviderMatch,
+        on_delete=models.CASCADE,
+        related_name="events",
+        db_index=False,
+    )
+    event_index = models.PositiveIntegerField()
+    provider_event_id = models.CharField(max_length=64, null=True, blank=True)
+    provider_team_id = models.CharField(max_length=64)
+    team = models.ForeignKey(
+        CanonicalTeam,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="provider_match_events",
+        db_index=False,
+    )
+    provider_player_id = models.CharField(max_length=64, null=True, blank=True)
+    player = models.ForeignKey(
+        CanonicalPlayer,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="provider_match_events",
+        db_index=False,
+    )
+    period = models.PositiveSmallIntegerField(
+        choices=MatchEventPeriod.choices,
+        default=MatchEventPeriod.UNKNOWN,
+    )
+    minute = models.PositiveSmallIntegerField()
+    second = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(0), MaxValueValidator(59)],
+    )
+    expanded_minute = models.PositiveSmallIntegerField(null=True, blank=True)
+    match_seconds = models.PositiveIntegerField(null=True, blank=True)
+    event_type = models.PositiveSmallIntegerField(
+        choices=MatchEventType.choices,
+        default=MatchEventType.UNKNOWN,
+    )
+    source_event_type_id = models.PositiveSmallIntegerField(null=True, blank=True)
+    outcome_successful = models.BooleanField(null=True, blank=True)
+    x = _scaled_coordinate_field()
+    y = _scaled_coordinate_field()
+    end_x = _scaled_coordinate_field()
+    end_y = _scaled_coordinate_field()
+    goal_mouth_y = _scaled_coordinate_field()
+    goal_mouth_z = _scaled_coordinate_field()
+    blocked_x = _scaled_coordinate_field()
+    blocked_y = _scaled_coordinate_field()
+    is_touch = models.BooleanField(default=False)
+    is_key_pass = models.BooleanField(default=False)
+    is_shot_assist = models.BooleanField(default=False)
+    is_intentional_assist = models.BooleanField(default=False)
+    is_cross = models.BooleanField(default=False)
+    is_long_ball = models.BooleanField(default=False)
+    is_chipped = models.BooleanField(default=False)
+    is_head_pass = models.BooleanField(default=False)
+    is_through_ball = models.BooleanField(default=False)
+    is_throw_in = models.BooleanField(default=False)
+    is_corner = models.BooleanField(default=False)
+    is_free_kick = models.BooleanField(default=False)
+    is_set_piece = models.BooleanField(default=False)
+    is_regular_play = models.BooleanField(default=False)
+    is_big_chance = models.BooleanField(default=False)
+    body_part = models.PositiveSmallIntegerField(
+        choices=MatchEventBodyPart.choices,
+        default=MatchEventBodyPart.UNKNOWN,
+    )
+    shot_situation = models.PositiveSmallIntegerField(
+        choices=MatchEventShotSituation.choices,
+        default=MatchEventShotSituation.UNKNOWN,
+    )
+    shot_outcome = models.PositiveSmallIntegerField(
+        choices=MatchEventShotOutcome.choices,
+        default=MatchEventShotOutcome.UNKNOWN,
+    )
+    is_progressive_pass = models.BooleanField(default=False)
+    is_final_third_entry = models.BooleanField(default=False)
+    is_box_entry = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["provider_match", "event_index"],
+                name="uniq_provider_match_event",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(second__gte=0, second__lte=59),
+                name="provider_event_second_range",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    (models.Q(x__isnull=True) | models.Q(x__gte=0, x__lte=10000))
+                    & (models.Q(y__isnull=True) | models.Q(y__gte=0, y__lte=10000))
+                    & (models.Q(end_x__isnull=True) | models.Q(end_x__gte=0, end_x__lte=10000))
+                    & (models.Q(end_y__isnull=True) | models.Q(end_y__gte=0, end_y__lte=10000))
+                    & (
+                        models.Q(goal_mouth_y__isnull=True)
+                        | models.Q(goal_mouth_y__gte=0, goal_mouth_y__lte=10000)
+                    )
+                    & (
+                        models.Q(goal_mouth_z__isnull=True)
+                        | models.Q(goal_mouth_z__gte=0, goal_mouth_z__lte=10000)
+                    )
+                    & (
+                        models.Q(blocked_x__isnull=True)
+                        | models.Q(blocked_x__gte=0, blocked_x__lte=10000)
+                    )
+                    & (
+                        models.Q(blocked_y__isnull=True)
+                        | models.Q(blocked_y__gte=0, blocked_y__lte=10000)
+                    )
+                ),
+                name="provider_event_coords_range",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["player", "event_type", "provider_match"],
+                name="prov_event_player_type_idx",
+            ),
+            models.Index(
+                fields=["team", "event_type", "provider_match"],
+                name="prov_event_team_type_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.provider_match_id}:{self.event_index}"
+
+
+class PlayerSeasonEventProfile(models.Model):
+    competition_season = models.ForeignKey(
+        CompetitionSeason,
+        on_delete=models.CASCADE,
+        related_name="player_event_profiles",
+    )
+    player = models.ForeignKey(
+        CanonicalPlayer,
+        on_delete=models.CASCADE,
+        related_name="season_event_profiles",
+    )
+    team = models.ForeignKey(
+        CanonicalTeam,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="player_season_event_profiles",
+    )
+    split_type = models.CharField(
+        max_length=16,
+        choices=EventProfileSplitType.choices,
+    )
+    formula_version = models.CharField(
+        max_length=32,
+        default="event_profiles_v1",
+        db_index=True,
+    )
+    materialized_ingestion_run = models.ForeignKey(
+        IngestionRun,
+        on_delete=models.PROTECT,
+        related_name="player_event_profiles",
+    )
+    observed_match_count = models.PositiveSmallIntegerField(default=0)
+    observed_event_minutes = models.PositiveIntegerField(default=0)
+    minutes = models.PositiveIntegerField(default=0)
+    valid_location_actions = models.PositiveIntegerField(default=0)
+    touches = models.PositiveIntegerField(default=0)
+    pass_attempts = models.PositiveIntegerField(default=0)
+    pass_completions = models.PositiveIntegerField(default=0)
+    progressive_pass_attempts = models.PositiveIntegerField(default=0)
+    progressive_pass_completions = models.PositiveIntegerField(default=0)
+    final_third_entries = models.PositiveIntegerField(default=0)
+    box_entries = models.PositiveIntegerField(default=0)
+    key_passes = models.PositiveIntegerField(default=0)
+    crosses = models.PositiveIntegerField(default=0)
+    long_balls = models.PositiveIntegerField(default=0)
+    shots = models.PositiveIntegerField(default=0)
+    goals = models.PositiveIntegerField(default=0)
+    big_chance_shots = models.PositiveIntegerField(default=0)
+    take_ons_attempted = models.PositiveIntegerField(default=0)
+    take_ons_successful = models.PositiveIntegerField(default=0)
+    defensive_actions = models.PositiveIntegerField(default=0)
+    average_touch_x = _scaled_coordinate_field()
+    average_touch_y = _scaled_coordinate_field()
+    action_grid = models.JSONField(default=list, blank=True)
+    is_current = models.BooleanField(default=True, db_index=True)
+    superseded_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(split_type=EventProfileSplitType.SEASON_TOTAL, team__isnull=True)
+                    | models.Q(split_type=EventProfileSplitType.TEAM, team__isnull=False)
+                ),
+                name="player_event_profile_scope",
+            ),
+            models.UniqueConstraint(
+                fields=["competition_season", "player"],
+                condition=models.Q(
+                    is_current=True,
+                    split_type=EventProfileSplitType.SEASON_TOTAL,
+                ),
+                name="uniq_cur_player_event_total",
+            ),
+            models.UniqueConstraint(
+                fields=["competition_season", "player", "team"],
+                condition=models.Q(
+                    is_current=True,
+                    split_type=EventProfileSplitType.TEAM,
+                ),
+                name="uniq_cur_player_event_team",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["competition_season", "player", "is_current"],
+                name="player_event_profile_idx",
+            ),
+            models.Index(
+                fields=["competition_season", "team", "is_current"],
+                name="player_event_team_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        scope = self.team_id if self.team_id is not None else "total"
+        return f"{self.player} @ {self.competition_season} ({scope})"
+
+
+class TeamSeasonEventProfile(models.Model):
+    competition_season = models.ForeignKey(
+        CompetitionSeason,
+        on_delete=models.CASCADE,
+        related_name="team_event_profiles",
+    )
+    team = models.ForeignKey(
+        CanonicalTeam,
+        on_delete=models.CASCADE,
+        related_name="season_event_profiles",
+    )
+    formula_version = models.CharField(
+        max_length=32,
+        default="event_profiles_v1",
+        db_index=True,
+    )
+    materialized_ingestion_run = models.ForeignKey(
+        IngestionRun,
+        on_delete=models.PROTECT,
+        related_name="team_event_profiles",
+    )
+    observed_match_count = models.PositiveSmallIntegerField(default=0)
+    expected_match_count = models.PositiveSmallIntegerField(null=True, blank=True)
+    coverage = models.FloatField(null=True, blank=True)
+    valid_location_actions = models.PositiveIntegerField(default=0)
+    touches = models.PositiveIntegerField(default=0)
+    pass_attempts = models.PositiveIntegerField(default=0)
+    pass_completions = models.PositiveIntegerField(default=0)
+    progressive_pass_attempts = models.PositiveIntegerField(default=0)
+    progressive_pass_completions = models.PositiveIntegerField(default=0)
+    final_third_entries = models.PositiveIntegerField(default=0)
+    box_entries = models.PositiveIntegerField(default=0)
+    key_passes = models.PositiveIntegerField(default=0)
+    crosses = models.PositiveIntegerField(default=0)
+    long_balls = models.PositiveIntegerField(default=0)
+    shots_for = models.PositiveIntegerField(default=0)
+    goals_for = models.PositiveIntegerField(default=0)
+    big_chance_shots_for = models.PositiveIntegerField(default=0)
+    shots_against = models.PositiveIntegerField(default=0)
+    goals_against = models.PositiveIntegerField(default=0)
+    big_chance_shots_against = models.PositiveIntegerField(default=0)
+    take_ons_attempted = models.PositiveIntegerField(default=0)
+    take_ons_successful = models.PositiveIntegerField(default=0)
+    defensive_actions = models.PositiveIntegerField(default=0)
+    action_grid = models.JSONField(default=list, blank=True)
+    opponent_action_grid = models.JSONField(default=list, blank=True)
+    pass_flow = models.JSONField(default=list, blank=True)
+    is_current = models.BooleanField(default=True, db_index=True)
+    superseded_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(coverage__isnull=True)
+                    | models.Q(coverage__gte=0.0, coverage__lte=1.0)
+                ),
+                name="team_event_coverage_range",
+            ),
+            models.UniqueConstraint(
+                fields=["competition_season", "team"],
+                condition=models.Q(is_current=True),
+                name="uniq_cur_team_event_profile",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["competition_season", "team", "is_current"],
+                name="team_event_profile_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.team} @ {self.competition_season}"
 
 
 class UnderstatPlayerSeasonSource(models.Model):
