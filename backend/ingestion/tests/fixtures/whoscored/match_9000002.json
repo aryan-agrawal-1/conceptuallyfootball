@@ -1,0 +1,45 @@
+{
+  "_fixture": {
+    "sanitized": true,
+    "synthetic": true,
+    "coverage": ["synthetic transfer across fixtures"]
+  },
+  "matchId": 9000002,
+  "startDate": "2025-08-23",
+  "startTime": "14:00",
+  "score": "0 : 0",
+  "home": {
+    "teamId": 9103,
+    "name": "Synthetic C"
+  },
+  "away": {
+    "teamId": 9104,
+    "name": "Synthetic D"
+  },
+  "playerIdNameDictionary": {
+    "9201": "Synthetic Player One"
+  },
+  "periodMinuteLimits": {
+    "1": 45,
+    "2": 90
+  },
+  "events": [
+    {
+      "id": 94001,
+      "eventId": 1,
+      "minute": 1,
+      "second": 0,
+      "teamId": 9103,
+      "playerId": 9201,
+      "x": 18.0,
+      "y": 50.0,
+      "endX": 68.0,
+      "endY": 50.0,
+      "period": {"value": 1, "displayName": "FirstHalf"},
+      "type": {"value": 1, "displayName": "Pass"},
+      "outcomeType": {"value": 1, "displayName": "Successful"},
+      "isTouch": true,
+      "qualifiers": []
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "_fixture": {
+    "sanitized": true,
+    "synthetic": true
+  },
+  "matches": [
+    {
+      "league": "ENG-Premier League",
+      "season": "2526",
+      "game": "Synthetic A-Synthetic B",
+      "game_id": 9000001,
+      "date": "2025-08-16T14:00:00Z",
+      "home_team_id": 9101,
+      "away_team_id": 9102,
+      "home_team": "Synthetic A",
+      "away_team": "Synthetic B",
+      "is_result": true,
+      "status_code": "FT",
+      "scores": [2, 1]
+    },
+    {
+      "league": "ENG-Premier League",
+      "season": "2526",
+      "game": "Synthetic C-Synthetic D",
+      "game_id": 9000002,
+      "date": "2025-08-23T14:00:00Z",
+      "home_team_id": 9103,
+      "away_team_id": 9104,
+      "home_team": "Synthetic C",
+      "away_team": "Synthetic D",
+      "is_result": true,
+      "status_code": "FT",
+      "scores": [0, 0]
+    },
+    {
+      "league": "ENG-Premier League",
+      "season": "2526",
+      "game": "Synthetic E-Synthetic F",
+      "game_id": 9000003,
+      "date": "2025-08-30T14:00:00Z",
+      "home_team_id": 9105,
+      "away_team_id": 9106,
+      "home_team": "Synthetic E",
+      "away_team": "Synthetic F",
+      "is_result": false,
+      "status_code": "Scheduled",
+      "scores": []
+    }
+  ]
+}
