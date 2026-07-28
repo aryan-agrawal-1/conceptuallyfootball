@@ -3,8 +3,12 @@ from __future__ import annotations
 import html
 import re
 import unicodedata
+from dataclasses import asdict, dataclass
+from decimal import Decimal
+from typing import Any, Mapping
 
 from django.db import transaction
+from django.db.models import QuerySet
 from django.utils import timezone
 
 from ingestion.models import (
@@ -14,6 +18,8 @@ from ingestion.models import (
     IngestionRun,
     MatchMethod,
     Provider,
+    ProviderMatch,
+    ProviderMatchEvent,
     ProviderPlayerMapping,
     ProviderTeamMapping,
     ReepPlayerRow,
@@ -24,6 +30,95 @@ from ingestion.models import (
     UnmatchedProviderPlayer,
     UnmatchedProviderTeam,
 )
+
+EVENT_IDENTITY_WARNING_PERCENT = Decimal("1")
+EVENT_IDENTITY_PUBLICATION_FAILURE_PERCENT = Decimal("5")
+
+
+class EventIdentityPublicationError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class EventIdentityVolume:
+    total_events: int
+    player_events: int
+    mapped_player_events: int
+    unmapped_player_events: int
+    playerless_events: int
+    mapped_team_events: int
+    unmapped_team_events: int
+
+    @property
+    def unmapped_player_percent(self) -> Decimal:
+        if not self.player_events:
+            return Decimal("0")
+        return Decimal(self.unmapped_player_events * 100) / Decimal(self.player_events)
+
+    @property
+    def warning(self) -> bool:
+        return self.unmapped_player_percent > EVENT_IDENTITY_WARNING_PERCENT
+
+    @property
+    def publication_failure(self) -> bool:
+        return self.unmapped_player_percent > EVENT_IDENTITY_PUBLICATION_FAILURE_PERCENT
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self) | {
+            "unmapped_player_percent": str(self.unmapped_player_percent),
+            "warning": self.warning,
+            "publication_failure": self.publication_failure,
+        }
+
+
+@dataclass(frozen=True)
+class EventIdentityReport:
+    competition_season_id: int
+    volume: EventIdentityVolume
+    by_match: tuple[dict[str, Any], ...]
+    by_team: tuple[dict[str, Any], ...]
+
+    @property
+    def warning(self) -> bool:
+        return self.volume.warning
+
+    @property
+    def publication_failure(self) -> bool:
+        return self.volume.publication_failure
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "competition_season_id": self.competition_season_id,
+            "volume": self.volume.as_dict(),
+            "by_match": list(self.by_match),
+            "by_team": list(self.by_team),
+            "warning": self.warning,
+            "publication_failure": self.publication_failure,
+        }
+
+
+def _aggregate_counterpart(provider: str) -> tuple[str, type[Any]] | None:
+    if provider == Provider.UNDERSTAT:
+        return Provider.SOFASCORE, SofascorePlayerSeasonSource
+    if provider == Provider.SOFASCORE:
+        return Provider.UNDERSTAT, UnderstatPlayerSeasonSource
+    return None
+
+
+def _reep_player_row(provider: str, provider_player_id: str) -> ReepPlayerRow | None:
+    if provider == Provider.UNDERSTAT:
+        return ReepPlayerRow.objects.filter(understat_player_id=provider_player_id).first()
+    if provider == Provider.SOFASCORE:
+        return ReepPlayerRow.objects.filter(sofascore_player_id=provider_player_id).first()
+    return None
+
+
+def _reep_team_row(provider: str, provider_team_id: str) -> ReepTeamRow | None:
+    if provider == Provider.UNDERSTAT:
+        return ReepTeamRow.objects.filter(understat_team_id=provider_team_id).first()
+    if provider == Provider.SOFASCORE:
+        return ReepTeamRow.objects.filter(sofascore_team_id=provider_team_id).first()
+    return None
 
 
 def _mark_unmatched_player_resolved(
@@ -38,6 +133,44 @@ def _mark_unmatched_player_resolved(
         provider=provider,
         provider_player_id=provider_player_id,
     ).update(resolved_player=player, resolved_at=timezone.now())
+
+
+def _record_unmatched_player(
+    *,
+    competition_season: CompetitionSeason,
+    provider: str,
+    provider_player_id: str,
+    player_name: str,
+    run: IngestionRun | None,
+) -> None:
+    unmatched, created = UnmatchedProviderPlayer.objects.get_or_create(
+        competition_season=competition_season,
+        provider=provider,
+        provider_player_id=provider_player_id,
+        defaults={"player_name": player_name, "first_seen_run": run},
+    )
+    if not created and player_name and unmatched.player_name != player_name:
+        unmatched.player_name = player_name
+        unmatched.save(update_fields=["player_name"])
+
+
+def _record_unmatched_team(
+    *,
+    competition_season: CompetitionSeason,
+    provider: str,
+    provider_team_id: str,
+    team_name: str,
+    run: IngestionRun | None,
+) -> None:
+    unmatched, created = UnmatchedProviderTeam.objects.get_or_create(
+        competition_season=competition_season,
+        provider=provider,
+        provider_team_id=provider_team_id,
+        defaults={"team_name": team_name, "first_seen_run": run},
+    )
+    if not created and team_name and unmatched.team_name != team_name:
+        unmatched.team_name = team_name
+        unmatched.save(update_fields=["team_name"])
 
 
 def _get_or_create_player_for_reep_row(
@@ -137,12 +270,10 @@ def _resolve_player_from_slice_counterpart(
     if not display_name:
         return None
 
-    other_provider = Provider.SOFASCORE if provider == Provider.UNDERSTAT else Provider.UNDERSTAT
-    other_model = (
-        SofascorePlayerSeasonSource
-        if provider == Provider.UNDERSTAT
-        else UnderstatPlayerSeasonSource
-    )
+    counterpart_config = _aggregate_counterpart(provider)
+    if counterpart_config is None:
+        return None
+    other_provider, other_model = counterpart_config
     normalized_display_name = _normalize_player_name_for_match(display_name)
     if not normalized_display_name:
         return None
@@ -212,10 +343,10 @@ def _attach_provider_native_slice_counterpart(
     already made an auto provider-native player for a same unique normalized alias
     in this slice, attach it to the reep-backed canonical player.
     """
-    other_provider = Provider.SOFASCORE if provider == Provider.UNDERSTAT else Provider.UNDERSTAT
-    other_model = (
-        SofascorePlayerSeasonSource if provider == Provider.UNDERSTAT else UnderstatPlayerSeasonSource
-    )
+    counterpart_config = _aggregate_counterpart(provider)
+    if counterpart_config is None:
+        return
+    other_provider, other_model = counterpart_config
     normalized_aliases = _normalized_player_aliases(display_name, *alias_names)
     if not normalized_aliases:
         return
@@ -273,10 +404,11 @@ def _attach_provider_native_slice_counterpart(
 
 
 def _reep_row_missing_counterpart_id(row: ReepPlayerRow, provider: str) -> bool:
-    other_provider = Provider.SOFASCORE if provider == Provider.UNDERSTAT else Provider.UNDERSTAT
-    if other_provider == Provider.UNDERSTAT:
+    if provider == Provider.SOFASCORE:
         return not row.understat_player_id
-    return not row.sofascore_player_id
+    if provider == Provider.UNDERSTAT:
+        return not row.sofascore_player_id
+    return False
 
 
 def resolve_canonical_player(
@@ -288,10 +420,9 @@ def resolve_canonical_player(
     run: IngestionRun | None,
 ) -> CanonicalPlayer | None:
     pid = str(provider_player_id)
-    if provider == Provider.UNDERSTAT:
-        row = ReepPlayerRow.objects.filter(understat_player_id=pid).first()
-    else:
-        row = ReepPlayerRow.objects.filter(sofascore_player_id=pid).first()
+    if not pid:
+        return None
+    row = _reep_player_row(provider, pid)
 
     existing_map = (
         ProviderPlayerMapping.objects.filter(
@@ -302,6 +433,14 @@ def resolve_canonical_player(
         .first()
     )
     if existing_map:
+        if _aggregate_counterpart(provider) is None:
+            _mark_unmatched_player_resolved(
+                competition_season=competition_season,
+                provider=provider,
+                provider_player_id=pid,
+                player=existing_map.canonical_player,
+            )
+            return existing_map.canonical_player
         if row and existing_map.match_method == MatchMethod.AUTO:
             player = _get_or_create_player_for_reep_row(row=row, fallback_name=display_name)
             if existing_map.canonical_player_id != player.id:
@@ -344,6 +483,16 @@ def resolve_canonical_player(
                 return player
 
         return existing_map.canonical_player
+
+    if _aggregate_counterpart(provider) is None:
+        _record_unmatched_player(
+            competition_season=competition_season,
+            provider=provider,
+            provider_player_id=pid,
+            player_name=display_name,
+            run=run,
+        )
+        return None
 
     if not row:
         player = _resolve_player_from_slice_counterpart(
@@ -431,16 +580,24 @@ def resolve_canonical_team(
     tid = str(provider_team_id)
     if not tid:
         return None
-    if provider == Provider.UNDERSTAT:
-        row = ReepTeamRow.objects.filter(understat_team_id=tid).first()
-    else:
-        row = ReepTeamRow.objects.filter(sofascore_team_id=tid).first()
+    row = _reep_team_row(provider, tid)
 
-    existing_map = ProviderTeamMapping.objects.filter(
-        provider=provider,
-        provider_team_id=tid,
-    ).first()
+    existing_map = (
+        ProviderTeamMapping.objects.filter(
+            provider=provider,
+            provider_team_id=tid,
+        )
+        .select_related("canonical_team")
+        .first()
+    )
     if existing_map:
+        if _aggregate_counterpart(provider) is None:
+            UnmatchedProviderTeam.objects.filter(
+                competition_season=competition_season,
+                provider=provider,
+                provider_team_id=tid,
+            ).update(resolved_team=existing_map.canonical_team, resolved_at=timezone.now())
+            return existing_map.canonical_team
         if (
             row
             and existing_map.match_method == MatchMethod.AUTO
@@ -454,6 +611,16 @@ def resolve_canonical_team(
             existing_map.save(update_fields=["canonical_team", "updated_at"])
             return team
         return existing_map.canonical_team
+
+    if _aggregate_counterpart(provider) is None:
+        _record_unmatched_team(
+            competition_season=competition_season,
+            provider=provider,
+            provider_team_id=tid,
+            team_name=team_name,
+            run=run,
+        )
+        return None
 
     if not row:
         team = _get_or_create_provider_native_team(
@@ -487,6 +654,260 @@ def resolve_canonical_team(
         provider_team_id=tid,
     ).update(resolved_team=team, resolved_at=timezone.now())
     return team
+
+
+@transaction.atomic
+def attach_provider_match_identities(
+    provider_match: ProviderMatch,
+    *,
+    run: IngestionRun | None = None,
+    team_names: Mapping[str, str] | None = None,
+    player_names: Mapping[str, str] | None = None,
+    include_report: bool = True,
+) -> EventIdentityReport | None:
+    """
+    Attach provider event IDs only through existing mappings.
+
+    Event feeds must never manufacture canonical identities from a provider name.
+    Unknown IDs are retained on normalized rows and recorded for manual resolution.
+    """
+
+    locked_match = (
+        ProviderMatch.objects.select_for_update()
+        .select_related("competition_season")
+        .get(pk=provider_match.pk)
+    )
+    normalized_team_names = {str(key): value for key, value in (team_names or {}).items()}
+    normalized_player_names = {str(key): value for key, value in (player_names or {}).items()}
+    team_ids = set(
+        locked_match.events.exclude(provider_team_id="")
+        .values_list("provider_team_id", flat=True)
+        .distinct()
+    )
+    team_ids.update(
+        provider_team_id
+        for provider_team_id in (
+            locked_match.home_provider_team_id,
+            locked_match.away_provider_team_id,
+        )
+        if provider_team_id
+    )
+    player_ids = set(
+        locked_match.events.exclude(provider_player_id__isnull=True)
+        .exclude(provider_player_id="")
+        .values_list("provider_player_id", flat=True)
+        .distinct()
+    )
+
+    team_mappings = {
+        mapping.provider_team_id: mapping.canonical_team
+        for mapping in ProviderTeamMapping.objects.filter(
+            provider=locked_match.provider,
+            provider_team_id__in=team_ids,
+        ).select_related("canonical_team")
+    }
+    player_mappings = {
+        mapping.provider_player_id: mapping.canonical_player
+        for mapping in ProviderPlayerMapping.objects.filter(
+            provider=locked_match.provider,
+            provider_player_id__in=player_ids,
+        ).select_related("canonical_player")
+    }
+
+    for provider_team_id in team_ids:
+        team = team_mappings.get(provider_team_id)
+        if team is None:
+            _record_unmatched_team(
+                competition_season=locked_match.competition_season,
+                provider=locked_match.provider,
+                provider_team_id=provider_team_id,
+                team_name=normalized_team_names.get(provider_team_id, ""),
+                run=run,
+            )
+            continue
+        UnmatchedProviderTeam.objects.filter(
+            competition_season=locked_match.competition_season,
+            provider=locked_match.provider,
+            provider_team_id=provider_team_id,
+        ).update(resolved_team=team, resolved_at=timezone.now())
+
+    for provider_player_id in player_ids:
+        player = player_mappings.get(provider_player_id)
+        if player is None:
+            _record_unmatched_player(
+                competition_season=locked_match.competition_season,
+                provider=locked_match.provider,
+                provider_player_id=provider_player_id,
+                player_name=normalized_player_names.get(provider_player_id, ""),
+                run=run,
+            )
+            continue
+        _mark_unmatched_player_resolved(
+            competition_season=locked_match.competition_season,
+            provider=locked_match.provider,
+            provider_player_id=provider_player_id,
+            player=player,
+        )
+
+    locked_match.home_team = team_mappings.get(locked_match.home_provider_team_id)
+    locked_match.away_team = team_mappings.get(locked_match.away_provider_team_id)
+    locked_match.save(update_fields=["home_team", "away_team", "updated_at"])
+
+    locked_match.events.update(team=None, player=None)
+    for provider_team_id, team in team_mappings.items():
+        locked_match.events.filter(provider_team_id=provider_team_id).update(team=team)
+    for provider_player_id, player in player_mappings.items():
+        locked_match.events.filter(provider_player_id=provider_player_id).update(player=player)
+
+    if include_report:
+        return build_event_identity_report(locked_match.competition_season)
+    return None
+
+
+def _empty_event_identity_counts() -> dict[str, int]:
+    return {
+        "total_events": 0,
+        "player_events": 0,
+        "mapped_player_events": 0,
+        "unmapped_player_events": 0,
+        "playerless_events": 0,
+        "mapped_team_events": 0,
+        "unmapped_team_events": 0,
+    }
+
+
+def _add_event_identity_row(counts: dict[str, int], row: Mapping[str, Any]) -> None:
+    counts["total_events"] += 1
+    if row["team_id"] is None:
+        counts["unmapped_team_events"] += 1
+    else:
+        counts["mapped_team_events"] += 1
+
+    if not row["provider_player_id"]:
+        counts["playerless_events"] += 1
+    elif row["player_id"] is None:
+        counts["player_events"] += 1
+        counts["unmapped_player_events"] += 1
+    else:
+        counts["player_events"] += 1
+        counts["mapped_player_events"] += 1
+
+
+def _volume_from_counts(counts: Mapping[str, int]) -> EventIdentityVolume:
+    return EventIdentityVolume(
+        total_events=counts["total_events"],
+        player_events=counts["player_events"],
+        mapped_player_events=counts["mapped_player_events"],
+        unmapped_player_events=counts["unmapped_player_events"],
+        playerless_events=counts["playerless_events"],
+        mapped_team_events=counts["mapped_team_events"],
+        unmapped_team_events=counts["unmapped_team_events"],
+    )
+
+
+def build_event_identity_report(
+    competition_season: CompetitionSeason,
+    *,
+    provider: str = Provider.WHOSCORED,
+) -> EventIdentityReport:
+    events: QuerySet[ProviderMatchEvent] = ProviderMatchEvent.objects.filter(
+        provider_match__competition_season=competition_season,
+        provider_match__provider=provider,
+    )
+    rows = events.values(
+        "provider_match_id",
+        "provider_match__provider_match_id",
+        "provider_team_id",
+        "provider_player_id",
+        "team_id",
+        "player_id",
+    )
+    slice_counts = _empty_event_identity_counts()
+    match_counts: dict[tuple[int, str], dict[str, int]] = {}
+    team_counts: dict[str, dict[str, int]] = {}
+    for row in rows.iterator():
+        match_key = (
+            row["provider_match_id"],
+            row["provider_match__provider_match_id"],
+        )
+        match_volume = match_counts.setdefault(match_key, _empty_event_identity_counts())
+        team_volume = team_counts.setdefault(
+            row["provider_team_id"],
+            _empty_event_identity_counts(),
+        )
+        _add_event_identity_row(slice_counts, row)
+        _add_event_identity_row(match_volume, row)
+        _add_event_identity_row(team_volume, row)
+
+    by_match = tuple(
+        {
+            "provider_match_database_id": database_id,
+            "provider_match_id": provider_match_id,
+            **_volume_from_counts(counts).as_dict(),
+        }
+        for (database_id, provider_match_id), counts in sorted(
+            match_counts.items(),
+            key=lambda item: (item[0][1], item[0][0]),
+        )
+    )
+    by_team = tuple(
+        {
+            "provider_team_id": provider_team_id,
+            **_volume_from_counts(counts).as_dict(),
+        }
+        for provider_team_id, counts in sorted(team_counts.items())
+    )
+    return EventIdentityReport(
+        competition_season_id=competition_season.pk,
+        volume=_volume_from_counts(slice_counts),
+        by_match=by_match,
+        by_team=by_team,
+    )
+
+
+def validate_event_identity_publication(report: EventIdentityReport) -> None:
+    if report.publication_failure:
+        raise EventIdentityPublicationError(
+            "Unmapped player-event volume "
+            f"{report.volume.unmapped_player_percent}% exceeds the "
+            f"{EVENT_IDENTITY_PUBLICATION_FAILURE_PERCENT}% publication limit."
+        )
+
+
+def record_event_identity_diagnostics(
+    run: IngestionRun,
+    report: EventIdentityReport | None = None,
+) -> EventIdentityReport:
+    if run.competition_season is None:
+        raise ValueError("Event identity diagnostics require a competition-season run.")
+    active_report = report or build_event_identity_report(run.competition_season)
+    stats = dict(run.stats)
+    stats["event_identity"] = active_report.as_dict()
+    run.stats = stats
+    run.save(update_fields=["stats"])
+    return active_report
+
+
+def reattach_event_identities(
+    competition_season: CompetitionSeason,
+    *,
+    provider: str = Provider.WHOSCORED,
+    run: IngestionRun | None = None,
+) -> tuple[int, int]:
+    match_count = 0
+    event_count = 0
+    for provider_match in ProviderMatch.objects.filter(
+        competition_season=competition_season,
+        provider=provider,
+    ):
+        attach_provider_match_identities(
+            provider_match,
+            run=run,
+            include_report=False,
+        )
+        match_count += 1
+        event_count += provider_match.events.count()
+    return match_count, event_count
 
 
 def reattach_slice_identities(competition_season: CompetitionSeason) -> tuple[int, int, int]:
@@ -553,6 +974,7 @@ def reattach_slice_identities(competition_season: CompetitionSeason) -> tuple[in
         src.save(update_fields=["canonical_team"])
         t_count += 1
 
+    reattach_event_identities(competition_season)
     return u_count, s_count, t_count
 
 
@@ -573,6 +995,11 @@ def apply_manual_player_resolution(
     unmatched.resolved_player = canonical_player
     unmatched.resolved_at = timezone.now()
     unmatched.save(update_fields=["resolved_player", "resolved_at"])
+    ProviderMatchEvent.objects.filter(
+        provider_match__competition_season=unmatched.competition_season,
+        provider_match__provider=unmatched.provider,
+        provider_player_id=unmatched.provider_player_id,
+    ).update(player=canonical_player)
 
 
 @transaction.atomic
@@ -591,3 +1018,18 @@ def apply_manual_team_resolution(
     unmatched.resolved_team = canonical_team
     unmatched.resolved_at = timezone.now()
     unmatched.save(update_fields=["resolved_team", "resolved_at"])
+    ProviderMatchEvent.objects.filter(
+        provider_match__competition_season=unmatched.competition_season,
+        provider_match__provider=unmatched.provider,
+        provider_team_id=unmatched.provider_team_id,
+    ).update(team=canonical_team)
+    ProviderMatch.objects.filter(
+        competition_season=unmatched.competition_season,
+        provider=unmatched.provider,
+        home_provider_team_id=unmatched.provider_team_id,
+    ).update(home_team=canonical_team)
+    ProviderMatch.objects.filter(
+        competition_season=unmatched.competition_season,
+        provider=unmatched.provider,
+        away_provider_team_id=unmatched.provider_team_id,
+    ).update(away_team=canonical_team)

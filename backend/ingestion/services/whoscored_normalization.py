@@ -10,6 +10,7 @@ from typing import Any, Mapping, Sequence
 from django.db import transaction
 
 from ingestion.models import (
+    IngestionRun,
     MatchEventBodyPart,
     MatchEventPeriod,
     MatchEventShotOutcome,
@@ -282,6 +283,8 @@ class NormalizedMatch:
     source_checksum: str
     events: tuple[NormalizedMatchEvent, ...]
     diagnostics: NormalizationDiagnostics
+    team_names: tuple[tuple[str, str], ...] = ()
+    player_names: tuple[tuple[str, str], ...] = ()
 
     def canonical_bytes(self) -> bytes:
         value = {
@@ -472,11 +475,30 @@ def parse_match_payload(
         raise WhoScoredNormalizationError(diagnostics)
 
     source_checksum = hashlib.sha256(canonical_raw_payload_bytes(payload)).hexdigest()
+    team_names = tuple(
+        (str(team["teamId"]), str(team.get("name") or ""))
+        for side in ("home", "away")
+        if isinstance((team := payload.get(side)), Mapping)
+        and team.get("teamId") not in (None, "")
+    )
+    player_dictionary = payload.get("playerIdNameDictionary")
+    player_names = (
+        tuple(
+            sorted(
+                (str(provider_player_id), str(player_name or ""))
+                for provider_player_id, player_name in player_dictionary.items()
+            )
+        )
+        if isinstance(player_dictionary, Mapping)
+        else ()
+    )
     return NormalizedMatch(
         schema_version=NORMALIZATION_SCHEMA_VERSION,
         source_checksum=source_checksum,
         events=tuple(normalized_events),
         diagnostics=diagnostics,
+        team_names=team_names,
+        player_names=player_names,
     )
 
 
@@ -759,6 +781,7 @@ def replace_match_events(
     normalized_match: NormalizedMatch,
     *,
     batch_size: int = 1000,
+    run: IngestionRun | None = None,
 ) -> int:
     if not normalized_match.diagnostics.valid:
         raise WhoScoredNormalizationError(normalized_match.diagnostics)
@@ -770,6 +793,15 @@ def replace_match_events(
             for event in normalized_match.events
         ]
         ProviderMatchEvent.objects.bulk_create(rows, batch_size=batch_size)
+        from ingestion.services.identity import attach_provider_match_identities
+
+        attach_provider_match_identities(
+            locked_match,
+            run=run,
+            team_names=dict(normalized_match.team_names),
+            player_names=dict(normalized_match.player_names),
+            include_report=False,
+        )
     return len(normalized_match.events)
 
 
