@@ -1,0 +1,468 @@
+from __future__ import annotations
+
+import copy
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from unittest.mock import patch
+
+from django.db import DatabaseError
+from django.test import TestCase, SimpleTestCase
+
+from ingestion.models import (
+    Competition,
+    CompetitionSeason,
+    MatchEventBodyPart,
+    MatchEventPeriod,
+    MatchEventShotOutcome,
+    MatchEventShotSituation,
+    MatchEventType,
+    Provider,
+    ProviderMatch,
+    ProviderMatchEvent,
+    ProviderMatchStatus,
+    Season,
+)
+from ingestion.services.whoscored_normalization import (
+    NORMALIZATION_SCHEMA_VERSION,
+    RAW_PAYLOAD_SCHEMA_VERSION,
+    NormalizationPolicy,
+    WhoScoredNormalizationError,
+    action_grid_assignment,
+    box_entry,
+    canonical_raw_payload_bytes,
+    decode_coordinate,
+    encode_coordinate,
+    final_third_entry,
+    is_action_event,
+    is_defensive_event,
+    parse_match_payload,
+    progressive_pass,
+    replace_match_events,
+    team_zone_assignment,
+    unwrap_raw_payload,
+    wrap_raw_payload,
+)
+
+
+FIXTURE_DIR = Path(__file__).parent / "fixtures" / "whoscored"
+FIXTURE_POLICY = NormalizationPolicy(minimum_event_count=0)
+
+
+def load_fixture(name: str) -> dict:
+    with (FIXTURE_DIR / name).open(encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+class WhoScoredNormalizationHelperTests(SimpleTestCase):
+    def test_coordinate_encode_decode_boundaries_and_rounding(self):
+        self.assertEqual(encode_coordinate(0), 0)
+        self.assertEqual(encode_coordinate("12.345"), 1235)
+        self.assertEqual(encode_coordinate(100), 10000)
+        self.assertEqual(decode_coordinate(0), 0)
+        self.assertEqual(decode_coordinate(1235), 12.35)
+        self.assertEqual(decode_coordinate(10000), 100)
+
+        for invalid in (-0.01, 100.01, True, "not-a-number", float("nan")):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                encode_coordinate(invalid)
+        for invalid in (-1, 10001, True, 1.5):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                decode_coordinate(invalid)
+
+    def test_progressive_pass_thresholds_for_all_three_zones(self):
+        cases = (
+            ((1000, 5000, 3857, 5000), False),
+            ((1000, 5000, 3858, 5000), True),
+            ((4000, 5000, 5428, 5000), False),
+            ((4000, 5000, 5429, 5000), True),
+            ((7000, 5000, 7952, 5000), False),
+            ((7000, 5000, 7953, 5000), True),
+        )
+        for coordinates, expected in cases:
+            with self.subTest(coordinates=coordinates):
+                self.assertIs(progressive_pass(*coordinates), expected)
+
+    def test_final_third_and_box_boundaries(self):
+        self.assertTrue(final_third_entry(True, 6669, 6670))
+        self.assertFalse(final_third_entry(False, 6669, 6670))
+        self.assertFalse(final_third_entry(True, 6670, 8000))
+        self.assertFalse(final_third_entry(True, 5000, 6669))
+
+        self.assertTrue(box_entry(True, 8349, 2110, 8350, 2110))
+        self.assertTrue(box_entry(True, 5000, 5000, 8350, 7890))
+        self.assertFalse(box_entry(True, 8350, 2110, 9000, 5000))
+        self.assertFalse(box_entry(True, 5000, 5000, 8350, 2109))
+        self.assertFalse(box_entry(True, 5000, 5000, 8350, 7891))
+        self.assertFalse(box_entry(False, 5000, 5000, 9000, 5000))
+
+    def test_grid_assignment_boundaries(self):
+        self.assertEqual(action_grid_assignment(0, 0), (0, 0, 0))
+        self.assertEqual(action_grid_assignment(833, 1249), (0, 0, 0))
+        self.assertEqual(action_grid_assignment(834, 1250), (1, 1, 9))
+        self.assertEqual(action_grid_assignment(10000, 10000), (11, 7, 95))
+
+        self.assertEqual(team_zone_assignment(0, 0), (0, 0, 0))
+        self.assertEqual(team_zone_assignment(1999, 3333), (0, 0, 0))
+        self.assertEqual(team_zone_assignment(2000, 3334), (1, 1, 4))
+        self.assertEqual(team_zone_assignment(10000, 10000), (4, 2, 14))
+
+    def test_action_and_defensive_event_classification(self):
+        self.assertTrue(is_action_event(MatchEventType.PASS))
+        self.assertTrue(is_action_event(MatchEventType.SHOT))
+        self.assertFalse(is_action_event(MatchEventType.FOUL))
+        self.assertFalse(is_action_event(MatchEventType.AERIAL))
+        self.assertTrue(
+            is_action_event(MatchEventType.AERIAL, defensive_qualifier=True)
+        )
+        self.assertTrue(is_defensive_event(MatchEventType.TACKLE))
+        self.assertFalse(is_defensive_event(MatchEventType.PASS))
+        self.assertTrue(
+            is_defensive_event(MatchEventType.CHALLENGE, defensive_qualifier=True)
+        )
+
+    def test_raw_wrapper_version_and_checksum_are_stable(self):
+        payload = load_fixture("match_9000001.json")
+        reordered = dict(reversed(list(payload.items())))
+        wrapped = wrap_raw_payload(payload)
+
+        self.assertEqual(wrapped["schema_version"], RAW_PAYLOAD_SCHEMA_VERSION)
+        self.assertEqual(unwrap_raw_payload(wrapped), payload)
+        self.assertEqual(
+            canonical_raw_payload_bytes(payload),
+            canonical_raw_payload_bytes(reordered),
+        )
+        with self.assertRaisesMessage(ValueError, "Unsupported"):
+            unwrap_raw_payload(
+                {
+                    "schema_version": RAW_PAYLOAD_SCHEMA_VERSION + 1,
+                    "provider": "whoscored",
+                    "payload": payload,
+                }
+            )
+
+
+class WhoScoredParserTests(SimpleTestCase):
+    def setUp(self):
+        self.payload = load_fixture("match_9000001.json")
+
+    def test_fixture_normalizes_all_v1_families_and_typed_fields(self):
+        result = parse_match_payload(self.payload, policy=FIXTURE_POLICY)
+
+        self.assertEqual(result.schema_version, NORMALIZATION_SCHEMA_VERSION)
+        self.assertEqual(len(result.events), len(self.payload["events"]))
+        self.assertTrue(result.diagnostics.valid)
+        self.assertEqual(
+            result.diagnostics.unknown_event_types,
+            {"999:SyntheticUnknownEvent": 1},
+        )
+        self.assertEqual(
+            result.diagnostics.unknown_qualifiers,
+            {"999:SyntheticUnknownQualifier": 1},
+        )
+
+        first = result.events[0]
+        self.assertEqual(first.provider_event_id, "93001")
+        self.assertEqual(first.provider_team_id, "9101")
+        self.assertEqual(first.provider_player_id, "9201")
+        self.assertEqual(first.period, MatchEventPeriod.FIRST_HALF)
+        self.assertEqual(first.match_seconds, 65)
+        self.assertEqual(first.event_type, MatchEventType.PASS)
+        self.assertEqual((first.x, first.y, first.end_x, first.end_y), (2250, 5000, 7100, 4800))
+        self.assertTrue(first.outcome_successful)
+        self.assertTrue(first.is_touch)
+        self.assertTrue(first.is_cross)
+        self.assertTrue(first.is_through_ball)
+        self.assertTrue(first.is_free_kick)
+        self.assertTrue(first.is_progressive_pass)
+        self.assertTrue(first.is_final_third_entry)
+        self.assertFalse(first.is_box_entry)
+
+        event_types = {event.event_type for event in result.events}
+        self.assertTrue(
+            {
+                MatchEventType.PASS,
+                MatchEventType.BALL_TOUCH,
+                MatchEventType.TAKE_ON,
+                MatchEventType.SHOT,
+                MatchEventType.BALL_RECOVERY,
+                MatchEventType.TACKLE,
+                MatchEventType.INTERCEPTION,
+                MatchEventType.CLEARANCE,
+                MatchEventType.BLOCKED_PASS,
+                MatchEventType.AERIAL,
+                MatchEventType.CHALLENGE,
+                MatchEventType.DISPOSSESSED,
+                MatchEventType.FOUL,
+                MatchEventType.OFFSIDE,
+                MatchEventType.CARD,
+                MatchEventType.SUBSTITUTION,
+                MatchEventType.ADMINISTRATIVE,
+                MatchEventType.UNKNOWN,
+            }.issubset(event_types)
+        )
+
+        shots = {
+            event.provider_event_id: event
+            for event in result.events
+            if event.event_type == MatchEventType.SHOT
+        }
+        self.assertEqual(shots["93003"].shot_outcome, MatchEventShotOutcome.GOAL)
+        self.assertEqual(shots["93003"].shot_situation, MatchEventShotSituation.PENALTY)
+        self.assertEqual(shots["93003"].goal_mouth_y, 4810)
+        self.assertEqual(shots["93004"].shot_outcome, MatchEventShotOutcome.OFF_TARGET)
+        self.assertEqual(shots["93004"].body_part, MatchEventBodyPart.HEAD)
+        self.assertEqual(shots["93005"].shot_outcome, MatchEventShotOutcome.SAVED)
+        self.assertTrue(shots["93005"].is_big_chance)
+        self.assertEqual(shots["93005"].blocked_x, 9600)
+        self.assertEqual(shots["93006"].shot_outcome, MatchEventShotOutcome.WOODWORK)
+        self.assertEqual(shots["93006"].body_part, MatchEventBodyPart.RIGHT_FOOT)
+        self.assertEqual(shots["93008"].body_part, MatchEventBodyPart.OTHER)
+
+        missing_player = next(
+            event for event in result.events if event.provider_event_id == "93024"
+        )
+        self.assertIsNone(missing_player.provider_player_id)
+        substitutions = [
+            event for event in result.events
+            if event.event_type == MatchEventType.SUBSTITUTION
+        ]
+        self.assertEqual(len(substitutions), 2)
+
+        aerial = next(event for event in result.events if event.provider_event_id == "93016")
+        challenge = next(event for event in result.events if event.provider_event_id == "93017")
+        self.assertTrue(
+            is_defensive_event(aerial.event_type, defensive_qualifier=True)
+        )
+        self.assertTrue(
+            is_defensive_event(challenge.event_type, defensive_qualifier=True)
+        )
+
+    def test_missing_optional_fields_and_qualifiers_are_allowed(self):
+        event = self.payload["events"][0]
+        event.pop("playerId")
+        event.pop("expandedMinute", None)
+        event.pop("endX")
+        event.pop("endY")
+        event.pop("qualifiers")
+
+        result = parse_match_payload(self.payload, policy=FIXTURE_POLICY)
+        normalized = result.events[0]
+        self.assertIsNone(normalized.provider_player_id)
+        self.assertIsNone(normalized.expanded_minute)
+        self.assertIsNone(normalized.end_x)
+        self.assertFalse(normalized.is_progressive_pass)
+
+    def test_blocked_shot_and_root_assist_flags_are_typed(self):
+        blocked_shot = next(
+            event for event in self.payload["events"] if event["id"] == 93005
+        )
+        blocked_shot["qualifiers"].append(
+            {"type": {"value": 82, "displayName": "Blocked"}}
+        )
+        pass_event = self.payload["events"][0]
+        pass_event["isKeyPass"] = True
+        pass_event["isShotAssist"] = True
+        pass_event["isGoalAssist"] = True
+
+        result = parse_match_payload(self.payload, policy=FIXTURE_POLICY)
+        normalized_pass = next(
+            event for event in result.events if event.provider_event_id == "93001"
+        )
+        normalized_shot = next(
+            event for event in result.events if event.provider_event_id == "93005"
+        )
+        self.assertTrue(normalized_pass.is_key_pass)
+        self.assertTrue(normalized_pass.is_shot_assist)
+        self.assertTrue(normalized_pass.is_intentional_assist)
+        self.assertEqual(
+            normalized_shot.shot_outcome,
+            MatchEventShotOutcome.BLOCKED,
+        )
+
+    def test_ordering_and_canonical_normalized_bytes_are_deterministic(self):
+        first = parse_match_payload(self.payload, policy=FIXTURE_POLICY)
+        second = parse_match_payload(copy.deepcopy(self.payload), policy=FIXTURE_POLICY)
+        reversed_payload = copy.deepcopy(self.payload)
+        reversed_payload["events"].reverse()
+        reordered = parse_match_payload(reversed_payload, policy=FIXTURE_POLICY)
+
+        self.assertEqual(first.canonical_bytes(), second.canonical_bytes())
+        self.assertEqual(
+            [event.provider_event_id for event in first.events],
+            [event.provider_event_id for event in reordered.events],
+        )
+        self.assertEqual(
+            [event.event_index for event in first.events],
+            list(range(len(first.events))),
+        )
+
+    def test_normalized_values_never_include_commentary_or_qualifier_arrays(self):
+        self.payload["events"][0]["commentary"] = "private source commentary"
+        result = parse_match_payload(self.payload, policy=FIXTURE_POLICY)
+        rendered = result.canonical_bytes().decode()
+
+        self.assertNotIn("commentary", rendered)
+        self.assertNotIn("qualifiers", rendered)
+        self.assertNotIn("private source commentary", rendered)
+
+    def test_structural_coordinate_and_clock_errors_are_diagnostic(self):
+        cases = (
+            ("missing match field", lambda payload: payload.pop("matchId")),
+            (
+                "coordinate",
+                lambda payload: payload["events"][0].__setitem__("x", 100.01),
+            ),
+            (
+                "clock",
+                lambda payload: payload["events"][0].__setitem__("second", 60),
+            ),
+            (
+                "required event field",
+                lambda payload: payload["events"][0].pop("teamId"),
+            ),
+        )
+        for label, mutation in cases:
+            malformed = copy.deepcopy(self.payload)
+            mutation(malformed)
+            with self.subTest(label=label), self.assertRaises(
+                WhoScoredNormalizationError
+            ) as raised:
+                parse_match_payload(malformed, policy=FIXTURE_POLICY)
+            self.assertFalse(raised.exception.diagnostics.valid)
+            self.assertTrue(raised.exception.diagnostics.errors)
+
+    def test_validation_rejects_low_empty_changed_and_excessive_unknowns(self):
+        with self.assertRaises(WhoScoredNormalizationError) as low:
+            parse_match_payload(self.payload)
+        self.assertEqual(
+            low.exception.diagnostics.errors[-1]["code"],
+            "implausibly_low_event_count",
+        )
+
+        empty = copy.deepcopy(self.payload)
+        empty["events"] = []
+        with self.assertRaises(WhoScoredNormalizationError) as changed:
+            parse_match_payload(empty, policy=FIXTURE_POLICY, changed_payload=True)
+        self.assertIn(
+            "changed_payload_empty",
+            [error["code"] for error in changed.exception.diagnostics.errors],
+        )
+
+        drifted = copy.deepcopy(self.payload)
+        for index in range(6):
+            unknown = copy.deepcopy(drifted["events"][-1])
+            unknown["id"] = 95000 + index
+            unknown["eventId"] = 100 + index
+            drifted["events"].append(unknown)
+        with self.assertRaises(WhoScoredNormalizationError) as drift:
+            parse_match_payload(drifted, policy=FIXTURE_POLICY)
+        codes = [error["code"] for error in drift.exception.diagnostics.errors]
+        self.assertIn("unknown_event_tolerance_exceeded", codes)
+
+    def test_shot_orientation_failure_is_structured(self):
+        reversed_shots = copy.deepcopy(self.payload)
+        for event in reversed_shots["events"]:
+            if event["type"]["displayName"] in {
+                "Goal",
+                "MissedShots",
+                "SavedShot",
+                "ShotOnPost",
+            }:
+                event["x"] = 15
+        with self.assertRaises(WhoScoredNormalizationError) as raised:
+            parse_match_payload(reversed_shots, policy=FIXTURE_POLICY)
+        self.assertIn(
+            "shot_orientation_failed",
+            [error["code"] for error in raised.exception.diagnostics.errors],
+        )
+
+
+class WhoScoredEventReplacementTests(TestCase):
+    def setUp(self):
+        competition = Competition.objects.create(
+            name="Premier League",
+            short_code="ENG1",
+            country="England",
+        )
+        season = Season.objects.create(label="2025-26", sort_order=2026)
+        competition_season = CompetitionSeason.objects.create(
+            competition=competition,
+            season=season,
+            has_whoscored=True,
+            whoscored_league="ENG-Premier League",
+            whoscored_season="2526",
+            whoscored_expected_match_count=380,
+        )
+        self.provider_match = ProviderMatch.objects.create(
+            provider=Provider.WHOSCORED,
+            provider_match_id="9000001",
+            competition_season=competition_season,
+            kickoff_at=datetime(2025, 8, 16, 14, 0, tzinfo=timezone.utc),
+            status=ProviderMatchStatus.COMPLETED,
+            home_provider_team_id="9101",
+            away_provider_team_id="9102",
+            home_score=2,
+            away_score=1,
+        )
+        ProviderMatchEvent.objects.create(
+            provider_match=self.provider_match,
+            event_index=0,
+            provider_team_id="old",
+            minute=0,
+            second=0,
+            event_type=MatchEventType.ADMINISTRATIVE,
+        )
+        self.normalized = parse_match_payload(
+            load_fixture("match_9000001.json"),
+            policy=FIXTURE_POLICY,
+        )
+
+    def test_replacement_is_complete_and_repeatable(self):
+        first_count = replace_match_events(self.provider_match, self.normalized)
+        first_values = list(
+            self.provider_match.events.order_by("event_index").values(
+                *[
+                    field.name
+                    for field in ProviderMatchEvent._meta.fields
+                    if field.name != "id"
+                ]
+            )
+        )
+        second_count = replace_match_events(self.provider_match, self.normalized)
+        second_values = list(
+            self.provider_match.events.order_by("event_index").values(
+                *[
+                    field.name
+                    for field in ProviderMatchEvent._meta.fields
+                    if field.name != "id"
+                ]
+            )
+        )
+
+        self.assertEqual(first_count, len(self.normalized.events))
+        self.assertEqual(second_count, len(self.normalized.events))
+        self.assertEqual(first_values, second_values)
+        self.assertNotIn("old", {event["provider_team_id"] for event in second_values})
+
+    def test_database_failure_rolls_back_deleted_event_set(self):
+        with patch.object(
+            ProviderMatchEvent.objects,
+            "bulk_create",
+            side_effect=DatabaseError("synthetic database failure"),
+        ):
+            with self.assertRaises(DatabaseError):
+                replace_match_events(self.provider_match, self.normalized)
+
+        rows = list(self.provider_match.events.values_list("provider_team_id", flat=True))
+        self.assertEqual(rows, ["old"])
+
+    def test_parser_failure_never_touches_existing_events(self):
+        malformed = load_fixture("match_9000001.json")
+        malformed["events"][0]["x"] = -1
+        with self.assertRaises(WhoScoredNormalizationError):
+            parsed = parse_match_payload(malformed, policy=FIXTURE_POLICY)
+            replace_match_events(self.provider_match, parsed)
+
+        rows = list(self.provider_match.events.values_list("provider_team_id", flat=True))
+        self.assertEqual(rows, ["old"])
