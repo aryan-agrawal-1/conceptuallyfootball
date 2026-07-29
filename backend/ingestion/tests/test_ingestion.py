@@ -425,6 +425,164 @@ class IdentityQuarantineTests(TestCase):
             ).exists()
         )
 
+    def test_reep_missing_counterpart_does_not_absorb_same_name_from_another_team(self):
+        cs = _slice()
+        team_a = CanonicalTeam.objects.create(name="Alpha FC")
+        team_b = CanonicalTeam.objects.create(name="Beta FC")
+        ProviderTeamMapping.objects.create(
+            provider=Provider.UNDERSTAT,
+            provider_team_id="u-team-a",
+            canonical_team=team_a,
+        )
+        ProviderTeamMapping.objects.create(
+            provider=Provider.SOFASCORE,
+            provider_team_id="s-team-b",
+            canonical_team=team_b,
+        )
+        sofa_run = IngestionRun.objects.create(
+            kind=IngestionKind.SOFASCORE,
+            competition_season=cs,
+            status=IngestionRunStatus.SUCCESS,
+        )
+        sofa_source = SofascorePlayerSeasonSource.objects.create(
+            competition_season=cs,
+            ingestion_run=sofa_run,
+            provider_player_id="s-1",
+            provider_team_id="s-team-b",
+            player_name="Same Name",
+            team_name="Beta FC",
+            canonical_team=team_b,
+        )
+        sofa_player = resolve_canonical_player(
+            competition_season=cs,
+            provider=Provider.SOFASCORE,
+            provider_player_id="s-1",
+            display_name="Same Name",
+            run=sofa_run,
+            canonical_team_ids={team_b.id},
+            require_team_match=True,
+        )
+        assert sofa_player is not None
+        sofa_source.canonical_player = sofa_player
+        sofa_source.save(update_fields=["canonical_player"])
+
+        ReepPlayerRow.objects.create(
+            reep_id="reep-same-name",
+            full_name="Same Name",
+            understat_player_id="u-1",
+            sofascore_player_id=None,
+        )
+        understat_player = resolve_canonical_player(
+            competition_season=cs,
+            provider=Provider.UNDERSTAT,
+            provider_player_id="u-1",
+            display_name="Same Name",
+            run=None,
+            canonical_team_ids={team_a.id},
+            require_team_match=True,
+        )
+
+        self.assertIsNotNone(understat_player)
+        self.assertNotEqual(understat_player, sofa_player)
+        self.assertEqual(
+            ProviderPlayerMapping.objects.get(
+                provider=Provider.SOFASCORE,
+                provider_player_id="s-1",
+            ).canonical_player,
+            sofa_player,
+        )
+
+    def test_auto_reconciliation_does_not_split_an_identity_with_other_provider_mappings(self):
+        cs = _slice()
+        run = IngestionRun.objects.create(
+            kind=IngestionKind.UNDERSTAT,
+            competition_season=cs,
+            status=IngestionRunStatus.SUCCESS,
+        )
+        original = CanonicalPlayer.objects.create(display_name="Shared Example")
+        candidate = CanonicalPlayer.objects.create(display_name="Shared Example")
+        ProviderPlayerMapping.objects.create(
+            provider=Provider.UNDERSTAT,
+            provider_player_id="u-1",
+            canonical_player=original,
+        )
+        ProviderPlayerMapping.objects.create(
+            provider=Provider.WHOSCORED,
+            provider_player_id="w-1",
+            canonical_player=original,
+        )
+        ProviderPlayerMapping.objects.create(
+            provider=Provider.SOFASCORE,
+            provider_player_id="s-1",
+            canonical_player=candidate,
+        )
+        SofascorePlayerSeasonSource.objects.create(
+            competition_season=cs,
+            ingestion_run=run,
+            provider_player_id="s-1",
+            provider_team_id="",
+            player_name="Shared Example",
+            canonical_player=candidate,
+        )
+
+        resolved = resolve_canonical_player(
+            competition_season=cs,
+            provider=Provider.UNDERSTAT,
+            provider_player_id="u-1",
+            display_name="Shared Example",
+            run=run,
+        )
+
+        self.assertEqual(resolved, original)
+        self.assertEqual(
+            ProviderPlayerMapping.objects.get(
+                provider=Provider.UNDERSTAT,
+                provider_player_id="u-1",
+            ).canonical_player,
+            original,
+        )
+        self.assertEqual(
+            ProviderPlayerMapping.objects.get(
+                provider=Provider.WHOSCORED,
+                provider_player_id="w-1",
+            ).canonical_player,
+            original,
+        )
+
+    def test_source_persistence_defers_non_reep_matching_until_post_source_reconciliation(self):
+        cs = _slice()
+        run = IngestionRun.objects.create(
+            kind=IngestionKind.UNDERSTAT,
+            competition_season=cs,
+            status=IngestionRunStatus.SUCCESS,
+        )
+        understat_player = CanonicalPlayer.objects.create(display_name="Deferred Example")
+        ProviderPlayerMapping.objects.create(
+            provider=Provider.UNDERSTAT,
+            provider_player_id="u-1",
+            canonical_player=understat_player,
+        )
+        UnderstatPlayerSeasonSource.objects.create(
+            competition_season=cs,
+            ingestion_run=run,
+            provider_player_id="u-1",
+            provider_team_id="",
+            player_name="Deferred Example",
+            canonical_player=understat_player,
+        )
+
+        sofa_player = resolve_canonical_player(
+            competition_season=cs,
+            provider=Provider.SOFASCORE,
+            provider_player_id="s-1",
+            display_name="Deferred Example",
+            run=run,
+            allow_shared_fallback=False,
+        )
+
+        self.assertIsNotNone(sofa_player)
+        self.assertNotEqual(sofa_player, understat_player)
+
     def test_team_auto_mapping_heals_after_reep_correction(self):
         cs = _slice()
         wrong_team = CanonicalTeam.objects.create(name="SC Freiburg", reep_id="reef_wrong")
