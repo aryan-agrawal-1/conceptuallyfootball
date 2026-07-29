@@ -118,7 +118,7 @@ export const eventShotFixture: EventShot[] = [
     bigChance: true,
     assisted: true,
     perspective: 'for',
-    goalMouth: { x: 100, y: 54 },
+    goalMouth: { y: 48.1, z: 12 },
   },
   {
     id: 'shot-02',

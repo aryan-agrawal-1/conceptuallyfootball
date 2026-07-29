@@ -36,6 +36,11 @@ export type ShotOutcome = 'goal' | 'saved' | 'blocked' | 'off_target' | 'woodwor
 export type ShotBodyPart = 'left_foot' | 'right_foot' | 'head' | 'other'
 export type ShotSituation = 'open_play' | 'set_piece' | 'corner' | 'penalty' | 'fast_break'
 
+export type GoalMouthCoordinate = {
+  y: number
+  z: number
+}
+
 export type EventShot = {
   id: string
   matchRef: string
@@ -48,7 +53,7 @@ export type EventShot = {
   bigChance: boolean
   assisted: boolean
   perspective: 'for' | 'against'
-  goalMouth?: PitchCoordinate
+  goalMouth?: GoalMouthCoordinate
   blockedAt?: PitchCoordinate
 }
 

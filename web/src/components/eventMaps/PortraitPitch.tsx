@@ -44,12 +44,22 @@ export type PitchLabel = {
   tone?: 'neutral' | 'accent' | 'warning'
 }
 
+export type PitchMarker = {
+  id: string
+  coordinate: PitchCoordinate
+  kind: 'jersey'
+  ariaLabel: string
+  label?: string
+  tone?: 'neutral' | 'accent' | 'warning'
+}
+
 type PortraitPitchProps = {
   passes?: EventPass[]
   shots?: EventShot[]
   densityCells?: ActionGridCell[]
   flows?: TeamPassFlow[]
   labels?: PitchLabel[]
+  markers?: PitchMarker[]
   selectedEventId?: string | null
   onSelectedEventChange?: (event: SelectablePitchEvent | null) => void
   ariaLabel?: string
@@ -152,12 +162,24 @@ function toLogicalSelectionEvent(event: SelectablePitchEvent): SelectablePitchEv
   }
 }
 
-function shotMarkerStyle(shot: EventShot, selected: boolean) {
-  if (selected) return { fill: '#E4EAF8', stroke: '#4A9EF5', radius: 10 }
-  if (shot.outcome === 'goal') return { fill: '#1FD17C', stroke: '#07150E', radius: 8 }
-  if (shot.perspective === 'against') return { fill: '#EF4444', stroke: '#270909', radius: 7 }
-  if (shot.outcome === 'blocked') return { fill: '#F0A832', stroke: '#231806', radius: 6 }
-  return { fill: '#8A95B8', stroke: '#0D0F1A', radius: 6 }
+function shotMarkerStyle(shot: EventShot, selected: boolean, hasSelection: boolean) {
+  let fill = '#8A95B8'
+  let radius = 6
+  if (shot.outcome === 'goal') {
+    fill = '#1FD17C'
+    radius = 8
+  } else if (shot.perspective === 'against') {
+    fill = '#EF4444'
+    radius = 7
+  } else if (shot.outcome === 'blocked') {
+    fill = '#F0A832'
+  }
+  return {
+    fill,
+    stroke: selected ? '#E4EAF8' : 'none',
+    radius,
+    opacity: selected ? 1 : hasSelection ? 0.4 : 1,
+  }
 }
 
 function labelClasses(tone: PitchLabel['tone']) {
@@ -166,12 +188,19 @@ function labelClasses(tone: PitchLabel['tone']) {
   return 'fill-ink-dim'
 }
 
+function markerClasses(tone: PitchMarker['tone']) {
+  if (tone === 'warning') return 'fill-gold stroke-gold text-gold'
+  if (tone === 'neutral') return 'fill-ink-dim stroke-ink-dim text-ink-dim'
+  return 'fill-electric stroke-electric text-electric'
+}
+
 export const PortraitPitch = memo(function PortraitPitch({
   passes = [],
   shots = [],
   densityCells = [],
   flows = [],
   labels = [],
+  markers = [],
   selectedEventId: controlledSelectedEventId,
   onSelectedEventChange,
   ariaLabel = 'Portrait football pitch. The acting team attacks toward the top.',
@@ -195,6 +224,7 @@ export const PortraitPitch = memo(function PortraitPitch({
   )
   const selectedEvent =
     selectableEvents.find((event) => event.id === selectedEventId) ?? null
+  const hasSelection = selectedEvent !== null
 
   const selectEvent = useCallback(
     (event: SelectablePitchEvent | null) => {
@@ -225,7 +255,10 @@ export const PortraitPitch = memo(function PortraitPitch({
       const bounds = event.currentTarget.getBoundingClientRect()
       const point = clientPointToViewport(event.clientX, event.clientY, bounds)
       const nearest = findNearestPitchEvent(logicalSelectionEvents, point, 26)
-      if (!nearest) return
+      if (!nearest) {
+        selectEvent(null)
+        return
+      }
       selectEvent(selectableEvents.find((candidate) => candidate.id === nearest.id) ?? null)
     },
     [logicalSelectionEvents, selectEvent, selectableEvents],
@@ -236,6 +269,13 @@ export const PortraitPitch = memo(function PortraitPitch({
       if (event.pointerType !== 'touch') selectNearest(event)
     },
     [selectNearest],
+  )
+
+  const handlePointerLeave = useCallback(
+    (event: PointerEvent<SVGSVGElement>) => {
+      if (event.pointerType !== 'touch') selectEvent(null)
+    },
+    [selectEvent],
   )
 
   const handleKeyDown = useCallback(
@@ -260,10 +300,39 @@ export const PortraitPitch = memo(function PortraitPitch({
 
   return (
     <figure className={`m-0 w-full ${className}`}>
-      <div
-        ref={containerRef}
-        className="relative isolate aspect-[68/105] w-full min-w-0 overflow-hidden border border-line-bright bg-[radial-gradient(circle_at_50%_24%,rgba(74,158,245,0.10),transparent_38%),repeating-linear-gradient(0deg,rgba(255,255,255,0.018)_0,rgba(255,255,255,0.018)_1px,transparent_1px,transparent_52.5px),linear-gradient(180deg,#11192a_0%,#0a101b_100%)] shadow-[0_24px_70px_rgba(0,0,0,0.42),inset_0_0_42px_rgba(74,158,245,0.05)]"
-      >
+      <div className="flex w-full items-stretch gap-2">
+        <div className="relative w-[52px] shrink-0" aria-hidden="true">
+          <svg
+            viewBox={`0 0 64 ${PITCH_VIEWBOX_HEIGHT}`}
+            preserveAspectRatio="none"
+            className="absolute inset-0 size-full overflow-visible"
+          >
+            <line
+              x1={48}
+              y1={930}
+              x2={48}
+              y2={126}
+              stroke="#4A9EF5"
+              strokeWidth={3}
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+            />
+            <path d="M 48 82 L 34 128 L 62 128 Z" fill="#4A9EF5" />
+            <text
+              transform="translate(18 530) rotate(-90)"
+              textAnchor="middle"
+              dominantBaseline="central"
+              fill="#E4EAF8"
+              className="text-[14px] font-bold uppercase tracking-[0.16em]"
+            >
+              Direction of attack
+            </text>
+          </svg>
+        </div>
+        <div
+          ref={containerRef}
+          className="relative isolate aspect-[68/105] min-w-0 flex-1 overflow-hidden border border-line-bright bg-[radial-gradient(circle_at_50%_24%,rgba(74,158,245,0.10),transparent_38%),repeating-linear-gradient(0deg,rgba(255,255,255,0.018)_0,rgba(255,255,255,0.018)_1px,transparent_1px,transparent_52.5px),linear-gradient(180deg,#11192a_0%,#0a101b_100%)] shadow-[0_24px_70px_rgba(0,0,0,0.42),inset_0_0_42px_rgba(74,158,245,0.05)]"
+        >
         <canvas
           ref={canvasRef}
           className="pointer-events-none absolute inset-0 size-full"
@@ -279,6 +348,7 @@ export const PortraitPitch = memo(function PortraitPitch({
           aria-describedby={`${accessibleDescriptionId} ${accessibleSelectionId}`}
           onPointerMove={handlePointerMove}
           onPointerDown={selectNearest}
+          onPointerLeave={handlePointerLeave}
           onKeyDown={handleKeyDown}
         >
           <PitchMarkings />
@@ -286,7 +356,7 @@ export const PortraitPitch = memo(function PortraitPitch({
           {shots.map((shot) => {
             const point = logicalTransform.toScreen(shot.location)
             const selected = shot.id === selectedEventId
-            const style = shotMarkerStyle(shot, selected)
+            const style = shotMarkerStyle(shot, selected, hasSelection)
             return (
               <g
                 key={shot.id}
@@ -315,12 +385,10 @@ export const PortraitPitch = memo(function PortraitPitch({
                   r={style.radius}
                   fill={style.fill}
                   stroke={style.stroke}
-                  strokeWidth={selected ? 4 : 2}
+                  strokeWidth={selected ? 3 : 0}
+                  opacity={style.opacity}
                   vectorEffect="non-scaling-stroke"
                 />
-                {shot.outcome === 'goal' ? (
-                  <circle cx={point.x} cy={point.y} r={2.2} fill="#07150E" aria-hidden="true" />
-                ) : null}
               </g>
             )
           })}
@@ -341,42 +409,51 @@ export const PortraitPitch = memo(function PortraitPitch({
             )
           })}
 
-          {selectedEvent?.kind === 'pass' ? (
-            <g aria-hidden="true" pointerEvents="none">
-              <line
-                x1={logicalTransform.toScreen(selectedEvent.start).x}
-                y1={logicalTransform.toScreen(selectedEvent.start).y}
-                x2={logicalTransform.toScreen(selectedEvent.end).x}
-                y2={logicalTransform.toScreen(selectedEvent.end).y}
-                stroke="#E4EAF8"
-                strokeWidth={2.4}
-                vectorEffect="non-scaling-stroke"
-              />
-              <circle
-                cx={logicalTransform.toScreen(selectedEvent.end).x}
-                cy={logicalTransform.toScreen(selectedEvent.end).y}
-                r={4}
-                fill="#E4EAF8"
-              />
-            </g>
-          ) : null}
+          {markers.map((marker) => {
+            const point = logicalTransform.toScreen(marker.coordinate)
+            return (
+              <g
+                key={marker.id}
+                role="img"
+                aria-label={marker.ariaLabel}
+                transform={`translate(${point.x - 18} ${point.y - 17})`}
+                className={`${markerClasses(marker.tone)} pointer-events-none`}
+              >
+                {marker.label ? (
+                  <text
+                    x={18}
+                    y={-6}
+                    textAnchor="middle"
+                    fill="currentColor"
+                    stroke="none"
+                    className="text-[10px] font-bold uppercase tracking-[0.12em]"
+                  >
+                    {marker.label}
+                  </text>
+                ) : null}
+                <path
+                  d="M 5 7 L 12 2 L 17 5 L 19 5 L 24 2 L 31 7 L 27 16 L 23 14 L 23 32 L 13 32 L 13 14 L 9 16 Z"
+                  strokeWidth={2}
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+                <path
+                  d="M 12 2 Q 18 11 24 2"
+                  fill="none"
+                  stroke="#07101B"
+                  strokeWidth={2}
+                  vectorEffect="non-scaling-stroke"
+                />
+              </g>
+            )
+          })}
 
-          <g aria-hidden="true" className="fill-electric">
-            <path d="M 326 18 L 340 5 L 354 18 L 348 18 L 348 29 L 332 29 L 332 18 Z" />
-            <text
-              x={340}
-              y={45}
-              textAnchor="middle"
-              className="text-[10px] font-bold uppercase tracking-[0.18em]"
-            >
-              Attack
-            </text>
-          </g>
         </svg>
         <span className="absolute left-2 top-2 size-2 border-l border-t border-electric/70" aria-hidden />
         <span className="absolute right-2 top-2 size-2 border-r border-t border-electric/70" aria-hidden />
         <span className="absolute bottom-2 left-2 size-2 border-b border-l border-electric/35" aria-hidden />
         <span className="absolute bottom-2 right-2 size-2 border-b border-r border-electric/35" aria-hidden />
+        </div>
       </div>
       <figcaption className="sr-only">
         <span id={accessibleDescriptionId}>

@@ -99,8 +99,8 @@ export function drawPassLayer(
     context.lineTo(end.x, end.y)
     context.strokeStyle =
       pass.outcome === 'successful' ? colors.successfulColor : colors.unsuccessfulColor
-    context.globalAlpha = selected ? 1 : hasSelection ? 0.075 : pass.outcome === 'successful' ? 0.3 : 0.48
-    context.lineWidth = selected ? 2.4 : pass.keyPass ? 1.35 : 0.85
+    context.globalAlpha = selected ? 1 : hasSelection ? 0.4 : 1
+    context.lineWidth = selected ? (pass.keyPass ? 2.1 : 1.65) : pass.keyPass ? 1.35 : 0.95
     context.stroke()
 
     const endpointRadius = selected ? 2.8 : 1.2
@@ -138,7 +138,7 @@ export function drawFlowLayer(
     context.beginPath()
     context.moveTo(start.x, start.y)
     context.quadraticCurveTo(controlX, controlY, end.x, end.y)
-    context.globalAlpha = 0.2 + volume * 0.58
+    context.globalAlpha = 1
     context.lineWidth = 1.5 + volume * 6
     context.stroke()
   }
