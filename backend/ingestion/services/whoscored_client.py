@@ -52,6 +52,7 @@ class SourceMatch:
     away_score: int | None
     source_league: str
     source_season: str
+    source_updated_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -382,6 +383,9 @@ def _normalize_schedule_row(
         away_score=away_score,
         source_league=str(row.get("league") or config.league),
         source_season=str(row.get("season") or config.season),
+        source_updated_at=_optional_datetime(
+            row.get("source_updated_at", row.get("updated_at", row.get("lastUpdated")))
+        ),
     )
 
 

@@ -10,12 +10,17 @@ from ingestion.models import (
     IngestionRunStatus,
     MergedTeamSeason,
     MergedPlayerSeason,
+    PlayerDataMode,
     Provider,
     SofascorePlayerSeasonSource,
     SofascoreTeamSeasonSource,
     UnderstatPlayerSeasonSource,
 )
-from ingestion.services.identity import resolve_canonical_player, resolve_canonical_team
+from ingestion.services.identity import (
+    reattach_slice_identities,
+    resolve_canonical_player,
+    resolve_canonical_team,
+)
 from ingestion.services.merge import execute_merge_for_slice
 from ingestion.services.sofascore_client import (
     SofascoreSeasonConfig,
@@ -132,13 +137,6 @@ def ingest_understat_slice(competition_season: CompetitionSeason, *, run: Ingest
                 )
             source_rows = UnderstatPlayerSeasonSource.objects.bulk_create(to_create, batch_size=1000)
             for src in source_rows:
-                cplayer = resolve_canonical_player(
-                    competition_season=competition_season,
-                    provider=Provider.UNDERSTAT,
-                    provider_player_id=src.provider_player_id,
-                    display_name=src.player_name,
-                    run=run,
-                )
                 cteam = None
                 if src.provider_team_id:
                     cteam = resolve_canonical_team(
@@ -148,6 +146,16 @@ def ingest_understat_slice(competition_season: CompetitionSeason, *, run: Ingest
                         team_name=src.team_name,
                         run=run,
                     )
+                cplayer = resolve_canonical_player(
+                    competition_season=competition_season,
+                    provider=Provider.UNDERSTAT,
+                    provider_player_id=src.provider_player_id,
+                    display_name=src.player_name,
+                    run=run,
+                    canonical_team_ids={cteam.id} if cteam else set(),
+                    require_team_match=bool(src.provider_team_id),
+                    allow_shared_fallback=False,
+                )
                 src.canonical_player = cplayer
                 src.canonical_team = cteam
             if source_rows:
@@ -255,13 +263,6 @@ def ingest_sofascore_slice(competition_season: CompetitionSeason, *, run: Ingest
                 )
             source_rows = SofascorePlayerSeasonSource.objects.bulk_create(to_create, batch_size=1000)
             for src in source_rows:
-                cplayer = resolve_canonical_player(
-                    competition_season=competition_season,
-                    provider=Provider.SOFASCORE,
-                    provider_player_id=src.provider_player_id,
-                    display_name=src.player_name,
-                    run=run,
-                )
                 tid = src.provider_team_id
                 cteam = None
                 if tid:
@@ -272,6 +273,16 @@ def ingest_sofascore_slice(competition_season: CompetitionSeason, *, run: Ingest
                         team_name=src.team_name,
                         run=run,
                     )
+                cplayer = resolve_canonical_player(
+                    competition_season=competition_season,
+                    provider=Provider.SOFASCORE,
+                    provider_player_id=src.provider_player_id,
+                    display_name=src.player_name,
+                    run=run,
+                    canonical_team_ids={cteam.id} if cteam else set(),
+                    require_team_match=bool(tid),
+                    allow_shared_fallback=False,
+                )
                 src.canonical_player = cplayer
                 src.canonical_team = cteam
             if source_rows:
@@ -295,6 +306,8 @@ def ingest_sofascore_slice(competition_season: CompetitionSeason, *, run: Ingest
 def run_merge_job(competition_season: CompetitionSeason, *, run: IngestionRun) -> None:
     _mark_run_start(run)
     try:
+        if competition_season.player_data_mode == PlayerDataMode.FULL_MERGE:
+            reattach_slice_identities(competition_season)
         execute_merge_for_slice(competition_season, merge_run=run)
     except Exception as exc:  # noqa: BLE001
         _mark_run_failed(run, str(exc))

@@ -1,4 +1,6 @@
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.db import transaction
+from django.utils.html import format_html_join
 
 from ingestion.models import (
     CanonicalPlayer,
@@ -37,6 +39,8 @@ from ingestion.services.identity import (
     apply_manual_player_resolution,
     apply_manual_team_resolution,
     reattach_slice_identities,
+    retry_unmatched_player_resolution,
+    unmatched_player_identity_candidates,
 )
 
 
@@ -301,15 +305,73 @@ class UnmatchedProviderPlayerAdmin(admin.ModelAdmin):
         "resolved_player",
         "resolved_at",
     )
-    list_filter = ("provider", "competition_season")
-    search_fields = ("provider_player_id", "player_name")
-    raw_id_fields = ("resolved_player", "first_seen_run")
+    list_filter = ("provider", "competition_season", "resolved_at")
+    search_fields = (
+        "provider_player_id",
+        "player_name",
+        "resolved_player__display_name",
+        "resolved_player__reep_id",
+    )
+    autocomplete_fields = ("resolved_player",)
+    raw_id_fields = ("first_seen_run",)
+    readonly_fields = ("automatic_candidate_details", "resolved_at")
+    actions = ("retry_automatic_resolution",)
+
+    def has_add_permission(self, request):
+        return False
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = list(super().get_readonly_fields(request, obj))
+        if obj and obj.resolved_player_id:
+            fields.append("resolved_player")
+        return tuple(fields)
+
+    @admin.display(description="Automatic candidate evidence")
+    def automatic_candidate_details(self, obj):
+        if obj is None:
+            return "Candidate evidence is available after ingestion creates a review case."
+        if obj.resolved_player_id:
+            return f"Resolved to {obj.resolved_player}."
+        candidates = unmatched_player_identity_candidates(obj)
+        if not candidates:
+            return "No exact, team-scoped candidate. Select an existing canonical player manually."
+        return format_html_join(
+            "",
+            "<div><strong>{}</strong> (#{}): {}; teams {}; sources {}</div>",
+            (
+                (
+                    candidate.canonical_player.display_name,
+                    candidate.canonical_player.id,
+                    candidate.match_reason,
+                    ", ".join(str(team_id) for team_id in candidate.canonical_team_ids) or "none",
+                    ", ".join(candidate.source_providers),
+                )
+                for candidate in candidates
+            ),
+        )
+
+    @admin.action(description="Retry conservative automatic identity resolution")
+    def retry_automatic_resolution(self, request, queryset):
+        resolved_count = 0
+        unresolved_count = 0
+        for unmatched in queryset.filter(resolved_player__isnull=True).select_related(
+            "competition_season"
+        ):
+            if retry_unmatched_player_resolution(unmatched) is None:
+                unresolved_count += 1
+            else:
+                resolved_count += 1
+        self.message_user(
+            request,
+            f"Resolved {resolved_count}; left {unresolved_count} for manual review.",
+            level=messages.SUCCESS if resolved_count else messages.WARNING,
+        )
 
     def save_model(self, request, obj, form, change):
-        super().save_model(request, obj, form, change)
-        if obj.resolved_player and (not change or "resolved_player" in form.changed_data):
-            apply_manual_player_resolution(obj, obj.resolved_player)
-            reattach_slice_identities(obj.competition_season)
+        with transaction.atomic():
+            super().save_model(request, obj, form, change)
+            if obj.resolved_player and (not change or "resolved_player" in form.changed_data):
+                apply_manual_player_resolution(obj, obj.resolved_player)
 
 
 @admin.register(UnmatchedProviderTeam)
