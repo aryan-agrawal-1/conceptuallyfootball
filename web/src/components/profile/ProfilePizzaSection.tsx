@@ -1,16 +1,27 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { arc as d3Arc } from 'd3-shape'
 import { scaleLinear } from 'd3-scale'
-import { ChevronDown, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ChevronDown, SlidersHorizontal, X } from 'lucide-react'
 import { HudCornerMarks, HudFrame } from '../hud/Hud'
 import { formatValue } from '../../lib/format'
-import type { MetricSemanticColor, PlayerRow, StatMeta } from '../../types/api'
+import type {
+  MetricSemanticColor,
+  PlayerRow,
+  ProfileDistributionPayload,
+  StatMeta,
+} from '../../types/api'
 import {
   PIZZA_SLICE_MIN,
   PIZZA_SLICE_SOFT_MAX,
   barKindForMetricKey,
+  canonicalProfileMetricKey,
   defaultPizzaMetricKeys,
+  dedupeCanonicalMetricKeys,
   groupMetricsForPizzaPicker,
+  moveMetricKey,
+  radarGroupForMetric,
+  radarTemplateGroups,
+  resolveRadarMetricKeys,
   resolveProfileMetric,
   stripPer90Suffix,
   type ProfileRateMode,
@@ -25,15 +36,17 @@ import {
 import { shortPlayerName } from '../../lib/entityLabels'
 import { cn } from '../../lib/utils'
 import { ChartShareCard } from '../visualizer/ChartShareCard'
+import { ProfileDistributionPanel } from './ProfileDistributionPanel'
 
 interface ProfilePizzaSectionProps {
   player: PlayerRow
   rateMode: ProfileRateMode
   meta: StatMeta
   percentileMap?: Record<string, number | null>
+  distributions?: ProfileDistributionPayload
 }
 
-export function ProfilePizzaSection({ player, rateMode, meta, percentileMap }: ProfilePizzaSectionProps) {
+export function ProfilePizzaSection({ player, rateMode, meta, percentileMap, distributions }: ProfilePizzaSectionProps) {
   return (
     <ProfilePizzaSectionInner
       key={`${player.canonical_player_id}:${player.position_group}`}
@@ -41,18 +54,26 @@ export function ProfilePizzaSection({ player, rateMode, meta, percentileMap }: P
       rateMode={rateMode}
       meta={meta}
       percentileMap={percentileMap}
+      distributions={distributions}
     />
   )
 }
 
-function ProfilePizzaSectionInner({ player, rateMode, meta, percentileMap = player.percentiles }: ProfilePizzaSectionProps) {
+function ProfilePizzaSectionInner({
+  player,
+  rateMode,
+  meta,
+  percentileMap = player.percentiles,
+  distributions,
+}: ProfilePizzaSectionProps) {
   const [keys, setKeys] = useState<string[]>(() => loadPizzaMetricKeys(player.position_group))
+  const [showDistributions, setShowDistributions] = useState(false)
   const warnMax = keys.length > PIZZA_SLICE_SOFT_MAX
   const rawOnly = !player.eligibility.percentiles_eligible
 
   useEffect(() => {
-    savePizzaMetricKeys(keys)
-  }, [keys])
+    savePizzaMetricKeys(player.position_group, keys)
+  }, [keys, player.position_group])
 
   const validKeys = useMemo(
     () =>
@@ -80,17 +101,19 @@ function ProfilePizzaSectionInner({ player, rateMode, meta, percentileMap = play
 
   const sectionOrder = useMemo(() => Object.keys(meta.metric_groups), [meta.metric_groups])
 
-  const chartKeys = useMemo(() => {
-    if (validKeys.length >= PIZZA_SLICE_MIN) return validKeys
-    const pad = defaultPizzaMetricKeys(player.position_group).filter(
-      k => {
-        if (!(k in meta.metrics) || validKeys.includes(k)) return false
-        const resolved = resolveProfileMetric(player, rateMode, barKindForMetricKey(k), meta, percentileMap)
-        return resolved.value != null
-      },
-    )
-    return [...validKeys, ...pad].slice(0, Math.max(PIZZA_SLICE_MIN, validKeys.length))
-  }, [validKeys, meta, player, rateMode, percentileMap])
+  const chartKeys = useMemo(
+    () =>
+      resolveRadarMetricKeys({
+        position: player.position_group,
+        current: validKeys,
+        available: [...usableKeySet],
+        targetCount: Math.max(
+          PIZZA_SLICE_MIN,
+          Math.min(keys.length || defaultPizzaMetricKeys(player.position_group).length, PIZZA_SLICE_SOFT_MAX),
+        ),
+      }),
+    [keys.length, player.position_group, usableKeySet, validKeys],
+  )
 
   useEffect(() => {
     if (keys.length === chartKeys.length && keys.every((key, index) => key === chartKeys[index])) return
@@ -107,8 +130,14 @@ function ProfilePizzaSectionInner({ player, rateMode, meta, percentileMap = play
   }
 
   function addKey(k: string) {
-    setKeys(prev => (prev.includes(k) ? prev : [...prev, k]))
+    setKeys(prev => dedupeCanonicalMetricKeys([...prev, k]))
   }
+
+  function moveKey(k: string, direction: -1 | 1) {
+    setKeys(prev => moveMetricKey(prev, k, direction))
+  }
+
+  const groupLegend = radarTemplateGroups(player.position_group)
 
   return (
     <HudFrame
@@ -124,9 +153,37 @@ function ProfilePizzaSectionInner({ player, rateMode, meta, percentileMap = play
         ) : undefined
       }
     >
-      <div className="flex flex-col items-start gap-5 p-3 sm:p-4 lg:flex-row lg:gap-8">
-        <div className="flex-1 flex flex-col gap-4 justify-center w-full min-w-0">
-          <div className="flex justify-end">
+      <div className="flex flex-col gap-5 p-3 sm:p-4">
+        <div className="flex flex-col gap-3 border-b border-electric/10 pb-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            {groupLegend.map(group => {
+              const count = chartKeys.filter(key =>
+                radarGroupForMetric(player.position_group, key, meta.metrics[key]?.group).id === group.id
+              ).length
+              return (
+                <div
+                  key={group.id}
+                  className="flex items-center justify-between gap-4 border px-3 py-2"
+                  style={{ borderColor: `${group.color}44`, background: `${group.color}0D` }}
+                >
+                  <span className="text-[9px] font-bold uppercase tracking-[0.18em]" style={{ color: group.color }}>
+                    {group.label}
+                  </span>
+                  <span className="font-mono text-[10px] text-ink-muted">{count}</span>
+                </div>
+              )
+            })}
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              aria-expanded={showDistributions}
+              onClick={() => setShowDistributions(current => !current)}
+              className="flex items-center gap-1.5 border border-control-border px-3 py-2 text-[10px] font-bold uppercase tracking-[0.14em] text-control-fg transition-colors hover:border-electric hover:text-control-fg-hover active:bg-electric/10"
+            >
+              <SlidersHorizontal size={13} />
+              {showDistributions ? 'Hide distributions' : 'Inspect distributions'}
+            </button>
             <ChartShareCard
               title={`${shortPlayerName(player.canonical_player_name)} · Polar profile`}
               subtitle={`${player.season_label} · ${player.canonical_team_name ?? 'No club'} · ${rateMode === 'per90' ? 'per 90 view' : 'season view'} · ${chartKeys.length} axes`}
@@ -139,30 +196,50 @@ function ProfilePizzaSectionInner({ player, rateMode, meta, percentileMap = play
                   rateMode={rateMode}
                   meta={meta}
                   metricKeys={chartKeys}
+                  percentileMap={percentileMap}
                   exportMode={exportMode}
                 />
               )}
             />
           </div>
-          <div className="flex justify-center w-full min-w-0">
-            <ProfilePizzaSvg
+        </div>
+        <div className="flex flex-col items-start gap-5 lg:flex-row lg:gap-8">
+          <div className="flex w-full min-w-0 flex-1 flex-col justify-center gap-4">
+            <div className="flex w-full min-w-0 justify-center">
+              <ProfilePizzaSvg
+                player={player}
+                rateMode={rateMode}
+                meta={meta}
+                metricKeys={chartKeys}
+                percentileMap={percentileMap}
+              />
+            </div>
+          </div>
+          <PizzaAxisPicker
+            position={player.position_group}
+            meta={meta}
+            sectionOrder={sectionOrder}
+            excludeMetricKeys={player.position_group === 'GK' ? ['rating'] : undefined}
+            usableKeys={usableKeySet}
+            selectedKeys={chartKeys}
+            onRemove={removeKey}
+            onAdd={addKey}
+            onMove={moveKey}
+            canRemove={chartKeys.length > PIZZA_SLICE_MIN}
+          />
+        </div>
+        {showDistributions && (
+          <div className="border-t border-electric/10 pt-5">
+            <ProfileDistributionPanel
               player={player}
               rateMode={rateMode}
               meta={meta}
               metricKeys={chartKeys}
+              distributions={distributions}
+              percentileMap={percentileMap}
             />
           </div>
-        </div>
-        <PizzaAxisPicker
-          meta={meta}
-          sectionOrder={sectionOrder}
-          excludeMetricKeys={player.position_group === 'GK' ? ['rating'] : undefined}
-          usableKeys={usableKeySet}
-          selectedKeys={validKeys}
-          onRemove={removeKey}
-          onAdd={addKey}
-          canRemove={validKeys.length > PIZZA_SLICE_MIN}
-        />
+        )}
       </div>
     </HudFrame>
   )
@@ -246,6 +323,16 @@ export function ProfilePizzaSvg({
         .startAngle(start)
         .endAngle(end)
       const dPath = arcGen(null as unknown as Record<string, never>) ?? ''
+      const group = radarGroupForMetric(
+        player.position_group,
+        key,
+        meta.metrics[resolved.metricKey]?.group,
+      )
+      const groupArc = d3Arc<unknown>()
+        .innerRadius(outerR + (exportMode ? 8 : 4))
+        .outerRadius(outerR + (exportMode ? 18 : 10))
+        .startAngle(start)
+        .endAngle(end)
 
       const inner = polar(mid, (innerR + outer) / 2)
       const outerLabel = polar(mid, labelRingR)
@@ -253,6 +340,8 @@ export function ProfilePizzaSvg({
       return {
         key,
         d: dPath,
+        groupD: groupArc(null as unknown as Record<string, never>) ?? '',
+        group,
         fill: pctEligible
           ? getPercentileTextColor(
               pct,
@@ -270,7 +359,7 @@ export function ProfilePizzaSvg({
         midDeg: (mid * 180) / Math.PI,
       }
     })
-  }, [band, innerR, labelRingR, metricKeys, player, rateMode, meta, percentileMap])
+  }, [band, exportMode, innerR, labelRingR, metricKeys, outerR, player, rateMode, meta, percentileMap])
 
   if (metricKeys.length === 0) {
     return (
@@ -350,6 +439,16 @@ export function ProfilePizzaSvg({
           ))}
 
           {slices.map(s => (
+            <path
+              key={`group-${s.key}`}
+              d={s.groupD}
+              fill={s.group.color}
+              fillOpacity={0.92}
+              pointerEvents="none"
+            />
+          ))}
+
+          {slices.map(s => (
             <text
               key={`v-${s.key}`}
               x={s.inner.x}
@@ -372,6 +471,7 @@ export function ProfilePizzaSvg({
               y={s.outerLabel.y}
               midDeg={s.midDeg}
               text={s.label}
+              color={s.group.color}
               exportMode={exportMode}
             />
           ))}
@@ -431,12 +531,14 @@ function OuterLabel({
   y,
   midDeg,
   text,
+  color,
   exportMode,
 }: {
   x: number
   y: number
   midDeg: number
   text: string
+  color: string
   exportMode: boolean
 }) {
   const normalized = ((midDeg % 360) + 360) % 360
@@ -446,7 +548,7 @@ function OuterLabel({
     <text
       x={x}
       y={y}
-      fill="#8A95B8"
+      fill={color}
       fontSize={exportMode ? 13 : 9}
       fontWeight={600}
       fontFamily="ui-monospace, SFMono-Regular, monospace"
@@ -462,6 +564,7 @@ function OuterLabel({
 }
 
 interface PizzaAxisPickerProps {
+  position: PlayerRow['position_group']
   meta: StatMeta
   sectionOrder: string[]
   /** Metrics omitted from the add-stat list (e.g. GK `rating`). */
@@ -471,9 +574,11 @@ interface PizzaAxisPickerProps {
   canRemove: boolean
   onRemove: (k: string) => void
   onAdd: (k: string) => void
+  onMove: (k: string, direction: -1 | 1) => void
 }
 
 function PizzaAxisPicker({
+  position,
   meta,
   sectionOrder,
   excludeMetricKeys,
@@ -482,6 +587,7 @@ function PizzaAxisPicker({
   canRemove,
   onRemove,
   onAdd,
+  onMove,
 }: PizzaAxisPickerProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -504,10 +610,13 @@ function PizzaAxisPicker({
   )
 
   const available = useMemo(() => {
-    const sel = new Set(selectedKeys)
+    if (selectedKeys.length >= PIZZA_SLICE_SOFT_MAX) return []
+    const selectedCanonical = new Set(selectedKeys.map(canonicalProfileMetricKey))
     return sectionOrder.flatMap(sec =>
       (grouped[sec] ?? []).flatMap(item =>
-        !sel.has(item.key) && usableKeys.has(item.key) ? [{ ...item, section: sec }] : [],
+        !selectedCanonical.has(canonicalProfileMetricKey(item.key)) && usableKeys.has(item.key)
+          ? [{ ...item, section: sec }]
+          : [],
       ),
     )
   }, [grouped, sectionOrder, selectedKeys, usableKeys])
@@ -516,25 +625,49 @@ function PizzaAxisPicker({
     <div className="w-full max-w-sm flex flex-col gap-3" ref={ref}>
       <p className="text-[10px] uppercase tracking-[0.2em] text-electric/80">Active axes</p>
       <div className="flex flex-wrap gap-1.5">
-        {selectedKeys.map(k => {
+        {selectedKeys.map((k, index) => {
           const label = stripPer90Suffix(meta.metrics[k]?.label ?? k)
+          const group = radarGroupForMetric(
+            position,
+            k,
+            meta.metrics[k]?.group,
+          )
           return (
-            <button
+            <div
               key={k}
-              type="button"
-              disabled={!canRemove}
-              onClick={() => onRemove(k)}
-              className={cn(
-                'relative flex items-center gap-1 pl-2 pr-1 py-1 text-[10px] uppercase tracking-wide border',
-                canRemove
-                  ? 'border-electric/35 bg-electric/5 text-ink-dim hover:text-ink hover:border-electric/60'
-                  : 'border-line opacity-50 cursor-not-allowed',
-              )}
+              className="relative flex items-center border bg-electric/5 text-[10px] uppercase tracking-wide text-control-fg"
+              style={{ borderColor: `${group.color}55` }}
             >
-              {canRemove && <HudCornerMarks size="size-1" />}
-              <span className="truncate max-w-[140px]">{label}</span>
-              <X size={11} className="opacity-60 shrink-0" />
-            </button>
+              <HudCornerMarks size="size-1" />
+              <span className="max-w-[120px] truncate py-1 pl-2 pr-1">{label}</span>
+              <button
+                type="button"
+                disabled={index === 0}
+                onClick={() => onMove(k, -1)}
+                className="grid size-6 place-items-center text-control-fg transition-colors hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+                aria-label={`Move ${label} earlier`}
+              >
+                <ArrowLeft size={10} />
+              </button>
+              <button
+                type="button"
+                disabled={index === selectedKeys.length - 1}
+                onClick={() => onMove(k, 1)}
+                className="grid size-6 place-items-center text-control-fg transition-colors hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+                aria-label={`Move ${label} later`}
+              >
+                <ArrowRight size={10} />
+              </button>
+              <button
+                type="button"
+                disabled={!canRemove}
+                onClick={() => onRemove(k)}
+                className="grid size-6 place-items-center text-control-fg transition-colors hover:text-ember disabled:cursor-not-allowed disabled:opacity-30"
+                aria-label={`Remove ${label}`}
+              >
+                <X size={10} />
+              </button>
+            </div>
           )
         })}
       </div>
@@ -551,7 +684,11 @@ function PizzaAxisPicker({
         {open && (
           <div className="absolute left-0 right-0 top-full mt-1 z-50 max-h-64 overflow-y-auto border border-electric/25 bg-panel/98 shadow-xl">
             {available.length === 0 ? (
-              <p className="p-3 text-[11px] text-ink-muted">All metrics selected.</p>
+              <p className="p-3 text-[11px] text-ink-muted">
+                {selectedKeys.length >= PIZZA_SLICE_SOFT_MAX
+                  ? `Maximum ${PIZZA_SLICE_SOFT_MAX} axes selected.`
+                  : 'All metrics selected.'}
+              </p>
             ) : (
               sectionOrder.map(sec => {
                 const items = available.filter(a => a.section === sec)
@@ -582,8 +719,8 @@ function PizzaAxisPicker({
         )}
       </div>
       <p className="text-[10px] text-ink-muted leading-relaxed">
-        Axes persist for this browser tab (session). Minimum {PIZZA_SLICE_MIN} slices; add up to your
-        tolerance (we warn past {PIZZA_SLICE_SOFT_MAX}).
+        Axes persist by position for this browser tab. Minimum {PIZZA_SLICE_MIN}; maximum{' '}
+        {PIZZA_SLICE_SOFT_MAX}. Use the arrow controls to keep the shape order stable.
       </p>
     </div>
   )

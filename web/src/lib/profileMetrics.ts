@@ -302,66 +302,156 @@ export function resolveHeaderCard(
   return { ...r, label: spec.label }
 }
 
-const PIZZA_DEFAULT_KEYS: Record<PositionGroup, string[]> = {
+export interface RadarMetricGroup {
+  id: string
+  label: string
+  color: string
+  candidates: string[]
+}
+
+const RADAR_GROUP_TEMPLATES: Record<PositionGroup, RadarMetricGroup[]> = {
   FWD: [
-    'xg_per_90',
-    'goals_per_90',
-    'xa_per_90',
-    'shots_per_90',
-    'key_passes_per_90',
-    'successful_dribbles_per_90',
-    'npxg_per_shot',
-    'chance_involvement_per_90',
+    {
+      id: 'goal-threat',
+      label: 'Goal threat',
+      color: '#FF7A8A',
+      candidates: ['xg_per_90', 'goals_per_90', 'npxg_per_90', 'shots_per_90', 'npxg_per_shot'],
+    },
+    {
+      id: 'creation',
+      label: 'Creation',
+      color: '#F6C95F',
+      candidates: ['xa_per_90', 'key_passes_per_90', 'big_chances_created_per_90', 'xa_per_key_pass', 'assists_per_90'],
+    },
+    {
+      id: 'link-play',
+      label: 'Link & carry',
+      color: '#67D7FF',
+      candidates: ['successful_dribbles_per_90', 'chance_involvement_per_90', 'xgchain_per_90', 'pass_accuracy', 'buildup_share'],
+    },
+    {
+      id: 'pressure',
+      label: 'Pressure work',
+      color: '#72E6A5',
+      candidates: ['ball_recoveries_per_90', 'ground_duels_won_per_90', 'defensive_action_density', 'interceptions_per_90', 'aerial_duels_won_per_90'],
+    },
   ],
   MID: [
-    'xg_per_90',
-    'xa_per_90',
-    'key_passes_per_90',
-    'xgchain_per_90',
-    'xgbuildup_per_90',
-    'successful_dribbles_per_90',
-    'completed_passes_per_90',
-    'pass_accuracy',
+    {
+      id: 'output',
+      label: 'Output',
+      color: '#FF7A8A',
+      candidates: ['xg_per_90', 'xa_per_90', 'chance_involvement_per_90', 'goals_per_90', 'assists_per_90'],
+    },
+    {
+      id: 'creation',
+      label: 'Creation',
+      color: '#F6C95F',
+      candidates: ['key_passes_per_90', 'big_chances_created_per_90', 'xa_per_key_pass', 'successful_dribbles_per_90', 'npxg_per_shot'],
+    },
+    {
+      id: 'progression',
+      label: 'Progression',
+      color: '#67D7FF',
+      candidates: ['xgchain_per_90', 'xgbuildup_per_90', 'completed_passes_per_90', 'pass_accuracy', 'buildup_share'],
+    },
+    {
+      id: 'ball-winning',
+      label: 'Ball winning',
+      color: '#72E6A5',
+      candidates: ['tackles_per_90', 'interceptions_per_90', 'ball_recoveries_per_90', 'ground_duels_won_per_90', 'defensive_action_density'],
+    },
   ],
   DEF: [
-    'tackles_per_90',
-    'interceptions_per_90',
-    'clearances_per_90',
-    'blocks_per_90',
-    'ball_recoveries_per_90',
-    'pass_accuracy',
-    'xgbuildup_per_90',
-    'defensive_action_density',
+    {
+      id: 'defending',
+      label: 'Defending',
+      color: '#72E6A5',
+      candidates: ['tackles_per_90', 'interceptions_per_90', 'clearances_per_90', 'blocks_per_90', 'defensive_action_density'],
+    },
+    {
+      id: 'duels',
+      label: 'Duels & recovery',
+      color: '#F6C95F',
+      candidates: ['aerial_duels_won_per_90', 'ground_duels_won_per_90', 'ball_recoveries_per_90', 'tackles_won_percentage', 'fouls_per_90'],
+    },
+    {
+      id: 'progression',
+      label: 'Progression',
+      color: '#67D7FF',
+      candidates: ['completed_passes_per_90', 'pass_accuracy', 'xgbuildup_per_90', 'xgchain_per_90', 'accurate_long_balls_per_90'],
+    },
+    {
+      id: 'attacking-value',
+      label: 'Attacking value',
+      color: '#FF7A8A',
+      candidates: ['xg_per_90', 'xa_per_90', 'key_passes_per_90', 'chance_involvement_per_90', 'npxg_per_shot'],
+    },
   ],
   GK: [
-    'saves_per_90',
-    'clean_sheet_rate',
-    'saved_shots_inside_box_per_90',
-    'runs_out_per_90',
-    'pass_accuracy',
-    'completed_passes_per_90',
-    'accurate_long_balls_per_90',
-    'penalty_saves',
+    {
+      id: 'shot-stopping',
+      label: 'Shot stopping',
+      color: '#FF7A8A',
+      candidates: ['saves_per_90', 'saved_shots_inside_box_per_90'],
+    },
+    {
+      id: 'outcomes',
+      label: 'Outcomes',
+      color: '#F6C95F',
+      candidates: ['clean_sheet_rate', 'clean_sheets', 'penalty_saves'],
+    },
+    {
+      id: 'sweeping',
+      label: 'Sweeping',
+      color: '#72E6A5',
+      candidates: ['runs_out_per_90'],
+    },
+    {
+      id: 'distribution',
+      label: 'Distribution',
+      color: '#67D7FF',
+      candidates: ['pass_accuracy', 'completed_passes_per_90', 'accurate_long_balls_per_90'],
+    },
   ],
   UNK: [
-    'xg_per_90',
-    'xa_per_90',
-    'xgchain_per_90',
-    'pass_accuracy',
-    'tackles_per_90',
-    'interceptions_per_90',
-    'key_passes_per_90',
-    'goals_per_90',
+    {
+      id: 'output',
+      label: 'Output',
+      color: '#FF7A8A',
+      candidates: ['xg_per_90', 'goals_per_90', 'xa_per_90', 'npxg_per_90', 'shots_per_90'],
+    },
+    {
+      id: 'creation',
+      label: 'Creation',
+      color: '#F6C95F',
+      candidates: ['key_passes_per_90', 'chance_involvement_per_90', 'successful_dribbles_per_90', 'big_chances_created_per_90'],
+    },
+    {
+      id: 'possession',
+      label: 'Possession',
+      color: '#67D7FF',
+      candidates: ['xgchain_per_90', 'xgbuildup_per_90', 'completed_passes_per_90', 'pass_accuracy'],
+    },
+    {
+      id: 'defending',
+      label: 'Defending',
+      color: '#72E6A5',
+      candidates: ['tackles_per_90', 'interceptions_per_90', 'ball_recoveries_per_90', 'clearances_per_90'],
+    },
   ],
 }
 
 export const PIZZA_SLICE_MIN = 4
 export const PIZZA_SLICE_SOFT_MAX = 12
 
-export const PIZZA_STORAGE_KEY = 'conceptually-football:pizza-axes:v1'
+export const PIZZA_STORAGE_KEY = 'conceptually-football:pizza-axes:v2'
+export const LEGACY_PIZZA_STORAGE_KEY = 'conceptually-football:pizza-axes:v1'
 
 export function defaultPizzaMetricKeys(position: PositionGroup): string[] {
-  return [...(PIZZA_DEFAULT_KEYS[position] ?? PIZZA_DEFAULT_KEYS.UNK)]
+  return dedupeCanonicalMetricKeys(
+    radarTemplateGroups(position).flatMap(group => group.candidates.slice(0, 3)),
+  ).slice(0, PIZZA_SLICE_SOFT_MAX)
 }
 
 const ALL_PROFILE_BAR_SPECS: ProfileBarSpec[] = [...PROFILE_BAR_SPECS, ...PROFILE_BAR_SPECS_GK]
@@ -375,6 +465,109 @@ export function barKindForMetricKey(metricKey: string): ProfileBarKind {
   })
   if (spec) return spec.bar
   return { kind: 'invariant', key: metricKey }
+}
+
+export function canonicalProfileMetricKey(metricKey: string): string {
+  const bar = barKindForMetricKey(metricKey)
+  if (bar.kind === 'invariant') return metricKey.replace(/_per_90$/i, '')
+  return bar.per90
+}
+
+export function dedupeCanonicalMetricKeys(keys: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const key of keys) {
+    const canonical = canonicalProfileMetricKey(key)
+    if (seen.has(canonical)) continue
+    seen.add(canonical)
+    out.push(key)
+  }
+  return out
+}
+
+export function radarTemplateGroups(position: PositionGroup): RadarMetricGroup[] {
+  return (RADAR_GROUP_TEMPLATES[position] ?? RADAR_GROUP_TEMPLATES.UNK).map(group => ({
+    ...group,
+    candidates: [...group.candidates],
+  }))
+}
+
+export function resolveRadarMetricKeys({
+  position,
+  current,
+  available,
+  targetCount = PIZZA_SLICE_SOFT_MAX,
+}: {
+  position: PositionGroup
+  current: readonly string[]
+  available: readonly string[]
+  targetCount?: number
+}): string[] {
+  const availableByCanonical = new Map<string, string>()
+  for (const key of available) {
+    const canonical = canonicalProfileMetricKey(key)
+    if (!availableByCanonical.has(canonical)) availableByCanonical.set(canonical, key)
+  }
+
+  const resolved: string[] = []
+  const seen = new Set<string>()
+  const append = (candidate: string) => {
+    const exact = available.includes(candidate) ? candidate : availableByCanonical.get(canonicalProfileMetricKey(candidate))
+    if (!exact) return
+    const canonical = canonicalProfileMetricKey(exact)
+    if (seen.has(canonical)) return
+    seen.add(canonical)
+    resolved.push(exact)
+  }
+
+  current.forEach(append)
+  const boundedTarget = Math.min(Math.max(targetCount, PIZZA_SLICE_MIN), availableByCanonical.size)
+  for (const candidate of radarTemplateGroups(position).flatMap(group => group.candidates)) {
+    if (resolved.length >= boundedTarget) break
+    append(candidate)
+  }
+  for (const candidate of available) {
+    if (resolved.length >= boundedTarget) break
+    append(candidate)
+  }
+  return resolved
+}
+
+export function radarGroupForMetric(
+  position: PositionGroup,
+  metricKey: string,
+  metricGroup?: string,
+): RadarMetricGroup {
+  const groups = radarTemplateGroups(position)
+  const canonical = canonicalProfileMetricKey(metricKey)
+  const matched = groups.find(group =>
+    group.candidates.some(candidate => canonicalProfileMetricKey(candidate) === canonical),
+  )
+  if (matched) return matched
+
+  const fallbackIndex =
+    metricGroup === 'attacking' || metricGroup === 'attack' || metricGroup === 'shot_stopping'
+      ? 0
+      : metricGroup === 'passing_creative' || metricGroup === 'outcomes'
+        ? 1
+        : metricGroup === 'sweeper'
+          ? 2
+          : 3
+  return groups[fallbackIndex] ?? groups[0]
+}
+
+export function moveMetricKey(
+  keys: readonly string[],
+  metricKey: string,
+  direction: -1 | 1,
+): string[] {
+  const index = keys.indexOf(metricKey)
+  const nextIndex = index + direction
+  if (index < 0 || nextIndex < 0 || nextIndex >= keys.length) return [...keys]
+  const next = [...keys]
+  const [item] = next.splice(index, 1)
+  next.splice(nextIndex, 0, item)
+  return next
 }
 
 /** Group metrics by backend `def.group` for the pizza axis picker (works for outfield + GK). */

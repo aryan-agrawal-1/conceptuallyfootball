@@ -7,7 +7,12 @@ import {
   COMPARISON_STAT_MIN,
 } from '../../lib/comparisonConstants'
 import type { ComparisonAxisPack } from '../../lib/comparisonAxisPacks'
-import { groupMetricsForPizzaPicker, stripPer90Suffix } from '../../lib/profileMetrics'
+import {
+  canonicalProfileMetricKey,
+  dedupeCanonicalMetricKeys,
+  groupMetricsForPizzaPicker,
+  stripPer90Suffix,
+} from '../../lib/profileMetrics'
 import { cn } from '../../lib/utils'
 
 interface CompareStatAxisPickerProps {
@@ -35,9 +40,9 @@ export function CompareStatAxisPicker({
   }
 
   function addKey(k: string) {
-    if (selectedKeys.includes(k)) return
+    if (selectedKeys.some(key => canonicalProfileMetricKey(key) === canonicalProfileMetricKey(k))) return
     if (selectedKeys.length >= COMPARISON_STAT_MAX) return
-    onChangeKeys([...selectedKeys, k])
+    onChangeKeys(dedupeCanonicalMetricKeys([...selectedKeys, k]))
   }
 
   const canRemove = selectedKeys.length > COMPARISON_STAT_MIN
@@ -147,10 +152,12 @@ function CompareStatAddDropdown({
   )
 
   const available = useMemo(() => {
-    const sel = new Set(selectedKeys)
+    const selectedCanonical = new Set(selectedKeys.map(canonicalProfileMetricKey))
     return sectionOrder.flatMap(sec =>
       (grouped[sec] ?? []).flatMap(item =>
-        sel.has(item.key) ? [] : [{ ...item, section: sec }],
+        selectedCanonical.has(canonicalProfileMetricKey(item.key))
+          ? []
+          : [{ ...item, section: sec }],
       ),
     )
   }, [grouped, sectionOrder, selectedKeys])

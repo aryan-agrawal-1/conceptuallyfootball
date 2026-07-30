@@ -1,7 +1,8 @@
 import { forwardRef, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { GripVertical, RotateCcw, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, GripVertical, RotateCcw, X } from 'lucide-react'
 import { HudCornerMarks, HudPill } from '../hud/Hud'
 import { ProfilePizzaSvg } from './ProfilePizzaSection'
+import { ProfileDistributionPanel } from './ProfileDistributionPanel'
 import { ShareActions, type ShareActionBusy } from '../share/ShareActions'
 import {
   createPngExport,
@@ -25,7 +26,11 @@ import {
 } from '../../lib/profileExport'
 import {
   PIZZA_SLICE_MIN,
+  PIZZA_SLICE_SOFT_MAX,
   barKindForMetricKey,
+  canonicalProfileMetricKey,
+  dedupeCanonicalMetricKeys,
+  moveMetricKey,
   resolveProfileMetric,
   stripPer90Suffix,
   type ProfileRateMode,
@@ -38,6 +43,7 @@ import type {
   GalaxyEdge,
   MetricSemanticColor,
   PlayerRow,
+  ProfileDistributionPayload,
   StatMeta,
 } from '../../types/api'
 
@@ -47,6 +53,7 @@ interface PlayerProfileExportModalProps {
   initialRateMode: ProfileRateMode
   percentileMap?: Record<string, number | null>
   percentileScopeLabel?: string
+  distributions?: ProfileDistributionPayload
   similarEdges?: GalaxyEdge[]
   similarIsLoading?: boolean
   similarIsError?: boolean
@@ -101,6 +108,7 @@ export function PlayerProfileExportModal({
   initialRateMode,
   percentileMap = player.percentiles,
   percentileScopeLabel = player.competition_code,
+  distributions,
   similarEdges = [],
   similarIsLoading = false,
   similarIsError = false,
@@ -177,8 +185,10 @@ export function PlayerProfileExportModal({
   )
   const chartMetricKeys = useMemo(
     () =>
-      preset.chartMetricKeys.filter(key =>
-        isUsableExportMetric(player, meta, preset.rateMode, key),
+      dedupeCanonicalMetricKeys(
+        preset.chartMetricKeys.filter(key =>
+          isUsableExportMetric(player, meta, preset.rateMode, key),
+        ),
       ),
     [meta, player, preset.chartMetricKeys, preset.rateMode],
   )
@@ -188,15 +198,19 @@ export function PlayerProfileExportModal({
   const underMin = validTiles.length < MIN_STATS
   const chartInvalid = preset.chartEnabled && chartMetricKeys.length < PIZZA_SLICE_MIN
   const notesInvalid = preset.notesEnabled && notes.length > noteMax
+  const distributionInvalid =
+    preset.distributionEnabled && (!preset.chartEnabled || !distributions)
   const invalidReason = overCap
     ? `This layout supports up to ${statCap} stat tiles. Remove ${validTiles.length - statCap} to export.`
     : underMin
       ? `Select at least ${MIN_STATS} available stat tiles to export.`
       : chartInvalid
         ? `Select at least ${PIZZA_SLICE_MIN} available profile chart axes.`
-        : notesInvalid
-          ? `Notes must be ${noteMax} characters or fewer for this layout.`
-          : null
+        : distributionInvalid
+          ? 'Distribution export requires an available profile chart cohort.'
+          : notesInvalid
+            ? `Notes must be ${noteMax} characters or fewer for this layout.`
+            : null
   const canExport = !invalidReason && !busy
 
   const fileName = pngFileName(
@@ -251,6 +265,8 @@ export function PlayerProfileExportModal({
       chartMetricKeys,
       notesEnabled: preset.notesEnabled,
       similarEnabled: preset.similarEnabled,
+      distributionEnabled:
+        preset.chartEnabled && Boolean(distributions) && preset.distributionEnabled,
       showPercentiles: player.eligibility.percentiles_eligible && preset.showPercentiles,
     })
   }
@@ -423,7 +439,24 @@ export function PlayerProfileExportModal({
                   <input
                     type="checkbox"
                     checked={preset.chartEnabled}
-                    onChange={e => updatePreset({ chartEnabled: e.target.checked })}
+                    onChange={e => updatePreset({
+                      chartEnabled: e.target.checked,
+                      distributionEnabled: e.target.checked ? preset.distributionEnabled : false,
+                    })}
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-3 border border-electric/10 bg-electric/[0.03] px-3 py-2 text-[11px] text-ink-dim">
+                  <span>
+                    Include matching distributions
+                    <span className="mt-0.5 block text-[9px] text-ink-muted">
+                      Uses the wide profile panel
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={preset.distributionEnabled}
+                    disabled={!preset.chartEnabled || !distributions}
+                    onChange={e => updatePreset({ distributionEnabled: e.target.checked })}
                   />
                 </label>
                 {!player.eligibility.percentiles_eligible && preset.chartEnabled && (
@@ -436,7 +469,9 @@ export function PlayerProfileExportModal({
                   meta={meta}
                   rateMode={preset.rateMode}
                   selectedKeys={preset.chartMetricKeys}
-                  onChange={chartMetricKeys => updatePreset({ chartMetricKeys })}
+                  onChange={chartMetricKeys => updatePreset({
+                    chartMetricKeys: dedupeCanonicalMetricKeys(chartMetricKeys),
+                  })}
                 />
               </EditorSection>
 
@@ -499,6 +534,7 @@ export function PlayerProfileExportModal({
                       previewInvalid={invalidReason}
                       percentileMap={percentileMap}
                       percentileScopeLabel={percentileScopeLabel}
+                      distributions={distributions}
                     />
                   </div>
                 </div>
@@ -547,6 +583,7 @@ export function PlayerProfileExportModal({
           similarScopeLabel={similarScopeLabel}
           percentileMap={percentileMap}
           percentileScopeLabel={percentileScopeLabel}
+          distributions={distributions}
         />
       </div>
     </div>
@@ -615,25 +652,30 @@ function ChartAxisEditor({
   selectedKeys: string[]
   onChange: (keys: string[]) => void
 }) {
-  const selectedSet = useMemo(() => new Set(selectedKeys), [selectedKeys])
+  const selectedSet = useMemo(
+    () => new Set(selectedKeys.map(canonicalProfileMetricKey)),
+    [selectedKeys],
+  )
   const addable = useMemo(
     () =>
-      curatedProfileMetricKeys(player.position_group).filter(
-        key => !selectedSet.has(key) && isUsableExportMetric(player, meta, rateMode, key),
+      selectedKeys.length >= PIZZA_SLICE_SOFT_MAX
+        ? []
+        : curatedProfileMetricKeys(player.position_group).filter(
+        key =>
+          !selectedSet.has(canonicalProfileMetricKey(key)) &&
+          isUsableExportMetric(player, meta, rateMode, key),
       ),
-    [meta, player, rateMode, selectedSet],
+    [meta, player, rateMode, selectedKeys.length, selectedSet],
   )
 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap gap-1.5">
-        {selectedKeys.map(key => {
+        {selectedKeys.map((key, index) => {
           const available = isUsableExportMetric(player, meta, rateMode, key)
           return (
-            <button
+            <div
               key={key}
-              type="button"
-              onClick={() => onChange(selectedKeys.filter(k => k !== key))}
               className={cn(
                 'flex items-center gap-1 border px-2 py-1 text-[10px] uppercase tracking-wide',
                 available
@@ -642,15 +684,40 @@ function ChartAxisEditor({
               )}
             >
               <span className="max-w-[150px] truncate">{profileExportLabelForKey(key, meta)}</span>
-              <X size={11} />
-            </button>
+              <button
+                type="button"
+                disabled={index === 0}
+                onClick={() => onChange(moveMetricKey(selectedKeys, key, -1))}
+                className="grid size-5 place-items-center hover:text-ink disabled:opacity-30"
+                aria-label={`Move ${profileExportLabelForKey(key, meta)} earlier`}
+              >
+                <ArrowLeft size={10} />
+              </button>
+              <button
+                type="button"
+                disabled={index === selectedKeys.length - 1}
+                onClick={() => onChange(moveMetricKey(selectedKeys, key, 1))}
+                className="grid size-5 place-items-center hover:text-ink disabled:opacity-30"
+                aria-label={`Move ${profileExportLabelForKey(key, meta)} later`}
+              >
+                <ArrowRight size={10} />
+              </button>
+              <button
+                type="button"
+                onClick={() => onChange(selectedKeys.filter(k => k !== key))}
+                className="grid size-5 place-items-center hover:text-ember"
+                aria-label={`Remove ${profileExportLabelForKey(key, meta)}`}
+              >
+                <X size={10} />
+              </button>
+            </div>
           )
         })}
       </div>
       <select
         value=""
         onChange={e => {
-          if (e.target.value) onChange([...selectedKeys, e.target.value])
+          if (e.target.value) onChange(dedupeCanonicalMetricKeys([...selectedKeys, e.target.value]))
         }}
         className="w-full border border-electric/20 bg-panel px-3 py-2 text-[12px] text-ink outline-none focus:border-electric/60"
       >
@@ -679,6 +746,7 @@ interface PlayerProfileExportSurfaceProps {
   similarScopeLabel: string
   percentileMap: Record<string, number | null>
   percentileScopeLabel: string
+  distributions?: ProfileDistributionPayload
   previewInvalid?: string | null
 }
 
@@ -697,6 +765,7 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
     similarScopeLabel,
     percentileMap,
     percentileScopeLabel,
+    distributions,
     previewInvalid,
   },
   ref,
@@ -714,10 +783,13 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
     : `Stats: ${player.competition_code} ${player.season_label} · ${preset.rateMode === 'per90' ? 'Per 90' : 'Season'} · Percentiles vs ${percentileScopeLabel} ${POSITION_COHORT_LABEL[player.position_group]}`
   const theme = surfaceTheme(preset.theme)
   const hasLowerPanel = preset.notesEnabled || preset.similarEnabled
+  const hasDistribution = Boolean(
+    preset.chartEnabled && preset.distributionEnabled && distributions,
+  )
   const hasSupplement = preset.chartEnabled || hasLowerPanel
-  const chartScale = hasLowerPanel ? 0.9 : 1.28
+  const chartScale = hasDistribution ? 0.62 : hasLowerPanel ? 0.9 : 1.28
   const chartViewportSize = 760 * chartScale
-  const shouldTransformChart = !hasLowerPanel
+  const shouldTransformChart = hasDistribution || !hasLowerPanel
 
   return (
     <div
@@ -799,100 +871,134 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
               className={cn(
                 'grid min-h-0 flex-1 gap-8',
                 preset.chartEnabled && hasLowerPanel
-                  ? 'grid-rows-[minmax(0,760px)_minmax(260px,1fr)]'
+                  ? 'grid-rows-[minmax(0,1fr)_minmax(260px,auto)]'
                   : 'grid-rows-1',
               )}
             >
               {preset.chartEnabled && (
-              <section
-                className="relative grid min-h-0 place-items-center overflow-hidden border px-4 py-6"
-                style={{ borderColor: theme.border, background: theme.panel }}
-              >
-                {preset.theme === 'conceptually-football' && <HudCornerMarks size="size-4" />}
-                <div className="flex min-h-0 flex-col items-center">
-                  <p style={{ color: theme.accent }} className="mb-2 text-[15px] font-bold uppercase tracking-[0.26em]">
-                    Profile chart
-                  </p>
-                  <div
-                    className={cn(
-                      'grid place-items-center overflow-visible',
-                      preset.theme === 'boring' && 'brightness-75 contrast-125',
-                    )}
-                    style={{
-                      width: chartViewportSize,
-                      height: chartViewportSize,
-                    }}
+                <div
+                  className={cn(
+                    'grid min-h-0 gap-8',
+                    hasDistribution ? 'grid-cols-[500px_minmax(0,1fr)]' : 'grid-cols-1',
+                  )}
+                >
+                  <section
+                    className="relative grid min-h-0 place-items-center overflow-hidden border px-4 py-6"
+                    style={{ borderColor: theme.border, background: theme.panel }}
                   >
-                    {shouldTransformChart ? (
+                    {preset.theme === 'conceptually-football' && <HudCornerMarks size="size-4" />}
+                    <div className="flex min-h-0 flex-col items-center">
+                      <p style={{ color: theme.accent }} className="mb-2 text-[15px] font-bold uppercase tracking-[0.26em]">
+                        Profile chart
+                      </p>
                       <div
+                        className={cn(
+                          'grid place-items-center overflow-visible',
+                          preset.theme === 'boring' && 'brightness-75 contrast-125',
+                        )}
                         style={{
-                          width: 760,
-                          height: 760,
-                          transform: `scale(${chartScale})`,
-                          transformOrigin: 'center center',
+                          width: chartViewportSize,
+                          height: chartViewportSize,
                         }}
                       >
-                        <ProfilePizzaSvg
-                          player={player}
-                          rateMode={preset.rateMode}
-                          meta={meta}
-                          metricKeys={chartMetricKeys}
-                          percentileMap={percentileMap}
-                          exportMode
-                        />
+                        {shouldTransformChart ? (
+                          <div
+                            style={{
+                              width: 760,
+                              height: 760,
+                              transform: `scale(${chartScale})`,
+                              transformOrigin: 'center center',
+                            }}
+                          >
+                            <ProfilePizzaSvg
+                              player={player}
+                              rateMode={preset.rateMode}
+                              meta={meta}
+                              metricKeys={chartMetricKeys}
+                              percentileMap={percentileMap}
+                              exportMode
+                            />
+                          </div>
+                        ) : (
+                          <ProfilePizzaSvg
+                            player={player}
+                            rateMode={preset.rateMode}
+                            meta={meta}
+                            metricKeys={chartMetricKeys}
+                            percentileMap={percentileMap}
+                            exportMode
+                          />
+                        )}
                       </div>
-                    ) : (
-                      <ProfilePizzaSvg
+                      {rawOnly && (
+                        <p style={{ color: theme.muted }} className="mt-2 text-[13px] uppercase tracking-[0.18em]">
+                          Raw metric profile
+                        </p>
+                      )}
+                    </div>
+                  </section>
+
+                  {hasDistribution && distributions && (
+                    <section
+                      className="relative min-h-0 overflow-hidden border p-5"
+                      style={{ borderColor: theme.border, background: theme.panel }}
+                    >
+                      {preset.theme === 'conceptually-football' && <HudCornerMarks size="size-4" />}
+                      <div className="mb-4 flex items-end justify-between gap-4">
+                        <p style={{ color: theme.accent }} className="text-[15px] font-bold uppercase tracking-[0.26em]">
+                          Cohort distance
+                        </p>
+                        <p style={{ color: theme.muted }} className="font-mono text-[10px] uppercase tracking-[0.14em]">
+                          {distributions.context.competition_code} · {distributions.cohort_count} eligible
+                        </p>
+                      </div>
+                      <ProfileDistributionPanel
                         player={player}
                         rateMode={preset.rateMode}
                         meta={meta}
                         metricKeys={chartMetricKeys}
+                        distributions={distributions}
                         percentileMap={percentileMap}
-                        exportMode
+                        compact
+                        light={preset.theme === 'boring'}
                       />
-                    )}
-                  </div>
-                  {rawOnly && (
-                    <p style={{ color: theme.muted }} className="mt-2 text-[13px] uppercase tracking-[0.18em]">
-                      Raw metric profile
-                    </p>
+                    </section>
                   )}
                 </div>
-              </section>
               )}
 
               {hasLowerPanel && (
-              <div
-                className={cn(
-                  'grid min-h-0 gap-8',
-                  preset.notesEnabled && preset.similarEnabled ? 'grid-cols-2' : 'grid-cols-1',
-                )}
-              >
-                {preset.notesEnabled && (
-                <section
-                  className="relative min-h-0 overflow-hidden border p-8"
-                  style={{ borderColor: theme.border, background: theme.panel }}
+                <div
+                  className={cn(
+                    'grid min-h-0 gap-8',
+                    preset.notesEnabled && preset.similarEnabled ? 'grid-cols-2' : 'grid-cols-1',
+                  )}
                 >
-                  {preset.theme === 'conceptually-football' && <HudCornerMarks size="size-4" />}
-                  <p style={{ color: theme.accent }} className="mb-5 text-[15px] font-bold uppercase tracking-[0.26em]">
-                    Notes
-                  </p>
-                  <p style={{ color: theme.text }} className="whitespace-pre-line text-[24px] font-medium leading-[1.45]">
-                    {notes.trim() || ' '}
-                  </p>
-                </section>
-                )}
+                  {preset.notesEnabled && (
+                    <section
+                      className="relative min-h-0 overflow-hidden border p-8"
+                      style={{ borderColor: theme.border, background: theme.panel }}
+                    >
+                      {preset.theme === 'conceptually-football' && <HudCornerMarks size="size-4" />}
+                      <p style={{ color: theme.accent }} className="mb-5 text-[15px] font-bold uppercase tracking-[0.26em]">
+                        Notes
+                      </p>
+                      <p style={{ color: theme.text }} className="whitespace-pre-line text-[24px] font-medium leading-[1.45]">
+                        {notes.trim() || ' '}
+                      </p>
+                    </section>
+                  )}
 
-                {preset.similarEnabled && (
-                <SimilarPlayersExportPanel
-                  edges={similarEdges}
-                  isLoading={similarIsLoading}
-                  isError={similarIsError}
-                  scopeLabel={similarScopeLabel}
-                  theme={preset.theme}
-                />
-                )}
-              </div>
+                  {preset.similarEnabled && (
+                    <SimilarPlayersExportPanel
+                      edges={similarEdges}
+                      isLoading={similarIsLoading}
+                      isError={similarIsError}
+                      scopeLabel={similarScopeLabel}
+                      theme={preset.theme}
+                    />
+                  )}
+                </div>
               )}
             </div>
           )}

@@ -4,10 +4,12 @@ import {
   PROFILE_BAR_SPECS,
   PROFILE_BAR_SPECS_GK,
   barKindForMetricKey,
+  dedupeCanonicalMetricKeys,
   defaultPizzaMetricKeys,
   headerSpecsForPosition,
   labelForBarSpec,
   resolveProfileMetric,
+  resolveRadarMetricKeys,
   resolveHeaderCard,
   stripPer90Suffix,
   type ProfileBarSpec,
@@ -27,12 +29,13 @@ export interface ProfileExportPreset {
   stats: ProfileExportTile[]
   chartEnabled: boolean
   chartMetricKeys: string[]
+  distributionEnabled: boolean
   notesEnabled: boolean
   similarEnabled: boolean
   showPercentiles: boolean
 }
 
-const EXPORT_PRESET_VERSION = 1
+const EXPORT_PRESET_VERSION = 2
 const PROFILE_EXPORT_STORAGE_KEY = 'conceptually-football:profile-export:v1'
 
 interface StoredProfileExportPreset extends ProfileExportPreset {
@@ -44,7 +47,7 @@ type StoredProfileExportState = Partial<Record<string, StoredProfileExportPreset
 export const PROFILE_EXPORT_STAT_LIMIT = 4
 
 const DEFAULT_TILE_COUNT = PROFILE_EXPORT_STAT_LIMIT
-const DEFAULT_CHART_AXIS_COUNT = 8
+const DEFAULT_CHART_AXIS_COUNT = 12
 
 function storageKeyForPosition(position: PositionGroup): string {
   return `player:${position}`
@@ -64,21 +67,31 @@ function readStoredState(): StoredProfileExportState {
 
 function writeStoredState(state: StoredProfileExportState) {
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(PROFILE_EXPORT_STORAGE_KEY, JSON.stringify(state))
+  try {
+    window.localStorage.setItem(PROFILE_EXPORT_STORAGE_KEY, JSON.stringify(state))
+  } catch {
+    // Storage can be unavailable in private browsing or constrained embeds.
+  }
 }
 
-function loadProfileExportPreset(position: PositionGroup): ProfileExportPreset | null {
+function loadProfileExportPreset(
+  position: PositionGroup,
+): { preset: ProfileExportPreset; version: number } | null {
   const stored = readStoredState()[storageKeyForPosition(position)]
-  if (!stored || stored.version !== EXPORT_PRESET_VERSION) return null
+  if (!stored || (stored.version !== 1 && stored.version !== EXPORT_PRESET_VERSION)) return null
   return {
-    theme: stored.theme,
-    rateMode: stored.rateMode,
-    stats: stored.stats,
-    chartEnabled: stored.chartEnabled,
-    chartMetricKeys: stored.chartMetricKeys,
-    notesEnabled: stored.notesEnabled,
-    similarEnabled: stored.similarEnabled ?? false,
-    showPercentiles: stored.showPercentiles,
+    version: stored.version,
+    preset: {
+      theme: stored.theme,
+      rateMode: stored.rateMode,
+      stats: stored.stats,
+      chartEnabled: stored.chartEnabled,
+      chartMetricKeys: stored.chartMetricKeys,
+      distributionEnabled: stored.distributionEnabled ?? false,
+      notesEnabled: stored.notesEnabled,
+      similarEnabled: stored.similarEnabled ?? false,
+      showPercentiles: stored.showPercentiles,
+    },
   }
 }
 
@@ -87,6 +100,8 @@ export function saveProfileExportPreset(position: PositionGroup, preset: Profile
   state[storageKeyForPosition(position)] = {
     version: EXPORT_PRESET_VERSION,
     ...preset,
+    chartMetricKeys: dedupeCanonicalMetricKeys(preset.chartMetricKeys),
+    distributionEnabled: preset.chartEnabled && preset.distributionEnabled,
   }
   writeStoredState(state)
 }
@@ -212,6 +227,7 @@ export function buildDefaultProfileExportPreset(
     stats: defaultProfileExportStats(player, meta, rateMode),
     chartEnabled: player.eligibility.percentiles_eligible,
     chartMetricKeys: defaultProfileExportChartKeys(player, meta, rateMode),
+    distributionEnabled: false,
     notesEnabled: false,
     similarEnabled: false,
     showPercentiles: player.eligibility.percentiles_eligible,
@@ -223,8 +239,9 @@ export function hydrateProfileExportPreset(
   meta: StatMeta,
   initialRateMode: ProfileRateMode,
 ): ProfileExportPreset {
-  const stored = loadProfileExportPreset(player.position_group)
-  if (!stored) return buildDefaultProfileExportPreset(player, meta, initialRateMode)
+  const storedRecord = loadProfileExportPreset(player.position_group)
+  if (!storedRecord) return buildDefaultProfileExportPreset(player, meta, initialRateMode)
+  const { preset: stored, version } = storedRecord
 
   const fallback = buildDefaultProfileExportPreset(player, meta, stored.rateMode ?? initialRateMode)
   const seen = new Set<string>()
@@ -242,14 +259,21 @@ export function hydrateProfileExportPreset(
     ...stats,
     ...fallback.stats.filter(tile => !statKeys.has(tile.key)),
   ].slice(0, DEFAULT_TILE_COUNT)
-  const chartKeys = stored.chartMetricKeys.filter(key =>
+  const usableChartKeys = curatedProfileMetricKeys(player.position_group).filter(key =>
     isUsableExportMetric(player, meta, stored.rateMode ?? initialRateMode, key),
   )
-  const chartKeySet = new Set(chartKeys)
-  const paddedChartKeys = [
-    ...chartKeys,
-    ...fallback.chartMetricKeys.filter(key => !chartKeySet.has(key)),
-  ]
+  const paddedChartKeys = resolveRadarMetricKeys({
+    position: player.position_group,
+    current: dedupeCanonicalMetricKeys(stored.chartMetricKeys),
+    available: usableChartKeys,
+    targetCount:
+      version === 1
+        ? DEFAULT_CHART_AXIS_COUNT
+        : Math.max(
+            PIZZA_SLICE_MIN,
+            Math.min(stored.chartMetricKeys.length, DEFAULT_CHART_AXIS_COUNT),
+          ),
+  })
 
   return {
     theme: stored.theme === 'boring' ? 'boring' : 'conceptually-football',
@@ -257,6 +281,10 @@ export function hydrateProfileExportPreset(
     stats: paddedStats.length ? paddedStats : fallback.stats,
     chartEnabled: player.eligibility.percentiles_eligible ? stored.chartEnabled : false,
     chartMetricKeys: paddedChartKeys.length ? paddedChartKeys : fallback.chartMetricKeys,
+    distributionEnabled:
+      player.eligibility.percentiles_eligible &&
+      stored.chartEnabled &&
+      stored.distributionEnabled,
     notesEnabled: stored.notesEnabled,
     similarEnabled: stored.similarEnabled ?? false,
     showPercentiles: player.eligibility.percentiles_eligible && stored.showPercentiles,

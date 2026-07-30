@@ -123,6 +123,31 @@ interface ScopePercentileContext {
   competition_season_ids?: number[]
 }
 
+export interface ProfileDistributionBin {
+  start: number
+  end: number
+  count: number
+}
+
+export interface ProfileMetricDistribution {
+  count: number
+  min: number
+  max: number
+  p25: number
+  median: number
+  p75: number
+  bins: ProfileDistributionBin[]
+  season_approx?: ProfileMetricDistribution
+}
+
+export interface ProfileDistributionPayload {
+  position_group: PositionGroup
+  cohort_count: number
+  bin_limit: number
+  context: ScopePercentileContext
+  metrics: Record<string, ProfileMetricDistribution>
+}
+
 export interface MetricDefinition {
   label: string
   group: string
@@ -168,6 +193,8 @@ export interface MatrixResponse {
 export interface PlayerDetailResponse extends PlayerRow {
   meta?: StatMeta
   sections?: ProfileSectionsPayload
+  profile_distributions?: ProfileDistributionPayload
+  scope_profile_distributions?: ProfileDistributionPayload
 }
 
 interface ProfileSectionsPayload {
