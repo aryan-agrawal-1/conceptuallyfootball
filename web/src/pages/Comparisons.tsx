@@ -506,7 +506,7 @@ export function Comparisons() {
                           </button>
                           <button
                             type="button"
-                            className="text-[10px] uppercase tracking-widest text-ink-muted hover:text-ember border border-electric/15 px-2 py-1"
+                            className="border border-control-border px-2 py-1 text-[10px] uppercase tracking-widest text-control-fg hover:border-ember hover:text-ember active:bg-ember/10"
                             onClick={() => removePlayerAt(index)}
                           >
                             Remove
@@ -654,7 +654,7 @@ export function Comparisons() {
                 <div className="flex flex-wrap gap-2 justify-end">
                   <button
                     type="button"
-                    className="px-3 py-2 text-[11px] uppercase tracking-widest border border-electric/25 text-ink-muted hover:text-ink"
+                    className="border border-control-border px-3 py-2 text-[11px] uppercase tracking-widest text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10"
                     onClick={() => setCohortConfirm(null)}
                   >
                     Cancel

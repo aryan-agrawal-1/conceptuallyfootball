@@ -78,7 +78,7 @@ export function ComparePlayerPicker({
                 setQ('')
                 onClose()
               }}
-              className="shrink-0 px-3 py-2 text-[10px] uppercase tracking-widest text-ink-muted border border-electric/20 hover:border-electric/40 hover:text-electric/80"
+              className="shrink-0 border border-control-border px-3 py-2 text-[10px] uppercase tracking-widest text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10"
             >
               Close
             </button>

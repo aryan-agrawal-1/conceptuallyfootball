@@ -63,8 +63,8 @@ export function HudSelectDropdown({
           'relative flex w-full min-w-0 items-center justify-between gap-2 border px-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.15em] transition-colors',
           open
             ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
-            : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
-          disabled && 'pointer-events-none opacity-50',
+            : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
+          disabled && 'pointer-events-none border-line-bright/40 bg-raised/35 text-control-disabled opacity-60 shadow-none',
         )}
       >
         {open && <HudCornerMarks size="size-1" />}
@@ -180,7 +180,7 @@ export function HudMultiSelectDropdown({
           compact ? 'w-auto justify-center px-2' : 'w-full justify-between px-3',
           selected.length || open
             ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
-            : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
+            : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
         )}
       >
         {(selected.length > 0 || open) && <HudCornerMarks size="size-1" />}

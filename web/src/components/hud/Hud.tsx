@@ -103,6 +103,8 @@ export function HudVSep({ className }: { className?: string }) {
 // A HUD-styled pill button. Inactive reads as a quiet outline; active lights
 // up with electric fill + corner brackets so the current choice pops. Used
 // for filter segments (positions, min-minutes, rate mode, etc.).
+// State contract: control tokens at rest, ink/electric on hover, tinted fill
+// while pressed, electric accent when selected, and the global focus ring.
 export function HudPill({
   active,
   onClick,
@@ -124,10 +126,10 @@ export function HudPill({
       title={title}
       onClick={onClick}
       className={cn(
-        'relative px-2.5 py-1 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border',
+        'relative px-2.5 py-1 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border active:bg-electric/10',
         active
           ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
-          : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
+          : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover',
         className,
       )}
     >
@@ -165,7 +167,7 @@ export function HudActionButton({
         'group relative px-4 py-3 border border-electric bg-electric/15 hover:bg-electric/30 text-electric hover:text-ink transition-colors',
         'flex items-center justify-center gap-2 font-bold tracking-[0.15em] uppercase text-[12px]',
         'shadow-[0_0_24px_-6px_rgba(74,158,245,0.7)] hover:shadow-[0_0_32px_-6px_rgba(74,158,245,0.9)]',
-        disabled && 'opacity-40 pointer-events-none border-electric/20 text-electric/50 shadow-none',
+        disabled && 'border-line-bright/50 bg-raised/35 text-control-disabled opacity-60 pointer-events-none shadow-none',
         className,
       )}
     >

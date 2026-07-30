@@ -44,6 +44,12 @@
   --color-ink-dim:      #8A95B8;
   --color-ink-muted:    #4E5878;
 
+  /* Interactive-state hierarchy (kept separate from secondary copy). */
+  --color-control-fg:       #8796BC;
+  --color-control-fg-hover: #E4EAF8;
+  --color-control-border:   #65759E;
+  --color-control-disabled: #65718F;
+
   --color-electric:     #4A9EF5;
   --color-electric-mid: #2066C4;
   --color-electric-dim: #0D2248;
@@ -89,6 +95,21 @@
     font-weight: 400;
   }
 
+  /*
+   * Shared interaction states:
+   * default = control foreground/border tokens; hover = brighter ink/electric;
+   * pressed = component-local tinted fill; selected = electric accent;
+   * disabled = control-disabled with reduced emphasis; keyboard focus = this ring.
+   */
+  :where(button, a, input, select, textarea, [role='button'], [role='tab'], [role='option']):focus-visible {
+    outline: 2px solid var(--color-electric);
+    outline-offset: 3px;
+  }
+
+  :where(button, input, select, textarea):disabled {
+    cursor: not-allowed;
+  }
+
   #root {
     min-height: 100svh;
     display: flex;
@@ -109,6 +130,19 @@
   }
   ::-webkit-scrollbar-thumb:hover {
     background: var(--color-ink-muted);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  [class*='backdrop-blur'] {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  :where(button, a, input, select, textarea, [role='button'], [role='tab'], [role='option']):focus-visible {
+    outline-color: Highlight;
   }
 }
 

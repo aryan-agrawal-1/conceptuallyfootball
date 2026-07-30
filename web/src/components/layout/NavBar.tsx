@@ -86,7 +86,7 @@ export function NavBar() {
           onClick={() => setSearchOpen(true)}
           className={cn(
             'relative flex h-10 items-center gap-2 border px-2.5 py-1.5 transition-colors lg:h-auto',
-            'border-electric/20 bg-panel/50 text-ink-muted hover:border-electric/40 hover:text-electric/90',
+            'border-control-border bg-panel/50 text-control-fg hover:border-electric hover:text-control-fg-hover',
             'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-electric/50',
           )}
           aria-label="Open search"
@@ -190,7 +190,7 @@ export function NavBar() {
                 'flex h-full min-w-0 flex-col items-center justify-center gap-1 border-t-2 px-1 text-[9px] font-medium uppercase tracking-[0.08em]',
                 isActive
                   ? 'border-electric text-electric'
-                  : 'border-transparent text-ink-muted',
+                  : 'border-transparent text-control-fg hover:text-control-fg-hover',
               )}
             >
               <Icon size={17} strokeWidth={2} />
@@ -242,7 +242,7 @@ function ScopeDropdown({
           open
             ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
             : 'border-transparent text-electric/90 hover:border-electric/30 hover:bg-electric/5',
-          disabled && 'opacity-50 pointer-events-none',
+          disabled && 'border-transparent bg-raised/30 text-control-disabled opacity-60 pointer-events-none shadow-none',
         )}
       >
         {open && <HudCornerMarks size="size-1" />}
@@ -317,7 +317,7 @@ function HudNavButton({
         'relative px-3 py-1 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border',
         active
           ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
-          : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
+          : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover',
       )}
     >
       {active && <HudCornerMarks size="size-1" />}
