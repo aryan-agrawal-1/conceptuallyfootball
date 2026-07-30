@@ -5,6 +5,7 @@ import { AlertCircle, ChevronDown, ChevronUp, Copy, Loader2 } from 'lucide-react
 import { HudActionButton, HudFrame, HudLabel, HudPill, HudVSep } from '../components/hud/Hud'
 import { LabHelpHover } from '../components/regression/LabHelpHover'
 import { RegressionScatterPlot } from '../components/regression/RegressionScatterPlot'
+import { RegressionLabWalkthrough } from '../components/regression/RegressionLabWalkthrough'
 import { applyClientFilters, useStatMatrix } from '../hooks/useStatMatrix'
 import { fetchRegressionLabFit } from '../lib/api'
 import {
@@ -429,8 +430,12 @@ export function RegressionLab() {
 
   return (
     <div className="flex min-h-[calc(100svh-132px)] flex-col lg:min-h-[calc(100svh-52px)]">
-      <div className="sticky top-[64px] z-40 flex shrink-0 items-center gap-2 overflow-x-auto border-b border-electric/25 bg-panel/80 px-3 py-2 backdrop-blur-md lg:top-[52px] lg:flex-wrap lg:gap-3 lg:overflow-visible lg:px-6">
+      <div
+        data-regression-walkthrough="cohort"
+        className="sticky top-[64px] z-40 flex shrink-0 items-center gap-2 overflow-x-auto border-b border-electric/25 bg-panel/80 px-3 py-2 backdrop-blur-md lg:top-[52px] lg:flex-wrap lg:gap-3 lg:overflow-visible lg:px-6"
+      >
         <HudLabel className="shrink-0 whitespace-nowrap">Regression Lab</HudLabel>
+        <RegressionLabWalkthrough />
         <HudVSep className="hidden lg:block" />
         <span className="hidden shrink-0 whitespace-nowrap text-[11px] font-mono uppercase tracking-[0.16em] text-electric/85 sm:inline">
           {scopeLabel}
@@ -507,7 +512,9 @@ export function RegressionLab() {
               <HudFrame
                 header={
                   <>
-                    <span className="truncate">Target // Outcome</span>
+                    <span data-regression-walkthrough="target" className="truncate">
+                      Target // Outcome
+                    </span>
                     <LabHelpHover label="What is the target?">
                       <p>{LAB_HELP.targetPanel}</p>
                     </LabHelpHover>
@@ -547,7 +554,9 @@ export function RegressionLab() {
               <HudFrame
                 header={
                   <>
-                    <span className="truncate">Predictors // Evidence</span>
+                    <span data-regression-walkthrough="predictors" className="truncate">
+                      Predictors // Evidence
+                    </span>
                     <LabHelpHover label="What are predictors?">
                       <p>{LAB_HELP.predictorsPanel}</p>
                     </LabHelpHover>
@@ -562,7 +571,7 @@ export function RegressionLab() {
                   </p>
                   {target && (
                     <p className="text-[10px] text-ink-muted">
-                      The selected target is excluded to prevent the model from using the outcome as evidence.
+                      {LAB_HELP.predictorLeakage}
                     </p>
                   )}
                   {!meta && (
@@ -601,14 +610,22 @@ export function RegressionLab() {
               </HudFrame>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3">
-              <HudActionButton
-                type="button"
-                onClick={() => void runModel()}
-                disabled={!canRun || fitMutation.isPending}
-              >
-                {fitMutation.isPending ? 'Running…' : 'Run model'}
-              </HudActionButton>
+            <div
+              data-regression-walkthrough="readiness"
+              className="flex flex-wrap items-center gap-3"
+            >
+              <span data-regression-walkthrough="run" className="inline-flex">
+                <HudActionButton
+                  type="button"
+                  onClick={() => void runModel()}
+                  disabled={!canRun || fitMutation.isPending}
+                >
+                  {fitMutation.isPending ? 'Running…' : 'Run model'}
+                </HudActionButton>
+              </span>
+              <LabHelpHover label="Model readiness">
+                <p>{LAB_HELP.readinessPanel}</p>
+              </LabHelpHover>
               {usablePreview < 30 && position && target && predictors.length > 0 && (
                 <span className="text-[11px] text-ember flex items-center gap-1">
                   <AlertCircle size={14} />
@@ -644,7 +661,20 @@ export function RegressionLab() {
 
             {lastFit && !resultsStale && (
               <div className="grid min-w-0 gap-4 xl:grid-cols-2">
-                <HudFrame header="Fit summary // CV headline" className="min-w-0" bodyClassName="p-3">
+                <HudFrame
+                  header={
+                    <>
+                      <span data-regression-walkthrough="fit" className="truncate">
+                        Fit summary // CV headline
+                      </span>
+                      <LabHelpHover label="How to prioritise fit results">
+                        <p>{LAB_HELP.fitSummary}</p>
+                      </LabHelpHover>
+                    </>
+                  }
+                  className="min-w-0"
+                  bodyClassName="p-3"
+                >
                   <div className="grid grid-cols-2 gap-3 font-mono text-[12px]">
                     <FitSummaryStat
                       label="CV R²"
@@ -698,7 +728,12 @@ export function RegressionLab() {
                 <HudFrame
                   header={
                     <>
-                      <span className="truncate">Coefficients // standardized</span>
+                      <span
+                        data-regression-walkthrough="coefficients"
+                        className="truncate"
+                      >
+                        Coefficients // standardized
+                      </span>
                       <LabHelpHover label="How to read coefficients">
                         <p>{LAB_HELP.coefficientsPanel}</p>
                       </LabHelpHover>
@@ -751,7 +786,9 @@ export function RegressionLab() {
                 <HudFrame
                   header={
                     <>
-                      <span className="truncate">Predicted vs actual // OOF</span>
+                      <span data-regression-walkthrough="errors" className="truncate">
+                        Predicted vs actual // OOF
+                      </span>
                       <LabHelpHover label="What is OOF?">
                         <p>{LAB_HELP.oofScatter}</p>
                       </LabHelpHover>
