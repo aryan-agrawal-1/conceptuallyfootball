@@ -1,6 +1,12 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { BRAND_DOMAIN, BRAND_LOGO_URL, BRAND_NAME_UPPER, BRAND_SLUG } from '../../lib/brand'
 import { ShareActions, type ShareActionBusy } from '../share/ShareActions'
+import {
+  createPngExport,
+  handoffPngExport,
+  PNG_EXPORT_POLICIES,
+  pngFileName,
+} from '../share/pngExport'
 
 type ExportAspect = 'square' | 'landscape'
 
@@ -20,12 +26,6 @@ function aspectClass(aspect: ExportAspect): string {
   return aspect === 'landscape' ? 'w-[1400px] min-h-[860px]' : 'w-[1200px] min-h-[1200px]'
 }
 
-async function dataUrlToFile(dataUrl: string, fileName: string): Promise<File> {
-  const res = await fetch(dataUrl)
-  const blob = await res.blob()
-  return new File([blob], fileName, { type: blob.type || 'image/png' })
-}
-
 export function ChartShareCard({
   title,
   subtitle,
@@ -39,60 +39,24 @@ export function ChartShareCard({
 }: ChartShareCardProps) {
   const exportRef = useRef<HTMLDivElement>(null)
   const [busy, setBusy] = useState<ShareActionBusy>(null)
-  const safeFileName = `${BRAND_SLUG}-${fileName.replace(/[^a-z0-9-_]+/gi, '-').toLowerCase()}.png`
+  const safeFileName = pngFileName(BRAND_SLUG, fileName)
 
-  async function waitForExportSurface() {
-    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
-  }
-
-  async function buildImage(): Promise<string> {
-    const node = exportRef.current
-    if (!node) throw new Error('Export surface unavailable.')
-    const { toPng } = await import('html-to-image')
-    return toPng(node, {
-      cacheBust: true,
-      pixelRatio: 2.5,
-      backgroundColor: '#070810',
-    })
-  }
-
-  async function handleDownload() {
+  async function handleExport(mode: 'share' | 'download') {
     try {
-      setBusy('download')
-      await waitForExportSurface()
-      const dataUrl = await buildImage()
-      const link = document.createElement('a')
-      link.href = dataUrl
-      link.download = safeFileName
-      link.click()
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  async function handleShare() {
-    try {
-      setBusy('share')
-      await waitForExportSurface()
-      const dataUrl = await buildImage()
-      const file = await dataUrlToFile(dataUrl, safeFileName)
-      if (
-        typeof navigator !== 'undefined' &&
-        'share' in navigator &&
-        'canShare' in navigator &&
-        navigator.canShare?.({ files: [file] })
-      ) {
-        await navigator.share({
-          title,
-          text: subtitle,
-          files: [file],
-        })
-        return
-      }
-      const link = document.createElement('a')
-      link.href = dataUrl
-      link.download = safeFileName
-      link.click()
+      setBusy(mode)
+      const artifact = await createPngExport({
+        resolveNode: () => exportRef.current,
+        fileName: safeFileName,
+        policy: aspect === 'landscape'
+          ? PNG_EXPORT_POLICIES.chartLandscape
+          : PNG_EXPORT_POLICIES.chartSquare,
+        backgroundColor: '#070810',
+      })
+      await handoffPngExport(artifact, {
+        mode,
+        title,
+        text: subtitle,
+      })
     } finally {
       setBusy(null)
     }
@@ -131,8 +95,8 @@ export function ChartShareCard({
     <>
       <ShareActions
         busy={busy}
-        onShare={handleShare}
-        onDownload={handleDownload}
+        onShare={() => handleExport('share')}
+        onDownload={() => handleExport('download')}
         onCopyLink={copyUrl ? handleCopyLink : undefined}
         compact={compact}
       />

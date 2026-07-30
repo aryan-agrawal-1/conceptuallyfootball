@@ -91,7 +91,7 @@ function ShareSecondaryButton({
       disabled={disabled}
       title={title}
       className={cn(
-        'relative flex items-center gap-1.5 border border-electric/15 text-[11px] font-medium uppercase tracking-[0.15em] text-ink-muted transition-colors hover:border-electric/40 hover:text-electric/80',
+        'relative flex items-center gap-1.5 border border-control-border text-[11px] font-medium uppercase tracking-[0.15em] text-control-fg transition-colors hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
         compact ? 'px-3 py-2' : 'px-4 py-2.5',
         disabled && 'pointer-events-none opacity-40',
       )}

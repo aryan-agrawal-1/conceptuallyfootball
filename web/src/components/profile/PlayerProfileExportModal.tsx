@@ -3,8 +3,14 @@ import { GripVertical, RotateCcw, X } from 'lucide-react'
 import { HudCornerMarks, HudPill } from '../hud/Hud'
 import { ProfilePizzaSvg } from './ProfilePizzaSection'
 import { ShareActions, type ShareActionBusy } from '../share/ShareActions'
+import {
+  createPngExport,
+  handoffPngExport,
+  PNG_EXPORT_POLICIES,
+  pngFileName,
+} from '../share/pngExport'
 import { formatValue } from '../../lib/format'
-import { getPercentileTextColor } from '../../lib/heatmap'
+import { getPercentileTextColor, metricSemanticColor } from '../../lib/heatmap'
 import {
   buildDefaultProfileExportPreset,
   curatedProfileMetricKeys,
@@ -28,7 +34,12 @@ import { getTeamLogoPath } from '../../lib/teamLogos'
 import { BRAND_DOMAIN, BRAND_NAME_UPPER, BRAND_SLUG } from '../../lib/brand'
 import { shortPlayerName } from '../../lib/entityLabels'
 import { cn } from '../../lib/utils'
-import type { GalaxyEdge, PlayerRow, StatMeta } from '../../types/api'
+import type {
+  GalaxyEdge,
+  MetricSemanticColor,
+  PlayerRow,
+  StatMeta,
+} from '../../types/api'
 
 interface PlayerProfileExportModalProps {
   player: PlayerRow
@@ -74,20 +85,6 @@ function layoutStatCap(): number {
 
 function notesLimit(chartEnabled: boolean): number {
   return chartEnabled ? 280 : 500
-}
-
-function dataUrlToFile(dataUrl: string, fileName: string): Promise<File> {
-  return fetch(dataUrl)
-    .then(res => res.blob())
-    .then(blob => new File([blob], fileName, { type: blob.type || 'image/png' }))
-}
-
-function slugify(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
 }
 
 function reorderTile(list: ProfileExportTile[], from: number, to: number): ProfileExportTile[] {
@@ -202,7 +199,13 @@ export function PlayerProfileExportModal({
           : null
   const canExport = !invalidReason && !busy
 
-  const fileName = `${BRAND_SLUG}-player-profile-${slugify(player.canonical_player_name)}-${slugify(player.season_label)}-${preset.theme}.png`
+  const fileName = pngFileName(
+    BRAND_SLUG,
+    'player-profile',
+    player.canonical_player_name,
+    player.season_label,
+    preset.theme,
+  )
 
   function updatePreset(next: Partial<ProfileExportPreset>) {
     setPreset(prev => ({ ...prev, ...next }))
@@ -252,56 +255,21 @@ export function PlayerProfileExportModal({
     })
   }
 
-  async function buildImage(): Promise<string> {
-    const node = exportRef.current
-    if (!node) throw new Error('Export surface unavailable.')
-    const { toPng } = await import('html-to-image')
-    return toPng(node, {
-      cacheBust: true,
-      pixelRatio: 2,
-      backgroundColor: preset.theme === 'boring' ? '#eef1f6' : '#070810',
-    })
-  }
-
-  async function handleDownload() {
+  async function handleExport(mode: 'share' | 'download') {
     if (!canExport) return
     try {
-      setBusy('download')
-      const dataUrl = await buildImage()
-      const link = document.createElement('a')
-      link.href = dataUrl
-      link.download = fileName
-      link.click()
-      persistExportPreset()
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  async function handleShare() {
-    if (!canExport) return
-    try {
-      setBusy('share')
-      const dataUrl = await buildImage()
-      const file = await dataUrlToFile(dataUrl, fileName)
-      if (
-        typeof navigator !== 'undefined' &&
-        'share' in navigator &&
-        'canShare' in navigator &&
-        navigator.canShare?.({ files: [file] })
-      ) {
-        await navigator.share({
-          title,
-          text: `${player.season_label} · ${player.canonical_team_name ?? 'No club'} profile`,
-          files: [file],
-        })
-        persistExportPreset()
-        return
-      }
-      const link = document.createElement('a')
-      link.href = dataUrl
-      link.download = fileName
-      link.click()
+      setBusy(mode)
+      const artifact = await createPngExport({
+        resolveNode: () => exportRef.current,
+        fileName,
+        policy: PNG_EXPORT_POLICIES.playerCard,
+        backgroundColor: preset.theme === 'boring' ? '#eef1f6' : '#070810',
+      })
+      await handoffPngExport(artifact, {
+        mode,
+        title,
+        text: `${player.season_label} · ${player.canonical_team_name ?? 'No club'} profile`,
+      })
       persistExportPreset()
     } finally {
       setBusy(null)
@@ -322,7 +290,7 @@ export function PlayerProfileExportModal({
           <button
             type="button"
             onClick={onClose}
-            className="grid size-9 shrink-0 place-items-center border border-electric/20 text-ink-muted transition-colors hover:border-electric/50 hover:text-electric"
+            className="grid size-9 shrink-0 place-items-center border border-control-border text-control-fg transition-colors hover:border-electric hover:text-control-fg-hover active:bg-electric/10"
             aria-label="Close export modal"
           >
             <X size={17} />
@@ -405,7 +373,7 @@ export function PlayerProfileExportModal({
                     >
                       <button
                         type="button"
-                        className="grid size-8 cursor-grab place-items-center border border-electric/15 text-ink-muted active:cursor-grabbing"
+                        className="grid size-8 cursor-grab place-items-center border border-control-border text-control-fg active:cursor-grabbing active:bg-electric/10"
                         aria-label="Drag to reorder stat"
                       >
                         <GripVertical size={14} />
@@ -425,7 +393,7 @@ export function PlayerProfileExportModal({
                       <button
                         type="button"
                         onClick={() => removeStat(tile.key)}
-                        className="grid size-7 place-items-center border border-electric/15 text-ink-muted transition-colors hover:border-ember/50 hover:text-ember"
+                        className="grid size-7 place-items-center border border-control-border text-control-fg transition-colors hover:border-ember hover:text-ember active:bg-ember/10"
                         aria-label="Remove stat"
                       >
                         <X size={13} />
@@ -545,7 +513,7 @@ export function PlayerProfileExportModal({
                 <button
                   type="button"
                   onClick={resetDefaults}
-                  className="flex items-center gap-1.5 border border-electric/15 px-3 py-2 text-[11px] uppercase tracking-[0.15em] text-ink-muted transition-colors hover:border-electric/40 hover:text-electric"
+                  className="flex items-center gap-1.5 border border-control-border px-3 py-2 text-[11px] uppercase tracking-[0.15em] text-control-fg transition-colors hover:border-electric hover:text-control-fg-hover active:bg-electric/10"
                 >
                   <RotateCcw size={14} />
                   Reset defaults
@@ -554,8 +522,8 @@ export function PlayerProfileExportModal({
                   busy={busy}
                   disabled={!canExport}
                   disabledReason={invalidReason}
-                  onShare={handleShare}
-                  onDownload={handleDownload}
+                  onShare={() => handleExport('share')}
+                  onDownload={() => handleExport('download')}
                 />
               </div>
             </div>
@@ -821,6 +789,7 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
                 tile={tile}
                 theme={preset.theme}
                 showPercentile={preset.showPercentiles && !rawOnly}
+                semanticColor={metricSemanticColor(meta.metrics[tile.key])}
               />
             ))}
           </section>
@@ -998,13 +967,18 @@ function ExportStatTile({
   tile,
   theme,
   showPercentile,
+  semanticColor,
 }: {
   tile: ResolvedTile
   theme: ProfileExportTheme
   showPercentile: boolean
+  semanticColor: MetricSemanticColor
 }) {
   const style = surfaceTheme(theme)
-  const pctColor = tile.percentile != null ? getPercentileTextColor(tile.percentile) : style.muted
+  const pctColor =
+    tile.percentile != null
+      ? getPercentileTextColor(tile.percentile, semanticColor)
+      : style.muted
   return (
     <article
       className="relative min-h-[138px] border p-5"
