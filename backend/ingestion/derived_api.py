@@ -17,6 +17,7 @@ from ingestion.api_cache import (
 from ingestion.derived_definitions import (
     FORMULA_VERSION,
     LIST_SORT_FIELDS,
+    METRIC_META_CACHE_VERSION,
     METRIC_DEFINITIONS,
     METRIC_FIELDS,
     METRIC_GROUPS,
@@ -294,6 +295,7 @@ class DerivedPlayerSeasonListApi(APIView):
         )
         source_version = joined_version(
             "derived-list",
+            METRIC_META_CACHE_VERSION,
             SCOPE_PERCENTILES_CACHE_VERSION,
             model_version(PlayerSeasonDerivedStats, {"is_current": True}),
         )
@@ -371,6 +373,7 @@ class DerivedPlayerSeasonDetailApi(APIView):
         )
         source_version = joined_version(
             "derived-detail",
+            METRIC_META_CACHE_VERSION,
             SCOPE_PERCENTILES_CACHE_VERSION,
             model_version(PlayerSeasonDerivedStats, {"is_current": True}),
         )

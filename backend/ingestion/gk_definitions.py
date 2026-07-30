@@ -123,6 +123,18 @@ GK_METRIC_DEFINITIONS: dict[str, dict] = {
     },
 }
 
+CONTEXTUAL_GK_SEMANTIC_COLOR_METRICS = {
+    "runs_out",
+    "runs_out_per_90",
+}
+
+for metric_key, metric_definition in GK_METRIC_DEFINITIONS.items():
+    metric_definition["semantic_color"] = (
+        "contextual"
+        if metric_key in CONTEXTUAL_GK_SEMANTIC_COLOR_METRICS
+        else "positive"
+    )
+
 GK_METRIC_FIELDS = list(GK_METRIC_DEFINITIONS.keys())
 
 # Appearances has no percentile column in the model.

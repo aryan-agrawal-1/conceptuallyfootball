@@ -15,6 +15,7 @@ import { formatValue } from '../../lib/format'
 import {
   getHeatmapStyle,
   getMinutesHeatRangeFromPlayers,
+  metricSemanticColor,
   minutesHeatPercentileFromRange,
 } from '../../lib/heatmap'
 import { getTeamLogoPath } from '../../lib/teamLogos'
@@ -44,7 +45,7 @@ import { logMatrixPerfPhases } from '../../lib/perfDebug'
 import { playerNameTitle, shortPlayerName } from '../../lib/entityLabels'
 import { MatrixDisplayContext, useMatrixDisplay, type MatrixVariant } from './MatrixDisplayContext'
 import { useMatrixHeaderTooltip } from './MatrixHeaderTooltipPortal'
-import type { PlayerRow, PositionGroup } from '../../types/api'
+import type { MetricDefinition, PlayerRow, PositionGroup } from '../../types/api'
 
 const POSITION_COLORS: Record<PositionGroup, string> = {
   FWD: '#F05A28',
@@ -267,15 +268,21 @@ function MetricMatrixCell({
   value,
   percentilesEligible,
   percentile,
+  metricDefinition,
 }: {
   unit: ColumnUnit
   value: number | null
   percentilesEligible: boolean
   percentile: number | null | undefined
+  metricDefinition?: MetricDefinition
 }) {
   const { heatmapEnabled } = useMatrixDisplay()
   const p = percentilesEligible ? (percentile ?? null) : null
-  const hStyle = getHeatmapStyle(p, heatmapEnabled)
+  const hStyle = getHeatmapStyle(
+    p,
+    heatmapEnabled,
+    metricSemanticColor(metricDefinition),
+  )
   return <StatCellBody hStyle={hStyle}>{formatValue(value, unit)}</StatCellBody>
 }
 
@@ -285,6 +292,7 @@ function buildTableColumns(
   rateMode: MatrixRateMode,
   cohortMaps: Map<string, Map<number, number>>,
   resolveMetricFn: (row: PlayerRow, columnId: string, rateMode: MatrixRateMode) => ResolvedMatrixMetric,
+  metricDefinitions: Record<string, MetricDefinition>,
 ): ColumnDef<PlayerRow, unknown>[] {
   return columnGroups.flatMap(group => {
     const visibleGroupCols = group.cols.filter(c => visibleCols[c.id])
@@ -294,7 +302,13 @@ function buildTableColumns(
       header: group.label.toUpperCase(),
       columns: visibleGroupCols.map((col): ColumnDef<PlayerRow, unknown> => {
         if (col.isMeta) return buildMetaColumn(col)
-        return buildMetricColumn(col, rateMode, cohortMaps, resolveMetricFn)
+        return buildMetricColumn(
+          col,
+          rateMode,
+          cohortMaps,
+          resolveMetricFn,
+          metricDefinitions,
+        )
       }),
     }]
   })
@@ -420,6 +434,7 @@ function buildMetricColumn(
   rateMode: MatrixRateMode,
   cohortMaps: Map<string, Map<number, number>>,
   resolveMetricFn: (row: PlayerRow, columnId: string, rateMode: MatrixRateMode) => ResolvedMatrixMetric,
+  metricDefinitions: Record<string, MetricDefinition>,
 ): ColumnDef<PlayerRow, unknown> {
   return helper.accessor(
     row => resolveMetricFn(row, col.id, rateMode).value,
@@ -448,6 +463,7 @@ function buildMetricColumn(
             value={resolved.value}
             percentilesEligible={row.eligibility.percentiles_eligible}
             percentile={percentile}
+            metricDefinition={metricDefinitions[col.id]}
           />
         )
       },
@@ -469,6 +485,7 @@ interface MatrixTableProps {
   scrollParentRef?: RefObject<HTMLDivElement | null>
   /** Outfield stat matrix vs goalkeeper-only columns and metrics. */
   variant?: MatrixVariant
+  metricDefinitions?: Record<string, MetricDefinition>
 }
 
 export function MatrixTable({
@@ -481,6 +498,7 @@ export function MatrixTable({
   onSortingChange,
   scrollParentRef,
   variant = 'outfield',
+  metricDefinitions = {},
 }: MatrixTableProps) {
   const navigate = useNavigate()
   const sortInteractionStartRef = useRef<number | null>(null)
@@ -562,8 +580,15 @@ export function MatrixTable({
 
   const columns = useMemo(
     () =>
-      buildTableColumns(columnGroups, visibleCols, rateMode, cohortMaps, resolveMetricFn),
-    [columnGroups, visibleCols, rateMode, cohortMaps, resolveMetricFn],
+      buildTableColumns(
+        columnGroups,
+        visibleCols,
+        rateMode,
+        cohortMaps,
+        resolveMetricFn,
+        metricDefinitions,
+      ),
+    [columnGroups, visibleCols, rateMode, cohortMaps, resolveMetricFn, metricDefinitions],
   )
 
   const sortedPlayers = useMemo(() => {

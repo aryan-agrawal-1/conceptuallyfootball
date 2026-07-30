@@ -6,7 +6,7 @@ import type { MatrixFilters, PositionGroup } from '../../types/api'
 import type { ColGroupDef } from '../../lib/columns'
 import type { MatrixRateMode } from '../../lib/matrixRateMode'
 import type { MatrixStarterView } from '../../lib/matrixStarterViews'
-import { HEATMAP_GRADIENT_CSS } from '../../lib/heatmap'
+import { heatmapGradientCss } from '../../lib/heatmap'
 import { HudCornerMarks, HudVSep } from '../hud/Hud'
 
 const POSITIONS: { value: PositionGroup | ''; label: string }[] = [
@@ -168,7 +168,7 @@ export function FilterBar({
             to={createChartHref}
             className={cn(
               'relative flex shrink-0 items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border',
-              'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
+              'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
             )}
           >
             <BarChart3 size={13} />
@@ -262,7 +262,7 @@ function FilterDropdown({
           'relative flex min-w-[116px] items-center justify-between gap-2 border px-2.5 py-1.5 text-[11px] font-medium uppercase tracking-[0.14em] transition-colors',
           open
             ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
-            : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
+            : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
           mono && 'font-mono',
         )}
       >
@@ -350,7 +350,7 @@ function RateModeButton({
         'px-2.5 py-1 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors',
         active
           ? 'bg-electric/15 text-electric shadow-[inset_0_0_12px_-4px_rgba(74,158,245,0.6)]'
-          : 'text-ink-muted hover:text-electric/80',
+          : 'text-control-fg hover:text-control-fg-hover',
       )}
     >
       {children}
@@ -376,7 +376,7 @@ function HeatmapToggle({
         'relative flex items-center gap-2 px-3 py-1.5 border text-[11px] font-medium tracking-[0.15em] uppercase transition-colors',
         enabled
           ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
-          : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
+          : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
       )}
     >
       {enabled && <HudCornerMarks size="size-1" />}
@@ -393,13 +393,32 @@ function HeatmapToggle({
 
 function HeatmapLegend() {
   return (
-    <div className="hidden shrink-0 items-center gap-1.5 text-[9px] font-medium uppercase tracking-[0.18em] text-ink-dim xl:flex">
-      <span>Low</span>
-      <span
-        className="h-1.5 w-16 border border-electric/20"
-        style={{ background: HEATMAP_GRADIENT_CSS }}
-      />
-      <span>High</span>
+    <div
+      className="hidden shrink-0 items-center gap-2 text-[9px] font-medium uppercase tracking-[0.15em] text-ink-dim xl:flex"
+      title="Positive metrics run low to high. Negative metrics reverse the evaluative colours. Contextual metrics use a neutral scale."
+    >
+      <span>Colour key</span>
+      <span className="flex items-center gap-1">
+        <span
+          className="h-1.5 w-10 border border-electric/20"
+          style={{ background: heatmapGradientCss('positive') }}
+        />
+        <span>↑ positive</span>
+      </span>
+      <span className="flex items-center gap-1">
+        <span
+          className="h-1.5 w-10 border border-electric/20"
+          style={{ background: heatmapGradientCss('negative') }}
+        />
+        <span>↓ reversed</span>
+      </span>
+      <span className="flex items-center gap-1">
+        <span
+          className="h-1.5 w-10 border border-electric/20"
+          style={{ background: heatmapGradientCss('contextual') }}
+        />
+        <span>≈ contextual</span>
+      </span>
     </div>
   )
 }
@@ -450,7 +469,7 @@ function TeamPicker({
           'relative flex items-center gap-1.5 px-3 py-1 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border',
           selectedCount > 0
             ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
-            : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
+            : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
         )}
       >
         {selectedCount > 0 && <HudCornerMarks size="size-1" />}
@@ -579,7 +598,7 @@ function ColumnsDropdown({
           'relative flex items-center gap-1.5 px-3 py-1.5 border text-[11px] font-medium tracking-[0.15em] uppercase transition-colors',
           open
             ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
-            : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
+            : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
         )}
       >
         {open && <HudCornerMarks size="size-1" />}
@@ -677,7 +696,7 @@ function ColumnPicker({
                     ? 'border-electric/40 bg-electric/10 text-electric'
                     : someVisible
                       ? 'border-electric/20 bg-electric/5 text-ink-dim'
-                      : 'border-transparent text-ink-muted hover:bg-electric/5 hover:text-ink-dim',
+                      : 'border-transparent text-control-fg hover:bg-electric/5 hover:text-control-fg-hover',
                 )}
               >
                 <span>{group.label}</span>
