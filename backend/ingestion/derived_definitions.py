@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 FORMULA_VERSION = "v3"
+METRIC_META_CACHE_VERSION = "metric-meta-v2"
 MIN_ELIGIBLE_MINUTES = 450
 CORE_METRIC_MIN_COVERAGE = 0.8
 STYLE_METRIC_MIN_COVERAGE = 0.7
@@ -433,6 +434,30 @@ METRIC_DEFINITIONS: dict[str, dict] = {
         "availability_note": "Null when total passes is zero or missing.",
     },
 }
+
+NEGATIVE_SEMANTIC_COLOR_METRICS = {
+    "fouls",
+    "fouls_per_90",
+    "errors_lead_to_goal_per_90",
+    "inaccurate_pass_rate",
+    "shots_off_target",
+    "offsides",
+    "offsides_per_90",
+}
+
+CONTEXTUAL_SEMANTIC_COLOR_METRICS = {
+    "clearances_per_90",
+    "blocks_per_90",
+    "defensive_action_density",
+}
+
+for metric_key, metric_definition in METRIC_DEFINITIONS.items():
+    if metric_key in NEGATIVE_SEMANTIC_COLOR_METRICS:
+        metric_definition["semantic_color"] = "negative"
+    elif metric_key in CONTEXTUAL_SEMANTIC_COLOR_METRICS:
+        metric_definition["semantic_color"] = "contextual"
+    else:
+        metric_definition["semantic_color"] = "positive"
 
 METRIC_FIELDS = list(METRIC_DEFINITIONS.keys())
 PERCENTILE_FIELDS = [f"{metric}_percentile" for metric in METRIC_FIELDS]

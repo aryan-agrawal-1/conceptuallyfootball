@@ -1,12 +1,11 @@
 import { useRef, useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
-import { BarChart3, Search, ChevronDown, X, Loader2 } from 'lucide-react'
+import { Search, ChevronDown, X, Loader2 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { MatrixFilters, PositionGroup } from '../../types/api'
 import type { ColGroupDef } from '../../lib/columns'
 import type { MatrixRateMode } from '../../lib/matrixRateMode'
 import type { MatrixStarterView } from '../../lib/matrixStarterViews'
-import { HEATMAP_GRADIENT_CSS } from '../../lib/heatmap'
+import { heatmapGradientCss } from '../../lib/heatmap'
 import { HudCornerMarks, HudVSep } from '../hud/Hud'
 
 const POSITIONS: { value: PositionGroup | ''; label: string }[] = [
@@ -42,8 +41,6 @@ interface FilterBarProps {
   totalCount: number
   /** True while a new matrix request is in flight but stale rows are still shown. */
   refetching?: boolean
-  /** Hand off current cohort to Create Charts. */
-  createChartHref?: string | null
   starterViews: MatrixStarterView[]
   activeStarterViewId: string | null
   onStarterViewApply: (view: MatrixStarterView) => void
@@ -63,7 +60,6 @@ export function FilterBar({
   playerCount,
   totalCount,
   refetching = false,
-  createChartHref = null,
   starterViews,
   activeStarterViewId,
   onStarterViewApply,
@@ -158,24 +154,7 @@ export function FilterBar({
           onFiltersChange({ min_minutes: Number(mins) })
           setMinutesOpen(false)
         }}
-        mono
       />
-
-      {createChartHref && (
-        <>
-          <HudVSep className="hidden lg:block" />
-          <Link
-            to={createChartHref}
-            className={cn(
-              'relative flex shrink-0 items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border',
-              'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
-            )}
-          >
-            <BarChart3 size={13} />
-            Create Chart
-          </Link>
-        </>
-      )}
 
       <div className="hidden flex-1 lg:block" />
 
@@ -239,7 +218,6 @@ function FilterDropdown({
   onOpenChange,
   options,
   onSelect,
-  mono = false,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>
   label: string
@@ -248,7 +226,6 @@ function FilterDropdown({
   onOpenChange: (open: boolean) => void
   options: Array<{ value: string; label: string }>
   onSelect: (value: string) => void
-  mono?: boolean
 }) {
   return (
     <div ref={containerRef} className="relative shrink-0">
@@ -259,15 +236,14 @@ function FilterDropdown({
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
         className={cn(
-          'relative flex min-w-[116px] items-center justify-between gap-2 border px-2.5 py-1.5 text-[11px] font-medium uppercase tracking-[0.14em] transition-colors',
+          'relative flex h-8 min-w-[116px] items-center justify-between gap-2 border px-2.5 text-[11px] font-medium uppercase tracking-[0.14em] transition-colors',
           open
             ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
-            : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
-          mono && 'font-mono',
+            : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
         )}
       >
         {open && <HudCornerMarks size="size-1" />}
-        <span className="text-electric/45">{label}</span>
+        <span className="text-control-fg">{label}</span>
         <span className={cn('text-ink', open && 'text-electric')}>{value}</span>
         <ChevronDown size={11} className={cn('transition-transform', open && 'rotate-180')} />
       </button>
@@ -285,7 +261,6 @@ function FilterDropdown({
                   onClick={() => onSelect(option.value)}
                   className={cn(
                     'w-full border px-3 py-2 text-left text-[11px] uppercase tracking-[0.15em] transition-colors',
-                    mono && 'font-mono',
                     active
                       ? 'border-electric/40 bg-electric/10 text-electric'
                       : 'border-transparent text-ink-dim hover:bg-electric/5 hover:text-ink',
@@ -312,7 +287,7 @@ function RateModeToggle({
 }) {
   return (
     <div
-      className="relative flex items-center border border-electric/30 bg-mat/60 overflow-hidden shrink-0"
+      className="relative flex h-8 shrink-0 items-center overflow-hidden border border-electric/30 bg-mat/60"
       role="group"
       aria-label="Stat rate display"
     >
@@ -347,10 +322,10 @@ function RateModeButton({
       type="button"
       onClick={onClick}
       className={cn(
-        'px-2.5 py-1 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors',
+        'h-full px-2.5 text-[11px] font-medium uppercase tracking-[0.15em] transition-colors',
         active
           ? 'bg-electric/15 text-electric shadow-[inset_0_0_12px_-4px_rgba(74,158,245,0.6)]'
-          : 'text-ink-muted hover:text-electric/80',
+          : 'text-control-fg hover:text-control-fg-hover',
       )}
     >
       {children}
@@ -373,10 +348,10 @@ function HeatmapToggle({
       aria-pressed={enabled}
       onClick={onToggle}
       className={cn(
-        'relative flex items-center gap-2 px-3 py-1.5 border text-[11px] font-medium tracking-[0.15em] uppercase transition-colors',
+        'relative flex h-8 items-center gap-2 border px-3 text-[11px] font-medium uppercase tracking-[0.15em] transition-colors',
         enabled
           ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
-          : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
+          : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
       )}
     >
       {enabled && <HudCornerMarks size="size-1" />}
@@ -392,14 +367,42 @@ function HeatmapToggle({
 }
 
 function HeatmapLegend() {
+  const description =
+    'Purple to green: purple marks negative performance and green marks positive performance. Gray is used for contextual statistics.'
+
   return (
-    <div className="hidden shrink-0 items-center gap-1.5 text-[9px] font-medium uppercase tracking-[0.18em] text-ink-dim xl:flex">
-      <span>Low</span>
+    <div
+      className="group relative hidden shrink-0 cursor-help grid-cols-[auto_auto] items-center gap-x-1.5 gap-y-0.5 text-[9px] font-medium uppercase tracking-[0.15em] text-control-fg outline-none xl:grid"
+      tabIndex={0}
+      aria-label={`Colour key. ${description}`}
+      aria-describedby="matrix-colour-key-description"
+    >
       <span
-        className="h-1.5 w-16 border border-electric/20"
-        style={{ background: HEATMAP_GRADIENT_CSS }}
+        className="h-1.5 w-12 border border-electric/25"
+        style={{ background: heatmapGradientCss('positive') }}
+        aria-hidden
       />
-      <span>High</span>
+      <span aria-hidden>↑</span>
+      <span
+        className="h-1.5 w-12 border border-control-border/60"
+        style={{ background: heatmapGradientCss('contextual') }}
+        aria-hidden
+      />
+      <span aria-hidden>≈</span>
+      <span
+        id="matrix-colour-key-description"
+        role="tooltip"
+        className="pointer-events-none absolute right-0 top-[calc(100%+10px)] z-50 w-72 border border-electric/35 bg-overlay/95 px-3 py-2 text-left text-[10px] font-normal normal-case leading-relaxed tracking-normal text-ink opacity-0 shadow-[0_16px_36px_-12px_rgba(0,0,0,0.85)] backdrop-blur-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+      >
+        <span className="block">
+          <span className="font-medium text-control-fg-hover">Purple → green:</span>{' '}
+          purple marks negative performance and green marks positive performance.
+        </span>
+        <span className="mt-1 block">
+          <span className="font-medium text-control-fg-hover">Gray:</span> used for
+          contextual statistics.
+        </span>
+      </span>
     </div>
   )
 }
@@ -447,10 +450,10 @@ function TeamPicker({
       <button
         onClick={() => onOpenChange(!open)}
         className={cn(
-          'relative flex items-center gap-1.5 px-3 py-1 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border',
+          'relative flex h-8 items-center gap-1.5 border px-3 text-[11px] font-medium uppercase tracking-[0.15em] transition-colors',
           selectedCount > 0
             ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
-            : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
+            : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
         )}
       >
         {selectedCount > 0 && <HudCornerMarks size="size-1" />}
@@ -478,7 +481,7 @@ function TeamPicker({
                 value={search}
                 onChange={e => onSearchChange(e.target.value)}
                 placeholder="Search club..."
-                className="min-w-0 flex-1 bg-transparent text-[16px] tracking-wide text-ink outline-none placeholder:text-electric/30 lg:text-[11px]"
+                className="min-w-0 flex-1 bg-transparent text-[16px] tracking-wide text-ink outline-none placeholder:text-control-fg lg:text-[11px]"
               />
               {search && (
                 <button
@@ -536,7 +539,7 @@ function TeamPicker({
               )
             })}
             {filteredTeams.length === 0 && (
-              <p className="px-3 py-3 text-[11px] text-electric/40 text-center uppercase tracking-[0.2em]">
+              <p className="px-3 py-3 text-center text-[11px] uppercase tracking-[0.2em] text-control-fg">
                 No clubs found
               </p>
             )}
@@ -576,10 +579,10 @@ function ColumnsDropdown({
       <button
         onClick={() => onOpenChange(!open)}
         className={cn(
-          'relative flex items-center gap-1.5 px-3 py-1.5 border text-[11px] font-medium tracking-[0.15em] uppercase transition-colors',
+          'relative flex h-8 items-center gap-1.5 border px-3 text-[11px] font-medium uppercase tracking-[0.15em] transition-colors',
           open
             ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
-            : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
+            : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
         )}
       >
         {open && <HudCornerMarks size="size-1" />}
@@ -677,7 +680,7 @@ function ColumnPicker({
                     ? 'border-electric/40 bg-electric/10 text-electric'
                     : someVisible
                       ? 'border-electric/20 bg-electric/5 text-ink-dim'
-                      : 'border-transparent text-ink-muted hover:bg-electric/5 hover:text-ink-dim',
+                      : 'border-transparent text-control-fg hover:bg-electric/5 hover:text-control-fg-hover',
                 )}
               >
                 <span>{group.label}</span>

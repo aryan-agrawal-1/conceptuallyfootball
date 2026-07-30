@@ -48,14 +48,95 @@ export function toLabPosition(p: PositionGroup | string | undefined): LabPositio
   return null
 }
 
+const RECOMMENDED_PREDICTOR_COUNT = 5
+
+/** All raw metrics that can appear as predictors in packs (subset of known API metrics). */
+export const PREDICTOR_METRIC_POOL: string[] = [
+  'xg_per_90',
+  'npxg_per_90',
+  'shots_per_90',
+  'npxg_per_shot',
+  'goals_per_90',
+  'assists_per_90',
+  'goals_minus_npxg',
+  'goals_minus_xg',
+  'xa_per_90',
+  'xgchain_per_90',
+  'xgbuildup_per_90',
+  'buildup_share',
+  'key_passes_per_90',
+  'big_chances_created_per_90',
+  'successful_dribbles_per_90',
+  'chance_involvement_per_90',
+  'completed_passes_per_90',
+  'pass_accuracy',
+  'accurate_long_balls_per_90',
+  'accurate_crosses_per_90',
+  'tackles_per_90',
+  'interceptions_per_90',
+  'clearances_per_90',
+  'blocks_per_90',
+  'defensive_action_density',
+  'ball_recoveries_per_90',
+  'tackles_won_percentage',
+  'ground_duels_won_per_90',
+  'aerial_duels_won_per_90',
+  'fouls_per_90',
+  'errors_lead_to_goal_per_90',
+  'offsides_per_90',
+  'sot_rate',
+  'inaccurate_pass_rate',
+  'kp_share_per90',
+]
+
+/**
+ * Canonicalise predictor input while preserving its first-seen order.
+ *
+ * This is the shared frontend boundary for the target-leakage invariant.
+ */
+export function sanitizePredictorsForTarget(
+  targetKey: string | undefined,
+  predictorKeys: Iterable<string> | undefined,
+): string[] {
+  if (!predictorKeys) return []
+  const canonicalTarget = targetKey?.trim()
+  const seen = new Set<string>()
+  const sanitized: string[] = []
+  for (const rawKey of predictorKeys) {
+    const key = rawKey.trim()
+    if (!key || key === canonicalTarget || seen.has(key)) continue
+    seen.add(key)
+    sanitized.push(key)
+  }
+  return sanitized
+}
+
+export function hasTargetPredictorLeakage(
+  targetKey: string | undefined,
+  predictorKeys: Iterable<string>,
+): boolean {
+  const canonicalTarget = targetKey?.trim()
+  if (!canonicalTarget) return false
+  for (const rawKey of predictorKeys) {
+    if (rawKey.trim() === canonicalTarget) return true
+  }
+  return false
+}
+
+export function isPredictorSelectableForTarget(
+  targetKey: string | undefined,
+  predictorKey: string,
+): boolean {
+  const canonicalTarget = targetKey?.trim()
+  return !canonicalTarget || predictorKey.trim() !== canonicalTarget
+}
+
 /** Target-specific default predictors (raw metrics only). */
 export function recommendedPredictorsForTarget(
   targetKey: string,
   position: LabPosition,
   availableKeys?: Iterable<string>,
 ): string[] {
-  void position
-  const available = availableKeys ? new Set(availableKeys) : null
   const fwdAttack = ['shots_per_90', 'npxg_per_shot', 'key_passes_per_90', 'xgchain_per_90', 'chance_involvement_per_90']
   const midCreate = [
     'key_passes_per_90',
@@ -100,60 +181,42 @@ export function recommendedPredictorsForTarget(
     ball_recoveries_per_90: ['tackles_per_90', 'interceptions_per_90', 'pass_accuracy', 'ground_duels_won_per_90'],
   }
 
-  const pack = byTarget[targetKey]
-  const base = pack ?? midCreate
-  if (!available) return [...base]
-  const filtered = base.filter(key => available.has(key))
-  if (filtered.length >= 2) return filtered
-  const filteredSet = new Set(filtered)
-  for (const key of available) {
-    if (!filteredSet.has(key) && key !== targetKey) {
-      filtered.push(key)
-      filteredSet.add(key)
-    }
-    if (filtered.length >= 5) break
+  const positionFallback = position === 'FWD' ? fwdAttack : position === 'DEF' ? defProg : midCreate
+  const available = availableKeys
+    ? new Set(sanitizePredictorsForTarget(targetKey, availableKeys))
+    : null
+  const base = sanitizePredictorsForTarget(targetKey, byTarget[targetKey] ?? positionFallback)
+  const candidates = sanitizePredictorsForTarget(targetKey, [
+    ...base,
+    ...positionFallback,
+    ...(available ? available : PREDICTOR_METRIC_POOL),
+  ])
+  const recommendations: string[] = []
+  for (const key of candidates) {
+    if (available && !available.has(key)) continue
+    recommendations.push(key)
+    if (recommendations.length >= RECOMMENDED_PREDICTOR_COUNT) break
   }
-  return filtered
+  return recommendations
 }
 
-/** All raw metrics that can appear as predictors in packs (subset of known API metrics). */
-export const PREDICTOR_METRIC_POOL: string[] = [
-  'xg_per_90',
-  'npxg_per_90',
-  'shots_per_90',
-  'npxg_per_shot',
-  'goals_per_90',
-  'assists_per_90',
-  'goals_minus_npxg',
-  'goals_minus_xg',
-  'xa_per_90',
-  'xgchain_per_90',
-  'xgbuildup_per_90',
-  'buildup_share',
-  'key_passes_per_90',
-  'big_chances_created_per_90',
-  'successful_dribbles_per_90',
-  'chance_involvement_per_90',
-  'completed_passes_per_90',
-  'pass_accuracy',
-  'accurate_long_balls_per_90',
-  'accurate_crosses_per_90',
-  'tackles_per_90',
-  'interceptions_per_90',
-  'clearances_per_90',
-  'blocks_per_90',
-  'defensive_action_density',
-  'ball_recoveries_per_90',
-  'tackles_won_percentage',
-  'ground_duels_won_per_90',
-  'aerial_duels_won_per_90',
-  'fouls_per_90',
-  'errors_lead_to_goal_per_90',
-  'offsides_per_90',
-  'sot_rate',
-  'inaccurate_pass_rate',
-  'kp_share_per90',
-]
+export function predictorsForTargetChange(
+  targetKey: string,
+  position: LabPosition,
+  currentPredictorKeys: Iterable<string>,
+  preserveCurrent: boolean,
+  availableKeys?: Iterable<string>,
+): string[] {
+  const available = availableKeys ? new Set(availableKeys) : null
+  const retained = preserveCurrent
+    ? sanitizePredictorsForTarget(targetKey, currentPredictorKeys).filter(
+        key => !available || available.has(key),
+      )
+    : []
+  return retained.length
+    ? retained
+    : recommendedPredictorsForTarget(targetKey, position, availableKeys)
+}
 
 const PREDICTOR_GROUP_ORDER = ['attack', 'volume', 'defending', 'efficiency_style'] as const
 const PREDICTOR_GROUP_ORDER_SET = new Set<string>(PREDICTOR_GROUP_ORDER)

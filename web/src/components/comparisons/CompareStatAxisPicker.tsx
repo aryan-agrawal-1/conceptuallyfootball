@@ -59,7 +59,7 @@ export function CompareStatAxisPicker({
                   'border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.15em] transition-colors',
                   active
                     ? 'border-electric bg-electric/15 text-electric'
-                    : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
+                    : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
                 )}
               >
                 {pack.label}
@@ -164,7 +164,7 @@ function CompareStatAddDropdown({
         className={cn(
           'relative w-full flex items-center justify-between gap-2 px-3 py-2 border text-[11px] uppercase tracking-[0.15em]',
           disabled
-            ? 'border-line text-ink-muted opacity-50 cursor-not-allowed'
+            ? 'border-line-bright/40 bg-raised/35 text-control-disabled opacity-60 cursor-not-allowed'
             : 'border-electric/25 text-electric/90 hover:bg-electric/5',
         )}
       >

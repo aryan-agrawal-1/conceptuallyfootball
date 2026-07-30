@@ -131,7 +131,11 @@ export interface MetricDefinition {
   description: string
   caveat: string
   availability_note?: string
+  /** How a percentile should be interpreted visually; positive is the default. */
+  semantic_color?: MetricSemanticColor
 }
+
+export type MetricSemanticColor = 'positive' | 'negative' | 'contextual'
 
 interface ScoreDefinition {
   label: string

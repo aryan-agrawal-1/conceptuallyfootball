@@ -28,7 +28,7 @@ export function ProfileRateToggle({
           'px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors',
           value === 'per90'
             ? 'bg-electric/15 text-electric shadow-[inset_0_0_12px_-4px_rgba(74,158,245,0.6)]'
-            : 'text-ink-muted hover:text-electric/80',
+            : 'text-control-fg hover:text-control-fg-hover',
         )}
         onClick={() => onChange('per90')}
       >
@@ -41,7 +41,7 @@ export function ProfileRateToggle({
           'px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors',
           value === 'full'
             ? 'bg-electric/15 text-electric shadow-[inset_0_0_12px_-4px_rgba(74,158,245,0.6)]'
-            : 'text-ink-muted hover:text-electric/80',
+            : 'text-control-fg hover:text-control-fg-hover',
         )}
         onClick={() => onChange('full')}
       >

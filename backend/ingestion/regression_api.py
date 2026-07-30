@@ -70,6 +70,11 @@ class RegressionLabFitApi(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         predictor_keys = [k.strip() for k in predictor_keys]
+        if target_key in predictor_keys:
+            return Response(
+                {"detail": f"Target metric '{target_key}' cannot also be used as a predictor."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
             from ingestion.regression_service import fit_player_regression

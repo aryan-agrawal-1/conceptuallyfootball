@@ -4,7 +4,7 @@ import { scaleLinear } from 'd3-scale'
 import { ChevronDown, X } from 'lucide-react'
 import { HudCornerMarks, HudFrame } from '../hud/Hud'
 import { formatValue } from '../../lib/format'
-import type { PlayerRow, StatMeta } from '../../types/api'
+import type { MetricSemanticColor, PlayerRow, StatMeta } from '../../types/api'
 import {
   PIZZA_SLICE_MIN,
   PIZZA_SLICE_SOFT_MAX,
@@ -17,7 +17,11 @@ import {
 } from '../../lib/profileMetrics'
 import { loadPizzaMetricKeys, savePizzaMetricKeys } from '../../lib/profilePizzaStorage'
 import { BRAND_LOGO_URL } from '../../lib/brand'
-import { getPercentileTextColor } from '../../lib/heatmap'
+import {
+  getPercentileTextColor,
+  metricSemanticColor,
+  semanticColorDescription,
+} from '../../lib/heatmap'
 import { shortPlayerName } from '../../lib/entityLabels'
 import { cn } from '../../lib/utils'
 import { ChartShareCard } from '../visualizer/ChartShareCard'
@@ -61,7 +65,7 @@ function ProfilePizzaSectionInner({ player, rateMode, meta, percentileMap = play
           return resolved.value != null
         },
       ),
-    [keys, meta, player, rateMode],
+    [keys, meta, percentileMap, player, rateMode],
   )
 
   const usableKeySet = useMemo(() => {
@@ -72,7 +76,7 @@ function ProfilePizzaSectionInner({ player, rateMode, meta, percentileMap = play
       if (resolved.value != null) out.add(key)
     }
     return out
-  }, [meta, player, rateMode])
+  }, [meta, percentileMap, player, rateMode])
 
   const sectionOrder = useMemo(() => Object.keys(meta.metric_groups), [meta.metric_groups])
 
@@ -207,6 +211,7 @@ export function ProfilePizzaSvg({
   const [tip, setTip] = useState<{
     label: string
     percentile: number | null
+    semanticColor: MetricSemanticColor
     x: number
     y: number
   } | null>(null)
@@ -248,12 +253,18 @@ export function ProfilePizzaSvg({
       return {
         key,
         d: dPath,
-        fill: pctEligible ? getPercentileTextColor(pct) : 'rgba(74, 158, 245, 0.28)',
+        fill: pctEligible
+          ? getPercentileTextColor(
+              pct,
+              metricSemanticColor(meta.metrics[resolved.metricKey]),
+            )
+          : 'rgba(74, 158, 245, 0.28)',
         valueFill: pctEligible ? '#000000' : '#E4EAF8',
         label: stripPer90Suffix(meta.metrics[key]?.label ?? key),
         raw: resolved.value,
         formatUnit: resolved.formatUnit,
         percentile: pctEligible ? resolved.percentile : null,
+        semanticColor: metricSemanticColor(meta.metrics[resolved.metricKey]),
         inner,
         outerLabel,
         midDeg: (mid * 180) / Math.PI,
@@ -308,7 +319,13 @@ export function ProfilePizzaSvg({
               onMouseEnter={e => {
                 if (exportMode) return
                 const { x, y } = pointerToLocal(e.clientX, e.clientY)
-                setTip({ label: s.label, percentile: s.percentile, x, y })
+                setTip({
+                  label: s.label,
+                  percentile: s.percentile,
+                  semanticColor: s.semanticColor,
+                  x,
+                  y,
+                })
               }}
               onMouseLeave={() => {
                 if (exportMode) return
@@ -320,7 +337,13 @@ export function ProfilePizzaSvg({
                 setTip(prev =>
                   prev
                     ? { ...prev, x, y }
-                    : { label: s.label, percentile: s.percentile, x, y },
+                    : {
+                        label: s.label,
+                        percentile: s.percentile,
+                        semanticColor: s.semanticColor,
+                        x,
+                        y,
+                      },
                 )
               }}
             />
@@ -389,6 +412,9 @@ export function ProfilePizzaSvg({
                 Mode <span className="text-electric">Raw</span>
               </>
             )}
+          </div>
+          <div className="mt-1 max-w-[240px] text-[9px] leading-relaxed text-ink-dim">
+            {semanticColorDescription(tip.semanticColor)}
           </div>
         </div>
       )}

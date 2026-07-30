@@ -243,7 +243,7 @@ function ProfileLayout({
             />
             <Link
               to={buildPlayerCreateChartsPath(player, rateMode)}
-              className="relative flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80 whitespace-nowrap"
+              className="relative flex items-center gap-1.5 whitespace-nowrap border border-control-border px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.15em] text-control-fg transition-colors hover:border-electric hover:text-control-fg-hover active:bg-electric/10"
             >
               <BarChart3 size={13} />
               Create Chart
@@ -252,7 +252,7 @@ function ProfileLayout({
               to={buildScopedPath(
                 `/comparisons?players=${player.competition_code}:${player.season_label}:${player.canonical_player_id}`,
               )}
-              className="relative px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80 whitespace-nowrap"
+              className="relative whitespace-nowrap border border-control-border px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.15em] text-control-fg transition-colors hover:border-electric hover:text-control-fg-hover active:bg-electric/10"
             >
               Compare
             </Link>
@@ -291,7 +291,7 @@ function ProfileLayout({
               className={
                 mode === percentileMode
                   ? 'border border-electric/50 bg-electric/10 px-3 py-1.5 text-[11px] uppercase tracking-[0.15em] text-electric'
-                  : 'border border-electric/15 px-3 py-1.5 text-[11px] uppercase tracking-[0.15em] text-ink-muted hover:border-electric/35 hover:text-electric/80'
+                  : 'border border-control-border px-3 py-1.5 text-[11px] uppercase tracking-[0.15em] text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10'
               }
             >
               {mode === 'league'

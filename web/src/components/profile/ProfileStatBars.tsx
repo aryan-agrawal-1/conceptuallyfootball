@@ -1,6 +1,10 @@
 import type { ReactNode } from 'react'
 import { HudFrame } from '../hud/Hud'
-import { getPercentileTextColor } from '../../lib/heatmap'
+import {
+  getPercentileTextColor,
+  metricSemanticColor,
+  semanticColorDescription,
+} from '../../lib/heatmap'
 import { formatValue } from '../../lib/format'
 import type { PlayerRow, StatMeta } from '../../types/api'
 import {
@@ -129,12 +133,19 @@ function ProfileBarRow({ spec, player, rateMode, meta, pctOk, percentileMap }: P
   const pct = pctOk ? resolved.percentile : null
   const rawOnly = !pctOk
   const fillPct = pct != null ? Math.min(100, Math.max(0, pct)) : 0
-  const fill = pct != null ? getPercentileTextColor(pct) : 'rgba(78, 88, 120, 0.35)'
+  const semanticColor = metricSemanticColor(meta.metrics[resolved.metricKey])
+  const fill =
+    pct != null
+      ? getPercentileTextColor(pct, semanticColor)
+      : 'rgba(78, 88, 120, 0.35)'
   const formatted = formatValue(resolved.value, mapUnit(resolved.formatUnit))
 
   return (
     <div className="grid grid-cols-[minmax(8.5rem,10rem)_minmax(24rem,1fr)_3rem] items-center gap-2.5 max-xl:grid-cols-[minmax(8rem,10rem)_minmax(0,1fr)_3rem]">
-      <span className="min-w-0 truncate text-[11px] text-ink-dim leading-tight font-medium">
+      <span
+        className="min-w-0 truncate text-[11px] text-ink-dim leading-tight font-medium"
+        title={semanticColorDescription(semanticColor)}
+      >
         {label}
       </span>
 

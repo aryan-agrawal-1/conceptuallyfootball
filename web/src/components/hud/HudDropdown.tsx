@@ -63,8 +63,8 @@ export function HudSelectDropdown({
           'relative flex w-full min-w-0 items-center justify-between gap-2 border px-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.15em] transition-colors',
           open
             ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
-            : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
-          disabled && 'pointer-events-none opacity-50',
+            : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
+          disabled && 'pointer-events-none border-line-bright/40 bg-raised/35 text-control-disabled opacity-60 shadow-none',
         )}
       >
         {open && <HudCornerMarks size="size-1" />}
@@ -77,7 +77,7 @@ export function HudSelectDropdown({
             {groups.map(group => (
               <div key={group.key} className="border-b border-electric/10 pb-1 last:border-b-0 last:pb-0">
                 {groups.length > 1 && (
-                  <p className="px-2 py-1 text-[9px] uppercase tracking-[0.22em] text-ink-muted">
+                  <p className="px-2 py-1 text-[9px] uppercase tracking-[0.22em] text-control-fg">
                     {group.label}
                   </p>
                 )}
@@ -180,7 +180,7 @@ export function HudMultiSelectDropdown({
           compact ? 'w-auto justify-center px-2' : 'w-full justify-between px-3',
           selected.length || open
             ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
-            : 'border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80',
+            : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
         )}
       >
         {(selected.length > 0 || open) && <HudCornerMarks size="size-1" />}
@@ -209,7 +209,7 @@ export function HudMultiSelectDropdown({
                   value={search}
                   onChange={event => setSearch(event.target.value)}
                   placeholder={searchPlaceholder}
-                  className="min-w-0 flex-1 bg-transparent text-[16px] tracking-wide text-ink outline-none placeholder:text-electric/30 lg:text-[11px]"
+                  className="min-w-0 flex-1 bg-transparent text-[16px] tracking-wide text-ink outline-none placeholder:text-control-fg lg:text-[11px]"
                 />
                 {search && (
                   <button
@@ -272,7 +272,7 @@ export function HudMultiSelectDropdown({
               )
             })}
             {filtered.length === 0 && (
-              <p className="px-3 py-3 text-center text-[11px] uppercase tracking-[0.2em] text-electric/40">
+              <p className="px-3 py-3 text-center text-[11px] uppercase tracking-[0.2em] text-control-fg">
                 No results
               </p>
             )}

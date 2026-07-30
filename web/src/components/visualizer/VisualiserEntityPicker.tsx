@@ -24,6 +24,9 @@ interface VisualiserEntityPickerProps {
   isError?: boolean
   emptyLabel?: string
   closeLabel?: string
+  groupSelected?: boolean
+  selectedSectionLabel?: string
+  clearAllLabel?: string
 }
 
 export function VisualiserEntityPicker({
@@ -39,6 +42,9 @@ export function VisualiserEntityPicker({
   isError = false,
   emptyLabel = 'No matching entities.',
   closeLabel = 'Close',
+  groupSelected = false,
+  selectedSectionLabel = 'Selected',
+  clearAllLabel = 'Clear all',
 }: VisualiserEntityPickerProps) {
   const [query, setQuery] = useState('')
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
@@ -50,6 +56,57 @@ export function VisualiserEntityPicker({
       foldForSearch(`${option.label} ${option.sublabel ?? ''} ${option.meta ?? ''}`).includes(needle),
     )
   }, [options, query])
+  const selectedOptions = groupSelected
+    ? filtered.filter(option => selectedSet.has(option.id))
+    : []
+  const unselectedOptions = groupSelected
+    ? filtered.filter(option => !selectedSet.has(option.id))
+    : filtered
+
+  function renderOption(option: VisualiserEntityOption) {
+    const on = selectedSet.has(option.id)
+    const limitReached = !on && maxSelected != null && selectedIds.length >= maxSelected
+    return (
+      <li key={option.id}>
+        <button
+          type="button"
+          disabled={limitReached}
+          onClick={() => {
+            onChange(
+              on
+                ? selectedIds.filter(id => id !== option.id)
+                : [...selectedIds, option.id].slice(0, maxSelected ?? Number.MAX_SAFE_INTEGER),
+            )
+          }}
+          className={cn(
+            'flex w-full items-center gap-3 border border-transparent px-3 py-2.5 text-left transition-colors',
+            on
+              ? 'bg-electric/12 text-electric'
+              : 'text-ink hover:border-electric/25 hover:bg-electric/8',
+            limitReached && 'cursor-not-allowed opacity-45',
+          )}
+        >
+          <span
+            className={cn(
+              'flex size-5 shrink-0 items-center justify-center border',
+              on ? 'border-electric bg-electric/15' : 'border-electric/20 text-transparent',
+            )}
+          >
+            <Check className="size-3.5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[13px] font-medium">{option.label}</div>
+            {(option.sublabel || option.meta) && (
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-ink-muted">
+                {option.sublabel && <span className="truncate">{option.sublabel}</span>}
+                {option.meta && <span className="font-mono">{option.meta}</span>}
+              </div>
+            )}
+          </div>
+        </button>
+      </li>
+    )
+  }
 
   if (!open) return null
 
@@ -87,13 +144,23 @@ export function VisualiserEntityPicker({
                   setQuery('')
                   onClose()
                 }}
-                className="shrink-0 border border-electric/20 px-3 py-2 text-[10px] uppercase tracking-widest text-ink-muted hover:border-electric/40 hover:text-electric/80"
+                className="shrink-0 border border-control-border px-3 py-2 text-[10px] uppercase tracking-widest text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10"
               >
                 {closeLabel}
               </button>
             </div>
 
             {description && <p className="text-[11px] leading-relaxed text-ink-dim">{description}</p>}
+
+            {groupSelected && selectedIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                className="self-start border border-electric/25 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.16em] text-electric transition-colors hover:border-electric/55 hover:bg-electric/10"
+              >
+                {clearAllLabel}
+              </button>
+            )}
 
             {isLoading && (
               <div className="flex items-center justify-center gap-2 py-10 text-ink-muted">
@@ -111,50 +178,20 @@ export function VisualiserEntityPicker({
                 {filtered.length === 0 ? (
                   <li className="px-3 py-8 text-center text-[12px] text-ink-muted">{emptyLabel}</li>
                 ) : (
-                  filtered.map(option => {
-                    const on = selectedSet.has(option.id)
-                    const limitReached = !on && maxSelected != null && selectedIds.length >= maxSelected
-                    return (
-                      <li key={option.id}>
-                        <button
-                          type="button"
-                          disabled={limitReached}
-                          onClick={() => {
-                            onChange(
-                              on
-                                ? selectedIds.filter(id => id !== option.id)
-                                : [...selectedIds, option.id].slice(0, maxSelected ?? Number.MAX_SAFE_INTEGER),
-                            )
-                          }}
-                          className={cn(
-                            'flex w-full items-center gap-3 border border-transparent px-3 py-2.5 text-left transition-colors',
-                            on
-                              ? 'bg-electric/12 text-electric'
-                              : 'text-ink hover:border-electric/25 hover:bg-electric/8',
-                            limitReached && 'cursor-not-allowed opacity-45',
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              'flex size-5 shrink-0 items-center justify-center border',
-                              on ? 'border-electric bg-electric/15' : 'border-electric/20 text-transparent',
-                            )}
-                          >
-                            <Check className="size-3.5" />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-[13px] font-medium">{option.label}</div>
-                            {(option.sublabel || option.meta) && (
-                              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-ink-muted">
-                                {option.sublabel && <span className="truncate">{option.sublabel}</span>}
-                                {option.meta && <span className="font-mono">{option.meta}</span>}
-                              </div>
-                            )}
-                          </div>
-                        </button>
+                  <>
+                    {groupSelected && selectedOptions.length > 0 && (
+                      <li className="sticky top-0 z-10 border-b border-electric/20 bg-mat/95 px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.2em] text-electric">
+                        {selectedSectionLabel}
                       </li>
-                    )
-                  })
+                    )}
+                    {selectedOptions.map(renderOption)}
+                    {groupSelected && unselectedOptions.length > 0 && (
+                      <li className="sticky top-0 z-10 border-y border-electric/20 bg-mat/95 px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.2em] text-ink-dim">
+                        Available
+                      </li>
+                    )}
+                    {unselectedOptions.map(renderOption)}
+                  </>
                 )}
               </ul>
             )}

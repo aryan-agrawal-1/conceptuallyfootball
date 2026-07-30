@@ -14,7 +14,7 @@ from ingestion.api_cache import (
     model_version,
     stable_cache_key,
 )
-from ingestion.derived_definitions import MIN_ELIGIBLE_MINUTES
+from ingestion.derived_definitions import METRIC_META_CACHE_VERSION, MIN_ELIGIBLE_MINUTES
 from ingestion.gk_definitions import (
     FORMULA_VERSION_GK,
     GK_METRIC_DEFINITIONS,
@@ -226,6 +226,7 @@ class GkDerivedPlayerSeasonListApi(APIView):
         )
         source_version = joined_version(
             "gk-derived-list",
+            METRIC_META_CACHE_VERSION,
             SCOPE_PERCENTILES_CACHE_VERSION,
             model_version(PlayerSeasonGkDerivedStats, {"is_current": True}),
         )
@@ -305,6 +306,7 @@ class GkDerivedPlayerSeasonDetailApi(APIView):
         )
         source_version = joined_version(
             "gk-derived-detail",
+            METRIC_META_CACHE_VERSION,
             SCOPE_PERCENTILES_CACHE_VERSION,
             model_version(PlayerSeasonGkDerivedStats, {"is_current": True}),
         )

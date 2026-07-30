@@ -1,7 +1,7 @@
 import type { MatrixFilters } from '../types/api'
 import { DEFAULT_FILTERS } from '../hooks/useStatMatrix'
 import type { LabPosition } from './regressionLabConfig'
-import { isLabPosition } from './regressionLabConfig'
+import { isLabPosition, sanitizePredictorsForTarget } from './regressionLabConfig'
 
 export interface RegressionLabUrlState {
   competition: string
@@ -44,13 +44,12 @@ export function parseRegressionLabParams(search: URLSearchParams): RegressionLab
       : undefined
   const target = search.get('target')?.trim() || undefined
   const predRaw = search.get('predictors')
-  const predictors =
+  const parsedPredictors =
     predRaw && predRaw.length
-      ? predRaw.split(',').flatMap(s => {
-          const predictor = s.trim()
-          return predictor ? [predictor] : []
-        })
-      : undefined
+      ? predRaw.split(',')
+      : []
+  const sanitizedPredictors = sanitizePredictorsForTarget(target, parsedPredictors)
+  const predictors = sanitizedPredictors.length ? sanitizedPredictors : undefined
   const autoRun = search.get('run') === '1'
 
   return {
@@ -70,13 +69,15 @@ export function writeRegressionLabParams(
   opts?: { includeRunFlag?: boolean },
 ): URLSearchParams {
   const p = new URLSearchParams()
+  const target = state.target?.trim() || undefined
+  const predictors = sanitizePredictorsForTarget(target, state.predictors)
   p.set('competition', state.competition)
   p.set('season', state.season)
   if (state.position_group) p.set('position', state.position_group)
   p.set('min_minutes', String(state.min_minutes))
   if (state.teams?.length) p.set('teams', state.teams.join('|'))
-  if (state.target) p.set('target', state.target)
-  if (state.predictors?.length) p.set('predictors', state.predictors.join(','))
+  if (target) p.set('target', target)
+  if (predictors.length) p.set('predictors', predictors.join(','))
   if (opts?.includeRunFlag) p.set('run', '1')
   return p
 }

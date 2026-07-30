@@ -12,7 +12,7 @@ import {
   type ProfileRateMode,
 } from '../../lib/profileMetrics'
 import { cn } from '../../lib/utils'
-import { getPercentileTextColor } from '../../lib/heatmap'
+import { getPercentileTextColor, metricSemanticColor } from '../../lib/heatmap'
 
 interface ProfileKeyStatsProps {
   player: PlayerRow
@@ -82,7 +82,13 @@ export function ProfileKeyStats({ player, rateMode, meta, percentileMap = player
           const label = 'spec' in item ? item.resolved.label : item.label
           const r = item.resolved
           const pct = !rawOnly && r.percentile != null ? r.percentile : null
-          const pc = pct != null ? getPercentileTextColor(pct) : undefined
+          const pc =
+            pct != null
+              ? getPercentileTextColor(
+                  pct,
+                  metricSemanticColor(meta.metrics[r.metricKey]),
+                )
+              : undefined
           return (
             <div
               key={id}

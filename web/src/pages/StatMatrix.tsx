@@ -10,7 +10,7 @@ import { useStatMatrix, DEFAULT_FILTERS, applyClientFilters } from '../hooks/use
 import { COLUMN_GROUPS, type ColDef, type ColGroupDef } from '../lib/columns'
 import { COLUMN_GROUPS_GK, buildMatrixVisibilityAll } from '../lib/gkColumns'
 import { logMatrixPerfPhases } from '../lib/perfDebug'
-import { buildMatrixCreateChartsPath, buildMatrixMetricCreateChartsPath } from '../lib/createChartsUrl'
+import { buildMatrixMetricCreateChartsPath } from '../lib/createChartsUrl'
 import {
   starterViewsForVariant,
   visibilityForStarterView,
@@ -195,10 +195,6 @@ export function StatMatrix() {
     return () => window.clearTimeout(timeout)
   }, [chartCta])
 
-  const createChartHref = useMemo(
-    () => buildMatrixCreateChartsPath(filters, rateMode),
-    [filters, rateMode],
-  )
   const chartCtaHref = useMemo(
     () =>
       effectiveChartCta
@@ -307,7 +303,6 @@ export function StatMatrix() {
         playerCount={filteredPlayers.length}
         totalCount={allPlayers.length}
         refetching={isFetching && isPlaceholderData}
-        createChartHref={createChartHref}
         starterViews={starterViews}
         activeStarterViewId={effectiveActiveStarterViewId}
         onStarterViewApply={handleStarterViewApply}
@@ -327,6 +322,7 @@ export function StatMatrix() {
             onSortingChange={handleSortingChange}
             scrollParentRef={matrixScrollParentRef}
             variant={matrixVariant}
+            metricDefinitions={data?.meta?.metrics}
           />
         )}
       </div>
@@ -392,7 +388,7 @@ function MatrixChartCta({
             type="button"
             aria-label="Dismiss chart suggestion"
             onClick={onDismiss}
-            className="flex size-8 shrink-0 items-center justify-center border border-electric/15 text-ink-muted transition-colors hover:border-electric/35 hover:text-electric"
+            className="flex size-8 shrink-0 items-center justify-center border border-control-border text-control-fg transition-colors hover:border-electric hover:text-control-fg-hover active:bg-electric/10"
           >
             <X size={14} />
           </button>

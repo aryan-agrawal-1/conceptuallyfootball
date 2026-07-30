@@ -175,7 +175,7 @@ function TeamLayout({
           />
           <Link
             to={buildTeamCreateChartsPath(team, rateMode)}
-            className="relative flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border border-electric/15 text-ink-muted hover:border-electric/40 hover:text-electric/80 whitespace-nowrap"
+            className="relative flex items-center gap-1.5 whitespace-nowrap border border-control-border px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.15em] text-control-fg transition-colors hover:border-electric hover:text-control-fg-hover active:bg-electric/10"
           >
             <BarChart3 size={13} />
             Create Chart
