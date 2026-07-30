@@ -91,9 +91,13 @@ def _allowed_target_keys(position_group: str) -> set[str]:
     raise DjangoValidationError("position_group must be FWD, MID, or DEF.")
 
 
-def _validate_predictors(predictor_keys: list[str]) -> None:
+def _validate_predictors(target_key: str, predictor_keys: list[str]) -> None:
     seen: set[str] = set()
     for key in predictor_keys:
+        if key == target_key:
+            raise DjangoValidationError(
+                f"Target metric '{target_key}' cannot also be used as a predictor."
+            )
         if key in SCORE_FIELDS:
             raise DjangoValidationError("Predictors must be raw metrics only, not scores.")
         if key not in METRIC_FIELDS:
@@ -141,7 +145,7 @@ def fit_player_regression(
     if not predictor_keys:
         raise DjangoValidationError("Select at least one predictor.")
 
-    _validate_predictors(predictor_keys)
+    _validate_predictors(target_key, predictor_keys)
 
     competition_code, season_label, competition_seasons = _resolve_competition_seasons(competition, season)
     rows = list(

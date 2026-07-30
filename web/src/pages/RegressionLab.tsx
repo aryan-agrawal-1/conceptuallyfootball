@@ -9,9 +9,13 @@ import { applyClientFilters, useStatMatrix } from '../hooks/useStatMatrix'
 import { fetchRegressionLabFit } from '../lib/api'
 import {
   groupPredictorPool,
+  hasTargetPredictorLeakage,
   isLabPosition,
+  isPredictorSelectableForTarget,
   PREDICTOR_METRIC_POOL,
+  predictorsForTargetChange,
   recommendedPredictorsForTarget,
+  sanitizePredictorsForTarget,
   TARGETS_BY_POSITION,
   toLabPosition,
   type LabPosition,
@@ -98,17 +102,16 @@ export function RegressionLab() {
       min_minutes: p.min_minutes,
     }
   })
-  const [target, setTarget] = useState<string>(() => searchParams.get('target')?.trim() ?? '')
-  const [predictors, setPredictors] = useState<string[]>(() => {
-    const raw = searchParams.get('predictors')
-    return raw
-      ? raw.split(',').flatMap(s => {
-          const predictor = s.trim()
-          return predictor ? [predictor] : []
-        })
-      : []
-  })
-  const predictorsCustomized = useRef(Boolean(searchParams.get('predictors')?.trim()))
+  const [target, setTarget] = useState<string>(
+    () => parseRegressionLabParams(searchParams).target ?? '',
+  )
+  const [predictors, setPredictors] = useState<string[]>(
+    () => parseRegressionLabParams(searchParams).predictors ?? [],
+  )
+  const predictorsCustomized = useRef(
+    Boolean(parseRegressionLabParams(searchParams).predictors?.length),
+  )
+  const predictorRecoveryPending = useRef(Boolean(searchParams.get('predictors')?.trim()))
   const [pendingTarget, setPendingTarget] = useState<string | null>(null)
   const [lastFit, setLastFit] = useState<import('../types/api').RegressionLabFitResponse | null>(null)
   const [lastFitKey, setLastFitKey] = useState<string | null>(null)
@@ -181,8 +184,11 @@ export function RegressionLab() {
   )
 
   const predictorGroups = useMemo(
-    () => groupPredictorPool(meta, availablePredictorKeys),
-    [availablePredictorKeys, meta],
+    () => groupPredictorPool(
+      meta,
+      availablePredictorKeys.filter(key => isPredictorSelectableForTarget(target, key)),
+    ),
+    [availablePredictorKeys, meta, target],
   )
 
   useEffect(() => {
@@ -196,13 +202,29 @@ export function RegressionLab() {
   }, [availableTargetKeys, isLoading, position, target])
 
   useEffect(() => {
-    if (isLoading || !predictors.length) return
-    const next = predictors.filter(key => availablePredictorKeySet.has(key))
-    if (next.length !== predictors.length) {
+    if (isLoading || !position || !target) return
+    const sanitized = sanitizePredictorsForTarget(target, predictors).filter(key =>
+      availablePredictorKeySet.has(key),
+    )
+    const predictorsChanged =
+      sanitized.length !== predictors.length ||
+      sanitized.some((key, index) => key !== predictors[index])
+    if (predictorsChanged || (predictorRecoveryPending.current && sanitized.length === 0)) {
+      const next = sanitized.length
+        ? sanitized
+        : recommendedPredictorsForTarget(target, position, availablePredictorKeys)
       setPredictors(next)
-      predictorsCustomized.current = next.length > 0
+      predictorsCustomized.current = sanitized.length > 0
     }
-  }, [availablePredictorKeySet, isLoading, predictors])
+    predictorRecoveryPending.current = false
+  }, [
+    availablePredictorKeys,
+    availablePredictorKeySet,
+    isLoading,
+    position,
+    predictors,
+    target,
+  ])
 
   const usablePreview = useMemo(
     () => countUsableRows(cohortRows, target, predictors),
@@ -250,6 +272,9 @@ export function RegressionLab() {
   const fitMutation = useMutation({
     mutationFn: async () => {
       if (!position || !target || !predictors.length) throw new Error('Incomplete model spec.')
+      if (hasTargetPredictorLeakage(target, predictors)) {
+        throw new Error('The target metric cannot also be used as a predictor.')
+      }
       const ids = cohortRows.map(r => r.canonical_player_id)
       return fetchRegressionLabFit({
         competition: filters.competition,
@@ -300,11 +325,21 @@ export function RegressionLab() {
   function applyTarget(next: string, opts?: { forceReplacePredictors?: boolean }) {
     if (!position) return
     const replace = opts?.forceReplacePredictors || !predictorsCustomized.current
+    const retainedCustomPredictors = replace
+      ? []
+      : sanitizePredictorsForTarget(next, predictors).filter(key =>
+          availablePredictorKeySet.has(key),
+        )
     setTarget(next)
-    if (replace) {
-      setPredictors(recommendedPredictorsForTarget(next, position, availablePredictorKeys))
-      predictorsCustomized.current = false
-    }
+    const nextPredictors = predictorsForTargetChange(
+      next,
+      position,
+      predictors,
+      !replace,
+      availablePredictorKeys,
+    )
+    setPredictors(nextPredictors)
+    predictorsCustomized.current = retainedCustomPredictors.length > 0
   }
 
   function onSelectTarget(next: string) {
@@ -321,6 +356,8 @@ export function RegressionLab() {
   }
 
   function togglePredictor(key: string) {
+    if (!isPredictorSelectableForTarget(target, key)) return
+    predictorRecoveryPending.current = false
     predictorsCustomized.current = true
     setPredictors(prev =>
       prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key],
@@ -351,6 +388,7 @@ export function RegressionLab() {
     Boolean(position) &&
     Boolean(target) &&
     predictors.length > 0 &&
+    !hasTargetPredictorLeakage(target, predictors) &&
     cohortRows.length > 0 &&
     usablePreview >= 30
 
@@ -489,7 +527,7 @@ export function RegressionLab() {
                           'text-left px-2 py-1.5 text-[12px] border transition-colors',
                           target === key
                             ? 'border-electric bg-electric/10 text-electric'
-                            : 'border-electric/15 text-ink-dim hover:border-electric/35',
+                            : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
                         )}
                       >
                         {meta?.metrics[key]?.label ?? key}
@@ -522,6 +560,11 @@ export function RegressionLab() {
                   <p className="text-[10px] text-ink-muted uppercase tracking-[0.18em]">
                     Raw metrics only · grouped by stat family · toggle to add/remove
                   </p>
+                  {target && (
+                    <p className="text-[10px] text-ink-muted">
+                      The selected target is excluded to prevent the model from using the outcome as evidence.
+                    </p>
+                  )}
                   {!meta && (
                     <p className="text-[11px] text-ink-muted">Load cohort data to show predictor groups.</p>
                   )}
@@ -839,9 +882,7 @@ export function RegressionLab() {
                 type="button"
                 onClick={() => {
                   if (!position || !pendingTarget) return
-                  setTarget(pendingTarget)
-                  setPredictors(recommendedPredictorsForTarget(pendingTarget, position))
-                  predictorsCustomized.current = false
+                  applyTarget(pendingTarget, { forceReplacePredictors: true })
                   setPendingTarget(null)
                 }}
               >
@@ -849,10 +890,9 @@ export function RegressionLab() {
               </HudActionButton>
               <button
                 type="button"
-                className="px-4 py-3 border border-electric/25 text-[11px] uppercase tracking-[0.15em] text-ink-muted hover:text-electric"
+                className="border border-control-border px-4 py-3 text-[11px] uppercase tracking-[0.15em] text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10"
                 onClick={() => {
-                  if (pendingTarget) setTarget(pendingTarget)
-                  predictorsCustomized.current = true
+                  if (pendingTarget) applyTarget(pendingTarget)
                   setPendingTarget(null)
                 }}
               >
@@ -974,7 +1014,7 @@ function TeamStrip({
           'px-3 py-1 text-[11px] font-medium tracking-[0.15em] uppercase border transition-colors',
           selected.length
             ? 'border-electric bg-electric/15 text-electric'
-            : 'border-electric/15 text-ink-muted hover:border-electric/40',
+            : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
         )}
       >
         {label}
