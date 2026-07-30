@@ -77,7 +77,7 @@ export function HudSelectDropdown({
             {groups.map(group => (
               <div key={group.key} className="border-b border-electric/10 pb-1 last:border-b-0 last:pb-0">
                 {groups.length > 1 && (
-                  <p className="px-2 py-1 text-[9px] uppercase tracking-[0.22em] text-ink-muted">
+                  <p className="px-2 py-1 text-[9px] uppercase tracking-[0.22em] text-control-fg">
                     {group.label}
                   </p>
                 )}
@@ -209,7 +209,7 @@ export function HudMultiSelectDropdown({
                   value={search}
                   onChange={event => setSearch(event.target.value)}
                   placeholder={searchPlaceholder}
-                  className="min-w-0 flex-1 bg-transparent text-[16px] tracking-wide text-ink outline-none placeholder:text-electric/30 lg:text-[11px]"
+                  className="min-w-0 flex-1 bg-transparent text-[16px] tracking-wide text-ink outline-none placeholder:text-control-fg lg:text-[11px]"
                 />
                 {search && (
                   <button
@@ -272,7 +272,7 @@ export function HudMultiSelectDropdown({
               )
             })}
             {filtered.length === 0 && (
-              <p className="px-3 py-3 text-center text-[11px] uppercase tracking-[0.2em] text-electric/40">
+              <p className="px-3 py-3 text-center text-[11px] uppercase tracking-[0.2em] text-control-fg">
                 No results
               </p>
             )}

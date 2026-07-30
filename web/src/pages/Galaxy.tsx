@@ -489,7 +489,7 @@ export function Galaxy() {
             placeholder="SEARCH PLAYER"
             value={search}
             onChange={event => setSearch(event.target.value)}
-            className="w-full border border-electric/30 bg-mat/80 px-2 py-1.5 text-[16px] uppercase tracking-widest placeholder:text-electric/40 focus:border-electric focus:outline-none lg:text-[11px]"
+            className="w-full border border-electric/30 bg-mat/80 px-2 py-1.5 text-[16px] uppercase tracking-widest text-ink placeholder:text-control-fg focus:border-electric focus:outline-none lg:text-[11px]"
           />
           <div className="grid grid-cols-2 gap-2">
             <HudMultiSelectDropdown
@@ -507,7 +507,7 @@ export function Galaxy() {
               onCommit={min_minutes => setFilter({ min_minutes })}
             />
           </div>
-          <p className="text-[10px] uppercase tracking-[0.16em] text-electric/50">
+          <p className="text-[10px] uppercase tracking-[0.16em] text-control-fg">
             Model floor: {data.model_meta.min_minutes} minutes
           </p>
           <HudMultiSelectDropdown
@@ -604,7 +604,7 @@ export function Galaxy() {
               placeholder="SEARCH PLAYER"
               value={search}
               onChange={event => setSearch(event.target.value)}
-              className="w-full border border-electric/30 bg-mat/80 px-2 py-2 text-[16px] uppercase tracking-widest text-ink placeholder:text-electric/40 focus:border-electric focus:outline-none lg:text-[12px]"
+              className="w-full border border-electric/30 bg-mat/80 px-2 py-2 text-[16px] uppercase tracking-widest text-ink placeholder:text-control-fg focus:border-electric focus:outline-none lg:text-[12px]"
             />
             <div className="grid grid-cols-2 gap-2">
               <HudMultiSelectDropdown
@@ -622,7 +622,7 @@ export function Galaxy() {
                 onCommit={min_minutes => setFilter({ min_minutes })}
               />
             </div>
-            <p className="text-[10px] uppercase tracking-[0.16em] text-electric/50">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-control-fg">
               Model floor: {data.model_meta.min_minutes} minutes
             </p>
             <Link

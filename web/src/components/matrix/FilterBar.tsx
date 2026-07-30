@@ -1,6 +1,5 @@
 import { useRef, useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
-import { BarChart3, Search, ChevronDown, X, Loader2 } from 'lucide-react'
+import { Search, ChevronDown, X, Loader2 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { MatrixFilters, PositionGroup } from '../../types/api'
 import type { ColGroupDef } from '../../lib/columns'
@@ -42,8 +41,6 @@ interface FilterBarProps {
   totalCount: number
   /** True while a new matrix request is in flight but stale rows are still shown. */
   refetching?: boolean
-  /** Hand off current cohort to Create Charts. */
-  createChartHref?: string | null
   starterViews: MatrixStarterView[]
   activeStarterViewId: string | null
   onStarterViewApply: (view: MatrixStarterView) => void
@@ -63,7 +60,6 @@ export function FilterBar({
   playerCount,
   totalCount,
   refetching = false,
-  createChartHref = null,
   starterViews,
   activeStarterViewId,
   onStarterViewApply,
@@ -161,22 +157,6 @@ export function FilterBar({
         mono
       />
 
-      {createChartHref && (
-        <>
-          <HudVSep className="hidden lg:block" />
-          <Link
-            to={createChartHref}
-            className={cn(
-              'relative flex shrink-0 items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border',
-              'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
-            )}
-          >
-            <BarChart3 size={13} />
-            Create Chart
-          </Link>
-        </>
-      )}
-
       <div className="hidden flex-1 lg:block" />
 
       <RateModeToggle value={rateMode} onChange={onRateModeChange} />
@@ -267,7 +247,7 @@ function FilterDropdown({
         )}
       >
         {open && <HudCornerMarks size="size-1" />}
-        <span className="text-electric/45">{label}</span>
+        <span className="text-control-fg">{label}</span>
         <span className={cn('text-ink', open && 'text-electric')}>{value}</span>
         <ChevronDown size={11} className={cn('transition-transform', open && 'rotate-180')} />
       </button>
@@ -392,32 +372,41 @@ function HeatmapToggle({
 }
 
 function HeatmapLegend() {
+  const description =
+    'Purple to green: purple marks negative performance and green marks positive performance. Gray is used for contextual statistics.'
+
   return (
     <div
-      className="hidden shrink-0 items-center gap-2 text-[9px] font-medium uppercase tracking-[0.15em] text-ink-dim xl:flex"
-      title="Positive metrics run low to high. Negative metrics reverse the evaluative colours. Contextual metrics use a neutral scale."
+      className="group relative hidden shrink-0 cursor-help grid-cols-[auto_auto] items-center gap-x-1.5 gap-y-0.5 text-[9px] font-medium uppercase tracking-[0.15em] text-control-fg outline-none xl:grid"
+      tabIndex={0}
+      aria-label={`Colour key. ${description}`}
+      aria-describedby="matrix-colour-key-description"
     >
-      <span>Colour key</span>
-      <span className="flex items-center gap-1">
-        <span
-          className="h-1.5 w-10 border border-electric/20"
-          style={{ background: heatmapGradientCss('positive') }}
-        />
-        <span>↑ positive</span>
-      </span>
-      <span className="flex items-center gap-1">
-        <span
-          className="h-1.5 w-10 border border-electric/20"
-          style={{ background: heatmapGradientCss('negative') }}
-        />
-        <span>↓ reversed</span>
-      </span>
-      <span className="flex items-center gap-1">
-        <span
-          className="h-1.5 w-10 border border-electric/20"
-          style={{ background: heatmapGradientCss('contextual') }}
-        />
-        <span>≈ contextual</span>
+      <span
+        className="h-1.5 w-12 border border-electric/25"
+        style={{ background: heatmapGradientCss('positive') }}
+        aria-hidden
+      />
+      <span aria-hidden>↑</span>
+      <span
+        className="h-1.5 w-12 border border-control-border/60"
+        style={{ background: heatmapGradientCss('contextual') }}
+        aria-hidden
+      />
+      <span aria-hidden>≈</span>
+      <span
+        id="matrix-colour-key-description"
+        role="tooltip"
+        className="pointer-events-none absolute right-0 top-[calc(100%+10px)] z-50 w-72 border border-electric/35 bg-overlay/95 px-3 py-2 text-left text-[10px] font-normal normal-case leading-relaxed tracking-normal text-ink opacity-0 shadow-[0_16px_36px_-12px_rgba(0,0,0,0.85)] backdrop-blur-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+      >
+        <span className="block">
+          <span className="font-medium text-control-fg-hover">Purple → green:</span>{' '}
+          purple marks negative performance and green marks positive performance.
+        </span>
+        <span className="mt-1 block">
+          <span className="font-medium text-control-fg-hover">Gray:</span> used for
+          contextual statistics.
+        </span>
       </span>
     </div>
   )
@@ -497,7 +486,7 @@ function TeamPicker({
                 value={search}
                 onChange={e => onSearchChange(e.target.value)}
                 placeholder="Search club..."
-                className="min-w-0 flex-1 bg-transparent text-[16px] tracking-wide text-ink outline-none placeholder:text-electric/30 lg:text-[11px]"
+                className="min-w-0 flex-1 bg-transparent text-[16px] tracking-wide text-ink outline-none placeholder:text-control-fg lg:text-[11px]"
               />
               {search && (
                 <button
@@ -555,7 +544,7 @@ function TeamPicker({
               )
             })}
             {filteredTeams.length === 0 && (
-              <p className="px-3 py-3 text-[11px] text-electric/40 text-center uppercase tracking-[0.2em]">
+              <p className="px-3 py-3 text-center text-[11px] uppercase tracking-[0.2em] text-control-fg">
                 No clubs found
               </p>
             )}
