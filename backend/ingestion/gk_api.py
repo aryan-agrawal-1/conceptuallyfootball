@@ -25,6 +25,10 @@ from ingestion.gk_definitions import (
 )
 from ingestion.derived_api import _resolve_competition_scope
 from ingestion.models import CanonicalTeam, CompetitionSeason, PlayerSeasonGkDerivedStats
+from ingestion.profile_distributions import (
+    PROFILE_DISTRIBUTION_CACHE_VERSION,
+    build_profile_distributions,
+)
 from ingestion.secondary_teams import secondary_teams_payload
 from ingestion.scope_percentiles import (
     SCOPE_PERCENTILES_CACHE_VERSION,
@@ -42,6 +46,10 @@ def _requested_meta(request) -> bool:
 
 def _requested_scope_percentiles(request) -> bool:
     return requested_include(request, "scope_percentiles")
+
+
+def _requested_profile_distributions(request) -> bool:
+    return requested_include(request, "profile_distributions")
 
 
 def _gk_meta_payload() -> dict:
@@ -307,6 +315,7 @@ class GkDerivedPlayerSeasonDetailApi(APIView):
         source_version = joined_version(
             "gk-derived-detail",
             METRIC_META_CACHE_VERSION,
+            PROFILE_DISTRIBUTION_CACHE_VERSION,
             SCOPE_PERCENTILES_CACHE_VERSION,
             model_version(PlayerSeasonGkDerivedStats, {"is_current": True}),
         )
@@ -328,6 +337,8 @@ class GkDerivedPlayerSeasonDetailApi(APIView):
             queryset = _base_queryset(competition_season)
             row = queryset.get(canonical_player_id=canonical_player_id)
             scope_percentiles = None
+            scope_seasons = None
+            scope_queryset = None
             if _requested_scope_percentiles(request):
                 scope_code = request.query_params.get("percentile_scope") or (
                     request.query_params.get("competition") if is_aggregate_scope(request.query_params.get("competition")) else None
@@ -335,8 +346,9 @@ class GkDerivedPlayerSeasonDetailApi(APIView):
                 if not scope_code:
                     raise DjangoValidationError("Provide percentile_scope for scope percentiles.")
                 scope_seasons = resolve_scope_seasons(scope_code, competition_season.season.label)
+                scope_queryset = _base_queryset_for_seasons(scope_seasons)
                 scope_percentiles = build_scope_percentiles(
-                    scope_queryset=_base_queryset_for_seasons(scope_seasons),
+                    scope_queryset=scope_queryset,
                     rows=[row],
                     metric_fields=GK_METRIC_FIELDS,
                     percentile_metric_fields=GK_METRICS_WITH_PERCENTILE,
@@ -350,6 +362,35 @@ class GkDerivedPlayerSeasonDetailApi(APIView):
         if scope_percentiles is not None:
             _attach_scope_percentiles(payload, row, scope_percentiles)
             payload["scope_percentile_context"] = scope_context(scope_code, competition_season.season.label, scope_seasons)
+        if _requested_profile_distributions(request):
+            league_seasons = [competition_season]
+            payload["profile_distributions"] = {
+                **build_profile_distributions(
+                    scope_queryset=_base_queryset(competition_season),
+                    row=row,
+                    metric_fields=GK_METRIC_FIELDS,
+                    percentile_metric_fields=GK_METRICS_WITH_PERCENTILE,
+                ),
+                "context": scope_context(
+                    competition_season.competition.short_code,
+                    competition_season.season.label,
+                    league_seasons,
+                ),
+            }
+            if scope_queryset is not None and scope_seasons is not None:
+                payload["scope_profile_distributions"] = {
+                    **build_profile_distributions(
+                        scope_queryset=scope_queryset,
+                        row=row,
+                        metric_fields=GK_METRIC_FIELDS,
+                        percentile_metric_fields=GK_METRICS_WITH_PERCENTILE,
+                    ),
+                    "context": scope_context(
+                        scope_code,
+                        competition_season.season.label,
+                        scope_seasons,
+                    ),
+                }
         if _requested_meta(request):
             payload["meta"] = _gk_meta_payload()
         return payload
