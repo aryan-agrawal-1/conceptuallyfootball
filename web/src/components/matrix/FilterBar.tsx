@@ -154,7 +154,6 @@ export function FilterBar({
           onFiltersChange({ min_minutes: Number(mins) })
           setMinutesOpen(false)
         }}
-        mono
       />
 
       <div className="hidden flex-1 lg:block" />
@@ -219,7 +218,6 @@ function FilterDropdown({
   onOpenChange,
   options,
   onSelect,
-  mono = false,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>
   label: string
@@ -228,7 +226,6 @@ function FilterDropdown({
   onOpenChange: (open: boolean) => void
   options: Array<{ value: string; label: string }>
   onSelect: (value: string) => void
-  mono?: boolean
 }) {
   return (
     <div ref={containerRef} className="relative shrink-0">
@@ -239,11 +236,10 @@ function FilterDropdown({
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
         className={cn(
-          'relative flex min-w-[116px] items-center justify-between gap-2 border px-2.5 py-1.5 text-[11px] font-medium uppercase tracking-[0.14em] transition-colors',
+          'relative flex h-8 min-w-[116px] items-center justify-between gap-2 border px-2.5 text-[11px] font-medium uppercase tracking-[0.14em] transition-colors',
           open
             ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
             : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
-          mono && 'font-mono',
         )}
       >
         {open && <HudCornerMarks size="size-1" />}
@@ -265,7 +261,6 @@ function FilterDropdown({
                   onClick={() => onSelect(option.value)}
                   className={cn(
                     'w-full border px-3 py-2 text-left text-[11px] uppercase tracking-[0.15em] transition-colors',
-                    mono && 'font-mono',
                     active
                       ? 'border-electric/40 bg-electric/10 text-electric'
                       : 'border-transparent text-ink-dim hover:bg-electric/5 hover:text-ink',
@@ -292,7 +287,7 @@ function RateModeToggle({
 }) {
   return (
     <div
-      className="relative flex items-center border border-electric/30 bg-mat/60 overflow-hidden shrink-0"
+      className="relative flex h-8 shrink-0 items-center overflow-hidden border border-electric/30 bg-mat/60"
       role="group"
       aria-label="Stat rate display"
     >
@@ -327,7 +322,7 @@ function RateModeButton({
       type="button"
       onClick={onClick}
       className={cn(
-        'px-2.5 py-1 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors',
+        'h-full px-2.5 text-[11px] font-medium uppercase tracking-[0.15em] transition-colors',
         active
           ? 'bg-electric/15 text-electric shadow-[inset_0_0_12px_-4px_rgba(74,158,245,0.6)]'
           : 'text-control-fg hover:text-control-fg-hover',
@@ -353,7 +348,7 @@ function HeatmapToggle({
       aria-pressed={enabled}
       onClick={onToggle}
       className={cn(
-        'relative flex items-center gap-2 px-3 py-1.5 border text-[11px] font-medium tracking-[0.15em] uppercase transition-colors',
+        'relative flex h-8 items-center gap-2 border px-3 text-[11px] font-medium uppercase tracking-[0.15em] transition-colors',
         enabled
           ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
           : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
@@ -455,7 +450,7 @@ function TeamPicker({
       <button
         onClick={() => onOpenChange(!open)}
         className={cn(
-          'relative flex items-center gap-1.5 px-3 py-1 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors border',
+          'relative flex h-8 items-center gap-1.5 border px-3 text-[11px] font-medium uppercase tracking-[0.15em] transition-colors',
           selectedCount > 0
             ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
             : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
@@ -584,7 +579,7 @@ function ColumnsDropdown({
       <button
         onClick={() => onOpenChange(!open)}
         className={cn(
-          'relative flex items-center gap-1.5 px-3 py-1.5 border text-[11px] font-medium tracking-[0.15em] uppercase transition-colors',
+          'relative flex h-8 items-center gap-1.5 border px-3 text-[11px] font-medium uppercase tracking-[0.15em] transition-colors',
           open
             ? 'border-electric bg-electric/15 text-electric shadow-[0_0_16px_-6px_rgba(74,158,245,0.8)]'
             : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
