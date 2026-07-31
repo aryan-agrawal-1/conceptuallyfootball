@@ -17,6 +17,7 @@ import {
 } from './profileMetrics'
 
 export type ProfileExportTheme = 'conceptually-football' | 'boring'
+export type ProfileExportOrientation = 'portrait' | 'landscape'
 
 export interface ProfileExportTile {
   key: string
@@ -25,6 +26,7 @@ export interface ProfileExportTile {
 
 export interface ProfileExportPreset {
   theme: ProfileExportTheme
+  orientation: ProfileExportOrientation
   rateMode: ProfileRateMode
   stats: ProfileExportTile[]
   chartEnabled: boolean
@@ -35,7 +37,7 @@ export interface ProfileExportPreset {
   showPercentiles: boolean
 }
 
-const EXPORT_PRESET_VERSION = 2
+const EXPORT_PRESET_VERSION = 3
 const PROFILE_EXPORT_STORAGE_KEY = 'conceptually-football:profile-export:v1'
 
 interface StoredProfileExportPreset extends ProfileExportPreset {
@@ -78,11 +80,18 @@ function loadProfileExportPreset(
   position: PositionGroup,
 ): { preset: ProfileExportPreset; version: number } | null {
   const stored = readStoredState()[storageKeyForPosition(position)]
-  if (!stored || (stored.version !== 1 && stored.version !== EXPORT_PRESET_VERSION)) return null
+  if (
+    !stored ||
+    (stored.version !== 1 && stored.version !== 2 && stored.version !== EXPORT_PRESET_VERSION)
+  ) return null
   return {
     version: stored.version,
     preset: {
       theme: stored.theme,
+      orientation:
+        stored.version === EXPORT_PRESET_VERSION && stored.orientation === 'landscape'
+          ? 'landscape'
+          : 'portrait',
       rateMode: stored.rateMode,
       stats: stored.stats,
       chartEnabled: stored.chartEnabled,
@@ -97,11 +106,13 @@ function loadProfileExportPreset(
 
 export function saveProfileExportPreset(position: PositionGroup, preset: ProfileExportPreset) {
   const state = readStoredState()
+  const distributionEnabled = preset.chartEnabled && preset.distributionEnabled
   state[storageKeyForPosition(position)] = {
     version: EXPORT_PRESET_VERSION,
     ...preset,
+    orientation: distributionEnabled ? 'landscape' : preset.orientation,
     chartMetricKeys: dedupeCanonicalMetricKeys(preset.chartMetricKeys),
-    distributionEnabled: preset.chartEnabled && preset.distributionEnabled,
+    distributionEnabled,
   }
   writeStoredState(state)
 }
@@ -223,6 +234,7 @@ export function buildDefaultProfileExportPreset(
 ): ProfileExportPreset {
   return {
     theme: 'conceptually-football',
+    orientation: 'portrait',
     rateMode,
     stats: defaultProfileExportStats(player, meta, rateMode),
     chartEnabled: player.eligibility.percentiles_eligible,
@@ -277,6 +289,12 @@ export function hydrateProfileExportPreset(
 
   return {
     theme: stored.theme === 'boring' ? 'boring' : 'conceptually-football',
+    orientation:
+      stored.chartEnabled && stored.distributionEnabled
+        ? 'landscape'
+        : stored.orientation === 'landscape'
+          ? 'landscape'
+          : 'portrait',
     rateMode: stored.rateMode ?? initialRateMode,
     stats: paddedStats.length ? paddedStats : fallback.stats,
     chartEnabled: player.eligibility.percentiles_eligible ? stored.chartEnabled : false,
