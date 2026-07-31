@@ -18,6 +18,7 @@ import {
   dedupeCanonicalMetricKeys,
   defaultPizzaMetricKeys,
   moveMetricKey,
+  radarLabelLines,
   resolveRadarMetricKeys,
 } from '../src/lib/profileMetrics'
 import {
@@ -139,6 +140,18 @@ describe('profile radar templates and canonical state', () => {
     const source = ['a', 'b', 'c']
     expect(moveMetricKey(source, 'b', -1)).toEqual(['b', 'a', 'c'])
     expect(source).toEqual(['a', 'b', 'c'])
+  })
+
+  it('keeps short labels on one line and balances long labels across two', () => {
+    expect(radarLabelLines('xG')).toEqual(['xG'])
+    expect(radarLabelLines('Defensive Action Density')).toEqual([
+      'Defensive',
+      'Action Density',
+    ])
+    expect(radarLabelLines('  Defensive   Action Density  ')).toEqual([
+      'Defensive',
+      'Action Density',
+    ])
   })
 
   it('deduplicates visualiser and comparison URL state', () => {

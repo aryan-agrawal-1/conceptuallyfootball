@@ -37,7 +37,7 @@ export const REGRESSION_LAB_WALKTHROUGH_STEPS: readonly RegressionLabWalkthrough
   {
     id: 'predictors',
     title: 'Choose predictors',
-    body: `${LAB_HELP.predictorsPanel} ${LAB_HELP.predictorLeakage}`,
+    body: `${LAB_HELP.predictorsWalkthrough} ${LAB_HELP.predictorLeakage}`,
     anchor: '[data-regression-walkthrough="predictors"]',
     unavailable: 'Choose a position and target to reveal predictor choices. You can still continue.',
   },

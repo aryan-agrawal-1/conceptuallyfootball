@@ -4,6 +4,28 @@ import type { ColumnUnit } from './columns'
 /** Mirrors matrix "Per 90 | Season" naming. */
 export type ProfileRateMode = 'per90' | 'full'
 
+export function radarLabelLines(label: string, maxLineLength = 20): string[] {
+  const normalized = label.trim().replace(/\s+/g, ' ')
+  if (normalized.length <= maxLineLength || !normalized.includes(' ')) {
+    return [normalized]
+  }
+
+  const words = normalized.split(' ')
+  let bestSplit = 1
+  let bestDifference = Number.POSITIVE_INFINITY
+  for (let index = 1; index < words.length; index += 1) {
+    const first = words.slice(0, index).join(' ')
+    const second = words.slice(index).join(' ')
+    const difference = Math.abs(first.length - second.length)
+    if (difference < bestDifference) {
+      bestSplit = index
+      bestDifference = difference
+    }
+  }
+
+  return [words.slice(0, bestSplit).join(' '), words.slice(bestSplit).join(' ')]
+}
+
 export type ProfileUiSection =
   | 'attacking'
   | 'passing_creative'

@@ -95,6 +95,10 @@ describe('RegressionLabWalkthrough', () => {
     expect(
       screen.getByRole('heading', { name: 'Learn the workflow in eight short steps' }),
     ).toBeTruthy()
+    expect(
+      screen.getByText(/which player stats are associated with chance creation/i),
+    ).toBeTruthy()
+    expect(screen.getByText(/not to prove that one stat causes another/i)).toBeTruthy()
     expect(screen.queryByRole('status')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Skip' }))
@@ -148,6 +152,27 @@ describe('RegressionLabWalkthrough', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Step 2 of 8'))
+  })
+
+  it('keeps the highlighted anchor clear and omits the score restriction from step three', async () => {
+    render(<AnchoredWalkthrough />)
+    fireEvent.click(screen.getByRole('button', { name: 'Start walkthrough' }))
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('regression-walkthrough-backdrop-panel')).toHaveLength(4)
+    })
+    expect(screen.getByTestId('regression-walkthrough-highlight')).toBeTruthy()
+    expect(screen.getByTestId('regression-walkthrough-layer').className).not.toContain(
+      'backdrop-blur',
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Step 3 of 8'))
+    expect(screen.getByRole('dialog').textContent).not.toMatch(/scores cannot be predictors/i)
+    expect(screen.getByRole('dialog').textContent).toMatch(
+      /selected target is excluded from predictors/i,
+    )
   })
 
   it('traps focus, restores the launcher, and supports Escape dismissal', async () => {

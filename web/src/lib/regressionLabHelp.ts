@@ -7,6 +7,8 @@ export const LAB_HELP = {
     'The raw-stat outcome you want the model to explain or predict for each player in the cohort. Pick one target per run.',
   predictorsPanel:
     'Raw stats used as inputs. Each target begins with a recommended predictor pack, which you can customise by toggling metrics. Scores cannot be predictors here, and rows missing any selected predictor or the target are dropped before fitting.',
+  predictorsWalkthrough:
+    'Raw stats used as inputs. Each target begins with a recommended predictor pack, which you can customise by toggling metrics. Rows missing any selected predictor or the target are dropped before fitting.',
   predictorLeakage:
     'The selected target is excluded from predictors, so the model cannot use the outcome itself as evidence.',
   readinessPanel:

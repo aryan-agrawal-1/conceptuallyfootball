@@ -5,7 +5,6 @@ import { ArrowLeft, ArrowRight, ChevronDown, SlidersHorizontal, X } from 'lucide
 import { HudCornerMarks, HudFrame } from '../hud/Hud'
 import { formatValue } from '../../lib/format'
 import type {
-  MetricSemanticColor,
   PlayerRow,
   ProfileDistributionPayload,
   StatMeta,
@@ -19,6 +18,7 @@ import {
   dedupeCanonicalMetricKeys,
   groupMetricsForPizzaPicker,
   moveMetricKey,
+  radarLabelLines,
   radarGroupForMetric,
   radarTemplateGroups,
   resolveRadarMetricKeys,
@@ -31,7 +31,6 @@ import { BRAND_LOGO_URL } from '../../lib/brand'
 import {
   getPercentileTextColor,
   metricSemanticColor,
-  semanticColorDescription,
 } from '../../lib/heatmap'
 import { shortPlayerName } from '../../lib/entityLabels'
 import { cn } from '../../lib/utils'
@@ -284,21 +283,6 @@ export function ProfilePizzaSvg({
   const labelRingR = outerR + (exportMode ? 36 : 20)
   const logoClipId = `pizza-logo-clip-${reactId.replace(/:/g, '')}`
   const logoSize = innerR * 1.45
-  const chartWrapRef = useRef<HTMLDivElement>(null)
-  const [tip, setTip] = useState<{
-    label: string
-    percentile: number | null
-    semanticColor: MetricSemanticColor
-    x: number
-    y: number
-  } | null>(null)
-
-  function pointerToLocal(clientX: number, clientY: number) {
-    const el = chartWrapRef.current
-    if (!el) return { x: clientX, y: clientY }
-    const r = el.getBoundingClientRect()
-    return { x: clientX - r.left, y: clientY - r.top }
-  }
 
   const slices = useMemo(() => {
     const n = Math.max(metricKeys.length, 1)
@@ -353,7 +337,6 @@ export function ProfilePizzaSvg({
         raw: resolved.value,
         formatUnit: resolved.formatUnit,
         percentile: pctEligible ? resolved.percentile : null,
-        semanticColor: metricSemanticColor(meta.metrics[resolved.metricKey]),
         inner,
         outerLabel,
         midDeg: (mid * 180) / Math.PI,
@@ -370,7 +353,7 @@ export function ProfilePizzaSvg({
   }
 
   return (
-    <div ref={chartWrapRef} className="relative inline-block max-w-full">
+    <div className="relative inline-block max-w-full">
       <svg
         width={chartSize}
         height={chartSize}
@@ -404,37 +387,6 @@ export function ProfilePizzaSvg({
               fillOpacity={0.85}
               stroke="rgba(7,8,16,0.9)"
               strokeWidth={1.5}
-              className="cursor-crosshair transition-[fill-opacity] hover:fill-opacity-100"
-              onMouseEnter={e => {
-                if (exportMode) return
-                const { x, y } = pointerToLocal(e.clientX, e.clientY)
-                setTip({
-                  label: s.label,
-                  percentile: s.percentile,
-                  semanticColor: s.semanticColor,
-                  x,
-                  y,
-                })
-              }}
-              onMouseLeave={() => {
-                if (exportMode) return
-                setTip(null)
-              }}
-              onMouseMove={e => {
-                if (exportMode) return
-                const { x, y } = pointerToLocal(e.clientX, e.clientY)
-                setTip(prev =>
-                  prev
-                    ? { ...prev, x, y }
-                    : {
-                        label: s.label,
-                        percentile: s.percentile,
-                        semanticColor: s.semanticColor,
-                        x,
-                        y,
-                      },
-                )
-              }}
             />
           ))}
 
@@ -489,35 +441,6 @@ export function ProfilePizzaSvg({
           />
         </g>
       </svg>
-
-      {tip && (
-        <div
-          className="absolute z-[100] pointer-events-none px-2.5 py-1.5 border border-electric/40 bg-panel/95 text-[11px] text-ink shadow-xl font-mono tabular-nums"
-          style={{
-            left: tip.x,
-            top: tip.y,
-            transform: 'translate(-50%, calc(-100% - 6px))',
-          }}
-        >
-          <div className="text-ink-muted text-[9px] uppercase tracking-[0.2em] mb-0.5">
-            {tip.label}
-          </div>
-          <div>
-            {tip.percentile != null ? (
-              <>
-                Percentile <span className="text-electric">{Math.round(tip.percentile)}</span>
-              </>
-            ) : (
-              <>
-                Mode <span className="text-electric">Raw</span>
-              </>
-            )}
-          </div>
-          <div className="mt-1 max-w-[240px] text-[9px] leading-relaxed text-ink-dim">
-            {semanticColorDescription(tip.semanticColor)}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -544,6 +467,7 @@ function OuterLabel({
   const normalized = ((midDeg % 360) + 360) % 360
   const flip = normalized > 90 && normalized < 270
   const rotation = flip ? midDeg + 180 : midDeg
+  const lines = radarLabelLines(text)
   return (
     <text
       x={x}
@@ -558,7 +482,15 @@ function OuterLabel({
       style={{ letterSpacing: '0.08em', textTransform: 'uppercase' }}
       pointerEvents="none"
     >
-      {text}
+      {lines.map((line, index) => (
+        <tspan
+          key={line}
+          x={x}
+          dy={lines.length === 1 ? 0 : index === 0 ? '-0.55em' : '1.1em'}
+        >
+          {line}
+        </tspan>
+      ))}
     </text>
   )
 }

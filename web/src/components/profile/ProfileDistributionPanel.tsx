@@ -99,18 +99,36 @@ export function ProfileDistributionPanel({
   return (
     <div>
       {!compact && (
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-electric">
-              Cohort distributions
-            </p>
-            <p className="mt-1 text-[11px] text-ink-muted">
-              Same {player.position_group === 'UNK' ? 'player' : player.position_group} cohort and percentile scope as the polar profile.
+        <div className="mb-4">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-electric">
+                Cohort distributions
+              </p>
+              <p className="mt-1 text-[11px] text-ink-muted">
+                Same {player.position_group === 'UNK' ? 'player' : player.position_group} cohort and percentile scope as the polar profile.
+              </p>
+            </div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-muted">
+              {scopeLabel} · {distributions.cohort_count} eligible
             </p>
           </div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-muted">
-            {scopeLabel} · {distributions.cohort_count} eligible
-          </p>
+          <div className="mt-3 border border-electric/15 bg-electric/[0.035] px-3 py-3">
+            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-electric/85">
+              How to read these
+            </p>
+            <p className="mt-1.5 max-w-5xl text-[10px] leading-relaxed text-ink-dim">
+              Each strip shows where the eligible players sit from the lowest value on the
+              left to the highest on the right. Taller bars mean more players fall in that
+              range; they do not automatically mean better performance.
+            </p>
+            <ul className="mt-2 grid gap-x-6 gap-y-1 text-[9px] leading-relaxed text-ink-muted sm:grid-cols-2">
+              <li><span className="font-bold text-ink-dim">Bright line + triangle:</span> this player&apos;s value.</li>
+              <li><span className="font-bold text-ink-dim">P number:</span> percentile within this exact cohort.</li>
+              <li><span className="font-bold text-ink-dim">Solid + dashed lines:</span> median and the middle 50% of players.</li>
+              <li><span className="font-bold text-ink-dim">Coloured dot:</span> favourable quartile for directional metrics; contextual metrics omit it.</li>
+            </ul>
+          </div>
         </div>
       )}
       <div className={compact ? 'grid grid-cols-2 gap-3' : 'grid gap-3 md:grid-cols-2'}>

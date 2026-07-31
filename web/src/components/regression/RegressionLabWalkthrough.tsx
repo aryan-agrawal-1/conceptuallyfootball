@@ -157,6 +157,48 @@ function focusableElements(container: HTMLElement): HTMLElement[] {
   )
 }
 
+function WalkthroughBackdrop({
+  anchor,
+  viewport,
+}: {
+  anchor: ElementRect | null
+  viewport: ViewportSize
+}) {
+  if (!anchor) {
+    return (
+      <div
+        data-testid="regression-walkthrough-backdrop"
+        className="pointer-events-none fixed inset-0 bg-mat/60 backdrop-blur-[1px]"
+      />
+    )
+  }
+
+  const gap = 6
+  const left = Math.max(0, Math.min(viewport.width, anchor.left - gap))
+  const right = Math.max(left, Math.min(viewport.width, anchor.right + gap))
+  const top = Math.max(0, Math.min(viewport.height, anchor.top - gap))
+  const bottom = Math.max(top, Math.min(viewport.height, anchor.bottom + gap))
+  const panels: CSSProperties[] = [
+    { left: 0, top: 0, width: viewport.width, height: top },
+    { left: 0, top: bottom, width: viewport.width, height: viewport.height - bottom },
+    { left: 0, top, width: left, height: bottom - top },
+    { left: right, top, width: viewport.width - right, height: bottom - top },
+  ]
+
+  return (
+    <>
+      {panels.map((style, index) => (
+        <div
+          key={index}
+          data-testid="regression-walkthrough-backdrop-panel"
+          className="pointer-events-none fixed bg-mat/60 backdrop-blur-[1px]"
+          style={style}
+        />
+      ))}
+    </>
+  )
+}
+
 function usePrefersReducedMotion(): boolean {
   const [reducedMotion, setReducedMotion] = useState(
     () =>
@@ -401,8 +443,11 @@ export function RegressionLabWalkthrough() {
                 id="regression-walkthrough-intro-description"
                 className="mt-3 max-w-md text-[12px] leading-relaxed text-ink-dim"
               >
-                Follow the real controls from cohort selection to responsible result
-                interpretation. The walkthrough will not change your current model.
+                Regression Lab helps answer questions such as which player stats are
+                associated with chance creation for a chosen cohort. It fits a model to
+                show which inputs move with the outcome and which players depart from the
+                pattern. Use it to explore relationships and test ideas, not to prove that
+                one stat causes another. This walkthrough will not change your current model.
               </p>
               <div className="mt-6 grid grid-cols-8 gap-1" aria-hidden>
                 {REGRESSION_LAB_WALKTHROUGH_STEPS.map(step => (
@@ -429,9 +474,17 @@ export function RegressionLabWalkthrough() {
           </div>
         </div>
       ) : (
-        <div className="fixed inset-0 z-[300] bg-mat/60 backdrop-blur-[1px]">
+        <div
+          data-testid="regression-walkthrough-layer"
+          className="fixed inset-0 z-[300]"
+        >
+          <WalkthroughBackdrop
+            anchor={anchorAvailable ? anchorRect : null}
+            viewport={viewport}
+          />
           {anchorAvailable && anchorRect ? (
             <div
+              data-testid="regression-walkthrough-highlight"
               aria-hidden
               className="pointer-events-none fixed border border-electric bg-electric/5 shadow-[0_0_0_3px_rgba(74,158,245,0.18),0_0_38px_rgba(74,158,245,0.45)]"
               style={{
