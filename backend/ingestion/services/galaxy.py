@@ -12,8 +12,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import connection, transaction
 from django.utils import timezone
 
-from ingestion.derived_api import BIG_FIVE_COMPETITION_CODES
-from ingestion.derived_definitions import MIN_ELIGIBLE_MINUTES
+from ingestion.competition_scope import resolve_public_scope
 from ingestion.models import (
     CompetitionSeason,
     GalaxyArchetype,
@@ -242,19 +241,7 @@ def _setting_bool(name: str, default: bool) -> bool:
 
 
 def resolve_galaxy_competition_seasons(scope_code: str, season_label: str) -> list[CompetitionSeason]:
-    code = scope_code.strip().upper()
-    rows = CompetitionSeason.objects.select_related("competition", "season").filter(
-        is_active=True,
-        season__label__iexact=season_label,
-    )
-    if code == "BIG5":
-        rows = rows.filter(competition__short_code__in=BIG_FIVE_COMPETITION_CODES)
-    elif code != "ALL":
-        rows = rows.filter(competition__short_code__iexact=code)
-    seasons = list(rows.order_by("competition__short_code"))
-    if not seasons:
-        raise DjangoValidationError("Unknown competition and season combination.")
-    return seasons
+    return resolve_public_scope(scope_code, season_label)
 
 
 def latest_galaxy_snapshot(scope_code: str, season_label: str) -> GalaxySnapshot | None:
@@ -412,14 +399,15 @@ def _row_feature_values(
 def _build_rows(
     competition_seasons: list[CompetitionSeason],
     *,
-    min_minutes: int,
+    minimum_minutes_by_competition: dict[str, int],
 ) -> tuple[list[GalaxyRow], list[dict], list[dict]]:
     all_specs = list({spec.name: spec for spec in FEATURE_SPECS}.values())
     excluded: list[dict] = []
     excluded_players: list[dict] = []
     rows: list[GalaxyRow] = []
     for cs in competition_seasons:
-        cs_rows = list(_eligible_queryset([cs], min_minutes))
+        minimum_minutes = minimum_minutes_by_competition[cs.competition.short_code]
+        cs_rows = list(_eligible_queryset([cs], minimum_minutes))
         sofascore_player_ids = set(
             SofascorePlayerSeasonSource.objects.filter(
                 competition_season=cs,
@@ -1185,13 +1173,22 @@ def materialize_galaxy_scope(
     season_label: str,
     *,
     run: IngestionRun,
-    min_minutes: int = MIN_ELIGIBLE_MINUTES,
+    min_minutes: int | None = None,
 ) -> GalaxySnapshot | None:
     _mark_run_start(run)
     scope = scope_code.strip().upper()
     try:
         competition_seasons = resolve_galaxy_competition_seasons(scope, season_label)
-        rows, excluded_competitions, excluded_players = _build_rows(competition_seasons, min_minutes=min_minutes)
+        requested_floor = max(min_minutes or 0, 0)
+        minimum_minutes_by_competition = {
+            cs.competition.short_code: max(cs.minimum_eligible_minutes, requested_floor)
+            for cs in competition_seasons
+        }
+        scope_minimum_minutes = min(minimum_minutes_by_competition.values())
+        rows, excluded_competitions, excluded_players = _build_rows(
+            competition_seasons,
+            minimum_minutes_by_competition=minimum_minutes_by_competition,
+        )
         if len(rows) < 3:
             raise ValueError(
                 "At least 3 eligible outfield players are required to materialize Galaxy "
@@ -1268,7 +1265,7 @@ def materialize_galaxy_scope(
                 ingestion_run=run,
                 model_version=MODEL_VERSION,
                 feature_profile=profile,
-                min_minutes=min_minutes,
+                min_minutes=scope_minimum_minutes,
                 default_min_minutes=DEFAULT_MIN_MINUTES,
                 top_k=TOP_K_SIMILARS,
                 included_competition_season_ids=sorted({row.derived.competition_season_id for row in rows}),
@@ -1284,6 +1281,7 @@ def materialize_galaxy_scope(
                     "coverage": {key: round(value, 4) for key, value in coverage.items()},
                     "eligible_players": len(rows),
                     "eligible_competitions": sorted({row.competition_code for row in rows}),
+                    "eligibility_thresholds": minimum_minutes_by_competition,
                     "excluded_players": {
                         "missing_sofascore_source": len(excluded_players),
                         "examples": excluded_players[:25],
@@ -1360,7 +1358,8 @@ def materialize_galaxy_scope(
             "scope_code": scope,
             "season_label": season_label,
             "feature_profile": profile,
-            "minimum_minutes": min_minutes,
+            "minimum_minutes": scope_minimum_minutes,
+            "eligibility_thresholds": minimum_minutes_by_competition,
             "players": len(rows),
             "features": len(feature_names),
             "top_k": TOP_K_SIMILARS,
@@ -1398,5 +1397,5 @@ def materialize_galaxy_embeddings(
         competition_season.competition.short_code,
         competition_season.season.label,
         run=run,
-        min_minutes=MIN_ELIGIBLE_MINUTES,
+        min_minutes=None,
     )

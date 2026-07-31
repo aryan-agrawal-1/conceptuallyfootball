@@ -29,8 +29,11 @@ def _percentile_rank(value: float, values: list[float]) -> float:
     return ((less + less_or_equal) / 2.0) / len(values) * 100.0
 
 
-def _gk_eligibility(minutes: int | None) -> tuple[bool, str]:
-    if not minutes or minutes < MIN_ELIGIBLE_MINUTES:
+def _gk_eligibility(
+    minutes: int | None,
+    minimum_eligible_minutes: int = MIN_ELIGIBLE_MINUTES,
+) -> tuple[bool, str]:
+    if not minutes or minutes < minimum_eligible_minutes:
         return False, "below_minutes_threshold"
     return True, ""
 
@@ -112,8 +115,9 @@ def materialize_gk_derived_stats(competition_season: CompetitionSeason, *, deriv
         return 0
 
     metric_rows: list[dict] = []
+    minimum_eligible_minutes = competition_season.minimum_eligible_minutes
     for merged in gk_merged:
-        pe, pr = _gk_eligibility(merged.minutes)
+        pe, pr = _gk_eligibility(merged.minutes, minimum_eligible_minutes)
         base: dict = {
             "competition_season": competition_season,
             "canonical_player": merged.canonical_player,

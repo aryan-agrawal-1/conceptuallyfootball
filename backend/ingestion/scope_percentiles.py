@@ -8,10 +8,12 @@ from django.core.exceptions import FieldDoesNotExist
 from django.db.models import QuerySet
 
 from ingestion.api_cache import get_or_build_payload, joined_version, model_version, stable_cache_key
+from ingestion.competition_scope import (
+    AGGREGATE_SCOPE_CODES,
+    resolve_public_scope,
+)
 from ingestion.models import CompetitionSeason
 
-BIG_FIVE_COMPETITION_CODES = ("ENG1", "GER1", "SPA1", "FRA1", "ITA1")
-AGGREGATE_SCOPE_CODES = ("BIG5", "ALL")
 SCOPE_PERCENTILES_CACHE_VERSION = "v2"
 
 
@@ -37,21 +39,10 @@ def resolve_scope_seasons(scope_code: str, season_label: str) -> list[Competitio
     if not code or not season_label:
         raise DjangoValidationError("Provide percentile_scope and season for scope percentiles.")
 
-    rows = CompetitionSeason.objects.select_related("competition", "season").filter(
-        is_active=True,
-        season__label__iexact=season_label,
-    )
-    if code == "BIG5":
-        rows = rows.filter(competition__short_code__in=BIG_FIVE_COMPETITION_CODES)
-    elif code == "ALL":
-        pass
-    else:
-        rows = rows.filter(competition__short_code__iexact=code)
-
-    seasons = list(rows.order_by("competition__short_code"))
-    if not seasons:
-        raise DjangoValidationError("Unknown percentile scope and season combination.")
-    return seasons
+    try:
+        return resolve_public_scope(code, season_label)
+    except DjangoValidationError as exc:
+        raise DjangoValidationError("Unknown percentile scope and season combination.") from exc
 
 
 def scope_context(scope_code: str, season_label: str, competition_seasons: Iterable[CompetitionSeason]) -> dict:

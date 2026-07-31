@@ -13,7 +13,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from ingestion.derived_definitions import METRIC_FIELDS, METRIC_DEFINITIONS, SCORE_FIELDS
-from ingestion.derived_api import BIG_FIVE_COMPETITION_CODES
+from ingestion.competition_scope import public_competition_seasons, resolve_public_scope
 from ingestion.models import CompetitionSeason, PlayerSeasonDerivedStats
 
 
@@ -24,7 +24,7 @@ class RegressionFitResult:
 
 def _resolve_competition_season(competition: str, season: str) -> CompetitionSeason:
     try:
-        return CompetitionSeason.objects.select_related("competition", "season").get(
+        return public_competition_seasons().select_related("competition", "season").get(
             competition__short_code__iexact=competition,
             season__label__iexact=season,
         )
@@ -38,15 +38,7 @@ def _resolve_competition_seasons(competition: str, season: str) -> tuple[str, st
         cs = _resolve_competition_season(competition, season)
         return cs.competition.short_code, cs.season.label, [cs]
 
-    rows = CompetitionSeason.objects.select_related("competition", "season").filter(
-        is_active=True,
-        season__label__iexact=season,
-    )
-    if code == "BIG5":
-        rows = rows.filter(competition__short_code__in=BIG_FIVE_COMPETITION_CODES)
-    competition_seasons = list(rows.order_by("competition__short_code"))
-    if not competition_seasons:
-        raise DjangoValidationError("Unknown competition and season combination.")
+    competition_seasons = resolve_public_scope(code, season)
     return code, competition_seasons[0].season.label, competition_seasons
 
 

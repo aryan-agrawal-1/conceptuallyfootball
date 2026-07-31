@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-FORMULA_VERSION_GK = "gk_v1"
+FORMULA_VERSION_GK = "gk_v2"
 
 GK_METRIC_GROUPS = {
     "shot_stopping": "Shot stopping",

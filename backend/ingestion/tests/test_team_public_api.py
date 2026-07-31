@@ -19,6 +19,7 @@ def _cs() -> CompetitionSeason:
         expected_team_count=2,
         min_merged_team_count=1,
         min_team_stats_coverage_count=1,
+        is_published=True,
     )
 
 

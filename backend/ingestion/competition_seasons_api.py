@@ -5,9 +5,9 @@ from collections import OrderedDict
 from rest_framework.views import APIView
 
 from ingestion.api_cache import get_or_build_payload_response, joined_version, model_version, stable_cache_key
+from ingestion.competition_scope import BIG_FIVE_COMPETITION_CODES, public_competition_seasons
 from ingestion.derived_definitions import CORE_METRIC_MIN_COVERAGE, STYLE_METRIC_MIN_COVERAGE, STYLE_PROXY_METRICS
-from ingestion.derived_api import BIG_FIVE_COMPETITION_CODES
-from ingestion.models import CompetitionSeason
+from ingestion.models import Competition, CompetitionSeason, CompetitionType
 
 COMPETITION_ORDER = {
     "ENG1": 0,
@@ -125,7 +125,11 @@ class CompetitionSeasonsCatalogApi(APIView):
 
     def get(self, request):
         cache_key = stable_cache_key("competition-seasons", {"path": request.path})
-        source_version = joined_version("competition-seasons", model_version(CompetitionSeason))
+        source_version = joined_version(
+            "competition-seasons",
+            model_version(Competition),
+            model_version(CompetitionSeason),
+        )
 
         response, _ = get_or_build_payload_response(
             cache_key=cache_key,
@@ -136,7 +140,7 @@ class CompetitionSeasonsCatalogApi(APIView):
 
     def _build_payload(self) -> dict:
         rows = (
-            CompetitionSeason.objects.filter(is_active=True)
+            public_competition_seasons()
             .select_related("competition", "season")
             .order_by("-season__sort_order", "-season__label", "competition__short_code")
         )
@@ -153,12 +157,24 @@ class CompetitionSeasonsCatalogApi(APIView):
         big_five_seasons: OrderedDict[str, dict] = OrderedDict()
         all_season_availability: dict[str, list[dict]] = {}
         big_five_season_availability: dict[str, list[dict]] = {}
+        all_season_thresholds: dict[str, dict[str, int]] = {}
+        big_five_season_thresholds: dict[str, dict[str, int]] = {}
         for cs in rows:
             code = cs.competition.short_code
+            is_domestic_aggregate_member = (
+                cs.competition.competition_type == CompetitionType.DOMESTIC_LEAGUE
+                and cs.competition.include_in_domestic_aggregates
+            )
             if code not in by_code:
                 by_code[code] = {
                     "code": code,
                     "name": cs.competition.name,
+                    "competition_type": cs.competition.competition_type,
+                    "group": (
+                        "european"
+                        if cs.competition.competition_type == CompetitionType.CONTINENTAL_CUP
+                        else "domestic"
+                    ),
                     "seasons": [],
                 }
             season_payload = {
@@ -167,9 +183,13 @@ class CompetitionSeasonsCatalogApi(APIView):
                 "player_data_mode": cs.player_data_mode,
                 "has_understat": cs.has_understat,
                 "has_sofascore": cs.has_sofascore,
+                "minimum_eligible_minutes": cs.minimum_eligible_minutes,
+                "eligibility_thresholds": {code: cs.minimum_eligible_minutes},
                 "metric_availability": cs.metric_availability,
             }
             by_code[code]["seasons"].append(season_payload)
+            if not is_domestic_aggregate_member:
+                continue
             all_seasons.setdefault(
                 cs.season.label,
                 {
@@ -178,10 +198,12 @@ class CompetitionSeasonsCatalogApi(APIView):
                     "player_data_mode": "aggregate",
                     "has_understat": None,
                     "has_sofascore": None,
+                    "minimum_eligible_minutes": 450,
                     "metric_availability": None,
                 },
             )
             all_season_availability.setdefault(cs.season.label, []).append(cs.metric_availability)
+            all_season_thresholds.setdefault(cs.season.label, {})[code] = cs.minimum_eligible_minutes
             if code in BIG_FIVE_COMPETITION_CODES:
                 big_five_seasons.setdefault(
                     cs.season.label,
@@ -191,10 +213,14 @@ class CompetitionSeasonsCatalogApi(APIView):
                         "player_data_mode": "aggregate",
                         "has_understat": None,
                         "has_sofascore": None,
+                        "minimum_eligible_minutes": 450,
                         "metric_availability": None,
                     },
                 )
                 big_five_season_availability.setdefault(cs.season.label, []).append(cs.metric_availability)
+                big_five_season_thresholds.setdefault(cs.season.label, {})[
+                    code
+                ] = cs.minimum_eligible_minutes
 
         aggregate_entries = []
         if all_seasons:
@@ -202,10 +228,14 @@ class CompetitionSeasonsCatalogApi(APIView):
                 payload["metric_availability"] = _aggregate_metric_availability(
                     all_season_availability.get(label) or []
                 )
+                payload["eligibility_thresholds"] = all_season_thresholds[label]
+                payload["minimum_eligible_minutes"] = min(all_season_thresholds[label].values())
             aggregate_entries.append(
                 {
                     "code": "ALL",
                     "name": "All",
+                    "competition_type": "aggregate",
+                    "group": "aggregate",
                     "seasons": list(all_seasons.values()),
                 }
             )
@@ -214,10 +244,16 @@ class CompetitionSeasonsCatalogApi(APIView):
                 payload["metric_availability"] = _aggregate_metric_availability(
                     big_five_season_availability.get(label) or []
                 )
+                payload["eligibility_thresholds"] = big_five_season_thresholds[label]
+                payload["minimum_eligible_minutes"] = min(
+                    big_five_season_thresholds[label].values()
+                )
             aggregate_entries.append(
                 {
                     "code": "BIG5",
                     "name": "Big 5",
+                    "competition_type": "aggregate",
+                    "group": "aggregate",
                     "seasons": list(big_five_seasons.values()),
                 }
             )

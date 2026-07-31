@@ -212,12 +212,16 @@ def _percentile_rank(value: float, values: list[float]) -> float:
     return ((less + less_or_equal) / 2.0) / len(values) * 100.0
 
 
-def _eligibility(minutes: int | None, position_group: str) -> tuple[bool, str]:
+def _eligibility(
+    minutes: int | None,
+    position_group: str,
+    minimum_eligible_minutes: int = MIN_ELIGIBLE_MINUTES,
+) -> tuple[bool, str]:
     if position_group not in ELIGIBLE_OUTFIELD_POSITIONS:
         if position_group == PositionGroup.UNKNOWN:
             return False, "unknown_position_group"
         return False, "ineligible_position_group"
-    if not minutes or minutes < MIN_ELIGIBLE_MINUTES:
+    if not minutes or minutes < minimum_eligible_minutes:
         return False, "below_minutes_threshold"
     return True, ""
 
@@ -672,6 +676,7 @@ def materialize_derived_stats(
     run: IngestionRun,
 ) -> None:
     _mark_run_start(run)
+    materialization_savepoint = transaction.savepoint()
     try:
         merged_rows = list(
             MergedPlayerSeason.objects.filter(
@@ -699,9 +704,18 @@ def materialize_derived_stats(
 
         metric_rows: list[dict] = []
         eligible_player_ids: set[int] = set()
+        minimum_eligible_minutes = competition_season.minimum_eligible_minutes
         for merged in merged_rows:
-            percentiles_eligible, percentile_reason = _eligibility(merged.minutes, merged.position_group)
-            scores_eligible, score_reason = _eligibility(merged.minutes, merged.position_group)
+            percentiles_eligible, percentile_reason = _eligibility(
+                merged.minutes,
+                merged.position_group,
+                minimum_eligible_minutes,
+            )
+            scores_eligible, score_reason = _eligibility(
+                merged.minutes,
+                merged.position_group,
+                minimum_eligible_minutes,
+            )
             if percentiles_eligible:
                 eligible_player_ids.add(merged.canonical_player_id)
 
@@ -765,14 +779,17 @@ def materialize_derived_stats(
         competition_season.save(update_fields=["metric_availability"])
         invalidate_materialized_api_payloads()
     except Exception as exc:  # noqa: BLE001
+        transaction.savepoint_rollback(materialization_savepoint)
         _mark_run_failed(run, str(exc))
         return
+
+    transaction.savepoint_commit(materialization_savepoint)
 
     _mark_run_success(
         run,
         stats={
             "formula_version": FORMULA_VERSION,
-            "minimum_eligible_minutes": MIN_ELIGIBLE_MINUTES,
+            "minimum_eligible_minutes": minimum_eligible_minutes,
             "derived_rows": len(metric_rows),
             "eligible_rows": len(eligible_player_ids),
             "coverage": {key: round(value, 4) for key, value in coverage_report.items()},

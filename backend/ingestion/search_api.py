@@ -43,6 +43,7 @@ class SearchEntitiesApi(APIView):
             PlayerSeasonDerivedStats.objects.filter(
                 is_current=True,
                 competition_season__is_active=True,
+                competition_season__is_published=True,
             )
             .values(
                 "canonical_player_id",
@@ -53,6 +54,9 @@ class SearchEntitiesApi(APIView):
                 "minutes",
                 "competition_season_id",
                 "competition_season__competition__short_code",
+                "competition_season__competition__competition_type",
+                "competition_season__competition__include_in_domestic_aggregates",
+                "competition_season__competition__minimum_eligible_minutes",
                 "competition_season__season__label",
             )
         )
@@ -60,6 +64,7 @@ class SearchEntitiesApi(APIView):
             PlayerSeasonGkDerivedStats.objects.filter(
                 is_current=True,
                 competition_season__is_active=True,
+                competition_season__is_published=True,
             )
             .values(
                 "canonical_player_id",
@@ -69,6 +74,9 @@ class SearchEntitiesApi(APIView):
                 "minutes",
                 "competition_season_id",
                 "competition_season__competition__short_code",
+                "competition_season__competition__competition_type",
+                "competition_season__competition__include_in_domestic_aggregates",
+                "competition_season__competition__minimum_eligible_minutes",
                 "competition_season__season__label",
             )
         )
@@ -77,6 +85,13 @@ class SearchEntitiesApi(APIView):
             player_id = row["canonical_player_id"]
             scope = {
                 "competition": row["competition_season__competition__short_code"],
+                "competition_type": row["competition_season__competition__competition_type"],
+                "include_in_domestic_aggregates": row[
+                    "competition_season__competition__include_in_domestic_aggregates"
+                ],
+                "minimum_eligible_minutes": row[
+                    "competition_season__competition__minimum_eligible_minutes"
+                ],
                 "season": row["competition_season__season__label"],
                 "competition_season_id": row["competition_season_id"],
             }
@@ -91,7 +106,11 @@ class SearchEntitiesApi(APIView):
                     "total_minutes": 0,
                 },
             )
-            entry["total_minutes"] += row["minutes"] or 0
+            if (
+                scope["competition_type"] == "domestic_league"
+                and scope["include_in_domestic_aggregates"]
+            ):
+                entry["total_minutes"] += row["minutes"] or 0
             if seen_key in player_membership_seen:
                 continue
             player_membership_seen.add(seen_key)
@@ -109,6 +128,13 @@ class SearchEntitiesApi(APIView):
             player_id = row["canonical_player_id"]
             scope = {
                 "competition": row["competition_season__competition__short_code"],
+                "competition_type": row["competition_season__competition__competition_type"],
+                "include_in_domestic_aggregates": row[
+                    "competition_season__competition__include_in_domestic_aggregates"
+                ],
+                "minimum_eligible_minutes": row[
+                    "competition_season__competition__minimum_eligible_minutes"
+                ],
                 "season": row["competition_season__season__label"],
                 "competition_season_id": row["competition_season_id"],
             }
@@ -123,7 +149,11 @@ class SearchEntitiesApi(APIView):
                     "total_minutes": 0,
                 },
             )
-            entry["total_minutes"] += row["minutes"] or 0
+            if (
+                scope["competition_type"] == "domestic_league"
+                and scope["include_in_domestic_aggregates"]
+            ):
+                entry["total_minutes"] += row["minutes"] or 0
             if seen_key in player_membership_seen:
                 continue
             player_membership_seen.add(seen_key)
@@ -143,6 +173,7 @@ class SearchEntitiesApi(APIView):
             MergedTeamSeason.objects.filter(
                 is_current=True,
                 competition_season__is_active=True,
+                competition_season__is_published=True,
             )
             .values(
                 "canonical_team_id",
@@ -151,6 +182,9 @@ class SearchEntitiesApi(APIView):
                 "matches",
                 "competition_season_id",
                 "competition_season__competition__short_code",
+                "competition_season__competition__competition_type",
+                "competition_season__competition__include_in_domestic_aggregates",
+                "competition_season__competition__minimum_eligible_minutes",
                 "competition_season__season__label",
             )
         )
@@ -158,6 +192,13 @@ class SearchEntitiesApi(APIView):
             team_id = row["canonical_team_id"]
             scope = {
                 "competition": row["competition_season__competition__short_code"],
+                "competition_type": row["competition_season__competition__competition_type"],
+                "include_in_domestic_aggregates": row[
+                    "competition_season__competition__include_in_domestic_aggregates"
+                ],
+                "minimum_eligible_minutes": row[
+                    "competition_season__competition__minimum_eligible_minutes"
+                ],
                 "season": row["competition_season__season__label"],
                 "competition_season_id": row["competition_season_id"],
             }
@@ -172,7 +213,11 @@ class SearchEntitiesApi(APIView):
                     "total_matches": 0,
                 },
             )
-            entry["total_matches"] += row["matches"] or 0
+            if (
+                scope["competition_type"] == "domestic_league"
+                and scope["include_in_domestic_aggregates"]
+            ):
+                entry["total_matches"] += row["matches"] or 0
             if seen_key in team_membership_seen:
                 continue
             team_membership_seen.add(seen_key)
