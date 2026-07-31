@@ -40,10 +40,34 @@ function playerRowKey(row: PlayerRow): string {
   return `${row.competition_code}:${row.season_label}:${row.canonical_player_id}`
 }
 
-function readoutTransform(percentile: number): string {
+function readoutTransform(percentile: number, placement: 'left' | 'center' | 'right'): string {
+  if (placement === 'left') return 'translateX(calc(-100% - 8px))'
+  if (placement === 'right') return 'translateX(8px)'
   if (percentile <= 8) return 'translateX(0)'
   if (percentile >= 92) return 'translateX(-100%)'
   return 'translateX(-50%)'
+}
+
+function readoutPlacements(
+  values: Array<{ plotPercentile: number | null; row: PlayerRow }>,
+): Map<string, 'left' | 'center' | 'right'> {
+  const placementByPlayer = new Map<string, 'left' | 'center' | 'right'>()
+  const plotted = values
+    .filter((value): value is { plotPercentile: number; row: PlayerRow } => value.plotPercentile != null)
+    .sort((left, right) => left.plotPercentile - right.plotPercentile)
+
+  plotted.forEach(value => placementByPlayer.set(playerRowKey(value.row), 'center'))
+
+  for (let index = 0; index < plotted.length - 1; index += 1) {
+    const left = plotted[index]
+    const right = plotted[index + 1]
+    if (right.plotPercentile - left.plotPercentile > 12) continue
+
+    placementByPlayer.set(playerRowKey(left.row), 'left')
+    placementByPlayer.set(playerRowKey(right.row), 'right')
+  }
+
+  return placementByPlayer
 }
 
 function semanticEnds(semantic: ReturnType<typeof metricSemanticColor>) {
@@ -160,6 +184,7 @@ export function CompareAlignedChart({
             players.length === 2 && plotted.length === 2
               ? { left: Math.min(...plotted), width: Math.abs(plotted[1] - plotted[0]) }
               : null
+          const readoutPlacementByPlayer = readoutPlacements(row.values)
           return (
             <div
               key={row.key}
@@ -194,7 +219,7 @@ export function CompareAlignedChart({
                 </div>
                 <div
                   className="relative"
-                  style={{ height: 38 + row.values.length * (exportMode ? 20 : 17) }}
+                  style={{ height: exportMode ? 58 : 55 }}
                 >
                   <div className="absolute inset-x-0 top-[18px] h-px -translate-y-1/2 bg-line-bright/70" />
                   {[25, 50, 75].map(tick => (
@@ -254,9 +279,10 @@ export function CompareAlignedChart({
                       </span>
                     )
                   })}
-                  {row.values.map((value, index) => {
+                  {row.values.map(value => {
                     if (value.plotPercentile == null) return null
                     const color = COMPARISON_SLOT_STROKES[value.slot % COMPARISON_SLOT_STROKES.length]
+                    const placement = readoutPlacementByPlayer.get(playerRowKey(value.row)) ?? 'center'
                     return (
                       <span
                         key={`readout-${playerRowKey(value.row)}-${row.key}`}
@@ -268,8 +294,8 @@ export function CompareAlignedChart({
                         style={{
                           color,
                           left: `${value.plotPercentile}%`,
-                          top: 34 + index * (exportMode ? 20 : 17),
-                          transform: readoutTransform(value.plotPercentile),
+                          top: 34,
+                          transform: readoutTransform(value.plotPercentile, placement),
                         }}
                       >
                         {formatValue(value.raw, value.unit)} ·{' '}
