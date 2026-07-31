@@ -112,7 +112,7 @@ export function ProfileDistributionPanel({
   const scopeLabel = `${distributions.context.competition_code} ${distributions.context.season_label}`
 
   return (
-    <div>
+    <div className={dense ? 'h-full' : undefined}>
       {!compact && (
         <div className="mb-4">
           <div className="flex flex-wrap items-end justify-between gap-2">
@@ -149,7 +149,7 @@ export function ProfileDistributionPanel({
       <div
         className={
           dense
-            ? 'grid grid-cols-3 gap-1.5'
+            ? 'grid h-full min-h-0 grid-cols-3 auto-rows-fr gap-2'
             : compact
               ? 'grid grid-cols-2 gap-3'
               : 'grid gap-3 md:grid-cols-2'
@@ -195,10 +195,10 @@ function DistributionStrip({
   dense: boolean
   light: boolean
 }) {
-  const width = 420
-  const height = dense ? 60 : compact ? 82 : 96
-  const chartTop = dense ? 22 : compact ? 28 : 34
-  const chartBottom = height - (dense ? 16 : 18)
+  const width = dense ? 320 : 420
+  const height = dense ? 118 : compact ? 82 : 96
+  const chartTop = dense ? 28 : compact ? 28 : 34
+  const chartBottom = height - (dense ? 24 : 18)
   const plotHeight = chartBottom - chartTop
   const maxBinCount = Math.max(1, ...distribution.bins.map(bin => bin.count))
   const domainSpan = distribution.max - distribution.min
@@ -213,7 +213,7 @@ function DistributionStrip({
     <figure
       className={
         dense
-          ? 'border p-1.5'
+          ? 'flex h-full min-h-0 flex-col overflow-hidden border p-2'
           : compact
             ? 'border p-3'
             : 'border border-electric/15 bg-mat/35 p-3'
@@ -246,7 +246,11 @@ function DistributionStrip({
       </figcaption>
       <svg
         viewBox={`0 0 ${width} ${height}`}
-        className={`${dense ? 'mt-0.5' : 'mt-1'} h-auto w-full overflow-visible`}
+        className={
+          dense
+            ? 'mt-0.5 min-h-0 w-full flex-1 overflow-hidden'
+            : 'mt-1 h-auto w-full overflow-visible'
+        }
         role="img"
         aria-hidden="true"
       >
@@ -292,20 +296,20 @@ function DistributionStrip({
           d={`M ${markerX - 5} ${chartTop - 12} L ${markerX + 5} ${chartTop - 12} L ${markerX} ${chartTop - 5} Z`}
           fill={color}
         />
-        <text x={0} y={height - 3} fill={mutedColor} fontSize={dense ? 16 : 9} fontFamily="ui-monospace, monospace">
+        <text x={0} y={height - 3} fill={mutedColor} fontSize={dense ? 12 : 9} fontFamily="ui-monospace, monospace">
           {formatValue(distribution.min, formatUnit)}
         </text>
         <text
           x={x(distribution.median)}
           y={height - 3}
           fill={textColor}
-          fontSize={dense ? 16 : 9}
+          fontSize={dense ? 12 : 9}
           textAnchor="middle"
           fontFamily="ui-monospace, monospace"
         >
           {formatValue(distribution.median, formatUnit)}
         </text>
-        <text x={width} y={height - 3} fill={mutedColor} fontSize={dense ? 16 : 9} textAnchor="end" fontFamily="ui-monospace, monospace">
+        <text x={width} y={height - 3} fill={mutedColor} fontSize={dense ? 12 : 9} textAnchor="end" fontFamily="ui-monospace, monospace">
           {formatValue(distribution.max, formatUnit)}
         </text>
       </svg>

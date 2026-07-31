@@ -11,6 +11,7 @@ import {
   resolveProfileMetric,
   resolveRadarMetricKeys,
   resolveHeaderCard,
+  selectHeadlinePercentileExtremes,
   stripPer90Suffix,
   type ProfileBarSpec,
   type ProfileRateMode,
@@ -165,7 +166,7 @@ function defaultProfileExportStats(
   rateMode: ProfileRateMode,
 ): ProfileExportTile[] {
   const seen = new Set<string>()
-  const standoutStats = curatedProfileMetricSpecs(player.position_group)
+  const percentileStats = curatedProfileMetricSpecs(player.position_group)
     .flatMap(spec => {
       const resolved = resolveProfileMetric(player, rateMode, spec.bar, meta)
       if (resolved.value == null || resolved.percentile == null) return []
@@ -178,11 +179,7 @@ function defaultProfileExportStats(
         percentile: resolved.percentile,
       }]
     })
-    .toSorted((left, right) =>
-      right.percentile - left.percentile ||
-      right.value - left.value,
-    )
-    .slice(0, DEFAULT_TILE_COUNT)
+  const standoutStats = selectHeadlinePercentileExtremes(percentileStats)
 
   if (standoutStats.length) {
     return standoutStats.map(({ key, label }) => ({ key, label }))

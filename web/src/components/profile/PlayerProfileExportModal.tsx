@@ -72,12 +72,29 @@ interface ResolvedTile extends ProfileExportTile {
 const MIN_STATS = PROFILE_EXPORT_STAT_LIMIT
 const MAX_STATS = PROFILE_EXPORT_STAT_LIMIT
 
-const PROFILE_EXPORT_DIMENSIONS: Record<
+const PROFILE_EXPORT_BASE_DIMENSIONS: Record<
   ProfileExportOrientation,
   { width: number; height: number }
 > = {
   portrait: { width: 1080, height: 1350 },
   landscape: { width: 1600, height: 900 },
+}
+
+function profileExportDimensions(preset: ProfileExportPreset): { width: number; height: number } {
+  const base = PROFILE_EXPORT_BASE_DIMENSIONS[preset.orientation]
+  const lowerPanelCount = Number(preset.notesEnabled) + Number(preset.similarEnabled)
+  const growth =
+    lowerPanelCount === 2 || preset.similarEnabled
+      ? 1.45
+      : lowerPanelCount === 1
+        ? 1.35
+        : preset.orientation === 'landscape' && preset.chartEnabled
+          ? 1.08
+          : 1
+  return {
+    width: Math.round(base.width * growth),
+    height: Math.round(base.height * growth),
+  }
 }
 
 const PROFILE_EXPORT_POLICIES: Record<ProfileExportOrientation, PngExportPolicy> = {
@@ -571,7 +588,7 @@ export function PlayerProfileExportModal({
 
           <main className="flex min-h-0 flex-col bg-[#05060c]">
             <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
-              <ExportSurfacePreview orientation={preset.orientation}>
+              <ExportSurfacePreview preset={preset}>
                 <PlayerProfileExportSurface
                   player={player}
                   meta={meta}
@@ -642,15 +659,15 @@ export function PlayerProfileExportModal({
 }
 
 function ExportSurfacePreview({
-  orientation,
+  preset,
   children,
 }: {
-  orientation: ProfileExportOrientation
+  preset: ProfileExportPreset
   children: ReactNode
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(0.4)
-  const dimensions = PROFILE_EXPORT_DIMENSIONS[orientation]
+  const dimensions = profileExportDimensions(preset)
 
   useEffect(() => {
     const container = containerRef.current
@@ -900,24 +917,21 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
   const theme = surfaceTheme(preset.theme)
   const orientation = preset.orientation
   const isLandscape = orientation === 'landscape'
-  const dimensions = PROFILE_EXPORT_DIMENSIONS[orientation]
+  const dimensions = profileExportDimensions(preset)
   const hasLowerPanel = preset.notesEnabled || preset.similarEnabled
   const hasDistribution = Boolean(
     preset.chartEnabled && preset.distributionEnabled && distributions,
   )
   const hasSupplement = preset.chartEnabled || hasLowerPanel
   const chartScale = isLandscape
-    ? hasDistribution
-      ? hasLowerPanel ? 0.37 : 0.52
-      : hasLowerPanel ? 0.41 : 0.58
-    : hasLowerPanel ? 0.68 : 0.82
+    ? hasDistribution ? 0.7 : 0.72
+    : 1.06
   const chartViewportSize = 760 * chartScale
+  const chartPanelHeight = chartViewportSize + (isLandscape ? 72 : 80)
   const supplementRows =
     preset.chartEnabled && hasLowerPanel
-      ? isLandscape
-        ? 'minmax(0, 1fr) 170px'
-        : 'minmax(0, 1fr) 260px'
-      : 'minmax(0, 1fr)'
+      ? `${chartPanelHeight}px minmax(0, 1fr)`
+      : 'auto'
 
   return (
     <div
@@ -1068,6 +1082,7 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
                   )}
                 >
                   <section
+                    data-export-section="profile-chart"
                     className={cn(
                       'relative grid min-h-0 place-items-center overflow-hidden border',
                       isLandscape ? 'px-3 py-3' : 'px-4 py-5',
@@ -1129,7 +1144,8 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
 
                   {hasDistribution && distributions && (
                     <section
-                      className="relative min-h-0 overflow-hidden border p-2 [&_figcaption]:min-w-0 [&_figcaption>span]:truncate"
+                      data-export-section="cohort-distance"
+                      className="relative flex min-h-0 flex-col overflow-hidden border p-3 [&_figcaption]:min-w-0 [&_figcaption>span]:truncate"
                       style={{ borderColor: theme.border, background: theme.panel }}
                     >
                       {preset.theme === 'conceptually-football' && <HudCornerMarks size="size-4" />}
@@ -1141,17 +1157,19 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
                           {distributions.context.competition_code} · {distributions.cohort_count} eligible
                         </p>
                       </div>
-                      <ProfileDistributionPanel
-                        player={player}
-                        rateMode={preset.rateMode}
-                        meta={meta}
-                        metricKeys={chartMetricKeys}
-                        distributions={distributions}
-                        percentileMap={percentileMap}
-                        compact
-                        dense
-                        light={preset.theme === 'boring'}
-                      />
+                      <div className="min-h-0 flex-1">
+                        <ProfileDistributionPanel
+                          player={player}
+                          rateMode={preset.rateMode}
+                          meta={meta}
+                          metricKeys={chartMetricKeys}
+                          distributions={distributions}
+                          percentileMap={percentileMap}
+                          compact
+                          dense
+                          light={preset.theme === 'boring'}
+                        />
+                      </div>
                     </section>
                   )}
                 </div>
@@ -1202,7 +1220,7 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
                       isError={similarIsError}
                       scopeLabel={similarScopeLabel}
                       theme={preset.theme}
-                      compact={isLandscape}
+                      compact={false}
                     />
                   )}
                 </div>
