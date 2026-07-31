@@ -22,6 +22,7 @@ interface ProfileDistributionPanelProps {
   distributions?: ProfileDistributionPayload
   percentileMap?: Record<string, number | null>
   compact?: boolean
+  dense?: boolean
   light?: boolean
 }
 
@@ -64,6 +65,7 @@ export function ProfileDistributionPanel({
   distributions,
   percentileMap = player.percentiles,
   compact = false,
+  dense = false,
   light = false,
 }: ProfileDistributionPanelProps) {
   const rows = useMemo(
@@ -110,7 +112,7 @@ export function ProfileDistributionPanel({
   const scopeLabel = `${distributions.context.competition_code} ${distributions.context.season_label}`
 
   return (
-    <div>
+    <div className={dense ? 'h-full' : undefined}>
       {!compact && (
         <div className="mb-4">
           <div className="flex flex-wrap items-end justify-between gap-2">
@@ -144,7 +146,15 @@ export function ProfileDistributionPanel({
           </div>
         </div>
       )}
-      <div className={compact ? 'grid grid-cols-2 gap-3' : 'grid gap-3 md:grid-cols-2'}>
+      <div
+        className={
+          dense
+            ? 'grid h-full min-h-0 grid-cols-3 auto-rows-fr gap-2'
+            : compact
+              ? 'grid grid-cols-2 gap-3'
+              : 'grid gap-3 md:grid-cols-2'
+        }
+      >
         {rows.map(row => (
           <DistributionStrip
             key={row.metricKey}
@@ -155,6 +165,7 @@ export function ProfileDistributionPanel({
             distribution={row.distribution}
             color={row.group.color}
             compact={compact}
+            dense={dense}
             light={light}
           />
         ))}
@@ -171,6 +182,7 @@ function DistributionStrip({
   distribution,
   color,
   compact,
+  dense,
   light,
 }: {
   label: string
@@ -180,12 +192,13 @@ function DistributionStrip({
   distribution: ProfileMetricDistribution
   color: string
   compact: boolean
+  dense: boolean
   light: boolean
 }) {
-  const width = 420
-  const height = compact ? 82 : 96
-  const chartTop = compact ? 28 : 34
-  const chartBottom = height - 18
+  const width = dense ? 320 : 420
+  const height = dense ? 118 : compact ? 82 : 96
+  const chartTop = dense ? 28 : compact ? 28 : 34
+  const chartBottom = height - (dense ? 24 : 18)
   const plotHeight = chartBottom - chartTop
   const maxBinCount = Math.max(1, ...distribution.bins.map(bin => bin.count))
   const domainSpan = distribution.max - distribution.min
@@ -198,15 +211,33 @@ function DistributionStrip({
 
   return (
     <figure
-      className={compact ? 'border p-3' : 'border border-electric/15 bg-mat/35 p-3'}
+      className={
+        dense
+          ? 'flex h-full min-h-0 flex-col overflow-hidden border p-2'
+          : compact
+            ? 'border p-3'
+            : 'border border-electric/15 bg-mat/35 p-3'
+      }
       style={compact ? { borderColor: `${color}44`, background: light ? 'rgba(255,255,255,0.38)' : 'rgba(7,8,16,0.32)' } : undefined}
       aria-label={`${label} distribution. Player value ${formatValue(value, formatUnit)}, ${percentile == null ? 'percentile unavailable' : ordinalPercentile(percentile)}.`}
     >
-      <figcaption className="flex items-start justify-between gap-3">
-        <span style={{ color }} className={compact ? 'text-[11px] font-bold uppercase tracking-[0.12em]' : 'text-[10px] font-bold uppercase tracking-[0.16em]'}>
+      <figcaption className={`flex items-start justify-between ${dense ? 'gap-1' : 'gap-3'}`}>
+        <span
+          style={{ color }}
+          className={
+            dense
+              ? 'text-[9px] font-bold uppercase tracking-[0.1em]'
+              : compact
+                ? 'text-[11px] font-bold uppercase tracking-[0.12em]'
+                : 'text-[10px] font-bold uppercase tracking-[0.16em]'
+          }
+        >
           {label}
         </span>
-        <span style={{ color: textColor }} className="font-mono text-[11px] font-bold tabular-nums">
+        <span
+          style={{ color: textColor }}
+          className={`font-mono font-bold tabular-nums ${dense ? 'text-[9px]' : 'text-[11px]'}`}
+        >
           {formatValue(value, formatUnit)}
           {percentile != null && (
             <span style={{ color: mutedColor }}> · {ordinalPercentile(percentile)}</span>
@@ -215,7 +246,11 @@ function DistributionStrip({
       </figcaption>
       <svg
         viewBox={`0 0 ${width} ${height}`}
-        className="mt-1 h-auto w-full overflow-visible"
+        className={
+          dense
+            ? 'mt-0.5 min-h-0 w-full flex-1 overflow-hidden'
+            : 'mt-1 h-auto w-full overflow-visible'
+        }
         role="img"
         aria-hidden="true"
       >
@@ -261,20 +296,20 @@ function DistributionStrip({
           d={`M ${markerX - 5} ${chartTop - 12} L ${markerX + 5} ${chartTop - 12} L ${markerX} ${chartTop - 5} Z`}
           fill={color}
         />
-        <text x={0} y={height - 3} fill={mutedColor} fontSize={9} fontFamily="ui-monospace, monospace">
+        <text x={0} y={height - 3} fill={mutedColor} fontSize={dense ? 12 : 9} fontFamily="ui-monospace, monospace">
           {formatValue(distribution.min, formatUnit)}
         </text>
         <text
           x={x(distribution.median)}
           y={height - 3}
           fill={textColor}
-          fontSize={9}
+          fontSize={dense ? 12 : 9}
           textAnchor="middle"
           fontFamily="ui-monospace, monospace"
         >
           {formatValue(distribution.median, formatUnit)}
         </text>
-        <text x={width} y={height - 3} fill={mutedColor} fontSize={9} textAnchor="end" fontFamily="ui-monospace, monospace">
+        <text x={width} y={height - 3} fill={mutedColor} fontSize={dense ? 12 : 9} textAnchor="end" fontFamily="ui-monospace, monospace">
           {formatValue(distribution.max, formatUnit)}
         </text>
       </svg>

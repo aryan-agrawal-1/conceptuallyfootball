@@ -7,8 +7,8 @@ import { ShareActions, type ShareActionBusy } from '../share/ShareActions'
 import {
   createPngExport,
   handoffPngExport,
-  PNG_EXPORT_POLICIES,
   pngFileName,
+  type PngExportPolicy,
 } from '../share/pngExport'
 import { formatValue } from '../../lib/format'
 import { getPercentileTextColor, metricSemanticColor } from '../../lib/heatmap'
@@ -20,6 +20,7 @@ import {
   profileExportLabelForKey,
   PROFILE_EXPORT_STAT_LIMIT,
   saveProfileExportPreset,
+  type ProfileExportOrientation,
   type ProfileExportPreset,
   type ProfileExportTheme,
   type ProfileExportTile,
@@ -68,10 +69,50 @@ interface ResolvedTile extends ProfileExportTile {
   formatUnit: Parameters<typeof formatValue>[1]
 }
 
-const A4_WIDTH = 1240
-const A4_HEIGHT = 1754
 const MIN_STATS = PROFILE_EXPORT_STAT_LIMIT
 const MAX_STATS = PROFILE_EXPORT_STAT_LIMIT
+
+const PROFILE_EXPORT_BASE_DIMENSIONS: Record<
+  ProfileExportOrientation,
+  { width: number; height: number }
+> = {
+  portrait: { width: 1080, height: 1350 },
+  landscape: { width: 1600, height: 900 },
+}
+
+function profileExportDimensions(preset: ProfileExportPreset): { width: number; height: number } {
+  const base = PROFILE_EXPORT_BASE_DIMENSIONS[preset.orientation]
+  const lowerPanelCount = Number(preset.notesEnabled) + Number(preset.similarEnabled)
+  const growth =
+    lowerPanelCount === 2 || preset.similarEnabled
+      ? 1.45
+      : lowerPanelCount === 1
+        ? 1.35
+        : preset.orientation === 'landscape' && preset.chartEnabled
+          ? 1.08
+          : 1
+  return {
+    width: Math.round(base.width * growth),
+    height: Math.round(base.height * growth),
+  }
+}
+
+const PROFILE_EXPORT_POLICIES: Record<ProfileExportOrientation, PngExportPolicy> = {
+  portrait: {
+    name: 'portrait player profile',
+    pixelRatios: [1, 0.9, 0.8, 0.75],
+    minWidth: 810,
+    minHeight: 1012,
+    minTextPixels: 8,
+  },
+  landscape: {
+    name: 'landscape player profile',
+    pixelRatios: [1, 0.9],
+    minWidth: 1440,
+    minHeight: 810,
+    minTextPixels: 8,
+  },
+}
 
 const POSITION_COHORT_LABEL: Record<PlayerRow['position_group'], string> = {
   FWD: 'forwards',
@@ -84,6 +125,11 @@ const POSITION_COHORT_LABEL: Record<PlayerRow['position_group'], string> = {
 const THEME_LABEL: Record<ProfileExportTheme, string> = {
   'conceptually-football': 'Conceptually Football',
   boring: 'Boring',
+}
+
+const ORIENTATION_LABEL: Record<ProfileExportOrientation, string> = {
+  portrait: 'Portrait 4:5',
+  landscape: 'Landscape 16:9',
 }
 
 function layoutStatCap(): number {
@@ -222,7 +268,12 @@ export function PlayerProfileExportModal({
   )
 
   function updatePreset(next: Partial<ProfileExportPreset>) {
-    setPreset(prev => ({ ...prev, ...next }))
+    setPreset(prev => {
+      const merged = { ...prev, ...next }
+      return merged.chartEnabled && merged.distributionEnabled
+        ? { ...merged, orientation: 'landscape' }
+        : merged
+    })
   }
 
   function updateStatLabel(key: string, label: string) {
@@ -278,7 +329,7 @@ export function PlayerProfileExportModal({
       const artifact = await createPngExport({
         resolveNode: () => exportRef.current,
         fileName,
-        policy: PNG_EXPORT_POLICIES.playerCard,
+        policy: PROFILE_EXPORT_POLICIES[preset.orientation],
         backgroundColor: preset.theme === 'boring' ? '#eef1f6' : '#070810',
       })
       await handoffPngExport(artifact, {
@@ -334,6 +385,24 @@ export function PlayerProfileExportModal({
                   }))}
                   onChange={theme => updatePreset({ theme })}
                 />
+                <SegmentedControl
+                  label="Orientation"
+                  value={preset.orientation}
+                  options={(['portrait', 'landscape'] as const).map(value => ({
+                    value,
+                    label: ORIENTATION_LABEL[value],
+                    disabled:
+                      value === 'portrait' &&
+                      preset.chartEnabled &&
+                      preset.distributionEnabled,
+                  }))}
+                  onChange={orientation => updatePreset({ orientation })}
+                />
+                {preset.chartEnabled && preset.distributionEnabled && (
+                  <p className="border border-electric/15 bg-electric/[0.04] px-3 py-2 text-[10px] leading-relaxed text-ink-muted">
+                    Landscape keeps the profile chart and distributions readable side by side.
+                  </p>
+                )}
                 <SegmentedControl
                   label="Rate"
                   value={preset.rateMode}
@@ -456,7 +525,10 @@ export function PlayerProfileExportModal({
                     type="checkbox"
                     checked={preset.distributionEnabled}
                     disabled={!preset.chartEnabled || !distributions}
-                    onChange={e => updatePreset({ distributionEnabled: e.target.checked })}
+                    onChange={e => updatePreset({
+                      distributionEnabled: e.target.checked,
+                      orientation: e.target.checked ? 'landscape' : preset.orientation,
+                    })}
                   />
                 </label>
                 {!player.eligibility.percentiles_eligible && preset.chartEnabled && (
@@ -516,29 +588,25 @@ export function PlayerProfileExportModal({
 
           <main className="flex min-h-0 flex-col bg-[#05060c]">
             <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
-              <div className="flex min-h-full items-start justify-center">
-                <div className="origin-top" style={{ width: A4_WIDTH * 0.42, height: A4_HEIGHT * 0.42 }}>
-                  <div style={{ transform: 'scale(0.42)', transformOrigin: 'top left' }}>
-                    <PlayerProfileExportSurface
-                      player={player}
-                      meta={meta}
-                      title={title}
-                      preset={preset}
-                      tiles={validTiles}
-                      chartMetricKeys={chartMetricKeys}
-                      notes={notes}
-                      similarEdges={similarEdges}
-                      similarIsLoading={similarIsLoading}
-                      similarIsError={similarIsError}
-                      similarScopeLabel={similarScopeLabel}
-                      previewInvalid={invalidReason}
-                      percentileMap={percentileMap}
-                      percentileScopeLabel={percentileScopeLabel}
-                      distributions={distributions}
-                    />
-                  </div>
-                </div>
-              </div>
+              <ExportSurfacePreview preset={preset}>
+                <PlayerProfileExportSurface
+                  player={player}
+                  meta={meta}
+                  title={title}
+                  preset={preset}
+                  tiles={validTiles}
+                  chartMetricKeys={chartMetricKeys}
+                  notes={notes}
+                  similarEdges={similarEdges}
+                  similarIsLoading={similarIsLoading}
+                  similarIsError={similarIsError}
+                  similarScopeLabel={similarScopeLabel}
+                  previewInvalid={invalidReason}
+                  percentileMap={percentileMap}
+                  percentileScopeLabel={percentileScopeLabel}
+                  distributions={distributions}
+                />
+              </ExportSurfacePreview>
             </div>
 
             <div className="flex shrink-0 flex-col gap-3 border-t border-electric/20 bg-panel/95 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -590,6 +658,60 @@ export function PlayerProfileExportModal({
   )
 }
 
+function ExportSurfacePreview({
+  preset,
+  children,
+}: {
+  preset: ProfileExportPreset
+  children: ReactNode
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [scale, setScale] = useState(0.4)
+  const dimensions = profileExportDimensions(preset)
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    const observedContainer = container
+
+    function fitSurface() {
+      const width = observedContainer.clientWidth
+      const height = observedContainer.clientHeight
+      if (!width || !height) return
+      setScale(Math.min(1, width / dimensions.width, height / dimensions.height))
+    }
+
+    fitSurface()
+    const observer = new ResizeObserver(fitSurface)
+    observer.observe(observedContainer)
+    return () => observer.disconnect()
+  }, [dimensions.height, dimensions.width])
+
+  return (
+    <div ref={containerRef} className="flex min-h-full w-full items-start justify-center">
+      <div
+        className="relative shrink-0"
+        style={{
+          width: dimensions.width * scale,
+          height: dimensions.height * scale,
+        }}
+      >
+        <div
+          className="absolute left-0 top-0"
+          style={{
+            width: dimensions.width,
+            height: dimensions.height,
+            transform: `scale(${scale})`,
+            transformOrigin: 'top left',
+          }}
+        >
+          {children}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function EditorSection({
   title,
   meta,
@@ -618,22 +740,33 @@ function SegmentedControl<T extends string>({
 }: {
   label: string
   value: T
-  options: Array<{ value: T; label: string }>
+  options: Array<{ value: T; label: string; disabled?: boolean }>
   onChange: (value: T) => void
 }) {
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-[10px] uppercase tracking-[0.18em] text-ink-muted">{label}</span>
       <div className="flex flex-wrap gap-2">
-        {options.map(option => (
-          <HudPill
-            key={option.value}
-            active={value === option.value}
-            onClick={() => onChange(option.value)}
-          >
-            {option.label}
-          </HudPill>
-        ))}
+        {options.map(option =>
+          option.disabled ? (
+            <button
+              key={option.value}
+              type="button"
+              disabled
+              className="border border-control-border px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.15em] text-control-disabled opacity-55"
+            >
+              {option.label}
+            </button>
+          ) : (
+            <HudPill
+              key={option.value}
+              active={value === option.value}
+              onClick={() => onChange(option.value)}
+            >
+              {option.label}
+            </HudPill>
+          ),
+        )}
       </div>
     </div>
   )
@@ -782,77 +915,141 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
     ? `Stats: ${player.competition_code} ${player.season_label} · Raw values · Percentiles unavailable`
     : `Stats: ${player.competition_code} ${player.season_label} · ${preset.rateMode === 'per90' ? 'Per 90' : 'Season'} · Percentiles vs ${percentileScopeLabel} ${POSITION_COHORT_LABEL[player.position_group]}`
   const theme = surfaceTheme(preset.theme)
+  const orientation = preset.orientation
+  const isLandscape = orientation === 'landscape'
+  const dimensions = profileExportDimensions(preset)
   const hasLowerPanel = preset.notesEnabled || preset.similarEnabled
   const hasDistribution = Boolean(
     preset.chartEnabled && preset.distributionEnabled && distributions,
   )
   const hasSupplement = preset.chartEnabled || hasLowerPanel
-  const chartScale = hasDistribution ? 0.62 : hasLowerPanel ? 0.9 : 1.28
+  const chartScale = isLandscape
+    ? hasDistribution ? 0.7 : 0.72
+    : 1.06
   const chartViewportSize = 760 * chartScale
-  const shouldTransformChart = hasDistribution || !hasLowerPanel
+  const chartPanelHeight = chartViewportSize + (isLandscape ? 72 : 80)
+  const supplementRows =
+    preset.chartEnabled && hasLowerPanel
+      ? `${chartPanelHeight}px minmax(0, 1fr)`
+      : 'auto'
 
   return (
     <div
       ref={ref}
-      className={cn(
-        'relative overflow-hidden',
-        preset.theme === 'conceptually-football' ? 'font-sans' : 'font-sans',
-      )}
+      className="relative overflow-hidden font-sans"
       style={{
-        width: A4_WIDTH,
-        height: A4_HEIGHT,
+        width: dimensions.width,
+        height: dimensions.height,
         background: theme.background,
         color: theme.text,
       }}
     >
       <SurfaceBackground theme={preset.theme} />
-      <div className="relative z-10 flex h-full flex-col p-[72px]">
-        <header className="flex items-start justify-between gap-10">
-          <div className="flex min-w-0 items-center gap-7">
+      <div
+        className={cn(
+          'relative z-10 flex h-full flex-col',
+          isLandscape ? 'p-[44px]' : 'p-[54px]',
+        )}
+      >
+        <header className={cn('flex shrink-0 items-start justify-between', isLandscape ? 'gap-7' : 'gap-9')}>
+          <div className={cn('flex min-w-0 items-center', isLandscape ? 'gap-5' : 'gap-7')}>
             <div
-              className="grid size-[142px] shrink-0 place-items-center border"
+              className={cn(
+                'grid shrink-0 place-items-center border',
+                isLandscape ? 'size-[86px]' : 'size-[124px]',
+              )}
               style={{
                 borderColor: theme.border,
                 background: theme.logoBackground,
               }}
             >
               {logo ? (
-                <img src={logo} alt="" className="max-h-[106px] max-w-[106px] object-contain" />
+                <img
+                  src={logo}
+                  alt=""
+                  className={cn(
+                    'object-contain',
+                    isLandscape ? 'max-h-[64px] max-w-[64px]' : 'max-h-[94px] max-w-[94px]',
+                  )}
+                />
               ) : (
-                <span style={{ color: theme.accent }} className="text-[36px] font-black">
+                <span
+                  style={{ color: theme.accent }}
+                  className={cn('font-black', isLandscape ? 'text-[26px]' : 'text-[34px]')}
+                >
                   CF
                 </span>
               )}
             </div>
             <div className="min-w-0">
-              <p style={{ color: theme.accent }} className="mb-5 text-[18px] font-bold uppercase tracking-[0.32em]">
+              <p
+                style={{ color: theme.accent }}
+                className={cn(
+                  'font-bold uppercase tracking-[0.3em]',
+                  isLandscape ? 'mb-2 text-[12px]' : 'mb-4 text-[16px]',
+                )}
+              >
                 Player profile
               </p>
-              <h1 className="max-w-[760px] text-[76px] font-black leading-[0.92] tracking-normal">
+              <h1
+                className={cn(
+                  'line-clamp-2 break-words font-black tracking-normal',
+                  isLandscape
+                    ? 'max-w-[940px] text-[50px] leading-[0.92]'
+                    : 'max-w-[710px] text-[66px] leading-[0.92]',
+                )}
+              >
                 {title || player.canonical_player_name}
               </h1>
-              <p style={{ color: theme.muted }} className="mt-6 text-[24px] font-medium">
+              <p
+                style={{ color: theme.muted }}
+                className={cn(
+                  'truncate font-medium',
+                  isLandscape ? 'mt-3 max-w-[980px] text-[16px]' : 'mt-5 max-w-[760px] text-[21px]',
+                )}
+              >
                 {subtitleParts.join(' · ')}
               </p>
             </div>
           </div>
           <div className="flex shrink-0 items-start justify-end gap-4 text-right">
             <div>
-              <p style={{ color: theme.accent }} className="max-w-[340px] text-[30px] font-black uppercase leading-tight tracking-[0.14em]">
+              <p
+                style={{ color: theme.accent }}
+                className={cn(
+                  'font-black uppercase leading-tight tracking-[0.14em]',
+                  isLandscape ? 'max-w-[260px] text-[20px]' : 'max-w-[300px] text-[26px]',
+                )}
+              >
                 {BRAND_NAME_UPPER}
               </p>
-              <p style={{ color: theme.muted }} className="mt-2 text-[13px] uppercase tracking-[0.24em]">
+              <p
+                style={{ color: theme.muted }}
+                className={cn(
+                  'uppercase tracking-[0.24em]',
+                  isLandscape ? 'mt-1 text-[10px]' : 'mt-2 text-[12px]',
+                )}
+              >
                 {BRAND_DOMAIN}
               </p>
             </div>
           </div>
         </header>
 
-        <div className="mt-10 flex min-h-0 flex-1 flex-col gap-8">
+        <div
+          className={cn(
+            'flex min-h-0 flex-1 flex-col',
+            isLandscape ? 'mt-5 gap-[18px]' : 'mt-8 gap-6',
+          )}
+        >
           <section
             className={cn(
               'grid gap-4',
-              hasSupplement ? 'grid-cols-4' : 'content-start grid-cols-4',
+              hasSupplement
+                ? 'shrink-0 grid-cols-4'
+                : isLandscape
+                  ? 'min-h-0 flex-1 grid-cols-4 auto-rows-fr'
+                  : 'min-h-0 flex-1 grid-cols-2 auto-rows-fr',
             )}
           >
             {tiles.map(tile => (
@@ -862,6 +1059,8 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
                 theme={preset.theme}
                 showPercentile={preset.showPercentiles && !rawOnly}
                 semanticColor={metricSemanticColor(meta.metrics[tile.key])}
+                compact={hasSupplement}
+                landscape={isLandscape}
               />
             ))}
           </section>
@@ -869,26 +1068,36 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
           {hasSupplement && (
             <div
               className={cn(
-                'grid min-h-0 flex-1 gap-8',
-                preset.chartEnabled && hasLowerPanel
-                  ? 'grid-rows-[minmax(0,1fr)_minmax(260px,auto)]'
-                  : 'grid-rows-1',
+                'grid min-h-0 flex-1',
+                isLandscape ? 'gap-[18px]' : 'gap-6',
               )}
+              style={{ gridTemplateRows: supplementRows }}
             >
               {preset.chartEnabled && (
                 <div
                   className={cn(
-                    'grid min-h-0 gap-8',
-                    hasDistribution ? 'grid-cols-[500px_minmax(0,1fr)]' : 'grid-cols-1',
+                    'grid min-h-0',
+                    isLandscape ? 'gap-[18px]' : 'gap-6',
+                    hasDistribution ? 'grid-cols-2' : 'grid-cols-1',
                   )}
                 >
                   <section
-                    className="relative grid min-h-0 place-items-center overflow-hidden border px-4 py-6"
+                    data-export-section="profile-chart"
+                    className={cn(
+                      'relative grid min-h-0 place-items-center overflow-hidden border',
+                      isLandscape ? 'px-3 py-3' : 'px-4 py-5',
+                    )}
                     style={{ borderColor: theme.border, background: theme.panel }}
                   >
                     {preset.theme === 'conceptually-football' && <HudCornerMarks size="size-4" />}
                     <div className="flex min-h-0 flex-col items-center">
-                      <p style={{ color: theme.accent }} className="mb-2 text-[15px] font-bold uppercase tracking-[0.26em]">
+                      <p
+                        style={{ color: theme.accent }}
+                        className={cn(
+                          'mb-1 font-bold uppercase tracking-[0.26em]',
+                          isLandscape ? 'text-[11px]' : 'text-[14px]',
+                        )}
+                      >
                         Profile chart
                       </p>
                       <div
@@ -901,25 +1110,14 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
                           height: chartViewportSize,
                         }}
                       >
-                        {shouldTransformChart ? (
-                          <div
-                            style={{
-                              width: 760,
-                              height: 760,
-                              transform: `scale(${chartScale})`,
-                              transformOrigin: 'center center',
-                            }}
-                          >
-                            <ProfilePizzaSvg
-                              player={player}
-                              rateMode={preset.rateMode}
-                              meta={meta}
-                              metricKeys={chartMetricKeys}
-                              percentileMap={percentileMap}
-                              exportMode
-                            />
-                          </div>
-                        ) : (
+                        <div
+                          style={{
+                            width: 760,
+                            height: 760,
+                            transform: `scale(${chartScale})`,
+                            transformOrigin: 'top left',
+                          }}
+                        >
                           <ProfilePizzaSvg
                             player={player}
                             rateMode={preset.rateMode}
@@ -928,10 +1126,16 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
                             percentileMap={percentileMap}
                             exportMode
                           />
-                        )}
+                        </div>
                       </div>
                       {rawOnly && (
-                        <p style={{ color: theme.muted }} className="mt-2 text-[13px] uppercase tracking-[0.18em]">
+                        <p
+                          style={{ color: theme.muted }}
+                          className={cn(
+                            'mt-1 uppercase tracking-[0.18em]',
+                            isLandscape ? 'text-[9px]' : 'text-[12px]',
+                          )}
+                        >
                           Raw metric profile
                         </p>
                       )}
@@ -940,28 +1144,32 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
 
                   {hasDistribution && distributions && (
                     <section
-                      className="relative min-h-0 overflow-hidden border p-5"
+                      data-export-section="cohort-distance"
+                      className="relative flex min-h-0 flex-col overflow-hidden border p-3 [&_figcaption]:min-w-0 [&_figcaption>span]:truncate"
                       style={{ borderColor: theme.border, background: theme.panel }}
                     >
                       {preset.theme === 'conceptually-football' && <HudCornerMarks size="size-4" />}
-                      <div className="mb-4 flex items-end justify-between gap-4">
-                        <p style={{ color: theme.accent }} className="text-[15px] font-bold uppercase tracking-[0.26em]">
+                      <div className="mb-1 flex items-end justify-between gap-3">
+                        <p style={{ color: theme.accent }} className="text-[11px] font-bold uppercase tracking-[0.24em]">
                           Cohort distance
                         </p>
-                        <p style={{ color: theme.muted }} className="font-mono text-[10px] uppercase tracking-[0.14em]">
+                        <p style={{ color: theme.muted }} className="font-mono text-[9px] uppercase tracking-[0.12em]">
                           {distributions.context.competition_code} · {distributions.cohort_count} eligible
                         </p>
                       </div>
-                      <ProfileDistributionPanel
-                        player={player}
-                        rateMode={preset.rateMode}
-                        meta={meta}
-                        metricKeys={chartMetricKeys}
-                        distributions={distributions}
-                        percentileMap={percentileMap}
-                        compact
-                        light={preset.theme === 'boring'}
-                      />
+                      <div className="min-h-0 flex-1">
+                        <ProfileDistributionPanel
+                          player={player}
+                          rateMode={preset.rateMode}
+                          meta={meta}
+                          metricKeys={chartMetricKeys}
+                          distributions={distributions}
+                          percentileMap={percentileMap}
+                          compact
+                          dense
+                          light={preset.theme === 'boring'}
+                        />
+                      </div>
                     </section>
                   )}
                 </div>
@@ -970,20 +1178,36 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
               {hasLowerPanel && (
                 <div
                   className={cn(
-                    'grid min-h-0 gap-8',
+                    'grid min-h-0',
+                    isLandscape ? 'gap-[18px]' : 'gap-6',
                     preset.notesEnabled && preset.similarEnabled ? 'grid-cols-2' : 'grid-cols-1',
                   )}
                 >
                   {preset.notesEnabled && (
                     <section
-                      className="relative min-h-0 overflow-hidden border p-8"
+                      className={cn(
+                        'relative min-h-0 overflow-hidden border',
+                        isLandscape ? 'p-[18px]' : 'p-6',
+                      )}
                       style={{ borderColor: theme.border, background: theme.panel }}
                     >
                       {preset.theme === 'conceptually-football' && <HudCornerMarks size="size-4" />}
-                      <p style={{ color: theme.accent }} className="mb-5 text-[15px] font-bold uppercase tracking-[0.26em]">
+                      <p
+                        style={{ color: theme.accent }}
+                        className={cn(
+                          'font-bold uppercase tracking-[0.26em]',
+                          isLandscape ? 'mb-2 text-[11px]' : 'mb-4 text-[14px]',
+                        )}
+                      >
                         Notes
                       </p>
-                      <p style={{ color: theme.text }} className="whitespace-pre-line text-[24px] font-medium leading-[1.45]">
+                      <p
+                        style={{ color: theme.text }}
+                        className={cn(
+                          'whitespace-pre-line break-words font-medium',
+                          isLandscape ? 'text-[16px] leading-[1.32]' : 'text-[20px] leading-[1.4]',
+                        )}
+                      >
                         {notes.trim() || ' '}
                       </p>
                     </section>
@@ -996,6 +1220,7 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
                       isError={similarIsError}
                       scopeLabel={similarScopeLabel}
                       theme={preset.theme}
+                      compact={false}
                     />
                   )}
                 </div>
@@ -1003,19 +1228,34 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
             </div>
           )}
 
-          <footer className="mt-auto flex items-end justify-between gap-8">
-            <div>
-              <p style={{ color: theme.muted }} className="text-[16px] font-medium">
+          <footer className="mt-auto flex shrink-0 items-end justify-between gap-8">
+            <div className="min-w-0">
+              <p
+                style={{ color: theme.muted }}
+                className={cn(
+                  'truncate font-medium',
+                  isLandscape ? 'max-w-[1280px] text-[11px]' : 'max-w-[820px] text-[14px]',
+                )}
+              >
                 {contextLine}
               </p>
               {previewInvalid && (
-                <p className="mt-2 text-[14px] font-bold uppercase tracking-[0.14em] text-amber-300">
+                <p className={cn(
+                  'font-bold uppercase tracking-[0.14em] text-amber-300',
+                  isLandscape ? 'mt-1 text-[9px]' : 'mt-2 text-[12px]',
+                )}>
                   Preview only · {previewInvalid}
                 </p>
               )}
             </div>
             <div className="text-right">
-              <p style={{ color: theme.muted }} className="text-[14px] uppercase tracking-[0.24em]">
+              <p
+                style={{ color: theme.muted }}
+                className={cn(
+                  'uppercase tracking-[0.24em]',
+                  isLandscape ? 'text-[10px]' : 'text-[12px]',
+                )}
+              >
                 {BRAND_DOMAIN}
               </p>
             </div>
@@ -1074,11 +1314,15 @@ function ExportStatTile({
   theme,
   showPercentile,
   semanticColor,
+  compact,
+  landscape,
 }: {
   tile: ResolvedTile
   theme: ProfileExportTheme
   showPercentile: boolean
   semanticColor: MetricSemanticColor
+  compact: boolean
+  landscape: boolean
 }) {
   const style = surfaceTheme(theme)
   const pctColor =
@@ -1087,23 +1331,49 @@ function ExportStatTile({
       : style.muted
   return (
     <article
-      className="relative min-h-[138px] border p-5"
+      className={cn(
+        'relative min-h-0 border',
+        compact
+          ? landscape ? 'p-3' : 'p-4'
+          : landscape ? 'flex flex-col justify-center p-7' : 'flex flex-col justify-center p-8',
+      )}
       style={{
         borderColor: style.border,
         background: style.panel,
       }}
     >
       {theme === 'conceptually-football' && <HudCornerMarks size="size-3" />}
-      <p style={{ color: style.muted }} className="mb-4 line-clamp-2 text-[13px] font-bold uppercase tracking-[0.18em]">
+      <p
+        style={{ color: style.muted }}
+        className={cn(
+          'line-clamp-2 font-bold uppercase tracking-[0.18em]',
+          compact
+            ? landscape ? 'mb-2 text-[10px]' : 'mb-3 text-[12px]'
+            : landscape ? 'mb-5 text-[15px]' : 'mb-7 text-[18px]',
+        )}
+      >
         {tile.label}
       </p>
       <div className="flex items-end justify-between gap-3">
-        <p style={{ color: style.text }} className="text-[38px] font-black leading-none tabular-nums">
+        <p
+          style={{ color: style.text }}
+          className={cn(
+            'font-black leading-none tabular-nums',
+            compact
+              ? landscape ? 'text-[30px]' : 'text-[36px]'
+              : landscape ? 'text-[54px]' : 'text-[68px]',
+          )}
+        >
           {formatValue(tile.value, tile.formatUnit)}
         </p>
         {showPercentile && (
           <div
-            className="border px-2.5 py-1 text-[15px] font-black tabular-nums"
+            className={cn(
+              'border font-black tabular-nums',
+              compact
+                ? landscape ? 'px-2 py-0.5 text-[12px]' : 'px-2.5 py-1 text-[14px]'
+                : 'px-3 py-1.5 text-[18px]',
+            )}
             style={{
               color: theme === 'boring' ? '#10131a' : pctColor,
               borderColor: `${pctColor}66`,
@@ -1124,52 +1394,87 @@ function SimilarPlayersExportPanel({
   isError,
   scopeLabel,
   theme,
+  compact,
 }: {
   edges: GalaxyEdge[]
   isLoading: boolean
   isError: boolean
   scopeLabel: string
   theme: ProfileExportTheme
+  compact: boolean
 }) {
   const style = surfaceTheme(theme)
   const topEdges = edges.slice(0, 3)
 
   return (
     <section
-      className="relative min-h-0 overflow-hidden border p-8"
+      className={cn(
+        'relative min-h-0 overflow-hidden border',
+        compact ? 'p-2.5' : 'p-6',
+      )}
       style={{ borderColor: style.border, background: style.panel }}
     >
       {theme === 'conceptually-football' && <HudCornerMarks size="size-4" />}
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <p style={{ color: style.accent }} className="text-[15px] font-bold uppercase tracking-[0.26em]">
+      <div className={cn('flex items-start justify-between', compact ? 'mb-1 gap-3' : 'mb-4 gap-4')}>
+        <p
+          style={{ color: style.accent }}
+          className={cn(
+            'font-bold uppercase tracking-[0.26em]',
+            compact ? 'text-[10px]' : 'text-[14px]',
+          )}
+        >
           Similar players
         </p>
-        <p style={{ color: style.muted }} className="text-right text-[11px] uppercase tracking-[0.2em]">
+        <p
+          style={{ color: style.muted }}
+          className={cn(
+            'max-w-[55%] truncate text-right uppercase tracking-[0.2em]',
+            compact ? 'text-[9px]' : 'text-[10px]',
+          )}
+        >
           {scopeLabel}
         </p>
       </div>
 
       {isLoading && (
-        <p style={{ color: style.muted }} className="flex min-h-[180px] items-center justify-center text-center text-[18px] font-bold uppercase tracking-[0.18em]">
+        <p
+          style={{ color: style.muted }}
+          className={cn(
+            'flex items-center justify-center text-center font-bold uppercase tracking-[0.18em]',
+            compact ? 'min-h-[90px] text-[12px]' : 'min-h-[170px] text-[17px]',
+          )}
+        >
           Scanning similarity matrix
         </p>
       )}
 
       {isError && !isLoading && (
-        <p style={{ color: style.muted }} className="flex min-h-[180px] items-center justify-center text-center text-[20px] font-medium leading-relaxed">
+        <p
+          style={{ color: style.muted }}
+          className={cn(
+            'flex items-center justify-center text-center font-medium leading-relaxed',
+            compact ? 'min-h-[90px] text-[12px]' : 'min-h-[170px] text-[18px]',
+          )}
+        >
           Similar players are unavailable for this league-season.
         </p>
       )}
 
       {!isLoading && !isError && topEdges.length === 0 && (
-        <p style={{ color: style.muted }} className="flex min-h-[180px] items-center justify-center text-center text-[20px] font-medium leading-relaxed">
+        <p
+          style={{ color: style.muted }}
+          className={cn(
+            'flex items-center justify-center text-center font-medium leading-relaxed',
+            compact ? 'min-h-[90px] text-[12px]' : 'min-h-[170px] text-[18px]',
+          )}
+        >
           No similar players found for this profile.
         </p>
       )}
 
       {!isLoading && !isError && topEdges.length > 0 && (
         <div
-          className="flex flex-col gap-2"
+          className={cn('flex flex-col', compact ? 'gap-1' : 'gap-2')}
           style={{
             background: 'transparent',
           }}
@@ -1179,25 +1484,42 @@ function SimilarPlayersExportPanel({
             return (
               <div
                 key={`${edge.to_galaxy_player_id}-${edge.rank}`}
-                className="grid grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-3 border px-3 py-3 text-left"
+                className={cn(
+                  'grid items-center border text-left',
+                  compact
+                    ? 'grid-cols-[26px_minmax(0,1fr)_auto] gap-2 px-2 py-0.5'
+                    : 'grid-cols-[34px_minmax(0,1fr)_auto] gap-3 px-3 py-3',
+                )}
                 style={{
                   borderColor: style.border,
                   background: theme === 'boring' ? 'rgba(255,255,255,0.34)' : 'rgba(7,8,16,0.26)',
                 }}
               >
-                <span style={{ color: style.accent }} className="font-mono text-[14px] font-bold opacity-70">
+                <span
+                  style={{ color: style.accent }}
+                  className={cn('font-mono font-bold opacity-70', compact ? 'text-[10px]' : 'text-[14px]')}
+                >
                   #{edge.rank}
                 </span>
                 <span className="min-w-0">
-                  <span style={{ color: style.text }} className="block truncate text-[21px] font-bold leading-tight">
+                  <span
+                    style={{ color: style.text }}
+                    className={cn('block truncate font-bold leading-tight', compact ? 'text-[13px]' : 'text-[20px]')}
+                  >
                     {shortPlayerName(edge.to_player_name)}
                   </span>
-                  <span style={{ color: style.muted }} className="mt-1 block truncate text-[14px] font-medium">
+                  <span
+                    style={{ color: style.muted }}
+                    className={cn('block truncate font-medium', compact ? 'text-[9px]' : 'mt-1 text-[13px]')}
+                  >
                     {edge.to_team_name ?? edge.to_competition_code ?? '—'}
                   </span>
                 </span>
                 <span
-                  className="border px-2.5 py-1 text-center font-mono text-[15px] font-black tabular-nums"
+                  className={cn(
+                    'border text-center font-mono font-black tabular-nums',
+                    compact ? 'px-2 py-0.5 text-[11px]' : 'px-2.5 py-1 text-[15px]',
+                  )}
                   style={{
                     color: theme === 'boring' ? style.text : style.accent,
                     borderColor: `${style.accent}55`,

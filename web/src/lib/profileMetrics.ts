@@ -60,6 +60,19 @@ export interface ProfileHeaderCardSpec {
   bar: ProfileBarKind
 }
 
+export function selectHeadlinePercentileExtremes<T extends { percentile: number }>(
+  candidates: T[],
+): T[] {
+  const ranked = candidates.toSorted((left, right) => right.percentile - left.percentile)
+  const best = ranked.slice(0, 2)
+  const bestSet = new Set(best)
+  const worst = ranked
+    .toReversed()
+    .filter(candidate => !bestSet.has(candidate))
+    .slice(0, 2)
+  return [...best, ...worst]
+}
+
 /** Goalkeeper profile — mirrors `COLUMN_GROUPS_GK` / backend gk_definitions. */
 export const PROFILE_BAR_SPECS_GK: ProfileBarSpec[] = [
   // Shot stopping

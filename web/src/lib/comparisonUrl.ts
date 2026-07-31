@@ -3,6 +3,8 @@ import {
   type ProfileRateMode,
 } from './profileMetrics'
 
+export type ComparisonView = 'compare' | 'overview' | 'table'
+
 export interface ScopedPlayerRef {
   id: number
   competition: string
@@ -57,4 +59,9 @@ export function parseStatsParam(raw: string | null): string[] | null {
 
 export function parseRateModeParam(raw: string | null): ProfileRateMode {
   return raw === 'full' ? 'full' : 'per90'
+}
+
+export function parseComparisonViewParam(raw: string | null): ComparisonView {
+  if (raw === 'overview' || raw === 'table') return raw
+  return 'compare'
 }

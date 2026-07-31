@@ -9,11 +9,15 @@ import {
 } from '../../lib/profileMetrics'
 import { formatValue } from '../../lib/format'
 import {
+  comparisonPercentileLabel,
+  comparisonPlotPercentile,
   COMPARISON_SLOT_FILLS,
   COMPARISON_SLOT_STROKES,
 } from '../../lib/comparisonConstants'
+import { metricSemanticColor } from '../../lib/heatmap'
 import { playerNameTitle, shortPlayerName } from '../../lib/entityLabels'
 import { cn } from '../../lib/utils'
+import { CompareMarkerIcon, CompareSvgMarker } from './CompareMarkerShape'
 
 const CHART_SIZE = 440
 const INNER_R = 52
@@ -99,7 +103,9 @@ export function CompareRadarChart({
         const resolved = resolveProfileMetric(row, rateMode, kind, meta, percentileMapForRow?.(row) ?? row.percentiles)
         const pctOk = row.eligibility.percentiles_eligible
         const pct = pctOk ? (resolved.percentile ?? 0) : 0
-        const r = innerR + rScale(pct)
+        const semantic = metricSemanticColor(meta.metrics[resolved.metricKey] ?? meta.metrics[key])
+        const plotPercentile = comparisonPlotPercentile(pct, semantic) ?? 0
+        const r = innerR + rScale(plotPercentile)
         const pt = polar(theta, r)
         return {
           slot,
@@ -213,6 +219,17 @@ export function CompareRadarChart({
                       r={exportMode ? 0 : 14}
                       fill="transparent"
                       className="cursor-crosshair"
+                      role={exportMode ? undefined : 'img'}
+                      tabIndex={exportMode ? -1 : 0}
+                      aria-label={
+                        exportMode
+                          ? undefined
+                          : `${row.canonical_player_name}, ${ax.label}: ${formatValue(pp.raw, pp.formatUnit)}, ${
+                              pp.pct != null
+                                ? comparisonPercentileLabel(pp.pct)
+                                : 'percentile unavailable'
+                            }`
+                      }
                       onMouseEnter={e => {
                         if (exportMode) return
                         const { x, y } = pointerToLocal(e.clientX, e.clientY)
@@ -229,15 +246,18 @@ export function CompareRadarChart({
                         onHoverStat(null)
                         setTip(null)
                       }}
+                      onFocus={() => {
+                        if (!exportMode) onHoverStat(i)
+                      }}
+                      onBlur={() => {
+                        if (!exportMode) onHoverStat(null)
+                      }}
                     />
-                    <circle
-                      cx={pp.pt.x}
-                      cy={pp.pt.y}
-                      r={4}
-                      fill={pp.stroke}
-                      stroke="rgba(7,8,16,0.95)"
-                      strokeWidth={1}
-                      pointerEvents="none"
+                    <CompareSvgMarker
+                      x={pp.pt.x}
+                      y={pp.pt.y}
+                      size={4}
+                      color={pp.stroke}
                     />
                   </g>
                 )
@@ -271,9 +291,8 @@ export function CompareRadarChart({
               className={cn('border border-electric/20 bg-panel/55', exportMode ? 'px-4 py-3' : 'px-3 py-2')}
             >
               <div className="flex items-center gap-2">
-                <span
-                  className="size-2 rounded-full"
-                  style={{ background: COMPARISON_SLOT_STROKES[slot % COMPARISON_SLOT_STROKES.length] }}
+                <CompareMarkerIcon
+                  color={COMPARISON_SLOT_STROKES[slot % COMPARISON_SLOT_STROKES.length]}
                 />
                 <span
                   className={cn('font-medium text-ink', exportMode ? 'text-[15px]' : 'text-[12px]')}
@@ -309,8 +328,6 @@ export function CompareRadarChart({
               const ax = axes[tip.statIndex]
               const pp = ax.playerPoints.find(p => p.slot === slot)
               if (!pp) return null
-              const kind = barKindForMetricKey(ax.key)
-              const resolved = resolveProfileMetric(row, rateMode, kind, meta)
               return (
                 <div key={row.canonical_player_id} className="flex items-baseline justify-between gap-2">
                   <span
@@ -321,7 +338,7 @@ export function CompareRadarChart({
                     {shortPlayerName(row.canonical_player_name)}
                   </span>
                   <span className="shrink-0 text-electric/90">
-                    {formatValue(resolved.value, resolved.formatUnit)}
+                    {formatValue(pp.raw, pp.formatUnit)}
                     <span className="text-ink-muted mx-1">·</span>
                     Pctl{' '}
                     {pp.pctOk && pp.pct != null ? Math.round(pp.pct) : '—'}

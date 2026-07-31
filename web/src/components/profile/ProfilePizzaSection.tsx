@@ -406,7 +406,7 @@ export function ProfilePizzaSvg({
               x={s.inner.x}
               y={s.inner.y}
               fill={s.valueFill}
-              fontSize={exportMode ? 16 : 11}
+              fontSize={exportMode ? 18 : 11}
               fontFamily="ui-monospace, SFMono-Regular, monospace"
               textAnchor="middle"
               dominantBaseline="middle"
@@ -473,7 +473,7 @@ function OuterLabel({
       x={x}
       y={y}
       fill={color}
-      fontSize={exportMode ? 13 : 9}
+      fontSize={exportMode ? 15 : 9}
       fontWeight={600}
       fontFamily="ui-monospace, SFMono-Regular, monospace"
       textAnchor="middle"

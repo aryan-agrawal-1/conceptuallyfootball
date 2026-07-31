@@ -6,6 +6,7 @@ import {
   labelForBarSpec,
   profileBarSpecsForPosition,
   resolveProfileMetric,
+  selectHeadlinePercentileExtremes,
   headerSpecsForPosition,
   resolveHeaderCard,
   stripPer90Suffix,
@@ -24,7 +25,7 @@ interface ProfileKeyStatsProps {
 export function ProfileKeyStats({ player, rateMode, meta, percentileMap = player.percentiles }: ProfileKeyStatsProps) {
   const rawOnly = !player.eligibility.percentiles_eligible
   const seen = new Set<string>()
-  const standoutSpecs = profileBarSpecsForPosition(player.position_group)
+  const percentileSpecs = profileBarSpecsForPosition(player.position_group)
     .flatMap(spec => {
       const resolved = resolveProfileMetric(player, rateMode, spec.bar, meta, percentileMap)
       if (resolved.value == null || resolved.percentile == null) return []
@@ -34,13 +35,10 @@ export function ProfileKeyStats({ player, rateMode, meta, percentileMap = player
         id: spec.id,
         label: labelForBarSpec(spec, meta),
         resolved,
+        percentile: resolved.percentile,
       }]
     })
-    .toSorted((left, right) =>
-      (right.resolved.percentile ?? 0) - (left.resolved.percentile ?? 0) ||
-      (right.resolved.value ?? 0) - (left.resolved.value ?? 0),
-    )
-    .slice(0, 4)
+  const standoutSpecs = selectHeadlinePercentileExtremes(percentileSpecs)
 
   const fallbackSpecs = headerSpecsForPosition(player.position_group).flatMap(spec => {
     const resolved = resolveHeaderCard(player, rateMode, spec, meta, percentileMap)
@@ -76,7 +74,10 @@ export function ProfileKeyStats({ player, rateMode, meta, percentileMap = player
       }
       className="w-full"
     >
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 divide-x divide-electric/10 border-t border-electric/10">
+      <div
+        data-profile-key-stats
+        className="grid grid-cols-2 gap-0 divide-x divide-electric/10 border-t border-electric/10 sm:grid-cols-4"
+      >
         {displaySpecs.map(item => {
           const id = 'spec' in item ? item.spec.id : item.id
           const label = 'spec' in item ? item.resolved.label : item.label
