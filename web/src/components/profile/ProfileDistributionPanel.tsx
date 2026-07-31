@@ -1,6 +1,5 @@
 import { useMemo } from 'react'
 import { formatValue } from '../../lib/format'
-import { distributionBenchmark } from '../../lib/profileDistributions'
 import {
   barKindForMetricKey,
   radarGroupForMetric,
@@ -9,7 +8,6 @@ import {
   type ProfileRateMode,
 } from '../../lib/profileMetrics'
 import type {
-  MetricSemanticColor,
   PlayerRow,
   ProfileDistributionPayload,
   ProfileMetricDistribution,
@@ -41,6 +39,23 @@ function distributionForMode(
   return payload.metrics[resolvedMetricKey] ?? base
 }
 
+function ordinalPercentile(percentile: number): string {
+  const value = Math.round(percentile)
+  const modulo100 = Math.abs(value) % 100
+  const modulo10 = Math.abs(value) % 10
+  const suffix =
+    modulo100 >= 11 && modulo100 <= 13
+      ? 'th'
+      : modulo10 === 1
+        ? 'st'
+        : modulo10 === 2
+          ? 'nd'
+          : modulo10 === 3
+            ? 'rd'
+            : 'th'
+  return `${value}${suffix} percentile`
+}
+
 export function ProfileDistributionPanel({
   player,
   rateMode,
@@ -69,13 +84,11 @@ export function ProfileDistributionPanel({
           distributions,
         )
         if (!distribution || resolved.value == null) return []
-        const semanticColor = meta.metrics[resolved.metricKey]?.semantic_color ?? 'positive'
         return [{
           metricKey,
           resolved,
           value: resolved.value,
           distribution,
-          semanticColor,
           group: radarGroupForMetric(
             player.position_group,
             metricKey,
@@ -124,9 +137,9 @@ export function ProfileDistributionPanel({
             </p>
             <ul className="mt-2 grid gap-x-6 gap-y-1 text-[9px] leading-relaxed text-ink-muted sm:grid-cols-2">
               <li><span className="font-bold text-ink-dim">Bright line + triangle:</span> this player&apos;s value.</li>
-              <li><span className="font-bold text-ink-dim">P number:</span> percentile within this exact cohort.</li>
-              <li><span className="font-bold text-ink-dim">Solid + dashed lines:</span> median and the middle 50% of players.</li>
-              <li><span className="font-bold text-ink-dim">Coloured dot:</span> favourable quartile for directional metrics; contextual metrics omit it.</li>
+              <li><span className="font-bold text-ink-dim">Left + right numbers:</span> lowest and highest values recorded in this cohort.</li>
+              <li><span className="font-bold text-ink-dim">Dashed lines:</span> Q1 and Q3.</li>
+              <li><span className="font-bold text-ink-dim">Solid line:</span> median.</li>
             </ul>
           </div>
         </div>
@@ -140,7 +153,6 @@ export function ProfileDistributionPanel({
             percentile={row.resolved.percentile}
             formatUnit={row.resolved.formatUnit}
             distribution={row.distribution}
-            semanticColor={row.semanticColor}
             color={row.group.color}
             compact={compact}
             light={light}
@@ -157,7 +169,6 @@ function DistributionStrip({
   percentile,
   formatUnit,
   distribution,
-  semanticColor,
   color,
   compact,
   light,
@@ -167,7 +178,6 @@ function DistributionStrip({
   percentile: number | null
   formatUnit: Parameters<typeof formatValue>[1]
   distribution: ProfileMetricDistribution
-  semanticColor: MetricSemanticColor
   color: string
   compact: boolean
   light: boolean
@@ -182,17 +192,15 @@ function DistributionStrip({
   const x = (raw: number) => (
     domainSpan <= 0 ? width / 2 : ((raw - distribution.min) / domainSpan) * width
   )
-  const benchmark = distributionBenchmark(distribution, semanticColor)
   const markerX = Math.max(0, Math.min(width, x(value)))
   const textColor = light ? '#10131A' : '#E4EAF8'
   const mutedColor = light ? '#596070' : '#8A95B8'
-  const gridColor = light ? 'rgba(16,19,26,0.18)' : 'rgba(138,149,184,0.24)'
 
   return (
     <figure
       className={compact ? 'border p-3' : 'border border-electric/15 bg-mat/35 p-3'}
       style={compact ? { borderColor: `${color}44`, background: light ? 'rgba(255,255,255,0.38)' : 'rgba(7,8,16,0.32)' } : undefined}
-      aria-label={`${label} distribution. Player value ${formatValue(value, formatUnit)}, percentile ${percentile == null ? 'unavailable' : Math.round(percentile)}.`}
+      aria-label={`${label} distribution. Player value ${formatValue(value, formatUnit)}, ${percentile == null ? 'percentile unavailable' : ordinalPercentile(percentile)}.`}
     >
       <figcaption className="flex items-start justify-between gap-3">
         <span style={{ color }} className={compact ? 'text-[11px] font-bold uppercase tracking-[0.12em]' : 'text-[10px] font-bold uppercase tracking-[0.16em]'}>
@@ -200,7 +208,9 @@ function DistributionStrip({
         </span>
         <span style={{ color: textColor }} className="font-mono text-[11px] font-bold tabular-nums">
           {formatValue(value, formatUnit)}
-          {percentile != null && <span style={{ color: mutedColor }}> · P{Math.round(percentile)}</span>}
+          {percentile != null && (
+            <span style={{ color: mutedColor }}> · {ordinalPercentile(percentile)}</span>
+          )}
         </span>
       </figcaption>
       <svg
@@ -234,19 +244,11 @@ function DistributionStrip({
             x2={x(quartile)}
             y1={chartTop - 3}
             y2={chartBottom + 2}
-            stroke={index === 1 ? textColor : gridColor}
+            stroke={textColor}
             strokeWidth={index === 1 ? 1.5 : 1}
             strokeDasharray={index === 1 ? undefined : '3 3'}
           />
         ))}
-        {benchmark && (
-          <circle
-            cx={x(benchmark.value)}
-            cy={chartTop - 7}
-            r={3}
-            fill={color}
-          />
-        )}
         <line
           x1={markerX}
           x2={markerX}
@@ -262,18 +264,20 @@ function DistributionStrip({
         <text x={0} y={height - 3} fill={mutedColor} fontSize={9} fontFamily="ui-monospace, monospace">
           {formatValue(distribution.min, formatUnit)}
         </text>
+        <text
+          x={x(distribution.median)}
+          y={height - 3}
+          fill={textColor}
+          fontSize={9}
+          textAnchor="middle"
+          fontFamily="ui-monospace, monospace"
+        >
+          {formatValue(distribution.median, formatUnit)}
+        </text>
         <text x={width} y={height - 3} fill={mutedColor} fontSize={9} textAnchor="end" fontFamily="ui-monospace, monospace">
           {formatValue(distribution.max, formatUnit)}
         </text>
       </svg>
-      {!compact && (
-        <p style={{ color: mutedColor }} className="mt-1 text-[9px] leading-relaxed">
-          Q1 · median · Q3
-          {benchmark
-            ? ` · ${benchmark.label}: ${formatValue(benchmark.value, formatUnit)}`
-            : ' · contextual metric: neither quartile is labelled elite'}
-        </p>
-      )}
     </figure>
   )
 }
