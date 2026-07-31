@@ -19,6 +19,7 @@ from ingestion.models import (
     MergedPlayerSeason,
     PlayerDataMode,
     PlayerPositionResolution,
+    PlayerSeasonClubSpell,
     Provider,
     ProviderPlayerMapping,
     ProviderTeamMapping,
@@ -964,6 +965,113 @@ class MergeTests(TestCase):
         )
         self.assertEqual(row.canonical_display_team_id, ct_city.pk)
         self.assertEqual(row.secondary_display_team_ids, [ct_bournemouth.pk])
+
+    def test_sofascore_only_preseason_transfer_does_not_preserve_zero_minute_club(self):
+        self.cs.player_data_mode = PlayerDataMode.SOFASCORE_ONLY
+        self.cs.has_understat = False
+        self.cs.save(update_fields=["player_data_mode", "has_understat"])
+        UnderstatPlayerSeasonSource.objects.filter(competition_season=self.cs).delete()
+        origin = CanonicalTeam.objects.create(name="Hearts")
+        SofascorePlayerSeasonSource.objects.filter(competition_season=self.cs).update(
+            provider_team_id="202",
+            team_name="Hearts",
+            canonical_team=origin,
+            minutes=0,
+        )
+        execute_merge_for_slice(self.cs, merge_run=None)
+
+        destination = CanonicalTeam.objects.create(name="Rangers")
+        SofascorePlayerSeasonSource.objects.filter(competition_season=self.cs).update(
+            provider_team_id="201",
+            team_name="Rangers",
+            canonical_team=destination,
+            minutes=0,
+        )
+
+        execute_merge_for_slice(self.cs, merge_run=None)
+
+        row = MergedPlayerSeason.objects.get(
+            competition_season=self.cs,
+            canonical_player=self.cp,
+            is_current=True,
+        )
+        self.assertEqual(row.canonical_display_team_id, destination.pk)
+        self.assertEqual(row.secondary_display_team_ids, [])
+
+    def test_sofascore_only_midseason_transfer_preserves_former_club_across_refreshes(self):
+        self.cs.player_data_mode = PlayerDataMode.SOFASCORE_ONLY
+        self.cs.has_understat = False
+        self.cs.save(update_fields=["player_data_mode", "has_understat"])
+        UnderstatPlayerSeasonSource.objects.filter(competition_season=self.cs).delete()
+        origin = CanonicalTeam.objects.create(name="Hearts")
+        SofascorePlayerSeasonSource.objects.filter(competition_season=self.cs).update(
+            provider_team_id="202",
+            team_name="Hearts",
+            canonical_team=origin,
+            minutes=180,
+        )
+        execute_merge_for_slice(self.cs, merge_run=None)
+
+        destination = CanonicalTeam.objects.create(name="Rangers")
+        SofascorePlayerSeasonSource.objects.filter(competition_season=self.cs).update(
+            provider_team_id="201",
+            team_name="Rangers",
+            canonical_team=destination,
+            minutes=270,
+        )
+
+        execute_merge_for_slice(self.cs, merge_run=None)
+        execute_merge_for_slice(self.cs, merge_run=None)
+
+        row = MergedPlayerSeason.objects.get(
+            competition_season=self.cs,
+            canonical_player=self.cp,
+            is_current=True,
+        )
+        self.assertEqual(row.canonical_display_team_id, destination.pk)
+        self.assertEqual(row.secondary_display_team_ids, [origin.pk])
+        self.assertEqual(
+            MergedPlayerSeason.objects.filter(
+                competition_season=self.cs,
+                canonical_player=self.cp,
+            ).count(),
+            3,
+        )
+        self.assertFalse(PlayerSeasonClubSpell.objects.exists())
+
+    def test_full_merge_transfer_unions_prior_and_understat_clubs_deterministically(self):
+        execute_merge_for_slice(self.cs, merge_run=None)
+        destination = CanonicalTeam.objects.create(name="Rangers")
+        other_former_club = CanonicalTeam.objects.create(name="Bournemouth")
+        ProviderTeamMapping.objects.create(
+            canonical_team=other_former_club,
+            provider=Provider.UNDERSTAT,
+            provider_team_id="300",
+            match_method=MatchMethod.AUTO,
+        )
+        UnderstatPlayerSeasonSource.objects.filter(competition_season=self.cs).update(
+            team_name="Bournemouth,Alpha FC",
+            provider_team_ids=["300", "100", "300"],
+        )
+        SofascorePlayerSeasonSource.objects.filter(competition_season=self.cs).update(
+            provider_team_id="201",
+            team_name="Rangers",
+            canonical_team=destination,
+        )
+
+        execute_merge_for_slice(self.cs, merge_run=None)
+        execute_merge_for_slice(self.cs, merge_run=None)
+
+        row = MergedPlayerSeason.objects.get(
+            competition_season=self.cs,
+            canonical_player=self.cp,
+            is_current=True,
+        )
+        self.assertEqual(row.canonical_display_team_id, destination.pk)
+        self.assertEqual(
+            row.secondary_display_team_ids,
+            sorted([self.ct.pk, other_former_club.pk]),
+        )
 
 
 class PositionNormalizationTests(TestCase):
