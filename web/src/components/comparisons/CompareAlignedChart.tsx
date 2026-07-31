@@ -9,9 +9,9 @@ import {
 } from '../../lib/profileMetrics'
 import { formatValue } from '../../lib/format'
 import {
+  comparisonCompactPercentileLabel,
   comparisonPercentileLabel,
   comparisonPlotPercentile,
-  comparisonMarkerForSlot,
   COMPARISON_SLOT_STROKES,
 } from '../../lib/comparisonConstants'
 import { metricSemanticColor } from '../../lib/heatmap'
@@ -40,10 +40,10 @@ function playerRowKey(row: PlayerRow): string {
   return `${row.competition_code}:${row.season_label}:${row.canonical_player_id}`
 }
 
-function markerOffset(index: number, count: number): number {
-  if (count === 2) return index === 0 ? -2 : 2
-  if (count === 3) return (index - 1) * 7
-  return 0
+function readoutTransform(percentile: number): string {
+  if (percentile <= 8) return 'translateX(0)'
+  if (percentile >= 92) return 'translateX(-100%)'
+  return 'translateX(-50%)'
 }
 
 function semanticEnds(semantic: ReturnType<typeof metricSemanticColor>) {
@@ -112,7 +112,7 @@ export function CompareAlignedChart({
     <div className={cn('w-full', exportMode && 'px-2')}>
       <div
         className={cn(
-          'mb-3 grid items-center gap-3 border-b border-electric/15 pb-3',
+          'grid items-center gap-3 border-b border-electric/15 pb-3',
           exportMode ? 'grid-cols-[220px_minmax(0,1fr)]' : 'sm:grid-cols-[180px_minmax(0,1fr)]',
         )}
       >
@@ -123,6 +123,32 @@ export function CompareAlignedChart({
           <span>Scale start</span>
           <span>Scale end</span>
         </div>
+      </div>
+      <div
+        className={cn(
+          'flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-electric/15 py-3',
+          exportMode ? 'text-[11px]' : 'text-[10px]',
+        )}
+      >
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          {players.map(({ row, slot }) => {
+            const color = COMPARISON_SLOT_STROKES[slot % COMPARISON_SLOT_STROKES.length]
+            return (
+              <span
+                key={`legend-${playerRowKey(row)}`}
+                className="flex min-w-0 items-center gap-2 font-semibold"
+                style={{ color }}
+                title={playerNameTitle(row.canonical_player_name)}
+              >
+                <CompareMarkerIcon color={color} className="size-2.5" />
+                <span className="truncate">{shortPlayerName(row.canonical_player_name)}</span>
+              </span>
+            )
+          })}
+        </div>
+        <p className="shrink-0 font-mono text-ink-muted">
+          Shown as <span className="text-ink-dim">raw value · percentile</span>
+        </p>
       </div>
 
       <div className="divide-y divide-electric/10 border-y border-electric/10">
@@ -166,27 +192,29 @@ export function CompareAlignedChart({
                   <span>{row.ends.left}</span>
                   <span className="text-right">{row.ends.right}</span>
                 </div>
-                <div className={cn('relative', exportMode ? 'h-10' : 'h-9')}>
-                  <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-line-bright/70" />
+                <div
+                  className="relative"
+                  style={{ height: 38 + row.values.length * (exportMode ? 20 : 17) }}
+                >
+                  <div className="absolute inset-x-0 top-[18px] h-px -translate-y-1/2 bg-line-bright/70" />
                   {[25, 50, 75].map(tick => (
                     <span
                       key={tick}
-                      className="absolute top-1/2 h-2.5 w-px -translate-y-1/2 bg-line-bright/55"
+                      className="absolute top-[18px] h-2.5 w-px -translate-y-1/2 bg-line-bright/55"
                       style={{ left: `${tick}%` }}
                       aria-hidden="true"
                     />
                   ))}
                   {connector && (
                     <span
-                      className="absolute top-1/2 h-[2px] -translate-y-1/2 bg-ink-muted/65"
+                      className="absolute top-[18px] h-[2px] -translate-y-1/2 bg-ink-muted/65"
                       style={{ left: `${connector.left}%`, width: `${connector.width}%` }}
                       aria-hidden="true"
                     />
                   )}
-                  {row.values.map((value, index) => {
+                  {row.values.map(value => {
                     if (value.plotPercentile == null) return null
                     const color = COMPARISON_SLOT_STROKES[value.slot % COMPARISON_SLOT_STROKES.length]
-                    const shape = comparisonMarkerForSlot(value.slot)
                     const rawLabel = formatValue(value.raw, value.unit)
                     const percentileLabel =
                       value.percentile == null
@@ -200,14 +228,12 @@ export function CompareAlignedChart({
                         tabIndex={exportMode ? undefined : 0}
                         aria-label={exportMode ? undefined : accessibleLabel}
                         title={exportMode ? undefined : accessibleLabel}
-                        className="group absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 outline-none"
+                        className="group absolute top-[18px] z-10 -translate-x-1/2 -translate-y-1/2 outline-none"
                         style={{
                           left: `${value.plotPercentile}%`,
-                          marginTop: markerOffset(index, row.values.length),
                         }}
                       >
                         <CompareMarkerIcon
-                          slot={value.slot}
                           color={color}
                           className={cn(
                             exportMode ? 'size-4 border-2' : 'size-3.5 border-2',
@@ -221,40 +247,36 @@ export function CompareAlignedChart({
                               {rawLabel} · Pctl {value.percentile == null ? '—' : Math.round(value.percentile)}
                             </span>
                             <span className="mt-1 block text-[9px] text-ink-muted">
-                              {shape} marker · {row.ends.note}
+                              {row.ends.note}
                             </span>
                           </span>
                         )}
                       </span>
                     )
                   })}
-                </div>
-                <div
-                  className={cn(
-                    'grid gap-x-3 gap-y-1',
-                    row.values.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2',
-                    exportMode && (row.values.length === 3 ? 'grid-cols-3' : 'grid-cols-2'),
-                  )}
-                >
-                  {row.values.map(value => {
+                  {row.values.map((value, index) => {
+                    if (value.plotPercentile == null) return null
                     const color = COMPARISON_SLOT_STROKES[value.slot % COMPARISON_SLOT_STROKES.length]
                     return (
-                      <div
+                      <span
                         key={`readout-${playerRowKey(value.row)}-${row.key}`}
-                        className="flex min-w-0 items-center gap-1.5 text-[9px] font-mono tabular-nums"
+                        data-comparison-readout
+                        className={cn(
+                          'absolute whitespace-nowrap font-mono font-semibold tabular-nums',
+                          exportMode ? 'text-[11px]' : 'text-[9px]',
+                        )}
+                        style={{
+                          color,
+                          left: `${value.plotPercentile}%`,
+                          top: 34 + index * (exportMode ? 20 : 17),
+                          transform: readoutTransform(value.plotPercentile),
+                        }}
                       >
-                        <CompareMarkerIcon slot={value.slot} color={color} className="size-2" />
-                        <span
-                          className="truncate"
-                          title={playerNameTitle(value.row.canonical_player_name)}
-                          style={{ color }}
-                        >
-                          {shortPlayerName(value.row.canonical_player_name)}
-                        </span>
-                        <span className="shrink-0 text-ink-dim">
-                          {formatValue(value.raw, value.unit)} · P{value.percentile == null ? '—' : Math.round(value.percentile)}
-                        </span>
-                      </div>
+                        {formatValue(value.raw, value.unit)} ·{' '}
+                        {value.percentile == null
+                          ? '—'
+                          : comparisonCompactPercentileLabel(value.percentile)}
+                      </span>
                     )
                   })}
                 </div>

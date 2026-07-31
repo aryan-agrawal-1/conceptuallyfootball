@@ -257,7 +257,6 @@ export function CompareRadarChart({
                       x={pp.pt.x}
                       y={pp.pt.y}
                       size={4}
-                      slot={slot}
                       color={pp.stroke}
                     />
                   </g>
@@ -293,7 +292,6 @@ export function CompareRadarChart({
             >
               <div className="flex items-center gap-2">
                 <CompareMarkerIcon
-                  slot={slot}
                   color={COMPARISON_SLOT_STROKES[slot % COMPARISON_SLOT_STROKES.length]}
                 />
                 <span

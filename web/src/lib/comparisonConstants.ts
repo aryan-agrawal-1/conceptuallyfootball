@@ -22,13 +22,6 @@ export const COMPARISON_SLOT_FILLS = [
   'rgba(251, 191, 36, 0.24)',
 ] as const
 
-export const COMPARISON_SLOT_MARKERS = ['circle', 'square', 'diamond'] as const
-export type ComparisonMarkerShape = (typeof COMPARISON_SLOT_MARKERS)[number]
-
-export function comparisonMarkerForSlot(slot: number): ComparisonMarkerShape {
-  return COMPARISON_SLOT_MARKERS[slot % COMPARISON_SLOT_MARKERS.length]
-}
-
 /**
  * Presentation-only position for aligned comparison charts.
  * The stored statistical percentile is always displayed unchanged.
@@ -44,15 +37,23 @@ export function comparisonPlotPercentile(
 
 export function comparisonPercentileLabel(percentile: number): string {
   const rounded = Math.round(percentile)
-  const suffix =
-    rounded % 100 >= 11 && rounded % 100 <= 13
-      ? 'th'
-      : rounded % 10 === 1
-        ? 'st'
-        : rounded % 10 === 2
-          ? 'nd'
-          : rounded % 10 === 3
-            ? 'rd'
-            : 'th'
+  const suffix = percentileOrdinalSuffix(rounded)
   return `${rounded}${suffix} percentile`
+}
+
+export function comparisonCompactPercentileLabel(percentile: number): string {
+  const rounded = Math.round(percentile)
+  return `${rounded}${percentileOrdinalSuffix(rounded)}%`
+}
+
+function percentileOrdinalSuffix(percentile: number): string {
+  return percentile % 100 >= 11 && percentile % 100 <= 13
+    ? 'th'
+    : percentile % 10 === 1
+      ? 'st'
+      : percentile % 10 === 2
+        ? 'nd'
+        : percentile % 10 === 3
+          ? 'rd'
+          : 'th'
 }

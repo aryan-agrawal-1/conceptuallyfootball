@@ -343,8 +343,7 @@ export function Comparisons() {
       return row ? [row] : []
     })
   }, [playersSorted])
-  const alignedViewLabel =
-    radarPlayers.length === 3 ? 'Multi-dot' : radarPlayers.length === 2 ? 'Dumbbell' : 'Aligned'
+  const alignedViewLabel = 'Dumbbell'
 
   const compareTitle = useMemo(() => {
     if (!radarPlayers.length) return 'Player comparison'
@@ -568,9 +567,9 @@ export function Comparisons() {
               header={
                 <span>
                   {comparisonView === 'overview'
-                    ? 'Overview // Radar'
+                    ? 'Radar // Percentile overview'
                       : comparisonView === 'table'
-                      ? 'Table // Exact values'
+                      ? 'Stat table // Exact values'
                       : `${alignedViewLabel} // Percentile comparison`}
                 </span>
               }
@@ -594,8 +593,8 @@ export function Comparisons() {
                   >
                     {([
                       ['compare', alignedViewLabel],
-                      ['overview', 'Overview'],
-                      ['table', 'Exact table'],
+                      ['overview', 'Radar'],
+                      ['table', 'Stat table'],
                     ] as const).map(([view, label]) => (
                       <button
                         key={view}
@@ -619,9 +618,9 @@ export function Comparisons() {
                     subtitle={compareSubtitle}
                     contextLabel={
                       comparisonView === 'overview'
-                        ? 'Comparisons · Radar overview'
+                        ? 'Comparisons · Radar'
                         : comparisonView === 'table'
-                          ? 'Comparisons · Exact values'
+                          ? 'Comparisons · Stat table'
                           : `Comparisons · ${alignedViewLabel}`
                     }
                     fileName={`${compareFileName} · ${comparisonView}`}

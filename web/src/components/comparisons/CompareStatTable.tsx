@@ -60,7 +60,6 @@ export function CompareStatTable({
               >
                 <span className="flex items-center gap-2">
                   <CompareMarkerIcon
-                    slot={slot}
                     color={COMPARISON_SLOT_STROKES[slot % COMPARISON_SLOT_STROKES.length]}
                   />
                   <span className="line-clamp-2" title={playerNameTitle(row.canonical_player_name)}>
