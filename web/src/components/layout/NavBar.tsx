@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { BarChart3, ChevronDown, GitCompare, Microscope, Orbit, Search, Table2 } from 'lucide-react'
 import { useScope } from '../../context/ScopeContext'
@@ -37,6 +37,14 @@ export function NavBar() {
     buildScopedPath,
     isError,
   } = useScope()
+  const competitionGroups = useMemo(
+    () => [
+      { key: 'aggregate', label: 'Aggregates', entries: competitions.filter(c => c.group === 'aggregate') },
+      { key: 'domestic', label: 'Domestic leagues', entries: competitions.filter(c => c.group === 'domestic' || !c.group) },
+      { key: 'european', label: 'European competitions', entries: competitions.filter(c => c.group === 'european') },
+    ].filter(group => group.entries.length > 0),
+    [competitions],
+  )
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -118,23 +126,30 @@ export function NavBar() {
             widthClassName="w-[84px] sm:w-32 lg:w-40"
           >
             {competitions.length ? (
-              competitions.map(c => (
-                <ScopeOption
-                  key={c.code}
-                  active={c.code === scope.competition}
-                  primary={competitionDisplay(c.code, c)}
-                  secondary={c.code === 'BIG5' || c.code === 'ALL' ? undefined : c.name}
-                  onSelect={() => {
-                    const nextSeason = c.seasons.some(season => season.label === scope.season)
-                      ? scope.season
-                      : c.seasons[0]?.label ?? scope.season
-                    setScope({
-                      competition: c.code,
-                      season: nextSeason,
-                    })
-                    setCompetitionOpen(false)
-                  }}
-                />
+              competitionGroups.map(group => (
+                <div key={group.key} role="group" aria-label={group.label}>
+                  <div className="px-2.5 pb-1 pt-2 text-[8px] font-mono uppercase tracking-[0.2em] text-electric/50 first:pt-1">
+                    {group.label}
+                  </div>
+                  {group.entries.map(c => (
+                    <ScopeOption
+                      key={c.code}
+                      active={c.code === scope.competition}
+                      primary={competitionDisplay(c.code, c)}
+                      secondary={c.code === 'BIG5' || c.code === 'ALL' ? undefined : c.name}
+                      onSelect={() => {
+                        const nextSeason = c.seasons.some(season => season.label === scope.season)
+                          ? scope.season
+                          : c.seasons[0]?.label ?? scope.season
+                        setScope({
+                          competition: c.code,
+                          season: nextSeason,
+                        })
+                        setCompetitionOpen(false)
+                      }}
+                    />
+                  ))}
+                </div>
               ))
             ) : (
               <ScopeOption active primary={scope.competition} onSelect={() => setCompetitionOpen(false)} />
