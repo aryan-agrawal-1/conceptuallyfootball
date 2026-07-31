@@ -83,6 +83,7 @@ class GalaxyV2Tests(TestCase):
             has_sofascore=True,
             sofascore_unique_tournament_id=1,
             sofascore_season_id=1,
+            is_published=True,
         )
 
     def _create_player_row(
@@ -349,3 +350,27 @@ class GalaxyV2Tests(TestCase):
         self.assertNotIn("xa_per_90", snapshot.feature_names)
         self.assertEqual(snapshot.diagnostics["coverage"]["xg_per_90"], 0)
         self.assertEqual(snapshot.diagnostics["coverage"]["xa_per_90"], 0)
+
+    def test_individual_scope_uses_competition_eligibility_threshold(self):
+        self.spa.competition.minimum_eligible_minutes = 270
+        self.spa.competition.save(update_fields=["minimum_eligible_minutes"])
+        threshold_player = CanonicalPlayer.objects.create(display_name="European Threshold Player")
+        self._create_player_row(
+            self.spa,
+            self.spa_team,
+            threshold_player,
+            idx=200,
+            position=PositionGroup.FWD,
+            minutes=300,
+        )
+
+        snapshot = self._materialize_scope("SPA1")
+
+        self.assertEqual(snapshot.min_minutes, 270)
+        self.assertEqual(snapshot.diagnostics["eligibility_thresholds"], {"SPA1": 270})
+        self.assertTrue(
+            GalaxyPlayerEmbedding.objects.filter(
+                snapshot=snapshot,
+                canonical_player=threshold_player,
+            ).exists()
+        )

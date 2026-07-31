@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -38,6 +40,7 @@ def _slice():
         understat_season_year="2025",
         sofascore_unique_tournament_id=17,
         sofascore_season_id=76986,
+        is_published=True,
     )
 
 
@@ -255,7 +258,7 @@ class DerivedStatsTests(TestCase):
         self.assertEqual(rows.count(), 4)
 
         alpha_row = rows.get(canonical_player=self.alpha)
-        self.assertEqual(alpha_row.formula_version, "v3")
+        self.assertEqual(alpha_row.formula_version, "v4")
         self.assertEqual(alpha_row.derived_ingestion_run, run)
         self.assertTrue(alpha_row.percentiles_eligible)
         self.assertTrue(alpha_row.scores_eligible)
@@ -273,6 +276,49 @@ class DerivedStatsTests(TestCase):
         self.assertEqual(delta_row.percentiles_ineligibility_reason, "below_minutes_threshold")
         self.assertFalse(delta_row.scores_eligible)
         self.assertIsNone(delta_row.creation_score)
+
+    def test_failed_rematerialization_preserves_last_good_published_rows(self):
+        first_run = self._materialize()
+        self.cs.is_published = True
+        self.cs.save(update_fields=["is_published"])
+        current_ids = set(
+            PlayerSeasonDerivedStats.objects.filter(
+                competition_season=self.cs,
+                is_current=True,
+            ).values_list("id", flat=True)
+        )
+        failed_run = IngestionRun.objects.create(
+            kind=IngestionKind.DERIVED,
+            competition_season=self.cs,
+            status=IngestionRunStatus.PENDING,
+        )
+
+        with patch(
+            "ingestion.services.derived.PlayerSeasonDerivedStats.objects.bulk_create",
+            side_effect=RuntimeError("simulated replacement failure"),
+        ):
+            materialize_derived_stats(self.cs, run=failed_run)
+
+        failed_run.refresh_from_db()
+        self.cs.refresh_from_db()
+        self.assertEqual(failed_run.status, IngestionRunStatus.FAILED)
+        self.assertTrue(self.cs.is_published)
+        self.assertSetEqual(
+            set(
+                PlayerSeasonDerivedStats.objects.filter(
+                    competition_season=self.cs,
+                    is_current=True,
+                ).values_list("id", flat=True)
+            ),
+            current_ids,
+        )
+        self.assertTrue(
+            PlayerSeasonDerivedStats.objects.filter(
+                competition_season=self.cs,
+                derived_ingestion_run=first_run,
+                is_current=True,
+            ).exists()
+        )
 
     def test_absent_sofascore_fields_remain_null_and_hidden(self):
         self._materialize()
@@ -313,7 +359,7 @@ class DerivedStatsTests(TestCase):
         self.assertEqual(payload["count"], 2)
         self.assertEqual(payload["results"][0]["canonical_player_name"], "Alpha Forward")
         self.assertIn("meta", payload)
-        self.assertEqual(payload["meta"]["formula_version"], "v3")
+        self.assertEqual(payload["meta"]["formula_version"], "v4")
         self.assertIn("npxg_per_shot", payload["meta"]["metrics"])
 
     def test_list_endpoint_cache_key_ignores_unknown_query_params(self):
@@ -402,8 +448,8 @@ class DerivedStatsTests(TestCase):
         season = Season.objects.create(label="2026-27", sort_order=2027)
         eng = Competition.objects.create(name="English Premier League", short_code="ENG1", country="England")
         ger = Competition.objects.create(name="Bundesliga", short_code="GER1", country="Germany")
-        eng_cs = CompetitionSeason.objects.create(competition=eng, season=season)
-        ger_cs = CompetitionSeason.objects.create(competition=ger, season=season)
+        eng_cs = CompetitionSeason.objects.create(competition=eng, season=season, is_published=True)
+        ger_cs = CompetitionSeason.objects.create(competition=ger, season=season, is_published=True)
         team = CanonicalTeam.objects.create(name="Scope FC", reep_id="scope-team")
 
         def make_row(name: str, cs: CompetitionSeason, xg_per_90: float, stored_pct: float, minutes: int = 900):
@@ -453,8 +499,8 @@ class DerivedStatsTests(TestCase):
         season = Season.objects.create(label="2028-29", sort_order=2029)
         eng = Competition.objects.create(name="English Premier League", short_code="ENG1", country="England")
         sco = Competition.objects.create(name="Scottish Premiership", short_code="SCO1", country="Scotland")
-        eng_cs = CompetitionSeason.objects.create(competition=eng, season=season)
-        sco_cs = CompetitionSeason.objects.create(competition=sco, season=season)
+        eng_cs = CompetitionSeason.objects.create(competition=eng, season=season, is_published=True)
+        sco_cs = CompetitionSeason.objects.create(competition=sco, season=season, is_published=True)
         team = CanonicalTeam.objects.create(name="All Scope FC", reep_id="all-scope-team")
 
         def make_row(
@@ -511,8 +557,8 @@ class DerivedStatsTests(TestCase):
         season = Season.objects.create(label="2027-28", sort_order=2028)
         eng = Competition.objects.create(name="English Premier League", short_code="ENG1", country="England")
         ita = Competition.objects.create(name="Serie A", short_code="ITA1", country="Italy")
-        eng_cs = CompetitionSeason.objects.create(competition=eng, season=season)
-        ita_cs = CompetitionSeason.objects.create(competition=ita, season=season)
+        eng_cs = CompetitionSeason.objects.create(competition=eng, season=season, is_published=True)
+        ita_cs = CompetitionSeason.objects.create(competition=ita, season=season, is_published=True)
         team = CanonicalTeam.objects.create(name="Keeper FC", reep_id="keeper-team")
 
         def make_row(name: str, cs: CompetitionSeason, saves_per_90: float, stored_pct: float):

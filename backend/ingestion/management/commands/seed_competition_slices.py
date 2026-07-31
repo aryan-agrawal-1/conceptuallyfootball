@@ -3,8 +3,9 @@ from __future__ import annotations
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
+from ingestion.api_cache import invalidate_materialized_api_payloads
 from ingestion.competition_seed_manifest import COMPETITION_SEED_MANIFEST
-from ingestion.models import Competition, CompetitionSeason, Season
+from ingestion.models import Competition, CompetitionSeason, CompetitionType, Season
 
 
 class Command(BaseCommand):
@@ -31,6 +32,9 @@ class Command(BaseCommand):
                     short_code=comp_cfg["code"],
                     name=comp_cfg["name"],
                     country=comp_cfg.get("country") or "",
+                    competition_type=comp_cfg.get("competition_type", CompetitionType.DOMESTIC_LEAGUE),
+                    include_in_domestic_aggregates=comp_cfg.get("include_in_domestic_aggregates", True),
+                    minimum_eligible_minutes=comp_cfg.get("minimum_eligible_minutes", 450),
                 )
                 competitions_created += 1
             else:
@@ -39,12 +43,24 @@ class Command(BaseCommand):
                     ("short_code", comp_cfg["code"]),
                     ("name", comp_cfg["name"]),
                     ("country", comp_cfg.get("country") or ""),
+                    ("competition_type", comp_cfg.get("competition_type", CompetitionType.DOMESTIC_LEAGUE)),
+                    ("include_in_domestic_aggregates", comp_cfg.get("include_in_domestic_aggregates", True)),
+                    ("minimum_eligible_minutes", comp_cfg.get("minimum_eligible_minutes", 450)),
                 ):
                     if getattr(competition, field) != value:
                         setattr(competition, field, value)
                         changed = True
                 if changed:
-                    competition.save(update_fields=["short_code", "name", "country"])
+                    competition.save(
+                        update_fields=[
+                            "short_code",
+                            "name",
+                            "country",
+                            "competition_type",
+                            "include_in_domestic_aggregates",
+                            "minimum_eligible_minutes",
+                        ]
+                    )
                     competitions_updated += 1
 
             for season_cfg in comp_cfg["seasons"]:
@@ -90,6 +106,15 @@ class Command(BaseCommand):
                 if changed_fields:
                     slice_obj.save(update_fields=changed_fields)
                     slices_updated += 1
+
+        if (
+            competitions_created
+            or competitions_updated
+            or seasons_created
+            or slices_created
+            or slices_updated
+        ):
+            invalidate_materialized_api_payloads()
 
         self.stdout.write(
             self.style.SUCCESS(

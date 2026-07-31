@@ -174,10 +174,23 @@ class PositionResolutionSource(models.TextChoices):
     MANUAL = "manual", "Manual"
 
 
+class CompetitionType(models.TextChoices):
+    DOMESTIC_LEAGUE = "domestic_league", "Domestic league"
+    CONTINENTAL_CUP = "continental_cup", "Continental cup"
+
+
 class Competition(models.Model):
     name = models.CharField(max_length=200)
     short_code = models.CharField(max_length=32, db_index=True)
     country = models.CharField(max_length=120, blank=True)
+    competition_type = models.CharField(
+        max_length=24,
+        choices=CompetitionType.choices,
+        default=CompetitionType.DOMESTIC_LEAGUE,
+        db_index=True,
+    )
+    include_in_domestic_aggregates = models.BooleanField(default=True, db_index=True)
+    minimum_eligible_minutes = models.PositiveSmallIntegerField(default=450)
 
     class Meta:
         ordering = ["name"]
@@ -225,6 +238,7 @@ class CompetitionSeason(models.Model):
     min_team_stats_coverage_count = models.PositiveSmallIntegerField(default=18)
     metric_availability = models.JSONField(default=dict, blank=True)
     is_active = models.BooleanField(default=True)
+    is_published = models.BooleanField(default=False, db_index=True)
     refresh_enabled = models.BooleanField(default=False, db_index=True)
 
     class Meta:
@@ -237,6 +251,10 @@ class CompetitionSeason(models.Model):
 
     def __str__(self) -> str:
         return f"{self.competition.short_code} {self.season.label}"
+
+    @property
+    def minimum_eligible_minutes(self) -> int:
+        return self.competition.minimum_eligible_minutes
 
     @property
     def supports_understat(self) -> bool:

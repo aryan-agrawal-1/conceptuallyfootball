@@ -2,6 +2,7 @@ from django.contrib import admin, messages
 from django.db import transaction
 from django.utils.html import format_html_join
 
+from ingestion.api_cache import invalidate_materialized_api_payloads
 from ingestion.models import (
     CanonicalPlayer,
     CanonicalTeam,
@@ -46,8 +47,21 @@ from ingestion.services.identity import (
 
 @admin.register(Competition)
 class CompetitionAdmin(admin.ModelAdmin):
-    list_display = ("id", "short_code", "name", "country")
+    list_display = (
+        "id",
+        "short_code",
+        "name",
+        "country",
+        "competition_type",
+        "include_in_domestic_aggregates",
+        "minimum_eligible_minutes",
+    )
+    list_filter = ("competition_type", "include_in_domestic_aggregates")
     search_fields = ("name", "short_code")
+
+    def save_model(self, request, obj, form, change) -> None:
+        super().save_model(request, obj, form, change)
+        invalidate_materialized_api_payloads()
 
 
 @admin.register(Season)
@@ -74,10 +88,12 @@ class CompetitionSeasonAdmin(admin.ModelAdmin):
         "whoscored_expected_match_count",
         "refresh_enabled",
         "is_active",
+        "is_published",
     )
     list_filter = (
         "refresh_enabled",
         "is_active",
+        "is_published",
         "competition",
         "player_data_mode",
         "has_understat",
@@ -85,7 +101,7 @@ class CompetitionSeasonAdmin(admin.ModelAdmin):
         "has_whoscored",
     )
     search_fields = ("season__label", "competition__short_code")
-    readonly_fields = ("metric_availability",)
+    readonly_fields = ("metric_availability", "is_published")
 
 
 @admin.register(IngestionRun)

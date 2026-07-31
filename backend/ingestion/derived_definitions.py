@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-FORMULA_VERSION = "v3"
+FORMULA_VERSION = "v4"
 METRIC_META_CACHE_VERSION = "metric-meta-v2"
 MIN_ELIGIBLE_MINUTES = 450
 CORE_METRIC_MIN_COVERAGE = 0.8

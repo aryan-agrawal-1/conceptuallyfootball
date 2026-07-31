@@ -37,6 +37,7 @@ function toPlayerRow(entity: SearchPlayerEntity, membership: SearchPlayerMembers
     formula_version: '',
     derived_run_id: null,
     eligibility: {
+      minimum_eligible_minutes: membership.minimum_eligible_minutes,
       percentiles_eligible: true,
       percentiles_ineligibility_reason: null,
       scores_eligible: true,

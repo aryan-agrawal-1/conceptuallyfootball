@@ -71,6 +71,25 @@ Do not commit real secrets, local databases, private CSVs, generated reports, or
 
 This repository contains the application code and public frontend assets. Some local data inputs and generated outputs are intentionally excluded from Git because they may be large, private, provider-specific, or environment-specific.
 
+## Season and Competition Operations
+
+Competition seasons remain private until their current player materialisation rows come from a successful derived run. Publish or hide a ready slice intentionally with:
+
+```bash
+cd backend
+python manage.py set_competition_season_publication <competition-season-id> --publish
+python manage.py set_competition_season_publication <competition-season-id> --hide
+```
+
+Domestic aggregate scopes are derived from competitions marked as domestic and included in aggregates. Continental competitions are excluded from those aggregates. The default domestic eligibility threshold is 450 minutes; the initial UEFA threshold is 270 minutes (three full matches). Changing a competition threshold requires rerunning the versioned outfield, goalkeeper, and galaxy materialisations before publishing the slice.
+
+Before a season rollover, run the read-only identity preflight and reconcile any reported provider IDs before ingestion:
+
+```bash
+cd backend
+python manage.py diagnose_season_rollover <competition-season-id> --candidate-file path/to/candidate-teams.json --fail-on-anomaly
+```
+
 ## Status
 
 This is an active project. APIs, ingestion commands, and data coverage may change as more competitions, seasons, and visualisation tools are added.

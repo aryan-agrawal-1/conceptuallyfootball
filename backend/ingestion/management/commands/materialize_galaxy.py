@@ -15,7 +15,12 @@ class Command(BaseCommand):
         )
         parser.add_argument("--competition", help="Competition scope code, e.g. ENG1, BIG5, ALL.")
         parser.add_argument("--season", help="Season label, e.g. 2025-26.")
-        parser.add_argument("--min-minutes", type=int, default=450)
+        parser.add_argument(
+            "--min-minutes",
+            type=int,
+            default=None,
+            help="Optional floor; competition eligibility thresholds still apply.",
+        )
 
     def handle(self, *args, **options) -> None:
         from ingestion.services.galaxy import materialize_galaxy_embeddings, materialize_galaxy_scope

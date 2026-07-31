@@ -103,7 +103,34 @@ def _secondary_display_team_ids(
             continue
         seen.add(ct.pk)
         out.append(ct.pk)
-    return out
+    return sorted(out)
+
+
+def _preserve_secondary_display_team_ids(
+    *,
+    provider_secondary_team_ids: list[int],
+    previous: MergedPlayerSeason | None,
+    primary: CanonicalTeam | None,
+) -> list[int]:
+    """Keep represented former clubs while making the current primary authoritative."""
+    primary_id = primary.pk if primary else None
+    secondary_ids = set(provider_secondary_team_ids)
+
+    if previous:
+        secondary_ids.update(previous.secondary_display_team_ids or [])
+        previous_primary_id = previous.canonical_display_team_id
+        if (
+            primary_id is not None
+            and previous_primary_id is not None
+            and previous_primary_id != primary_id
+            and previous.minutes is not None
+            and previous.minutes > 0
+        ):
+            secondary_ids.add(previous_primary_id)
+
+    if primary_id is not None:
+        secondary_ids.discard(primary_id)
+    return sorted(secondary_ids)
 
 
 def _resolve_position_metadata(
@@ -198,6 +225,20 @@ def execute_merge_for_slice(
         )
     }
 
+    previous_current_by_player = {
+        row.canonical_player_id: row
+        for row in MergedPlayerSeason.objects.filter(
+            competition_season=competition_season,
+            is_current=True,
+            canonical_player_id__in=player_ids,
+        ).only(
+            "canonical_player_id",
+            "canonical_display_team_id",
+            "secondary_display_team_ids",
+            "minutes",
+        )
+    }
+
     MergedPlayerSeason.objects.filter(
         competition_season=competition_season,
         is_current=True,
@@ -223,7 +264,16 @@ def execute_merge_for_slice(
         if display_team is None and us:
             display_team = us.canonical_team
 
-        secondary_team_ids = _secondary_display_team_ids(us, display_team, secondary_team_cache)
+        provider_secondary_team_ids = _secondary_display_team_ids(
+            us,
+            display_team,
+            secondary_team_cache,
+        )
+        secondary_team_ids = _preserve_secondary_display_team_ids(
+            provider_secondary_team_ids=provider_secondary_team_ids,
+            previous=previous_current_by_player.get(cid),
+            primary=display_team,
+        )
 
         native_pos, pos_group = _resolve_position_metadata(
             us=us,

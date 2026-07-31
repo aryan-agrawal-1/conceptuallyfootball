@@ -14,6 +14,12 @@ from ingestion.api_cache import (
     model_version,
     stable_cache_key,
 )
+from ingestion.competition_scope import (
+    eligibility_thresholds,
+    public_competition_seasons,
+    resolve_public_scope,
+    scope_minimum_eligible_minutes,
+)
 from ingestion.derived_definitions import (
     FORMULA_VERSION,
     LIST_SORT_FIELDS,
@@ -21,7 +27,6 @@ from ingestion.derived_definitions import (
     METRIC_DEFINITIONS,
     METRIC_FIELDS,
     METRIC_GROUPS,
-    MIN_ELIGIBLE_MINUTES,
     SCORE_DEFINITIONS,
     SCORE_FIELDS,
 )
@@ -32,7 +37,6 @@ from ingestion.profile_distributions import (
 )
 from ingestion.secondary_teams import secondary_teams_payload
 from ingestion.scope_percentiles import (
-    BIG_FIVE_COMPETITION_CODES,
     SCOPE_PERCENTILES_CACHE_VERSION,
     build_scope_percentiles,
     is_aggregate_scope,
@@ -58,10 +62,11 @@ def _requested_profile_distributions(request) -> bool:
     return requested_include(request, "profile_distributions")
 
 
-def _meta_payload() -> dict:
+def _meta_payload(competition_seasons: list[CompetitionSeason]) -> dict:
     return {
         "formula_version": FORMULA_VERSION,
-        "minimum_eligible_minutes": MIN_ELIGIBLE_MINUTES,
+        "minimum_eligible_minutes": scope_minimum_eligible_minutes(competition_seasons),
+        "eligibility_thresholds": eligibility_thresholds(competition_seasons),
         "metric_groups": METRIC_GROUPS,
         "metrics": METRIC_DEFINITIONS,
         "scores": SCORE_DEFINITIONS,
@@ -72,7 +77,7 @@ def _resolve_competition_season(request) -> CompetitionSeason:
     competition_season_id = request.query_params.get("competition_season")
     if competition_season_id:
         try:
-            return CompetitionSeason.objects.select_related("competition", "season").get(
+            return public_competition_seasons().select_related("competition", "season").get(
                 pk=int(competition_season_id)
             )
         except (CompetitionSeason.DoesNotExist, ValueError) as exc:
@@ -85,7 +90,7 @@ def _resolve_competition_season(request) -> CompetitionSeason:
             "Provide either competition_season or both competition and season."
         )
     try:
-        return CompetitionSeason.objects.select_related("competition", "season").get(
+        return public_competition_seasons().select_related("competition", "season").get(
             competition__short_code__iexact=competition_code,
             season__label__iexact=season_label,
         )
@@ -110,20 +115,9 @@ def _resolve_competition_scope(request) -> tuple[str, str, list[CompetitionSeaso
             "Provide either competition_season or both competition and season."
         )
 
-    rows = CompetitionSeason.objects.select_related("competition", "season").filter(
-        is_active=True,
-        season__label__iexact=season_label,
-    )
-    if competition_code == "BIG5":
-        rows = rows.filter(competition__short_code__in=BIG_FIVE_COMPETITION_CODES)
-    elif competition_code == "ALL":
-        pass
-    else:
+    if competition_code not in {"BIG5", "ALL"}:
         return (competition_code, season_label, [_resolve_competition_season(request)])
-
-    seasons = list(rows.order_by("competition__short_code"))
-    if not seasons:
-        raise DjangoValidationError("Unknown competition and season combination.")
+    seasons = resolve_public_scope(competition_code, season_label)
     return (competition_code, seasons[0].season.label, seasons)
 
 
@@ -239,6 +233,7 @@ def _row_payload(row: PlayerSeasonDerivedStats, secondary_team_names: dict[int, 
         "formula_version": row.formula_version,
         "derived_run_id": row.derived_ingestion_run_id,
         "eligibility": {
+            "minimum_eligible_minutes": row.competition_season.minimum_eligible_minutes,
             "percentiles_eligible": row.percentiles_eligible,
             "percentiles_ineligibility_reason": row.percentiles_ineligibility_reason or None,
             "scores_eligible": row.scores_eligible,
@@ -356,7 +351,7 @@ class DerivedPlayerSeasonListApi(APIView):
         if scope_percentiles is not None:
             payload["scope_percentile_context"] = scope_context(scope_code, season_label, scope_seasons)
         if _requested_meta(request):
-            payload["meta"] = _meta_payload()
+            payload["meta"] = _meta_payload(competition_seasons)
         return payload
 
 
@@ -457,5 +452,5 @@ class DerivedPlayerSeasonDetailApi(APIView):
                 }
         payload["sections"] = _detail_sections(row)
         if _requested_meta(request):
-            payload["meta"] = _meta_payload()
+            payload["meta"] = _meta_payload([competition_season])
         return payload

@@ -510,6 +510,9 @@ export function Comparisons() {
                             {!d.eligibility.percentiles_eligible && (
                               <ProfileEligibilityBanner
                                 reason={d.eligibility.percentiles_ineligibility_reason}
+                                minimumEligibleMinutes={
+                                  d.eligibility.minimum_eligible_minutes ?? detailQueries[index]?.data?.meta?.minimum_eligible_minutes
+                                }
                               />
                             )}
                             {d.minutes < COMPARISON_MIN_MINUTES_WARNING &&

@@ -3,13 +3,25 @@ import type { Scope } from '../context/ScopeContext'
 
 const BIG_FIVE_COMPETITION_CODES = new Set(['ENG1', 'GER1', 'SPA1', 'FRA1', 'ITA1'])
 
-type Membership = Pick<SearchPlayerMembership | SearchTeamMembership, 'competition' | 'season'>
+type Membership = Pick<
+  SearchPlayerMembership | SearchTeamMembership,
+  'competition' | 'season' | 'competition_type' | 'include_in_domestic_aggregates'
+>
+
+function isDomesticAggregateMembership(membership: Membership): boolean {
+  return (
+    membership.competition_type !== 'continental_cup' &&
+    membership.include_in_domestic_aggregates !== false
+  )
+}
 
 export function scopeIncludesMembership(scope: Scope, membership: Membership): boolean {
   if (membership.season !== scope.season) return false
   if (membership.competition === scope.competition) return true
-  if (scope.competition === 'ALL') return true
-  if (scope.competition === 'BIG5') return BIG_FIVE_COMPETITION_CODES.has(membership.competition)
+  if (scope.competition === 'ALL') return isDomesticAggregateMembership(membership)
+  if (scope.competition === 'BIG5') {
+    return isDomesticAggregateMembership(membership) && BIG_FIVE_COMPETITION_CODES.has(membership.competition)
+  }
   return false
 }
 

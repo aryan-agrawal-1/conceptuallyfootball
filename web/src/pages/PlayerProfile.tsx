@@ -283,6 +283,9 @@ function ProfileLayout({
         <div className="mb-6">
           <ProfileEligibilityBanner
             reason={player.eligibility.percentiles_ineligibility_reason}
+            minimumEligibleMinutes={
+              player.eligibility.minimum_eligible_minutes ?? player.meta?.minimum_eligible_minutes
+            }
           />
         </div>
       )}

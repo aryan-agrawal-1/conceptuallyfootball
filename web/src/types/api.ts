@@ -26,12 +26,16 @@ export interface CompetitionSeasonOption {
   player_data_mode?: string
   has_understat?: boolean
   has_sofascore?: boolean
+  minimum_eligible_minutes?: number
+  eligibility_thresholds?: Record<string, number>
   metric_availability?: MetricAvailability
 }
 
 export interface CompetitionCatalogEntry {
   code: string
   name: string
+  competition_type?: 'domestic_league' | 'continental_cup' | 'aggregate'
+  group?: 'aggregate' | 'domestic' | 'european'
   seasons: CompetitionSeasonOption[]
 }
 
@@ -41,6 +45,9 @@ export interface CompetitionSeasonsCatalogResponse {
 
 interface SearchScopeMembership {
   competition: string
+  competition_type?: 'domestic_league' | 'continental_cup'
+  include_in_domestic_aggregates?: boolean
+  minimum_eligible_minutes?: number
   season: string
   competition_season_id: number
 }
@@ -79,6 +86,7 @@ export interface SearchEntitiesResponse {
 }
 
 interface Eligibility {
+  minimum_eligible_minutes?: number
   percentiles_eligible: boolean
   percentiles_ineligibility_reason: string | null
   scores_eligible: boolean
@@ -172,6 +180,7 @@ interface ScoreDefinition {
 export interface StatMeta {
   formula_version: string
   minimum_eligible_minutes: number
+  eligibility_thresholds?: Record<string, number>
   metric_groups: Record<string, string>
   metrics: Record<string, MetricDefinition>
   scores?: Record<string, ScoreDefinition>
