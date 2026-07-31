@@ -6,9 +6,13 @@ import {
   type ProfileRateMode,
 } from '../../lib/profileMetrics'
 import { formatValue } from '../../lib/format'
-import { COMPARISON_SLOT_STROKES } from '../../lib/comparisonConstants'
+import {
+  comparisonPercentileLabel,
+  COMPARISON_SLOT_STROKES,
+} from '../../lib/comparisonConstants'
 import { playerNameTitle, shortPlayerName } from '../../lib/entityLabels'
 import { cn } from '../../lib/utils'
+import { CompareMarkerIcon } from './CompareMarkerShape'
 
 interface CompareStatTablePlayer {
   row: PlayerRow
@@ -54,8 +58,14 @@ export function CompareStatTable({
                 className="px-3 py-2.5 text-[10px] uppercase tracking-[0.12em] font-mono font-medium"
                 style={{ color: COMPARISON_SLOT_STROKES[slot % COMPARISON_SLOT_STROKES.length] }}
               >
-                <span className="line-clamp-2" title={playerNameTitle(row.canonical_player_name)}>
-                  {shortPlayerName(row.canonical_player_name)}
+                <span className="flex items-center gap-2">
+                  <CompareMarkerIcon
+                    slot={slot}
+                    color={COMPARISON_SLOT_STROKES[slot % COMPARISON_SLOT_STROKES.length]}
+                  />
+                  <span className="line-clamp-2" title={playerNameTitle(row.canonical_player_name)}>
+                    {shortPlayerName(row.canonical_player_name)}
+                  </span>
                 </span>
               </th>
             ))}
@@ -89,7 +99,7 @@ export function CompareStatTable({
                           {formatValue(r.value, r.formatUnit)}
                         </span>
                         <span className="text-[10px] text-ink-muted tabular-nums">
-                          {pct != null ? `${Math.round(pct)}th percentile` : '— percentile'}
+                          {pct != null ? comparisonPercentileLabel(pct) : '— percentile'}
                         </span>
                       </div>
                     </td>

@@ -9,9 +9,11 @@ import type { PlayerDetailResponse, PlayerRow, PositionGroup } from '../types/ap
 import {
   parsePlayerRefsParam,
   parseRateModeParam,
+  parseComparisonViewParam,
   parseStatsParam,
   playerRowToScopedRef,
   scopedPlayerToken,
+  type ComparisonView,
   type ScopedPlayerRef,
 } from '../lib/comparisonUrl'
 import { resolveComparisonStatKeys } from '../lib/comparisonStatKeys'
@@ -25,6 +27,7 @@ import type { ProfileRateMode } from '../lib/profileMetrics'
 import { HudActionButton, HudFrame, HudLabel } from '../components/hud/Hud'
 import { ProfileRateToggle } from '../components/profile/ProfileRateToggle'
 import { CompareRadarChart } from '../components/comparisons/CompareRadarChart'
+import { CompareAlignedChart } from '../components/comparisons/CompareAlignedChart'
 import { CompareStatAxisPicker } from '../components/comparisons/CompareStatAxisPicker'
 import { CompareStatTable } from '../components/comparisons/CompareStatTable'
 import { ComparePlayerPicker } from '../components/comparisons/ComparePlayerPicker'
@@ -65,6 +68,10 @@ export function Comparisons() {
   const urlStats = useMemo(() => parseStatsParam(searchParams.get('stats')), [searchParams])
   const rateMode: ProfileRateMode = useMemo(
     () => parseRateModeParam(searchParams.get('mode')),
+    [searchParams],
+  )
+  const comparisonView = useMemo(
+    () => parseComparisonViewParam(searchParams.get('view')),
     [searchParams],
   )
 
@@ -236,6 +243,22 @@ export function Comparisons() {
     [writeParams, playerRefs, urlStats],
   )
 
+  const setComparisonView = useCallback(
+    (view: ComparisonView) => {
+      setSearchParams(
+        prev => {
+          const p = new URLSearchParams(prev)
+          if (view === 'compare') p.delete('view')
+          else p.set('view', view)
+          return p
+        },
+        { replace: true },
+      )
+      setHoveredStatIndex(null)
+    },
+    [setSearchParams],
+  )
+
   const setStatKeys = useCallback(
     (keys: string[]) => {
       const trimmed = keys.slice(0, COMPARISON_STAT_MAX)
@@ -320,18 +343,20 @@ export function Comparisons() {
       return row ? [row] : []
     })
   }, [playersSorted])
+  const alignedViewLabel =
+    radarPlayers.length === 3 ? 'Multi-dot' : radarPlayers.length === 2 ? 'Dumbbell' : 'Aligned'
 
   const compareTitle = useMemo(() => {
-    if (!radarPlayers.length) return 'Comparisons · Radar'
+    if (!radarPlayers.length) return 'Player comparison'
     const names = radarPlayers.map(player => shortPlayerName(player.row.canonical_player_name))
-    if (names.length === 1) return `${names[0]} · Radar profile`
+    if (names.length === 1) return `${names[0]} · Comparison profile`
     if (names.length === 2) return `${names[0]} vs ${names[1]}`
     return `${names[0]} vs ${names[1]} vs ${names[2]}`
   }, [radarPlayers])
   const compareFileName = useMemo(() => {
-    if (!radarPlayers.length) return 'Comparisons · Radar'
+    if (!radarPlayers.length) return 'Player comparison'
     const names = radarPlayers.map(player => player.row.canonical_player_name)
-    if (names.length === 1) return `${names[0]} · Radar profile`
+    if (names.length === 1) return `${names[0]} · Comparison profile`
     if (names.length === 2) return `${names[0]} vs ${names[1]}`
     return `${names[0]} vs ${names[1]} vs ${names[2]}`
   }, [radarPlayers])
@@ -539,60 +564,149 @@ export function Comparisons() {
           </HudFrame>
 
           {meta && cohortPosition && statKeys.length >= COMPARISON_STAT_MIN && (
-            <>
-              <HudFrame
-                header={<span>Radar // Percentile overlay</span>}
-                className="w-full"
-                footer={
-                  <span className="text-ink-muted normal-case tracking-normal text-[10px]">
-                    Click an axis label to lock a stat; hover nodes for a quick readout. Locked stat highlights the table
-                    row.
-                  </span>
-                }
-              >
-                <div className="flex flex-col items-start gap-5 p-3 sm:p-4 xl:flex-row xl:gap-8">
-                  <div className="flex-1 flex flex-col gap-4 justify-center w-full min-w-0">
-                    <div className="flex justify-end border border-electric/15 bg-electric/[0.03] p-3">
-                      <div className="flex flex-wrap items-center justify-end gap-2">
-                        <ChartShareCard
-                          title={compareTitle}
-                          subtitle={compareSubtitle}
-                          contextLabel="Comparisons · Radar"
-                          fileName={compareFileName}
-                          aspect="square"
-                          copyUrl={pageShareUrl}
-                          compact={false}
-                          renderContent={({ exportMode }) => (
-                            <CompareRadarChart
-                              metricKeys={statKeys}
-                              players={radarPlayers}
-                              meta={meta}
-                              rateMode={rateMode}
-                              hoveredStatIndex={hoveredStatIndex}
-                              lockedStatIndex={lockedStatIndex}
-                              onHoverStat={setHoveredStatIndex}
-                              onClickStat={setLockedStatIndex}
-                              percentileMapForRow={percentileMapForRow}
-                              exportMode={exportMode}
-                            />
-                          )}
+            <HudFrame
+              header={
+                <span>
+                  {comparisonView === 'overview'
+                    ? 'Overview // Radar'
+                      : comparisonView === 'table'
+                      ? 'Table // Exact values'
+                      : `${alignedViewLabel} // Percentile comparison`}
+                </span>
+              }
+              className="w-full"
+              footer={
+                <span className="text-[10px] normal-case tracking-normal text-ink-muted">
+                  {comparisonView === 'compare'
+                    ? 'Marker positions use presentation-only semantic direction. Readouts keep the original raw value and statistical percentile.'
+                    : comparisonView === 'overview'
+                      ? 'The radar uses the same metrics and semantic direction as the aligned view. Contextual axes remain neutral low-to-high.'
+                      : 'Exact raw values and stored percentiles use the same cohort, scope, rate mode, and metric order as both charts.'}
+                </span>
+              }
+            >
+              <div className="flex flex-col gap-4 p-3 sm:p-4">
+                <div className="flex flex-col gap-3 border border-electric/15 bg-electric/[0.03] p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div
+                    className="grid grid-cols-3 border border-electric/20"
+                    role="tablist"
+                    aria-label="Comparison view"
+                  >
+                    {([
+                      ['compare', alignedViewLabel],
+                      ['overview', 'Overview'],
+                      ['table', 'Exact table'],
+                    ] as const).map(([view, label]) => (
+                      <button
+                        key={view}
+                        type="button"
+                        role="tab"
+                        aria-selected={comparisonView === view}
+                        onClick={() => setComparisonView(view)}
+                        className={`px-3 py-2 text-[10px] font-medium uppercase tracking-[0.14em] transition-colors ${
+                          comparisonView === view
+                            ? 'bg-electric/15 text-electric'
+                            : 'border-l border-electric/15 text-control-fg first:border-l-0 hover:text-control-fg-hover'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <ChartShareCard
+                    title={compareTitle}
+                    subtitle={compareSubtitle}
+                    contextLabel={
+                      comparisonView === 'overview'
+                        ? 'Comparisons · Radar overview'
+                        : comparisonView === 'table'
+                          ? 'Comparisons · Exact values'
+                          : `Comparisons · ${alignedViewLabel}`
+                    }
+                    fileName={`${compareFileName} · ${comparisonView}`}
+                    aspect={comparisonView === 'overview' ? 'square' : 'landscape'}
+                    copyUrl={pageShareUrl}
+                    compact={false}
+                    renderContent={({ exportMode }) =>
+                      comparisonView === 'overview' ? (
+                        <CompareRadarChart
+                          metricKeys={statKeys}
+                          players={radarPlayers}
+                          meta={meta}
+                          rateMode={rateMode}
+                          hoveredStatIndex={hoveredStatIndex}
+                          lockedStatIndex={lockedStatIndex}
+                          onHoverStat={setHoveredStatIndex}
+                          onClickStat={setLockedStatIndex}
+                          percentileMapForRow={percentileMapForRow}
+                          exportMode={exportMode}
+                        />
+                      ) : comparisonView === 'table' ? (
+                        <div className="w-full">
+                          <CompareStatTable
+                            metricKeys={statKeys}
+                            players={radarPlayers}
+                            meta={meta}
+                            rateMode={rateMode}
+                            lockedStatIndex={lockedStatIndex}
+                            hoveredStatIndex={hoveredStatIndex}
+                            percentileMapForRow={percentileMapForRow}
+                          />
+                        </div>
+                      ) : (
+                        <CompareAlignedChart
+                          metricKeys={statKeys}
+                          players={radarPlayers}
+                          meta={meta}
+                          positionGroup={cohortPosition}
+                          rateMode={rateMode}
+                          percentileMapForRow={percentileMapForRow}
+                          exportMode={exportMode}
+                        />
+                      )
+                    }
+                  />
+                </div>
+
+                <div className="flex flex-col items-start gap-5 xl:flex-row xl:gap-8">
+                  <div className="w-full min-w-0 flex-1">
+                    {comparisonView === 'overview' ? (
+                      <div className="flex w-full min-w-0 justify-center">
+                        <CompareRadarChart
+                          metricKeys={statKeys}
+                          players={radarPlayers}
+                          meta={meta}
+                          rateMode={rateMode}
+                          hoveredStatIndex={hoveredStatIndex}
+                          lockedStatIndex={lockedStatIndex}
+                          onHoverStat={setHoveredStatIndex}
+                          onClickStat={setLockedStatIndex}
+                          percentileMapForRow={percentileMapForRow}
                         />
                       </div>
-                    </div>
-                    <div className="flex justify-center w-full min-w-0">
-                      <CompareRadarChart
+                    ) : comparisonView === 'table' ? (
+                      <CompareStatTable
                         metricKeys={statKeys}
                         players={radarPlayers}
                         meta={meta}
                         rateMode={rateMode}
-                        hoveredStatIndex={hoveredStatIndex}
                         lockedStatIndex={lockedStatIndex}
-                        onHoverStat={setHoveredStatIndex}
-                        onClickStat={setLockedStatIndex}
+                        hoveredStatIndex={hoveredStatIndex}
                         percentileMapForRow={percentileMapForRow}
                       />
-                    </div>
+                    ) : (
+                      <CompareAlignedChart
+                        metricKeys={statKeys}
+                        players={radarPlayers}
+                        meta={meta}
+                        positionGroup={cohortPosition}
+                        rateMode={rateMode}
+                        percentileMapForRow={percentileMapForRow}
+                      />
+                    )}
                   </div>
+
                   <CompareStatAxisPicker
                     meta={meta}
                     positionGroup={cohortPosition}
@@ -602,22 +716,8 @@ export function Comparisons() {
                     onApplyAxisPack={setStatKeys}
                   />
                 </div>
-              </HudFrame>
-
-              <HudFrame header={<span>Table // Values</span>} className="w-full">
-                <div className="p-4">
-                  <CompareStatTable
-                    metricKeys={statKeys}
-                    players={radarPlayers}
-                    meta={meta}
-                    rateMode={rateMode}
-                    lockedStatIndex={lockedStatIndex}
-                    hoveredStatIndex={hoveredStatIndex}
-                    percentileMapForRow={percentileMapForRow}
-                  />
-                </div>
-              </HudFrame>
-            </>
+              </div>
+            </HudFrame>
           )}
         </div>
       )}

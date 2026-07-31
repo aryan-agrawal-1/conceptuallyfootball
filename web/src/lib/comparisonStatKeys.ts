@@ -46,7 +46,7 @@ export function resolveComparisonStatKeys(
   )
   const out = resolveRadarMetricKeys({
     position: positionGroup,
-    current: [],
+    current: defaultPizzaMetricKeys(positionGroup),
     available,
     targetCount: Math.min(defaultPizzaMetricKeys(positionGroup).length, COMPARISON_STAT_MAX),
   })
