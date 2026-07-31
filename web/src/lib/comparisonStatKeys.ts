@@ -3,7 +3,11 @@ import {
   COMPARISON_STAT_MAX,
   COMPARISON_STAT_MIN,
 } from './comparisonConstants'
-import { defaultPizzaMetricKeys } from './profileMetrics'
+import {
+  dedupeCanonicalMetricKeys,
+  defaultPizzaMetricKeys,
+  resolveRadarMetricKeys,
+} from './profileMetrics'
 
 function filterValidMetricKeys(
   keys: string[],
@@ -11,7 +15,7 @@ function filterValidMetricKeys(
   positionGroup: PositionGroup,
   isUsable?: (key: string) => boolean,
 ): string[] {
-  return keys.filter(
+  return dedupeCanonicalMetricKeys(keys).filter(
     k => k in meta.metrics && !(positionGroup === 'GK' && k === 'rating') && (isUsable?.(k) ?? true),
   )
 }
@@ -37,11 +41,15 @@ export function resolveComparisonStatKeys(
     }
   }
 
-  const defaults = defaultPizzaMetricKeys(positionGroup).filter(
+  const available = Object.keys(meta.metrics).filter(
     k => k in meta.metrics && excludeGkRating(k) && usable(k),
   )
-
-  const out = defaults.slice(0, COMPARISON_STAT_MAX)
+  const out = resolveRadarMetricKeys({
+    position: positionGroup,
+    current: [],
+    available,
+    targetCount: Math.min(defaultPizzaMetricKeys(positionGroup).length, COMPARISON_STAT_MAX),
+  })
 
   if (out.length < COMPARISON_STAT_MIN) {
     const rest = Object.keys(meta.metrics)

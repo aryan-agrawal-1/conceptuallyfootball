@@ -17,6 +17,8 @@ import {
 } from '../lib/dataVisualiserUrl'
 import {
   barKindForMetricKey,
+  canonicalProfileMetricKey,
+  dedupeCanonicalMetricKeys,
   defaultPizzaMetricKeys,
   groupMetricsForPizzaPicker,
   resolveProfileMetric,
@@ -182,8 +184,8 @@ export function DataVisualiser() {
         state.radarMetrics,
         playerMetricKeys,
         playerDefaults.radar,
-      ).slice(0, 8)
-    : coerceMetricKeys(state.radarMetrics, teamMetricKeys, teamDefaults.radar).slice(0, 8)
+      ).slice(0, 12)
+    : coerceMetricKeys(state.radarMetrics, teamMetricKeys, teamDefaults.radar).slice(0, 12)
 
   const playerScatterPoints = useMemo(() => {
     if (!playerMeta || !xMetric || !yMetric) return []
@@ -1013,9 +1015,7 @@ function buildTeamMetricGroups(meta: TeamStatMeta | undefined): MetricGroup[] {
 }
 
 function canonicalMetricKey(metricKey: string): string {
-  const bar = barKindForMetricKey(metricKey)
-  if (bar.kind === 'invariant') return metricKey.replace(/_per_90$/i, '')
-  return bar.per90
+  return canonicalProfileMetricKey(metricKey)
 }
 
 function dedupeMetricGroups(groups: MetricGroup[]): MetricGroup[] {
@@ -1108,11 +1108,26 @@ function coerceMetricKey(
 }
 
 function coerceMetricKeys(current: string[], available: string[], preferred: string[]): string[] {
-  const set = new Set(available)
-  const explicit = current.filter(key => set.has(key))
-  if (explicit.length) return explicit
-  const fallback = preferred.filter(key => set.has(key))
-  return fallback.length ? fallback : available.slice(0, 6)
+  const availableByCanonical = new Map(
+    available.map(key => [canonicalMetricKey(key), key]),
+  )
+  const explicit = dedupeCanonicalMetricKeys(
+    current.flatMap(key => {
+      const resolved = available.includes(key)
+        ? key
+        : availableByCanonical.get(canonicalMetricKey(key))
+      return resolved ? [resolved] : []
+    }),
+  )
+  const targetCount = current.length
+    ? Math.min(current.length, 12)
+    : Math.min(Math.max(preferred.length, 6), 12)
+  const padded = dedupeCanonicalMetricKeys([
+    ...explicit,
+    ...preferred,
+    ...available,
+  ]).filter(key => available.includes(key))
+  return padded.slice(0, targetCount)
 }
 
 function finalizeBarRows(
@@ -1226,11 +1241,11 @@ function MetricMultiSelect({
         label="Axes"
         options={options}
         selected={selected}
-        onChange={onChange}
+        onChange={next => onChange(dedupeCanonicalMetricKeys(next))}
         emptyLabel="+"
         triggerLabel="+"
         searchPlaceholder="Search metric..."
-        maxSelected={8}
+        maxSelected={12}
         hideClearButton
         hideChevron
         compact

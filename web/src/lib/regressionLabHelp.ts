@@ -1,12 +1,26 @@
 /** User-facing explainer copy for Regression Lab (keep sentences plain). */
 
 export const LAB_HELP = {
+  cohortPanel:
+    'Competition and season set the analysis scope. Position, club, and minimum minutes then decide which players enter the cohort.',
   targetPanel:
     'The raw-stat outcome you want the model to explain or predict for each player in the cohort. Pick one target per run.',
   predictorsPanel:
-    'Raw stats used as inputs. The model estimates how those pieces move together with the target. Scores cannot be predictors here (only metrics). Rows missing any selected predictor or the target are dropped before fitting.',
+    'Raw stats used as inputs. Each target begins with a recommended predictor pack, which you can customise by toggling metrics. Scores cannot be predictors here, and rows missing any selected predictor or the target are dropped before fitting.',
+  predictorsWalkthrough:
+    'Raw stats used as inputs. Each target begins with a recommended predictor pack, which you can customise by toggling metrics. Rows missing any selected predictor or the target are dropped before fitting.',
+  predictorLeakage:
+    'The selected target is excluded from predictors, so the model cannot use the outcome itself as evidence.',
+  readinessPanel:
+    'Check cohort rows, usable rows, and missing data before fitting. Every selected predictor must be present, so adding predictors can reduce the usable sample. At least 30 usable players are required.',
+  runModel:
+    'Run model fits ridge regression, which steadies overlapping predictors with shrinkage. Its out-of-fold predictions come from cross-validation models that did not train on the player being predicted.',
+  fitSummary:
+    'Start with the cross-validated metrics: R² describes explained spread, MAE the typical miss, and RMSE gives larger misses more weight. Sample counts show filtered versus usable players. Treat training R² as a secondary fit check because cross-validation evaluates held-out players.',
   coefficientsPanel:
     'Each value is the ridge coefficient on standardized predictors (mean 0, variance 1). That makes magnitudes more comparable across different stat scales. Signs show direction; overlapping stats can share credit — read as exploratory, not causal.',
+  predictionErrors:
+    'The predicted-vs-actual chart shows how closely out-of-fold predictions follow observed values. Residual is actual minus predicted: large positive values identify players who outperformed the model, while large negative values identify underperformance.',
   oofScatter:
     'Each point is one player. “OOF” means out-of-fold: the predicted value is from models that did not train on that player in cross-validation, so the cloud is closer to honest out-of-sample behaviour than training-only fit.',
   fitCvR2:

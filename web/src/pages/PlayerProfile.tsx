@@ -109,7 +109,9 @@ export function PlayerProfile() {
       fetchPlayerDetail(Number(id), {
         competition: detailCompetition,
         season: detailSeason,
-        include: isAggregateScope ? 'meta,scope_percentiles' : 'meta',
+        include: isAggregateScope
+          ? 'meta,scope_percentiles,profile_distributions'
+          : 'meta,profile_distributions',
         percentile_scope: isAggregateScope ? scope.competition : undefined,
       }),
     enabled: !!id && (!isAggregateScope || concreteMembership != null),
@@ -181,6 +183,10 @@ function ProfileLayout({
   const canUseScopePercentiles = isAggregateScope && player.scope_percentiles != null
   const activePercentileMap =
     percentileMode === 'scope' && canUseScopePercentiles ? player.scope_percentiles ?? {} : player.percentiles
+  const activeDistributions =
+    percentileMode === 'scope' && canUseScopePercentiles
+      ? player.scope_profile_distributions
+      : player.profile_distributions
   const percentileScopeLabel =
     percentileMode === 'scope' && canUseScopePercentiles ? aggregateScopeLabel(scope.competition) : player.competition_code
   const similarScopeLabel = `${player.competition_code} ${player.season_label}`
@@ -329,7 +335,13 @@ function ProfileLayout({
           <h2 id="profile-pizza-heading" className="sr-only">
             Percentile pizza chart
           </h2>
-          <ProfilePizzaSection player={player} rateMode={rateMode} meta={meta} percentileMap={activePercentileMap} />
+          <ProfilePizzaSection
+            player={player}
+            rateMode={rateMode}
+            meta={meta}
+            percentileMap={activePercentileMap}
+            distributions={activeDistributions}
+          />
         </section>
       </div>
 
@@ -341,6 +353,7 @@ function ProfileLayout({
             initialRateMode={rateMode}
             percentileMap={activePercentileMap}
             percentileScopeLabel={percentileScopeLabel}
+            distributions={activeDistributions}
             similarEdges={similarQuery.data?.edges ?? []}
             similarIsLoading={similarQuery.isLoading}
             similarIsError={similarQuery.isError}

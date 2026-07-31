@@ -1,4 +1,7 @@
-import type { ProfileRateMode } from './profileMetrics'
+import {
+  dedupeCanonicalMetricKeys,
+  type ProfileRateMode,
+} from './profileMetrics'
 
 export interface ScopedPlayerRef {
   id: number
@@ -48,7 +51,8 @@ export function parseStatsParam(raw: string | null): string[] | null {
     const key = s.trim()
     return key ? [key] : []
   })
-  return keys.length ? keys : null
+  const deduped = dedupeCanonicalMetricKeys(keys)
+  return deduped.length ? deduped : null
 }
 
 export function parseRateModeParam(raw: string | null): ProfileRateMode {

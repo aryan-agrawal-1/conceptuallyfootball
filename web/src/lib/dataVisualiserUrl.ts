@@ -1,5 +1,8 @@
 import { DEFAULT_FILTERS } from '../hooks/useStatMatrix'
-import type { ProfileRateMode } from './profileMetrics'
+import {
+  dedupeCanonicalMetricKeys,
+  type ProfileRateMode,
+} from './profileMetrics'
 
 type VisualiserTab = 'players' | 'teams'
 export type VisualiserChartType = 'scatter' | 'bar' | 'radar'
@@ -92,7 +95,7 @@ export function parseDataVisualiserParams(search: URLSearchParams): DataVisualis
     xMetric: search.get('x')?.trim() || undefined,
     yMetric: search.get('y')?.trim() || undefined,
     metric: search.get('metric')?.trim() || undefined,
-    radarMetrics: parseCsv(search.get('radar')),
+    radarMetrics: dedupeCanonicalMetricKeys(parseCsv(search.get('radar'))),
     compareIds: parseIds(search.get('compare')),
     compareMode: search.get('compare_mode') === 'manual' ? 'manual' : 'auto',
     pinnedIds: parseIds(search.get('pins')),
@@ -126,7 +129,8 @@ export function writeDataVisualiserParams(state: DataVisualiserUrlState): URLSea
   if (state.xMetric) p.set('x', state.xMetric)
   if (state.yMetric) p.set('y', state.yMetric)
   if (state.metric) p.set('metric', state.metric)
-  if (state.radarMetrics.length) p.set('radar', state.radarMetrics.join(','))
+  const radarMetrics = dedupeCanonicalMetricKeys(state.radarMetrics)
+  if (radarMetrics.length) p.set('radar', radarMetrics.join(','))
   if (state.compareIds.length) p.set('compare', state.compareIds.join(','))
   if (state.compareMode === 'manual') p.set('compare_mode', 'manual')
   if (state.pinnedIds.length) p.set('pins', state.pinnedIds.join(','))

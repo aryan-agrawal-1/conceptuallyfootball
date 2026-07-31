@@ -21,6 +21,11 @@ from ingestion.models import (
 )
 from ingestion.services.derived import materialize_derived_stats
 from ingestion.services.merge import execute_merge_for_slice
+from ingestion.profile_distributions import (
+    PROFILE_DISTRIBUTION_BIN_COUNT,
+    distribution_bins,
+    quantile,
+)
 
 
 def _slice():
@@ -361,6 +366,38 @@ class DerivedStatsTests(TestCase):
         self.assertIn("creation_score", payload["scores"])
         self.assertIn("finishing_score", payload["scores"])
 
+    def test_profile_distributions_are_bounded_and_match_the_league_position_cohort(self):
+        self._materialize()
+
+        response = self.client.get(
+            f"/api/v1/player-seasons/derived-stats/{self.alpha.id}",
+            {
+                "competition": "EPL",
+                "season": "2025-26",
+                "include": "meta,profile_distributions",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["profile_distributions"]
+        distribution = payload["metrics"]["xg_per_90"]
+        self.assertEqual(payload["position_group"], "FWD")
+        self.assertEqual(payload["cohort_count"], 2)
+        self.assertLessEqual(len(distribution["bins"]), PROFILE_DISTRIBUTION_BIN_COUNT)
+        self.assertEqual(sum(entry["count"] for entry in distribution["bins"]), distribution["count"])
+        self.assertEqual(distribution["count"], 2)
+        self.assertLess(distribution["p25"], distribution["p75"])
+        self.assertEqual(payload["context"]["competition_code"], "EPL")
+        self.assertNotIn("canonical_player_name", distribution)
+
+    def test_distribution_helpers_cover_sparse_and_constant_values(self):
+        self.assertEqual(quantile([4.0], 0.75), 4.0)
+        self.assertEqual(quantile([1.0, 3.0], 0.25), 1.5)
+        self.assertEqual(
+            distribution_bins([2.0, 2.0, 2.0]),
+            [{"start": 2.0, "end": 2.0, "count": 3}],
+        )
+
     def test_big5_scope_percentiles_are_returned_without_replacing_league_percentiles(self):
         season = Season.objects.create(label="2026-27", sort_order=2027)
         eng = Competition.objects.create(name="English Premier League", short_code="ENG1", country="England")
@@ -395,7 +432,7 @@ class DerivedStatsTests(TestCase):
             {
                 "competition": "ENG1",
                 "season": "2026-27",
-                "include": "scope_percentiles",
+                "include": "scope_percentiles,profile_distributions",
                 "percentile_scope": "BIG5",
             },
         )
@@ -405,6 +442,12 @@ class DerivedStatsTests(TestCase):
         self.assertEqual(payload["percentiles"]["xg_per_90"], 99.0)
         self.assertAlmostEqual(payload["scope_percentiles"]["xg_per_90"], 16.6666666667)
         self.assertEqual(payload["scope_percentile_context"]["competition_code"], "BIG5")
+        self.assertEqual(payload["profile_distributions"]["cohort_count"], 1)
+        self.assertEqual(payload["scope_profile_distributions"]["cohort_count"], 3)
+        self.assertEqual(
+            payload["scope_profile_distributions"]["context"]["competition_code"],
+            "BIG5",
+        )
 
     def test_all_scope_percentiles_cache_isolated_by_position_group(self):
         season = Season.objects.create(label="2028-29", sort_order=2029)
@@ -495,7 +538,7 @@ class DerivedStatsTests(TestCase):
             {
                 "competition": "ENG1",
                 "season": "2027-28",
-                "include": "scope_percentiles",
+                "include": "scope_percentiles,profile_distributions",
                 "percentile_scope": "BIG5",
             },
         )
@@ -505,3 +548,9 @@ class DerivedStatsTests(TestCase):
         self.assertEqual(payload["percentiles"]["saves_per_90"], 91.0)
         self.assertEqual(payload["scope_percentiles"]["appearances"], None)
         self.assertAlmostEqual(payload["scope_percentiles"]["saves_per_90"], 25.0)
+        self.assertEqual(payload["profile_distributions"]["cohort_count"], 1)
+        self.assertEqual(payload["scope_profile_distributions"]["cohort_count"], 2)
+        self.assertNotIn(
+            "appearances",
+            payload["scope_profile_distributions"]["metrics"],
+        )
