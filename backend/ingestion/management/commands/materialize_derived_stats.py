@@ -1,5 +1,7 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.management.base import BaseCommand, CommandError
 
+from ingestion.competition_scope import resolve_active_competition_season
 from ingestion.models import CompetitionSeason, IngestionKind, IngestionRun, IngestionRunStatus
 from ingestion.services.derived import materialize_derived_stats
 
@@ -33,12 +35,8 @@ class Command(BaseCommand):
                 raise CommandError(f"Unknown CompetitionSeason id={cid}") from exc
         else:
             try:
-                competition_season = CompetitionSeason.objects.select_related("competition", "season").get(
-                    competition__short_code__iexact=competition,
-                    season__label__iexact=season,
-                    is_active=True,
-                )
-            except CompetitionSeason.DoesNotExist as exc:
+                competition_season = resolve_active_competition_season(competition, season)
+            except DjangoValidationError as exc:
                 raise CommandError(f"Unknown active competition-season {competition} {season}") from exc
 
         run = IngestionRun.objects.create(

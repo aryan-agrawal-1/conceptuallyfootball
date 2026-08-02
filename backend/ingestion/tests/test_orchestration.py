@@ -9,6 +9,7 @@ from django.utils import timezone
 from ingestion.models import (
     Competition,
     CompetitionSeason,
+    CompetitionType,
     IngestionBatch,
     IngestionBatchItem,
     IngestionBatchItemStatus,
@@ -23,6 +24,7 @@ from ingestion.models import (
 from ingestion.services.orchestration import (
     enqueue_batch,
     execute_batch_item,
+    materialize_aggregate_scopes,
     plan_refresh_slices,
     validate_refresh_selection,
 )
@@ -41,7 +43,7 @@ def _slice(
     comp = Competition.objects.create(name=code, short_code=code, country="Test")
     season, _ = Season.objects.get_or_create(
         label=season_label,
-        defaults={"sort_order": int(season_label.split("-")[1])},
+        defaults={"sort_order": int(season_label.split("-")[-1])},
     )
     return CompetitionSeason.objects.create(
         competition=comp,
@@ -56,6 +58,7 @@ def _slice(
         expected_team_count=1,
         min_merged_team_count=1,
         min_team_stats_coverage_count=1,
+        is_published=True,
         refresh_enabled=refresh_enabled,
     )
 
@@ -90,12 +93,38 @@ class DailyRefreshPlanningTests(TestCase):
         self.assertEqual({entry.competition_season.competition.short_code for entry in planned}, {"ENG1", "SPA1"})
         self.assertTrue(all(entry.delay_seconds == 0 for entry in planned))
 
-    def test_mixed_refresh_enabled_seasons_are_rejected(self):
+    def test_mixed_refresh_enabled_seasons_are_allowed(self):
         _slice("ENG1", "2025-26", refresh_enabled=True)
         _slice("ENG2", "2024-25", refresh_enabled=True)
 
-        with self.assertRaisesMessage(ValueError, "share one season label"):
-            validate_refresh_selection(list(CompetitionSeason.objects.select_related("season")))
+        validate_refresh_selection(list(CompetitionSeason.objects.select_related("season")))
+
+    def test_refresh_selection_rejects_duplicate_competition(self):
+        first = _slice("ENG1", refresh_enabled=True)
+        duplicate = _slice("ENG2", "2024-25", refresh_enabled=True)
+        duplicate.competition_id = first.competition_id
+        duplicate.save(update_fields=["competition"])
+        with self.assertRaisesMessage(ValueError, "appears more than once"):
+            validate_refresh_selection([first, duplicate])
+
+    def test_refresh_selection_rejects_inactive_unpublished_and_provider_missing(self):
+        inactive = _slice("ENG1", refresh_enabled=True)
+        inactive.is_active = False
+        inactive.save(update_fields=["is_active"])
+        with self.assertRaisesMessage(ValueError, "inactive"):
+            validate_refresh_selection([inactive])
+
+        unpublished = _slice("ENG2", refresh_enabled=True)
+        unpublished.is_published = False
+        unpublished.save(update_fields=["is_published"])
+        with self.assertRaisesMessage(ValueError, "unpublished"):
+            validate_refresh_selection([unpublished])
+
+        missing_provider = _slice("ENG3", refresh_enabled=True)
+        missing_provider.sofascore_season_id = None
+        missing_provider.save(update_fields=["sofascore_season_id"])
+        with self.assertRaisesMessage(ValueError, "missing Sofascore"):
+            validate_refresh_selection([missing_provider])
 
     @patch("celery.current_app.send_task")
     def test_enqueue_batch_creates_items_without_sending_when_disabled(self, mock_send_task):
@@ -113,6 +142,23 @@ class DailyRefreshPlanningTests(TestCase):
         batch.refresh_from_db()
         self.assertEqual(batch.status, IngestionBatchStatus.RUNNING)
         self.assertEqual(batch.items.count(), 2)
+        mock_send_task.assert_not_called()
+
+    @patch("celery.current_app.send_task")
+    def test_mixed_batch_metadata_has_deterministic_season_labels(self, mock_send_task):
+        _slice("ENG1", "2025-26", refresh_enabled=True)
+        _slice("ENG2", "2024-25", refresh_enabled=True)
+        batch = IngestionBatch.objects.create(
+            scheduled_for_date=timezone.localdate(),
+            planned_start_at=timezone.now(),
+        )
+
+        result = enqueue_batch(batch.id, no_jitter=True, send_tasks=False)
+
+        self.assertTrue(result["ok"])
+        batch.refresh_from_db()
+        self.assertEqual(batch.summary_stats["season_labels"], ["2024-25", "2025-26"])
+        self.assertNotIn("season_label", batch.summary_stats)
         mock_send_task.assert_not_called()
 
 
@@ -191,6 +237,46 @@ class DailyRefreshExecutionTests(TestCase):
         self.assertEqual(self.item.status, IngestionBatchItemStatus.FAILED)
         self.assertEqual(self.item.current_stage, "sofascore_team")
         self.assertEqual(self.batch.status, IngestionBatchStatus.FAILED)
+
+
+class AggregateBatchTests(TestCase):
+    @patch("ingestion.services.galaxy.materialize_galaxy_scope", side_effect=_succeed_aggregate)
+    def test_mixed_label_aggregates_use_stable_keys_and_exclude_continental(self, mock_materialize):
+        batch = IngestionBatch.objects.create(
+            scheduled_for_date=timezone.localdate(),
+            planned_start_at=timezone.now(),
+            status=IngestionBatchStatus.RUNNING,
+        )
+        eng = _slice("ENG1", "2025-26", refresh_enabled=False)
+        swe = _slice("SWE1", "2026", refresh_enabled=False)
+        ucl = _slice("UCL", "2026-27", refresh_enabled=False)
+        ucl.competition.competition_type = CompetitionType.CONTINENTAL_CUP
+        ucl.competition.include_in_domestic_aggregates = False
+        ucl.competition.save(update_fields=["competition_type", "include_in_domestic_aggregates"])
+        for competition_season in (eng, swe, ucl):
+            IngestionBatchItem.objects.create(
+                batch=batch,
+                competition_season=competition_season,
+                status=IngestionBatchItemStatus.SUCCESS,
+                planned_order=competition_season.id,
+            )
+
+        result = materialize_aggregate_scopes(batch.id)
+
+        self.assertTrue(result["ok"])
+        keys = set(result["aggregate_run_ids"])
+        self.assertIn("BIG5:2025-26", keys)
+        self.assertIn("ALL:2025-26", keys)
+        self.assertIn("ALL:2026", keys)
+        self.assertNotIn("ALL:2026-27", keys)
+        self.assertNotEqual(
+            result["aggregate_run_ids"]["ALL:2025-26"],
+            result["aggregate_run_ids"]["ALL:2026"],
+        )
+        self.assertEqual(
+            [(call.args[0], call.args[1]) for call in mock_materialize.call_args_list],
+            [("BIG5", "2025-26"), ("ALL", "2025-26"), ("ALL", "2026")],
+        )
 
 
 class NewSeasonDailyRefreshExecutionTests(DailyRefreshExecutionTests):

@@ -13,8 +13,10 @@ from django.db.models import Count
 from django.utils import timezone
 
 from ingestion.api_cache import invalidate_materialized_api_payloads
+from ingestion.competition_scope import BIG_FIVE_COMPETITION_CODES
 from ingestion.models import (
     CompetitionSeason,
+    CompetitionType,
     IngestionBatch,
     IngestionBatchItem,
     IngestionBatchItemStatus,
@@ -113,15 +115,19 @@ def rotated_refresh_slices(day: date | None = None) -> list[CompetitionSeason]:
 def validate_refresh_selection(slices: list[CompetitionSeason]) -> None:
     if not slices:
         raise ValueError("No CompetitionSeason rows have refresh_enabled=True.")
-    season_labels = {cs.season.label for cs in slices}
-    if len(season_labels) != 1:
-        raise ValueError(
-            "Daily refresh requires all refresh-enabled slices to share one season label; "
-            f"found {sorted(season_labels)}."
-        )
+    seen_competitions: set[int] = set()
     for cs in slices:
+        if not cs.is_active:
+            raise ValueError(f"{cs} is selected for refresh but inactive.")
+        if not cs.is_published:
+            raise ValueError(f"{cs} is selected for refresh but unpublished.")
         if not cs.supports_sofascore:
-            raise ValueError(f"{cs} is refresh-enabled but missing Sofascore configuration.")
+            raise ValueError(f"{cs} is selected for refresh but missing Sofascore configuration.")
+        if cs.competition_id in seen_competitions:
+            raise ValueError(
+                f"Competition {cs.competition.short_code} appears more than once in refresh selection."
+            )
+        seen_competitions.add(cs.competition_id)
 
 
 def plan_refresh_slices(
@@ -222,10 +228,13 @@ def enqueue_batch(batch_id: int, *, no_jitter: bool = False, send_tasks: bool = 
         )
         batch.status = IngestionBatchStatus.RUNNING
         batch.started_at = timezone.now()
+        season_labels = sorted({entry.competition_season.season.label for entry in planned})
         batch.summary_stats = {
             "planned_items": len(planned),
-            "season_label": planned[0].competition_season.season.label if planned else "",
+            "season_labels": season_labels,
         }
+        if len(season_labels) == 1:
+            batch.summary_stats["season_label"] = season_labels[0]
         batch.save(update_fields=["status", "started_at", "summary_stats", "updated_at"])
         items = [
             IngestionBatchItem(
@@ -503,34 +512,57 @@ def finalize_batch(batch_id: int) -> dict[str, Any]:
 def materialize_aggregate_scopes(batch_id: int) -> dict[str, Any]:
     batch = IngestionBatch.objects.get(pk=batch_id)
     successful_items = list(
-        batch.items.select_related("competition_season__season").filter(status=IngestionBatchItemStatus.SUCCESS)
+        batch.items.select_related(
+            "competition_season__season",
+            "competition_season__competition",
+        ).filter(status=IngestionBatchItemStatus.SUCCESS)
     )
     if not successful_items:
         return {"ok": False, "error": "No successful league items; aggregate materialisation skipped."}
-    season_labels = {item.competition_season.season.label for item in successful_items}
-    if len(season_labels) != 1:
-        return {"ok": False, "error": f"Successful items span multiple seasons: {sorted(season_labels)}"}
-    season_label = next(iter(season_labels))
+    domestic_items = [
+        item
+        for item in successful_items
+        if (
+            item.competition_season.competition.competition_type == CompetitionType.DOMESTIC_LEAGUE
+            and item.competition_season.competition.include_in_domestic_aggregates
+        )
+    ]
+    items_by_season: dict[str, list[IngestionBatchItem]] = {}
+    for item in domestic_items:
+        items_by_season.setdefault(item.competition_season.season.label, []).append(item)
     from ingestion.services.galaxy import materialize_galaxy_scope
 
     aggregate_run_ids = dict(batch.aggregate_run_ids or {})
     try:
-        for scope in ("BIG5", "ALL"):
-            run = IngestionRun.objects.create(
-                kind=IngestionKind.GALAXY,
-                competition_season=None,
-                status=IngestionRunStatus.PENDING,
-            )
-            materialize_galaxy_scope(scope, season_label, run=run)
-            run.refresh_from_db()
-            aggregate_run_ids[scope] = run.id
-            if run.status != IngestionRunStatus.SUCCESS:
-                raise RuntimeError(run.error_detail or f"{scope} aggregate galaxy failed")
+        for season_label in sorted(items_by_season):
+            season_items = items_by_season[season_label]
+            codes = {item.competition_season.competition.short_code for item in season_items}
+            scopes: list[str] = []
+            if codes.intersection(BIG_FIVE_COMPETITION_CODES):
+                scopes.append("BIG5")
+            if season_items:
+                scopes.append("ALL")
+            for scope in scopes:
+                run = IngestionRun.objects.create(
+                    kind=IngestionKind.GALAXY,
+                    competition_season=None,
+                    status=IngestionRunStatus.PENDING,
+                )
+                materialize_galaxy_scope(scope, season_label, run=run)
+                run.refresh_from_db()
+                aggregate_run_ids[f"{scope}:{season_label}"] = run.id
+                if run.status != IngestionRunStatus.SUCCESS:
+                    raise RuntimeError(run.error_detail or f"{scope} {season_label} aggregate galaxy failed")
+                if len(items_by_season) == 1:
+                    # Preserve the singular keys consumed by older operators
+                    # while the stable season-qualified keys prevent mixed
+                    # batches from overwriting one another.
+                    aggregate_run_ids[scope] = run.id
     except Exception as exc:  # noqa: BLE001
         batch.aggregate_run_ids = aggregate_run_ids
         batch.save(update_fields=["aggregate_run_ids", "updated_at"])
         return {"ok": False, "error": str(exc)}
-    cache_deleted = invalidate_materialized_api_payloads()
+    cache_deleted = invalidate_materialized_api_payloads() if aggregate_run_ids else 0
     aggregate_run_ids["api_cache_deleted"] = cache_deleted
     batch.aggregate_run_ids = aggregate_run_ids
     batch.save(update_fields=["aggregate_run_ids", "updated_at"])

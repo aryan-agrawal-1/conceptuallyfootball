@@ -18,6 +18,10 @@ class RefreshCutoverPlan:
     source_competitions: tuple[str, ...]
     target_ids: tuple[int, ...]
     target_competitions: tuple[str, ...]
+    preserved_ids: tuple[int, ...]
+    preserved_competitions: tuple[str, ...]
+    preserved_season_labels: tuple[str, ...]
+    expected_refresh_ids: tuple[int, ...]
     pilot_target_id: int
     pilot_published: bool
     applied: bool = False
@@ -36,22 +40,18 @@ def _build_plan(
     if from_season == to_season:
         raise ValueError("--from-season and --to-season must be different seasons.")
 
-    source_queryset = CompetitionSeason.objects.filter(refresh_enabled=True).select_related(
+    enabled_queryset = CompetitionSeason.objects.filter(refresh_enabled=True).select_related(
         "competition",
         "season",
     )
     if lock_rows:
-        source_queryset = source_queryset.select_for_update()
-    source_rows = list(source_queryset.order_by("competition__short_code", "competition_id", "id"))
+        enabled_queryset = enabled_queryset.select_for_update()
+    enabled_rows = list(
+        enabled_queryset.order_by("competition__short_code", "competition_id", "id")
+    )
+    source_rows = [row for row in enabled_rows if row.season.label == from_season]
     if not source_rows:
-        raise ValueError("No refresh-enabled source slices were found.")
-
-    source_seasons = {row.season.label for row in source_rows}
-    if source_seasons != {from_season}:
-        raise ValueError(
-            "All refresh-enabled source slices must share --from-season "
-            f"{from_season}; found {sorted(source_seasons)}."
-        )
+        raise ValueError(f"No refresh-enabled source slices found for {from_season}.")
 
     targets: list[CompetitionSeason] = []
     for source_row in source_rows:
@@ -70,11 +70,10 @@ def _build_plan(
             )
         target = target_rows[0]
         if not target.supports_sofascore:
-            raise ValueError(
-                f"Target {target} is missing configured Sofascore provider IDs."
-            )
+            raise ValueError(f"Target {target} is missing configured Sofascore provider IDs.")
         targets.append(target)
 
+    source_codes = tuple(row.competition.short_code for row in source_rows)
     target_codes = tuple(target.competition.short_code for target in targets)
     pilot_matches = [
         target
@@ -83,31 +82,34 @@ def _build_plan(
     ]
     if len(pilot_matches) != 1:
         raise ValueError(
-            f"Pilot competition {pilot_competition} must identify exactly one source target; "
+            f"Pilot competition {pilot_competition} must identify exactly one transitioning target; "
             f"available targets are {list(target_codes)}."
         )
     pilot_target = pilot_matches[0]
     readiness = publication_readiness(pilot_target)
     if not readiness.ready:
-        raise ValueError(
-            f"Pilot target {pilot_target} is not ready: {readiness.reason}"
-        )
+        raise ValueError(f"Pilot target {pilot_target} is not ready: {readiness.reason}")
 
-    # Keep the tuples deterministic even if a caller supplied a queryset with
-    # an unusual default ordering.
-    ordered_pairs = sorted(
-        zip(source_rows, targets),
-        key=lambda pair: (pair[0].competition.short_code, pair[0].competition_id, pair[0].id),
+    source_ids = {row.id for row in source_rows}
+    preserved_rows = [row for row in enabled_rows if row.id not in source_ids]
+    resulting_rows = [*preserved_rows, *targets]
+    resulting_rows.sort(
+        key=lambda row: (row.competition.short_code, row.competition_id, row.id),
     )
-    ordered_sources, ordered_targets = zip(*ordered_pairs)
+    validate_refresh_selection(resulting_rows)
+    expected_refresh_ids = tuple(sorted({row.id for row in preserved_rows} | {row.id for row in targets}))
     return RefreshCutoverPlan(
         from_season=from_season,
         to_season=to_season,
         pilot_competition=pilot_competition.upper(),
-        source_ids=tuple(row.id for row in ordered_sources),
-        source_competitions=tuple(row.competition.short_code for row in ordered_sources),
-        target_ids=tuple(row.id for row in ordered_targets),
-        target_competitions=tuple(row.competition.short_code for row in ordered_targets),
+        source_ids=tuple(row.id for row in source_rows),
+        source_competitions=source_codes,
+        target_ids=tuple(row.id for row in targets),
+        target_competitions=target_codes,
+        preserved_ids=tuple(row.id for row in preserved_rows),
+        preserved_competitions=tuple(row.competition.short_code for row in preserved_rows),
+        preserved_season_labels=tuple(row.season.label for row in preserved_rows),
+        expected_refresh_ids=expected_refresh_ids,
         pilot_target_id=pilot_target.id,
         pilot_published=pilot_target.is_published,
     )
@@ -147,10 +149,10 @@ def apply_season_refresh_cutover(
         .order_by("competition__short_code", "competition_id", "id")
     )
     validate_refresh_selection(resulting_refresh_rows)
-    resulting_ids = tuple(row.id for row in resulting_refresh_rows)
-    if resulting_ids != plan.target_ids:
+    resulting_ids = {row.id for row in resulting_refresh_rows}
+    if resulting_ids != set(plan.expected_refresh_ids):
         raise ValueError(
-            "Applied refresh selection does not match the planned target IDs: "
-            f"expected {list(plan.target_ids)}, found {list(resulting_ids)}."
+            "Applied refresh selection does not match the planned target/preserved IDs: "
+            f"expected {list(plan.expected_refresh_ids)}, found {sorted(resulting_ids)}."
         )
     return RefreshCutoverPlan(**{**plan.as_dict(), "applied": True})

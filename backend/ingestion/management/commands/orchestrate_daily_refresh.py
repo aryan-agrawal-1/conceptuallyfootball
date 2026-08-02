@@ -107,7 +107,12 @@ class Command(BaseCommand):
             manual=True,
             status=IngestionBatchStatus.RUNNING,
             started_at=timezone.now(),
-            summary_stats={"planned_items": 1, "season_label": cs.season.label, "manual_competition": code},
+            summary_stats={
+                "planned_items": 1,
+                "season_label": cs.season.label,
+                "season_labels": [cs.season.label],
+                "manual_competition": code,
+            },
         )
         item = IngestionBatchItem.objects.create(
             batch=batch,

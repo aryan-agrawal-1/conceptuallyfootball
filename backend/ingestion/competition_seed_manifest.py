@@ -35,6 +35,7 @@ def _season_row(
     understat_season_year: str | None = None,
     is_active: bool = True,
     refresh_enabled: bool = False,
+    legacy_label_alias: str | None = None,
     expected_team_count: int | None = None,
     min_merged_team_count: int | None = None,
     min_team_stats_coverage_count: int | None = None,
@@ -49,6 +50,8 @@ def _season_row(
         "is_active": is_active,
         "refresh_enabled": refresh_enabled,
     }
+    if legacy_label_alias is not None:
+        row["legacy_label_alias"] = legacy_label_alias
     for key, value in (
         ("expected_team_count", expected_team_count),
         ("min_merged_team_count", min_merged_team_count),
@@ -396,11 +399,12 @@ COMPETITION_SEED_MANIFEST = [
         "min_merged_team_count": 8,
         "min_team_stats_coverage_count": 0,
         "seasons": [
-            _season_row("2021-22", sofascore_unique_tournament_id=178, sofascore_season_id=35341),
-            _season_row("2022-23", sofascore_unique_tournament_id=178, sofascore_season_id=40593),
-            _season_row("2023-24", sofascore_unique_tournament_id=178, sofascore_season_id=48281),
-            _season_row("2024-25", sofascore_unique_tournament_id=178, sofascore_season_id=57905),
-            _season_row("2025-26", sofascore_unique_tournament_id=178, sofascore_season_id=71438, refresh_enabled=True),
+            _season_row("2021", sofascore_unique_tournament_id=178, sofascore_season_id=35341, legacy_label_alias="2021-22"),
+            _season_row("2022", sofascore_unique_tournament_id=178, sofascore_season_id=40593, legacy_label_alias="2022-23"),
+            _season_row("2023", sofascore_unique_tournament_id=178, sofascore_season_id=48281, legacy_label_alias="2023-24"),
+            _season_row("2024", sofascore_unique_tournament_id=178, sofascore_season_id=57905, legacy_label_alias="2024-25"),
+            _season_row("2025", sofascore_unique_tournament_id=178, sofascore_season_id=71438, refresh_enabled=True, legacy_label_alias="2025-26"),
+            _season_row("2026", sofascore_unique_tournament_id=178, sofascore_season_id=89137, expected_team_count=10, min_merged_team_count=8, min_team_stats_coverage_count=0, legacy_label_alias="2026-27"),
         ],
     },
     {
@@ -414,11 +418,12 @@ COMPETITION_SEED_MANIFEST = [
         "min_merged_team_count": 14,
         "min_team_stats_coverage_count": 0,
         "seasons": [
-            _season_row("2021-22", sofascore_unique_tournament_id=20, sofascore_season_id=35403),
-            _season_row("2022-23", sofascore_unique_tournament_id=20, sofascore_season_id=40405),
-            _season_row("2023-24", sofascore_unique_tournament_id=20, sofascore_season_id=47806),
-            _season_row("2024-25", sofascore_unique_tournament_id=20, sofascore_season_id=57322),
-            _season_row("2025-26", sofascore_unique_tournament_id=20, sofascore_season_id=70174, refresh_enabled=True),
+            _season_row("2021", sofascore_unique_tournament_id=20, sofascore_season_id=35403, legacy_label_alias="2021-22"),
+            _season_row("2022", sofascore_unique_tournament_id=20, sofascore_season_id=40405, legacy_label_alias="2022-23"),
+            _season_row("2023", sofascore_unique_tournament_id=20, sofascore_season_id=47806, legacy_label_alias="2023-24"),
+            _season_row("2024", sofascore_unique_tournament_id=20, sofascore_season_id=57322, legacy_label_alias="2024-25"),
+            _season_row("2025", sofascore_unique_tournament_id=20, sofascore_season_id=70174, refresh_enabled=True, legacy_label_alias="2025-26"),
+            _season_row("2026", sofascore_unique_tournament_id=20, sofascore_season_id=87809, expected_team_count=16, min_merged_team_count=14, min_team_stats_coverage_count=0, legacy_label_alias="2026-27"),
         ],
     },
 ]
@@ -448,12 +453,6 @@ EXISTING_2026_27 = {
     "GRE1": (185, 98659, None, None, 14, 12, 0),
     "CYP1": (171, 99321, None, None, 14, 12, 0),
     "TUR1": (52, 98080, None, None, 18, 16, 0),
-    # SofaScore exposes calendar-year provider seasons for these two leagues;
-    # Statballer keeps its established split-year labels for compatibility.
-    # The 2026-27 provider IDs below therefore follow the next calendar year;
-    # the corrected 2025-26 rows above avoid duplicate provider slices.
-    "EST1": (178, 89137, None, None, 10, 8, 0),
-    "NOR1": (20, 87809, None, None, 16, 14, 0),
 }
 
 for competition_config in COMPETITION_SEED_MANIFEST:

@@ -17,6 +17,7 @@ from ingestion.api_cache import (
 from ingestion.competition_scope import (
     eligibility_thresholds,
     public_competition_seasons,
+    resolve_public_competition_season,
     scope_minimum_eligible_minutes,
 )
 from ingestion.derived_definitions import METRIC_META_CACHE_VERSION
@@ -83,13 +84,7 @@ def _resolve_competition_season(request) -> CompetitionSeason:
         raise DjangoValidationError(
             "Provide either competition_season or both competition and season."
         )
-    try:
-        return public_competition_seasons().select_related("competition", "season").get(
-            competition__short_code__iexact=competition_code,
-            season__label__iexact=season_label,
-        )
-    except CompetitionSeason.DoesNotExist as exc:
-        raise DjangoValidationError("Unknown competition and season combination.") from exc
+    return resolve_public_competition_season(competition_code, season_label)
 
 
 def _base_queryset(competition_season: CompetitionSeason) -> QuerySet[PlayerSeasonGkDerivedStats]:
