@@ -88,6 +88,15 @@ class Command(BaseCommand):
                     "is_active": season_cfg.get("is_active", True),
                     "refresh_enabled": season_cfg.get("refresh_enabled", False),
                 }
+                season_threshold_overrides = {
+                    field_name: season_cfg[field_name]
+                    for field_name in (
+                        "expected_team_count",
+                        "min_merged_team_count",
+                        "min_team_stats_coverage_count",
+                    )
+                    if field_name in season_cfg
+                }
 
                 slice_obj, created = CompetitionSeason.objects.get_or_create(
                     competition=competition,
@@ -100,6 +109,20 @@ class Command(BaseCommand):
 
                 changed_fields: list[str] = []
                 for field_name, value in defaults.items():
+                    # Threshold metadata can be pinned per season.  If a row
+                    # has no explicit override, leave its existing historical
+                    # value alone so changing a competition default cannot
+                    # rewrite already-validated slices during a later seed.
+                    if (
+                        field_name
+                        in {
+                            "expected_team_count",
+                            "min_merged_team_count",
+                            "min_team_stats_coverage_count",
+                        }
+                        and field_name not in season_threshold_overrides
+                    ):
+                        continue
                     if getattr(slice_obj, field_name) != value:
                         setattr(slice_obj, field_name, value)
                         changed_fields.append(field_name)

@@ -6,6 +6,7 @@ from django.utils import timezone
 
 from ingestion.models import (
     CompetitionSeason,
+    CompetitionType,
     IngestionRun,
     IngestionRunStatus,
     MergedTeamSeason,
@@ -335,7 +336,28 @@ def ingest_sofascore_team_slice(competition_season: CompetitionSeason, *, run: I
         season_id=competition_season.sofascore_season_id,
     )
     try:
-        rows = build_team_season_rows(cfg)
+        allowed_provider_team_ids = None
+        if competition_season.competition.competition_type == CompetitionType.CONTINENTAL_CUP:
+            allowed_provider_team_ids = {
+                str(provider_team_id)
+                for provider_team_id in SofascorePlayerSeasonSource.objects.filter(
+                    competition_season=competition_season,
+                )
+                .exclude(provider_team_id="")
+                .values_list("provider_team_id", flat=True)
+                if provider_team_id
+            }
+            if not allowed_provider_team_ids:
+                raise ValueError(
+                    "Sofascore continental team ingestion cannot determine main-stage teams: "
+                    "no provider team IDs are present in the player-stat aggregate for this slice."
+                )
+            rows = build_team_season_rows(
+                cfg,
+                allowed_provider_team_ids=allowed_provider_team_ids,
+            )
+        else:
+            rows = build_team_season_rows(cfg)
     except Exception as exc:  # noqa: BLE001
         _mark_run_failed(run, f"Sofascore team fetch failed: {exc}")
         return

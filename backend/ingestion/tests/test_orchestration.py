@@ -35,6 +35,8 @@ def _slice(
     refresh_enabled: bool = True,
     player_data_mode: str = PlayerDataMode.SOFASCORE_ONLY,
     has_understat: bool = False,
+    sofascore_season_id: int = 76986,
+    understat_season_year: str = "2025",
 ) -> CompetitionSeason:
     comp = Competition.objects.create(name=code, short_code=code, country="Test")
     season, _ = Season.objects.get_or_create(
@@ -48,9 +50,9 @@ def _slice(
         has_understat=has_understat,
         has_sofascore=True,
         understat_league="EPL" if has_understat else None,
-        understat_season_year="2025" if has_understat else None,
+        understat_season_year=understat_season_year if has_understat else None,
         sofascore_unique_tournament_id=17,
-        sofascore_season_id=76986,
+        sofascore_season_id=sofascore_season_id,
         expected_team_count=1,
         min_merged_team_count=1,
         min_team_stats_coverage_count=1,
@@ -115,19 +117,26 @@ class DailyRefreshPlanningTests(TestCase):
 
 
 class DailyRefreshExecutionTests(TestCase):
+    season_label = "2025-26"
+    sofascore_season_id = 76986
+    understat_season_year = "2025"
+
     def setUp(self):
         self.cs = _slice(
             "ENG1",
+            self.season_label,
             refresh_enabled=True,
             player_data_mode=PlayerDataMode.FULL_MERGE,
             has_understat=True,
+            sofascore_season_id=self.sofascore_season_id,
+            understat_season_year=self.understat_season_year,
         )
         self.batch = IngestionBatch.objects.create(
             scheduled_for_date=timezone.localdate(),
             planned_start_at=timezone.now(),
             status=IngestionBatchStatus.RUNNING,
             started_at=timezone.now(),
-            summary_stats={"planned_items": 1, "season_label": "2025-26"},
+            summary_stats={"planned_items": 1, "season_label": self.season_label},
         )
         self.item = IngestionBatchItem.objects.create(
             batch=self.batch,
@@ -182,6 +191,14 @@ class DailyRefreshExecutionTests(TestCase):
         self.assertEqual(self.item.status, IngestionBatchItemStatus.FAILED)
         self.assertEqual(self.item.current_stage, "sofascore_team")
         self.assertEqual(self.batch.status, IngestionBatchStatus.FAILED)
+
+
+class NewSeasonDailyRefreshExecutionTests(DailyRefreshExecutionTests):
+    """Issue #34 acceptance coverage for a configured 2026-27 target slice."""
+
+    season_label = "2026-27"
+    sofascore_season_id = 96518
+    understat_season_year = "2026"
 
 
 class DailyRefreshCommandTests(TestCase):

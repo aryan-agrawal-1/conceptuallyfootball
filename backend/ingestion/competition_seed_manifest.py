@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ingestion.models import PlayerDataMode
+from ingestion.models import CompetitionType, PlayerDataMode
 
 SEASON_LABELS = (
     "2021-22",
@@ -12,7 +12,18 @@ SEASON_LABELS = (
 
 
 def _sort_order(label: str) -> int:
-    return int(label.split("-")[1])
+    # Domestic split-year seasons use the full ending year (``2026-27`` ->
+    # 2027), while calendar competitions such as Allsvenskan use a plain year.
+    parts = label.split("-")
+    if len(parts) == 1:
+        return int(parts[0])
+    start = int(parts[0])
+    ending = int(parts[-1])
+    if len(parts[0]) == 4 and len(parts[-1]) == 2:
+        ending += start - (start % 100)
+        if ending <= start:
+            ending += 100
+    return ending
 
 
 def _season_row(
@@ -24,8 +35,11 @@ def _season_row(
     understat_season_year: str | None = None,
     is_active: bool = True,
     refresh_enabled: bool = False,
+    expected_team_count: int | None = None,
+    min_merged_team_count: int | None = None,
+    min_team_stats_coverage_count: int | None = None,
 ) -> dict:
-    return {
+    row = {
         "label": label,
         "sort_order": _sort_order(label),
         "sofascore_unique_tournament_id": sofascore_unique_tournament_id,
@@ -35,6 +49,14 @@ def _season_row(
         "is_active": is_active,
         "refresh_enabled": refresh_enabled,
     }
+    for key, value in (
+        ("expected_team_count", expected_team_count),
+        ("min_merged_team_count", min_merged_team_count),
+        ("min_team_stats_coverage_count", min_team_stats_coverage_count),
+    ):
+        if value is not None:
+            row[key] = value
+    return row
 
 
 COMPETITION_SEED_MANIFEST = [
@@ -378,7 +400,7 @@ COMPETITION_SEED_MANIFEST = [
             _season_row("2022-23", sofascore_unique_tournament_id=178, sofascore_season_id=40593),
             _season_row("2023-24", sofascore_unique_tournament_id=178, sofascore_season_id=48281),
             _season_row("2024-25", sofascore_unique_tournament_id=178, sofascore_season_id=57905),
-            _season_row("2025-26", sofascore_unique_tournament_id=178, sofascore_season_id=89137, refresh_enabled=True),
+            _season_row("2025-26", sofascore_unique_tournament_id=178, sofascore_season_id=71438, refresh_enabled=True),
         ],
     },
     {
@@ -396,7 +418,247 @@ COMPETITION_SEED_MANIFEST = [
             _season_row("2022-23", sofascore_unique_tournament_id=20, sofascore_season_id=40405),
             _season_row("2023-24", sofascore_unique_tournament_id=20, sofascore_season_id=47806),
             _season_row("2024-25", sofascore_unique_tournament_id=20, sofascore_season_id=57322),
-            _season_row("2025-26", sofascore_unique_tournament_id=20, sofascore_season_id=87809, refresh_enabled=True),
+            _season_row("2025-26", sofascore_unique_tournament_id=20, sofascore_season_id=70174, refresh_enabled=True),
         ],
     },
 ]
+
+
+# The current-season rows are kept together so their rollover policy is easy to
+# audit without touching the historical rows above.  In particular, the
+# 2026-27 rows are intentionally inactive only if a future operator changes
+# this explicit flag; they are otherwise active, unpublished, and not selected
+# for refresh until the safe cutover command is applied.
+EXISTING_2026_27 = {
+    "ENG1": (17, 96668, "EPL", "2026", 20, 18, 18),
+    "ITA1": (23, 95836, "Serie_A", "2026", 20, 18, 18),
+    "SPA1": (8, 97268, "La_liga", "2026", 20, 18, 18),
+    "GER1": (35, 97464, "Bundesliga", "2026", 18, 16, 16),
+    "GER2": (44, 97406, None, None, 18, 16, 0),
+    "GER3": (491, 98012, None, None, 20, 18, 0),
+    "FRA1": (34, 96127, "Ligue_1", "2026", 18, 16, 16),
+    "POR1": (238, 97436, None, None, 18, 16, 16),
+    "NED1": (37, 96143, None, None, 18, 16, 16),
+    "BEL1": (38, 96616, None, None, 18, 16, 14),
+    "SCO1": (36, 96658, None, None, 12, 10, 10),
+    "ENG2": (18, 97037, None, None, 24, 22, 22),
+    "POL1": (202, 96144, None, None, 18, 16, 0),
+    "CZE1": (172, 96966, None, None, 16, 14, 0),
+    "DEN1": (39, 95785, None, None, 12, 10, 0),
+    "GRE1": (185, 98659, None, None, 14, 12, 0),
+    "CYP1": (171, 99321, None, None, 14, 12, 0),
+    "TUR1": (52, 98080, None, None, 18, 16, 0),
+    # SofaScore exposes calendar-year provider seasons for these two leagues;
+    # Statballer keeps its established split-year labels for compatibility.
+    # The 2026-27 provider IDs below therefore follow the next calendar year;
+    # the corrected 2025-26 rows above avoid duplicate provider slices.
+    "EST1": (178, 89137, None, None, 10, 8, 0),
+    "NOR1": (20, 87809, None, None, 16, 14, 0),
+}
+
+for competition_config in COMPETITION_SEED_MANIFEST:
+    target = EXISTING_2026_27.get(competition_config["code"])
+    if target is None:
+        continue
+    (
+        tournament_id,
+        season_id,
+        understat_league,
+        understat_year,
+        expected_team_count,
+        min_merged_team_count,
+        min_team_stats_coverage_count,
+    ) = target
+    competition_config["seasons"].append(
+        _season_row(
+            "2026-27",
+            sofascore_unique_tournament_id=tournament_id,
+            sofascore_season_id=season_id,
+            understat_league=understat_league,
+            understat_season_year=understat_year,
+            expected_team_count=expected_team_count,
+            min_merged_team_count=min_merged_team_count,
+            min_team_stats_coverage_count=min_team_stats_coverage_count,
+        )
+    )
+
+
+def _cup_config(
+    code: str,
+    name: str,
+    tournament_id: int,
+    season_rows: list[tuple[str, int, int]],
+) -> dict:
+    return {
+        "code": code,
+        "name": name,
+        "country": "Europe",
+        "competition_type": CompetitionType.CONTINENTAL_CUP,
+        "include_in_domestic_aggregates": False,
+        "minimum_eligible_minutes": 270,
+        "player_data_mode": PlayerDataMode.SOFASCORE_ONLY,
+        "has_understat": False,
+        "has_sofascore": True,
+        "expected_team_count": 36,
+        "min_merged_team_count": 34,
+        "min_team_stats_coverage_count": 0,
+        "seasons": [
+            _season_row(
+                label,
+                sofascore_unique_tournament_id=tournament_id,
+                sofascore_season_id=season_id,
+                expected_team_count=expected_count,
+                min_merged_team_count=max(expected_count - 2, 1),
+                min_team_stats_coverage_count=0,
+            )
+            for label, season_id, expected_count in season_rows
+        ],
+    }
+
+
+COMPETITION_SEED_MANIFEST.extend(
+    [
+        _cup_config(
+            "UCL",
+            "UEFA Champions League",
+            7,
+            [
+                ("2022-23", 41897, 32),
+                ("2023-24", 52162, 32),
+                ("2024-25", 61644, 36),
+                ("2025-26", 76953, 36),
+                ("2026-27", 96518, 36),
+            ],
+        ),
+        _cup_config(
+            "UEL",
+            "UEFA Europa League",
+            679,
+            [
+                ("2022-23", 44509, 40),
+                ("2023-24", 53654, 40),
+                ("2024-25", 61645, 36),
+                ("2025-26", 76984, 36),
+                ("2026-27", 96522, 36),
+            ],
+        ),
+        _cup_config(
+            "UECL",
+            "UEFA Conference League",
+            17015,
+            [
+                ("2022-23", 42224, 40),
+                ("2023-24", 52327, 40),
+                ("2024-25", 61648, 36),
+                ("2025-26", 76960, 36),
+                ("2026-27", 96529, 36),
+            ],
+        ),
+    ]
+)
+
+
+def _domestic_config(
+    code: str,
+    name: str,
+    country: str,
+    tournament_id: int,
+    season_rows: list[tuple[str, int, int]],
+) -> dict:
+    expected_team_count = max(expected for _, _, expected in season_rows)
+    return {
+        "code": code,
+        "name": name,
+        "country": country,
+        "competition_type": CompetitionType.DOMESTIC_LEAGUE,
+        "include_in_domestic_aggregates": True,
+        "minimum_eligible_minutes": 450,
+        "player_data_mode": PlayerDataMode.SOFASCORE_ONLY,
+        "has_understat": False,
+        "has_sofascore": True,
+        "expected_team_count": expected_team_count,
+        "min_merged_team_count": max(expected_team_count - 2, 1),
+        "min_team_stats_coverage_count": 0,
+        "seasons": [
+            _season_row(
+                label,
+                sofascore_unique_tournament_id=tournament_id,
+                sofascore_season_id=season_id,
+                expected_team_count=expected_count,
+                min_merged_team_count=max(expected_count - 2, 1),
+                min_team_stats_coverage_count=0,
+            )
+            for label, season_id, expected_count in season_rows
+        ],
+    }
+
+
+COMPETITION_SEED_MANIFEST.extend(
+    [
+        _domestic_config(
+            "BEL2",
+            "Challenger Pro League",
+            "Belgium",
+            9,
+            [
+                ("2022-23", 42422, 12),
+                ("2023-24", 52384, 16),
+                ("2024-25", 61412, 16),
+                ("2025-26", 77849, 17),
+                ("2026-27", 96912, 15),
+            ],
+        ),
+        _domestic_config(
+            "FRA2",
+            "Ligue 2",
+            "France",
+            182,
+            [
+                ("2022-23", 42272, 20),
+                ("2023-24", 52572, 21),
+                ("2024-25", 61737, 20),
+                ("2025-26", 77357, 20),
+                ("2026-27", 96109, 18),
+            ],
+        ),
+        _domestic_config(
+            "FRA3",
+            "Ligue 3",
+            "France",
+            183,
+            [
+                ("2022-23", 42921, 18),
+                ("2023-24", 53055, 18),
+                ("2024-25", 64124, 18),
+                ("2025-26", 78599, 18),
+                ("2026-27", 97457, 18),
+            ],
+        ),
+        _domestic_config(
+            "SCO2",
+            "Scottish Championship",
+            "Scotland",
+            206,
+            [
+                ("2022-23", 41958, 13),
+                ("2023-24", 52606, 13),
+                ("2024-25", 62411, 13),
+                ("2025-26", 77037, 13),
+                ("2026-27", 96614, 10),
+            ],
+        ),
+        _domestic_config(
+            "SWE1",
+            "Allsvenskan",
+            "Sweden",
+            40,
+            [
+                ("2022", 40406, 17),
+                ("2023", 47730, 17),
+                ("2024", 57284, 17),
+                ("2025", 69956, 17),
+                ("2026", 87925, 16),
+            ],
+        ),
+    ]
+)

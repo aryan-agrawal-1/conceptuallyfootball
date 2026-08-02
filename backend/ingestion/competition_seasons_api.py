@@ -30,6 +30,14 @@ COMPETITION_ORDER = {
     "CYP1": 17,
     "NOR1": 18,
     "EST1": 19,
+    "BEL2": 20,
+    "FRA2": 21,
+    "FRA3": 22,
+    "SCO2": 23,
+    "SWE1": 24,
+    "UCL": 30,
+    "UEL": 31,
+    "UECL": 32,
 }
 
 
