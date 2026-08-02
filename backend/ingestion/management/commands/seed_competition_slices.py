@@ -147,6 +147,15 @@ class Command(BaseCommand):
                     season.sort_order = season_cfg["sort_order"]
                     season.save(update_fields=["sort_order"])
 
+                season_threshold_overrides = {
+                    field_name: season_cfg[field_name]
+                    for field_name in (
+                        "expected_team_count",
+                        "min_merged_team_count",
+                        "min_team_stats_coverage_count",
+                    )
+                    if field_name in season_cfg
+                }
                 defaults = {
                     "player_data_mode": comp_cfg["player_data_mode"],
                     "has_understat": comp_cfg["has_understat"],
@@ -161,15 +170,7 @@ class Command(BaseCommand):
                     "is_active": season_cfg.get("is_active", True),
                     "refresh_enabled": season_cfg.get("refresh_enabled", False),
                 }
-                season_threshold_overrides = {
-                    field_name: season_cfg[field_name]
-                    for field_name in (
-                        "expected_team_count",
-                        "min_merged_team_count",
-                        "min_team_stats_coverage_count",
-                    )
-                    if field_name in season_cfg
-                }
+                defaults.update(season_threshold_overrides)
 
                 reconciled_slice = _reconcile_legacy_season_label(competition, season, season_cfg)
                 if reconciled_slice is not None:

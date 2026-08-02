@@ -136,6 +136,54 @@ class CompetitionSeedBatch2Tests(TestCase):
                     self.assertFalse(row.is_published)
                     self.assertFalse(row.refresh_enabled)
 
+    def test_seed_applies_and_repairs_season_threshold_overrides(self):
+        call_command("seed_competition_slices")
+
+        competition = Competition.objects.get(short_code="UCL")
+        competition_config = next(
+            config for config in COMPETITION_SEED_MANIFEST if config["code"] == "UCL"
+        )
+        self.assertEqual(competition_config["expected_team_count"], 36)
+        self.assertEqual(competition_config["min_merged_team_count"], 34)
+        slice_obj = CompetitionSeason.objects.get(
+            competition=competition,
+            season__label="2022-23",
+        )
+        self.assertEqual(slice_obj.expected_team_count, 32)
+        self.assertEqual(slice_obj.min_merged_team_count, 30)
+        self.assertEqual(slice_obj.min_team_stats_coverage_count, 0)
+
+        CompetitionSeason.objects.filter(pk=slice_obj.pk).update(
+            expected_team_count=36,
+            min_merged_team_count=34,
+            min_team_stats_coverage_count=18,
+        )
+        call_command("seed_competition_slices")
+
+        slice_obj.refresh_from_db()
+        self.assertEqual(slice_obj.expected_team_count, 32)
+        self.assertEqual(slice_obj.min_merged_team_count, 30)
+        self.assertEqual(slice_obj.min_team_stats_coverage_count, 0)
+
+    def test_seed_preserves_unpinned_historical_thresholds(self):
+        call_command("seed_competition_slices")
+
+        slice_obj = CompetitionSeason.objects.get(
+            competition__short_code="ENG1",
+            season__label="2021-22",
+        )
+        CompetitionSeason.objects.filter(pk=slice_obj.pk).update(
+            expected_team_count=19,
+            min_merged_team_count=17,
+            min_team_stats_coverage_count=16,
+        )
+        call_command("seed_competition_slices")
+
+        slice_obj.refresh_from_db()
+        self.assertEqual(slice_obj.expected_team_count, 19)
+        self.assertEqual(slice_obj.min_merged_team_count, 17)
+        self.assertEqual(slice_obj.min_team_stats_coverage_count, 16)
+
 
 class CalendarLabelReconciliationTests(TestCase):
     def setUp(self):
