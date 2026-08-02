@@ -60,9 +60,9 @@ SofaScore-only mode:
 
 | Code (tournament) | 2022-23 | 2023-24 | 2024-25 | 2025-26 | 2026-27 |
 | --- | --- | --- | --- | --- | --- |
-| BEL2 (9) | 42422 / 12 | 52384 / 16 | 61412 / 16 | 77849 / 17 | 96912 / 15 |
+| BEL2 (9) | unavailable (not configured) | 52384 / 16 | 61412 / 16 | 77849 / 17 | 96912 / 15 |
 | FRA2 (182) | 42272 / 20 | 52572 / 21 | 61737 / 20 | 77357 / 20 | 96109 / 18 |
-| FRA3 (183) | 42921 / 18 | 53055 / 18 | 64124 / 18 | 78599 / 18 | 97457 / 18 |
+| FRA3 (183) | unavailable (not configured) | unavailable (not configured) | 64124 / 18 | 78599 / 18 | 97457 / 18 |
 | SCO2 (206) | 41958 / 13 | 52606 / 13 | 62411 / 13 | 77037 / 13 | 96614 / 10 |
 
 Allsvenskan (SWE1, tournament 40) uses calendar labels and IDs/counts:
@@ -82,9 +82,10 @@ unchanged.
 
 ## Known provider gaps
 
-Correct SofaScore endpoints currently return zero summary/wide player-stat
-pages for BEL2 2022-23 and FRA3 2022-23 and 2023-24. These slices remain
-unpublished; do not invent alternate IDs or mark them publishable.
+Correct SofaScore endpoints return no summary/wide player-stat pages for BEL2
+2022-23 and FRA3 2022-23 and 2023-24. Those seasons are intentionally omitted
+from the manifest and are not configured or stored as competition-season
+slices. They must not be requested by a later backfill.
 
 ## Safe rollover and later backfill
 
@@ -151,9 +152,25 @@ backend/venv/bin/python backend/manage.py backfill_history \
 ```bash
 backend/venv/bin/python backend/manage.py backfill_history \
   --skip-seed --stop-on-error \
-  --competitions BEL2,FRA2,FRA3,SCO2 \
+  --competitions FRA2,SCO2 \
   --seasons 2022-23,2023-24,2024-25,2025-26,2026-27 \
-  --output reports/batch-2-domestic-split-year.json
+  --output reports/batch-2-fra2-sco2-split-year.json
+```
+
+```bash
+backend/venv/bin/python backend/manage.py backfill_history \
+  --skip-seed --stop-on-error \
+  --competitions BEL2 \
+  --seasons 2023-24,2024-25,2025-26,2026-27 \
+  --output reports/batch-2-bel2-split-year.json
+```
+
+```bash
+backend/venv/bin/python backend/manage.py backfill_history \
+  --skip-seed --stop-on-error \
+  --competitions FRA3 \
+  --seasons 2024-25,2025-26,2026-27 \
+  --output reports/batch-2-fra3-split-year.json
 ```
 
 ```bash
@@ -165,6 +182,7 @@ backend/venv/bin/python backend/manage.py backfill_history \
 ```
 
 The commands above are intentionally not part of deployment or seeding; they
-are an operator runbook for a later, validated backfill. The known blockers
-remain exact: BEL2 2022-23 and FRA3 2022-23/2023-24 return zero correct
-SofaScore summary/wide player-stat pages and must not be papered over.
+are an operator runbook for a later, validated backfill. Because
+`backfill_history` takes a Cartesian product of competition codes and season
+labels, the unavailable BEL2/FRA3 seasons are deliberately split out and are
+not requested by any command.

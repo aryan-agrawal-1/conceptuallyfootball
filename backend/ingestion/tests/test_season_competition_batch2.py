@@ -25,6 +25,18 @@ class CompetitionSeedBatch2Tests(TestCase):
     def test_manifest_has_expected_classifications_and_calendar_labels(self):
         by_code = {config["code"]: config for config in COMPETITION_SEED_MANIFEST}
         self.assertEqual(len(by_code), 28)
+        unavailable = {
+            ("BEL2", "2022-23", 42422),
+            ("FRA3", "2022-23", 42921),
+            ("FRA3", "2023-24", 53055),
+        }
+        for code, label, provider_season_id in unavailable:
+            self.assertFalse(
+                any(
+                    row["label"] == label and row["sofascore_season_id"] == provider_season_id
+                    for row in by_code[code]["seasons"]
+                )
+            )
         for config in COMPETITION_SEED_MANIFEST:
             provider_season_ids = [
                 row["sofascore_season_id"]
@@ -78,6 +90,22 @@ class CompetitionSeedBatch2Tests(TestCase):
         call_command("seed_competition_slices")
 
         self.assertEqual(Competition.objects.count(), 28)
+        expected_slice_count = sum(len(config["seasons"]) for config in COMPETITION_SEED_MANIFEST)
+        self.assertEqual(CompetitionSeason.objects.count(), expected_slice_count)
+        for code, label, provider_season_id in (
+            ("BEL2", "2022-23", 42422),
+            ("FRA3", "2022-23", 42921),
+            ("FRA3", "2023-24", 53055),
+        ):
+            self.assertFalse(
+                CompetitionSeason.objects.filter(
+                    competition__short_code=code,
+                    season__label=label,
+                ).exists()
+            )
+            self.assertFalse(
+                CompetitionSeason.objects.filter(sofascore_season_id=provider_season_id).exists()
+            )
         for config in COMPETITION_SEED_MANIFEST:
             competition = Competition.objects.get(short_code=config["code"])
             for season_config in config["seasons"]:
