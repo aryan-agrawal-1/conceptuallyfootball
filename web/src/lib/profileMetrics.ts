@@ -4,7 +4,7 @@ import type { ColumnUnit } from './columns'
 /** Mirrors matrix "Per 90 | Season" naming. */
 export type ProfileRateMode = 'per90' | 'full'
 
-export function radarLabelLines(label: string, maxSingleLineCharacters = 16): string[] {
+export function radarLabelLines(label: string, maxSingleLineCharacters = 14): string[] {
   const normalized = label.trim().replace(/\s+/g, ' ')
   if (normalized.length <= maxSingleLineCharacters || !normalized.includes(' ')) {
     return [normalized]
