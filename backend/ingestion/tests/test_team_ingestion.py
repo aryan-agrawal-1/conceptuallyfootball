@@ -12,6 +12,7 @@ from ingestion.models import (
     CanonicalTeam,
     Competition,
     CompetitionSeason,
+    CompetitionType,
     IngestionKind,
     IngestionRun,
     IngestionRunStatus,
@@ -144,6 +145,58 @@ class TeamSourceIngestTests(TestCase):
         self.assertEqual(quarantine.team_name, "Mystery FC")
         self.assertEqual(quarantine.resolved_team, src.canonical_team)
         self.assertIsNotNone(quarantine.resolved_at)
+
+    @patch("ingestion.services.ingest.build_team_season_rows")
+    def test_continental_team_ingestion_filters_to_player_stat_stage_teams(self, mock_build_rows):
+        cs = _slice()
+        cs.competition.competition_type = CompetitionType.CONTINENTAL_CUP
+        cs.competition.save(update_fields=["competition_type"])
+        player_run = IngestionRun.objects.create(
+            kind=IngestionKind.SOFASCORE,
+            competition_season=cs,
+            status=IngestionRunStatus.SUCCESS,
+        )
+        SofascorePlayerSeasonSource.objects.create(
+            competition_season=cs,
+            ingestion_run=player_run,
+            provider_player_id="player-1",
+            provider_team_id="42",
+            player_name="Player",
+            team_name="Arsenal",
+        )
+        mock_build_rows.return_value = [_team_row()]
+        run = IngestionRun.objects.create(
+            kind=IngestionKind.SOFASCORE_TEAM,
+            competition_season=cs,
+            status=IngestionRunStatus.PENDING,
+        )
+
+        ingest_sofascore_team_slice(cs, run=run)
+
+        run.refresh_from_db()
+        self.assertEqual(run.status, IngestionRunStatus.SUCCESS)
+        self.assertEqual(
+            mock_build_rows.call_args.kwargs["allowed_provider_team_ids"],
+            {"42"},
+        )
+
+    @patch("ingestion.services.ingest.build_team_season_rows")
+    def test_continental_team_ingestion_fails_without_player_stat_stage_teams(self, mock_build_rows):
+        cs = _slice()
+        cs.competition.competition_type = CompetitionType.CONTINENTAL_CUP
+        cs.competition.save(update_fields=["competition_type"])
+        run = IngestionRun.objects.create(
+            kind=IngestionKind.SOFASCORE_TEAM,
+            competition_season=cs,
+            status=IngestionRunStatus.PENDING,
+        )
+
+        ingest_sofascore_team_slice(cs, run=run)
+
+        run.refresh_from_db()
+        self.assertEqual(run.status, IngestionRunStatus.FAILED)
+        self.assertIn("no provider team IDs", run.error_detail)
+        mock_build_rows.assert_not_called()
 
 
 class TeamMergeTests(TestCase):

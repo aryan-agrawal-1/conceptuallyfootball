@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 from django.test import SimpleTestCase, override_settings
 
 from ingestion.services import sofascore_client
+from ingestion.services.sofascore_team_client import build_team_season_rows
 
 
 class SofascoreRequestClientTests(SimpleTestCase):
@@ -28,3 +29,37 @@ class SofascoreRequestClientTests(SimpleTestCase):
         self.assertEqual(browser_get.call_count, 1)
         self.assertEqual(mock_plain_get.call_count, 1)
         self.assertEqual(sofascore_client.snapshot_request_metrics()["request_count"], 1)
+
+
+class SofascoreTeamStageFilterTests(SimpleTestCase):
+    @patch("ingestion.services.sofascore_team_client.fetch_team_overall_statistics")
+    @patch("ingestion.services.sofascore_team_client.fetch_total_standings")
+    @patch("ingestion.services.sofascore_team_client.fetch_season_teams")
+    def test_allowed_provider_ids_exclude_qualifier_teams(
+        self,
+        mock_fetch_teams,
+        mock_fetch_standings,
+        mock_fetch_overall,
+    ):
+        mock_fetch_teams.return_value = [
+            {"id": 10, "name": "Main stage"},
+            {"id": 20, "name": "Qualifier"},
+        ]
+        mock_fetch_standings.return_value = []
+        mock_fetch_overall.return_value = {"statistics": {}}
+
+        rows = build_team_season_rows(
+            sofascore_client.SofascoreSeasonConfig(unique_tournament_id=7, season_id=1),
+            delay_seconds=0,
+            allowed_provider_team_ids={"10"},
+        )
+
+        self.assertEqual([row["provider_team_id"] for row in rows], ["10"])
+
+    def test_empty_allowed_provider_ids_fail_instead_of_ingesting_all_teams(self):
+        with self.assertRaisesMessage(ValueError, "no main-stage provider teams"):
+            build_team_season_rows(
+                sofascore_client.SofascoreSeasonConfig(unique_tournament_id=7, season_id=1),
+                delay_seconds=0,
+                allowed_provider_team_ids=set(),
+            )

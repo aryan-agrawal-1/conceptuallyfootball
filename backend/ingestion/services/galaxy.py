@@ -13,6 +13,7 @@ from django.db import connection, transaction
 from django.utils import timezone
 
 from ingestion.competition_scope import resolve_public_scope
+from ingestion.services.season_labels import candidate_season_labels, canonical_season_label
 from ingestion.models import (
     CompetitionSeason,
     GalaxyArchetype,
@@ -245,15 +246,20 @@ def resolve_galaxy_competition_seasons(scope_code: str, season_label: str) -> li
 
 
 def latest_galaxy_snapshot(scope_code: str, season_label: str) -> GalaxySnapshot | None:
-    return (
+    scope = scope_code.strip().upper()
+    labels = [season_label] if scope in {"ALL", "BIG5"} else candidate_season_labels(scope, season_label)
+    snapshots = list(
         GalaxySnapshot.objects.filter(
-            scope_code=scope_code.strip().upper(),
-            season_label__iexact=season_label,
+            scope_code=scope,
+            season_label__in=labels,
             is_current=True,
-        )
-        .order_by("-created_at", "-id")
-        .first()
+        ).order_by("-created_at", "-id")
     )
+    if len({snapshot.season_label for snapshot in snapshots}) > 1:
+        raise DjangoValidationError(
+            f"Ambiguous {scope} season label {season_label!r}; both canonical and legacy snapshots exist."
+        )
+    return snapshots[0] if snapshots else None
 
 
 def prune_galaxy_snapshots(
@@ -1177,8 +1183,19 @@ def materialize_galaxy_scope(
 ) -> GalaxySnapshot | None:
     _mark_run_start(run)
     scope = scope_code.strip().upper()
+    season_label = (
+        season_label
+        if scope in {"ALL", "BIG5"}
+        else canonical_season_label(scope, season_label)
+    )
     try:
         competition_seasons = resolve_galaxy_competition_seasons(scope, season_label)
+        if scope not in {"ALL", "BIG5"}:
+            # During a rolling deploy, the compatibility resolver may still
+            # return the legacy-labelled row before the seed reconciliation
+            # runs. Persist the label that actually exists so we do not create
+            # simultaneous legacy and canonical current snapshots.
+            season_label = competition_seasons[0].season.label
         requested_floor = max(min_minutes or 0, 0)
         minimum_minutes_by_competition = {
             cs.competition.short_code: max(cs.minimum_eligible_minutes, requested_floor)

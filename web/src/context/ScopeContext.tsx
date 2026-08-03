@@ -65,9 +65,10 @@ function findScopeInCatalog(
   if (!catalog || !competition || !season) return null
   const comp = catalog.competitions.find(c => c.code === competition)
   if (!comp) return null
-  return comp.seasons.some(s => s.label === season)
-    ? { competition, season }
-    : null
+  const option = comp.seasons.find(s => s.label === season)
+  if (option) return { competition, season: option.label }
+  const aliasOption = comp.seasons.find(s => s.aliases?.includes(season))
+  return aliasOption ? { competition, season: aliasOption.label } : null
 }
 
 function withScopeParams(path: string, scope: Scope): string {
@@ -104,12 +105,12 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!catalog) return
     const valid = findScopeInCatalog(catalog, urlCompetition, urlSeason)
-    if (valid) return
+    if (valid && valid.season === urlSeason) return
     setSearchParams(
       prev => {
         const p = new URLSearchParams(prev)
-        p.set('competition', defaultScope.competition)
-        p.set('season', defaultScope.season)
+        p.set('competition', valid?.competition ?? defaultScope.competition)
+        p.set('season', valid?.season ?? defaultScope.season)
         return p
       },
       { replace: true },
