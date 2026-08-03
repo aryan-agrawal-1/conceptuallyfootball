@@ -56,10 +56,16 @@ class SofascoreTeamStageFilterTests(SimpleTestCase):
 
         self.assertEqual([row["provider_team_id"] for row in rows], ["10"])
 
-    def test_empty_allowed_provider_ids_fail_instead_of_ingesting_all_teams(self):
+    @patch("ingestion.services.sofascore_team_client.fetch_season_teams")
+    def test_empty_allowed_provider_ids_fail_instead_of_ingesting_all_teams(
+        self,
+        mock_fetch_teams,
+    ):
         with self.assertRaisesMessage(ValueError, "no main-stage provider teams"):
             build_team_season_rows(
                 sofascore_client.SofascoreSeasonConfig(unique_tournament_id=7, season_id=1),
                 delay_seconds=0,
                 allowed_provider_team_ids=set(),
             )
+
+        mock_fetch_teams.assert_not_called()
