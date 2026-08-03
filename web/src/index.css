@@ -1,30 +1,37 @@
 @import "tailwindcss";
 
-/* ─── Gotham font faces ─────────────────────────────────────────────────────── */
+/* Metropolis fonts */
 @font-face {
-  font-family: 'Gotham';
-  src: url('./assets/fonts/GothamBook.otf') format('opentype');
+  font-family: 'Metropolis';
+  src: url('./assets/fonts/Metropolis-Regular.otf') format('opentype');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Gotham';
-  src: url('./assets/fonts/GothamMedium.otf') format('opentype');
+  font-family: 'Metropolis';
+  src: url('./assets/fonts/Metropolis-Medium.otf') format('opentype');
   font-weight: 500;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Gotham';
-  src: url('./assets/fonts/GothamBold.otf') format('opentype');
+  font-family: 'Metropolis';
+  src: url('./assets/fonts/Metropolis-SemiBold.otf') format('opentype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Metropolis';
+  src: url('./assets/fonts/Metropolis-Bold.otf') format('opentype');
   font-weight: 700;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Gotham';
-  src: url('./assets/fonts/GothamUltra.otf') format('opentype');
+  font-family: 'Metropolis';
+  src: url('./assets/fonts/Metropolis-Black.otf') format('opentype');
   font-weight: 900;
   font-style: normal;
   font-display: swap;
@@ -67,7 +74,7 @@
   --color-pos-gk:       #A855F7;
 
   /* Typography */
-  --font-sans: 'Gotham', system-ui, sans-serif;
+  --font-sans: 'Metropolis', system-ui, sans-serif;
 
   /* Spacing */
   --spacing-nav: 52px;
