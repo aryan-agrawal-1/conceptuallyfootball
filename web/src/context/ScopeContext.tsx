@@ -136,7 +136,7 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
     () => catalog?.competitions.find(c => c.code === scope.competition),
     [catalog, scope.competition],
   )
-  const seasonOptions = currentCompetition?.seasons ?? []
+  const seasonOptions = useMemo(() => currentCompetition?.seasons ?? [], [currentCompetition])
   const currentSeason = useMemo(
     () => seasonOptions.find(s => s.label === scope.season),
     [scope.season, seasonOptions],
@@ -178,6 +178,8 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
   return <ScopeContext.Provider value={value}>{children}</ScopeContext.Provider>
 }
 
+// we are exporting both provider and hook on purpose
+// eslint-disable-next-line react-refresh/only-export-components
 export function useScope() {
   const value = useContext(ScopeContext)
   if (!value) throw new Error('useScope must be used inside ScopeProvider')

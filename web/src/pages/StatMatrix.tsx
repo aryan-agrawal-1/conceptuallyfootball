@@ -90,6 +90,8 @@ export function StatMatrix() {
   const [closingChartCtaKey, setClosingChartCtaKey] = useState<string | null>(null)
 
   useEffect(() => {
+    // Filters must follow the shared scope when it changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFilters(prev => {
       if (prev.competition === scope.competition && prev.season === scope.season) return prev
       return {

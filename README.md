@@ -6,6 +6,10 @@ The project focuses on turning player, team, and league data into practical inte
 
 Live site: [conceptuallyfootball.com](https://conceptuallyfootball.com/)
 
+Copyright (C) 2026 Aryan Agrawal.
+
+The project code is licensed under the GNU Affero General Public License, version 3 only. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the project and third party asset notices.
+
 ## Features
 
 - Player and team stat matrices by competition and season
@@ -93,3 +97,7 @@ python manage.py diagnose_season_rollover <competition-season-id> --candidate-fi
 ## Status
 
 This is an active project. APIs, ingestion commands, and data coverage may change as more competitions, seasons, and visualisation tools are added.
+
+## Contributing
+
+Any contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening an issue or pull request. All changes should be made on a branch and submitted through a pull request into `main`.

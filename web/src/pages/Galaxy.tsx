@@ -368,6 +368,8 @@ export function Galaxy() {
 
   useEffect(() => {
     if (teams.length === 0) return
+    // This state accumulates teams observed across data updates
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setKnownTeams(current => {
       const next = [...new Set([...current, ...teams])].toSorted((a, b) => a.localeCompare(b))
       return next.length === current.length && next.every((team, index) => team === current[index]) ? current : next
