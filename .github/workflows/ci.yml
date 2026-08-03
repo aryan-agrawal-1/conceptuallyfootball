@@ -56,9 +56,9 @@ jobs:
     env:
       DJANGO_DEBUG: '1'
       DJANGO_SECRET_KEY: ci-only-secret
-      STATBALLER_DB_NAME: cistatballer
-      STATBALLER_DB_USER: cistatballer
-      STATBALLER_DB_PASSWORD: cistatballer
+      STATBALLER_DB_NAME: statballer
+      STATBALLER_DB_USER: statballer
+      STATBALLER_DB_PASSWORD: statballer
       STATBALLER_DB_HOST: 127.0.0.1
       STATBALLER_DB_PORT: 5432
       CELERY_BROKER_URL: redis://127.0.0.1:6379/0
