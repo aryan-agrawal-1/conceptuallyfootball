@@ -15,6 +15,7 @@ from ingestion.models import (
     SofascorePlayerSeasonSource,
 )
 from ingestion.position import normalize_position_group
+from ingestion.competition_scope import resolve_active_competition_season
 from ingestion.services.galaxy import materialize_galaxy_embeddings
 from ingestion.services.ingest import run_merge_job
 from ingestion.services.sofascore_client import fetch_player_profile
@@ -49,7 +50,17 @@ class Command(BaseCommand):
                 competition_season__competition__short_code=options["competition"]
             )
         if options.get("season"):
-            source_qs = source_qs.filter(competition_season__season__label=options["season"])
+            requested_season = options["season"]
+            if options.get("competition"):
+                competition_season = resolve_active_competition_season(
+                    options["competition"],
+                    requested_season,
+                )
+                source_qs = source_qs.filter(competition_season=competition_season)
+            else:
+                source_qs = source_qs.filter(
+                    competition_season__season__label=requested_season,
+                )
 
         unknown_player_ids = set(
             MergedPlayerSeason.objects.filter(

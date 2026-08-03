@@ -22,6 +22,7 @@ export interface MetricAvailability {
 
 export interface CompetitionSeasonOption {
   label: string
+  aliases?: string[]
   competition_season_id: number
   player_data_mode?: string
   has_understat?: boolean

@@ -17,6 +17,7 @@ from ingestion.api_cache import (
 from ingestion.competition_scope import (
     eligibility_thresholds,
     public_competition_seasons,
+    resolve_public_competition_season,
     resolve_public_scope,
     scope_minimum_eligible_minutes,
 )
@@ -89,13 +90,7 @@ def _resolve_competition_season(request) -> CompetitionSeason:
         raise DjangoValidationError(
             "Provide either competition_season or both competition and season."
         )
-    try:
-        return public_competition_seasons().select_related("competition", "season").get(
-            competition__short_code__iexact=competition_code,
-            season__label__iexact=season_label,
-        )
-    except CompetitionSeason.DoesNotExist as exc:
-        raise DjangoValidationError("Unknown competition and season combination.") from exc
+    return resolve_public_competition_season(competition_code, season_label)
 
 
 def _resolve_competition_scope(request) -> tuple[str, str, list[CompetitionSeason]]:
@@ -116,7 +111,12 @@ def _resolve_competition_scope(request) -> tuple[str, str, list[CompetitionSeaso
         )
 
     if competition_code not in {"BIG5", "ALL"}:
-        return (competition_code, season_label, [_resolve_competition_season(request)])
+        competition_season = _resolve_competition_season(request)
+        return (
+            competition_season.competition.short_code,
+            competition_season.season.label,
+            [competition_season],
+        )
     seasons = resolve_public_scope(competition_code, season_label)
     return (competition_code, seasons[0].season.label, seasons)
 

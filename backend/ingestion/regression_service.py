@@ -13,7 +13,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from ingestion.derived_definitions import METRIC_FIELDS, METRIC_DEFINITIONS, SCORE_FIELDS
-from ingestion.competition_scope import public_competition_seasons, resolve_public_scope
+from ingestion.competition_scope import resolve_public_competition_season, resolve_public_scope
 from ingestion.models import CompetitionSeason, PlayerSeasonDerivedStats
 
 
@@ -23,13 +23,7 @@ class RegressionFitResult:
 
 
 def _resolve_competition_season(competition: str, season: str) -> CompetitionSeason:
-    try:
-        return public_competition_seasons().select_related("competition", "season").get(
-            competition__short_code__iexact=competition,
-            season__label__iexact=season,
-        )
-    except CompetitionSeason.DoesNotExist as exc:
-        raise DjangoValidationError("Unknown competition and season combination.") from exc
+    return resolve_public_competition_season(competition, season)
 
 
 def _resolve_competition_seasons(competition: str, season: str) -> tuple[str, str, list[CompetitionSeason]]:

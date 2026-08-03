@@ -8,6 +8,7 @@ from ingestion.api_cache import get_or_build_payload_response, joined_version, m
 from ingestion.competition_scope import BIG_FIVE_COMPETITION_CODES, public_competition_seasons
 from ingestion.derived_definitions import CORE_METRIC_MIN_COVERAGE, STYLE_METRIC_MIN_COVERAGE, STYLE_PROXY_METRICS
 from ingestion.models import Competition, CompetitionSeason, CompetitionType
+from ingestion.services.season_labels import season_label_aliases
 
 COMPETITION_ORDER = {
     "ENG1": 0,
@@ -30,6 +31,14 @@ COMPETITION_ORDER = {
     "CYP1": 17,
     "NOR1": 18,
     "EST1": 19,
+    "BEL2": 20,
+    "FRA2": 21,
+    "FRA3": 22,
+    "SCO2": 23,
+    "SWE1": 24,
+    "UCL": 30,
+    "UEL": 31,
+    "UECL": 32,
 }
 
 
@@ -179,6 +188,7 @@ class CompetitionSeasonsCatalogApi(APIView):
                 }
             season_payload = {
                 "label": cs.season.label,
+                "aliases": season_label_aliases(code, cs.season.label),
                 "competition_season_id": cs.id,
                 "player_data_mode": cs.player_data_mode,
                 "has_understat": cs.has_understat,

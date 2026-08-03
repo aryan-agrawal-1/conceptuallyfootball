@@ -87,12 +87,21 @@ def build_team_season_rows(
     config: SofascoreSeasonConfig,
     *,
     delay_seconds: float | None = None,
+    allowed_provider_team_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     if delay_seconds is None:
         delay_seconds = float(
             getattr(settings, "STATBALLER_SOFASCORE_REQUEST_DELAY_SECONDS", 1.5)
         )
     teams = fetch_season_teams(config)
+    if allowed_provider_team_ids is not None:
+        allowed_ids = {str(team_id) for team_id in allowed_provider_team_ids if str(team_id).strip()}
+        if not allowed_ids:
+            raise ValueError(
+                "Sofascore continental team ingestion has no main-stage provider teams "
+                "from player-stat aggregate rows."
+            )
+        teams = [team for team in teams if str(team.get("id") or "") in allowed_ids]
     standings_rows = fetch_total_standings(config)
     standings_by_team_id = {
         int((row.get("team") or {}).get("id")): row
