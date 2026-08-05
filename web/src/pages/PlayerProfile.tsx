@@ -12,7 +12,7 @@ import { ProfileKeyStats } from '../components/profile/ProfileKeyStats'
 import { ProfileStatBars } from '../components/profile/ProfileStatBars'
 import { ProfilePizzaSection } from '../components/profile/ProfilePizzaSection'
 import { ProfileEligibilityBanner } from '../components/profile/ProfileEligibilityBanner'
-import { PlayerProfileSliceSelector } from '../components/profile/PlayerProfileSliceSelector'
+import { ProfileScopeSelector } from '../components/profile/ProfileScopeSelector'
 import { ProfileSimilarPlayers } from '../components/profile/ProfileSimilarPlayers'
 import type { ProfileRateMode } from '../lib/profileMetrics'
 import type { PositionGroup, SearchPlayerMembership } from '../types/api'
@@ -285,14 +285,11 @@ function ProfileLayout({
         <div className="flex w-full flex-col gap-2 lg:w-auto lg:shrink-0 lg:items-end">
           <div className="flex w-full flex-wrap items-center justify-start gap-2 lg:justify-end">
             {profileSlice && (
-              <PlayerProfileSliceSelector
+              <ProfileScopeSelector
+                label="player-profile-scope"
+                currentScope={profileSlice}
                 memberships={memberships}
-                value={profileSlice}
-                onSeasonChange={season => setProfileSlice({ season })}
-                onCompetitionChange={competition => setProfileSlice({
-                  season: profileSlice.season,
-                  competition,
-                })}
+                onChange={nextScope => setProfileSlice(nextScope)}
               />
             )}
             <Link

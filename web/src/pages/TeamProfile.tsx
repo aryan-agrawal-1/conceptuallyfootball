@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { BarChart3, Loader2, AlertCircle } from 'lucide-react'
 import { fetchTeamDetail, fetchTeamSquad } from '../lib/api'
 import type { TeamDetailResponse, TeamSquadPlayer } from '../types/api'
 import { useScope } from '../context/ScopeContext'
-import { resolveEntityScope, useSearchPaletteIndex } from '../hooks/useSearchPaletteIndex'
+import { useSearchPaletteIndex } from '../hooks/useSearchPaletteIndex'
 import { ProfileRateToggle } from '../components/profile/ProfileRateToggle'
 import type { ProfileRateMode } from '../lib/profileMetrics'
 import { TeamKeyStats } from '../components/team/TeamKeyStats'
@@ -14,47 +14,56 @@ import { TeamSquadList } from '../components/team/TeamSquadList'
 import { ProfileScopeSelector } from '../components/profile/ProfileScopeSelector'
 import { buildTeamCreateChartsPath } from '../lib/createChartsUrl'
 import type { SearchTeamMembership } from '../types/api'
+import { profileSliceMatchesParams, resolveProfileSlice, withProfileSliceParams, type ProfileSlice } from '../lib/profileSlice'
 import { useSeoMeta } from '../lib/seo'
 
 export function TeamProfile() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { scope, buildScopedPath } = useScope()
-  const { globalTeams } = useSearchPaletteIndex(true)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { globalTeams, isLoading: searchIndexLoading } = useSearchPaletteIndex(true)
   const teamId = Number(id)
-  const teamEntity = globalTeams.find(t => t.canonical_team_id === teamId)
+  const teamEntity = useMemo(
+    () => globalTeams.find(t => t.canonical_team_id === teamId),
+    [globalTeams, teamId],
+  )
+
+  const profileSlice = useMemo(
+    () => teamEntity && resolveProfileSlice(teamEntity.memberships, scope, {
+      competition: searchParams.get('profileCompetition') ?? undefined,
+      season: searchParams.get('profileSeason') ?? undefined,
+    }),
+    [teamEntity, scope, searchParams],
+  )
 
   useEffect(() => {
-    if (!Number.isFinite(teamId) || !teamEntity) return
-    const hasCurrent = teamEntity.memberships.some(
-      m => m.competition === scope.competition && m.season === scope.season,
-    )
-    if (hasCurrent) return
-    const nextScope = resolveEntityScope(teamEntity.memberships, scope)
-    if (nextScope) {
-      navigate(buildScopedPath(`/team/${teamId}`, nextScope), { replace: true })
-    }
-  }, [buildScopedPath, navigate, scope, teamEntity, teamId])
+    if (!profileSlice || profileSliceMatchesParams(searchParams, profileSlice)) return
+    setSearchParams(previous => withProfileSliceParams(previous, profileSlice), { replace: true })
+  }, [profileSlice, searchParams, setSearchParams])
+
+  const detailCompetition = profileSlice?.competition
+  const detailSeason = profileSlice?.season
 
   const detailQuery = useQuery({
-    queryKey: ['team-detail', id, scope.competition, scope.season],
+    queryKey: ['team-detail', id, detailCompetition, detailSeason],
     queryFn: () =>
       fetchTeamDetail(teamId, {
-        competition: scope.competition,
-        season: scope.season,
+        competition: detailCompetition!,
+        season: detailSeason!,
         include: 'meta',
       }),
-    enabled: Number.isFinite(teamId) && teamId > 0,
+    enabled: Number.isFinite(teamId) && teamId > 0 && detailCompetition != null && detailSeason != null,
   })
 
   const squadQuery = useQuery({
-    queryKey: ['team-squad', id, scope.competition, scope.season],
+    queryKey: ['team-squad', id, detailCompetition, detailSeason],
     queryFn: () =>
       fetchTeamSquad(teamId, {
-        competition: scope.competition,
-        season: scope.season,
+        competition: detailCompetition!,
+        season: detailSeason!,
       }),
-    enabled: Number.isFinite(teamId) && teamId > 0,
+    enabled: Number.isFinite(teamId) && teamId > 0 && detailCompetition != null && detailSeason != null,
   })
 
   if (!Number.isFinite(teamId) || teamId <= 0) {
@@ -72,7 +81,7 @@ export function TeamProfile() {
     )
   }
 
-  if (detailQuery.isLoading) {
+  if (searchIndexLoading || (teamEntity != null && profileSlice != null && detailQuery.isLoading)) {
     return (
       <div className="flex items-center justify-center h-96">
         <Loader2 size={28} className="text-electric animate-spin" />
@@ -104,6 +113,7 @@ export function TeamProfile() {
       squad={squadQuery.data?.results}
       squadLoading={squadQuery.isLoading}
       memberships={teamEntity?.memberships ?? []}
+      profileSlice={profileSlice}
     />
   )
 }
@@ -113,16 +123,24 @@ function TeamLayout({
   squad,
   squadLoading,
   memberships,
+  profileSlice,
 }: {
   team: TeamDetailResponse
   squad: TeamSquadPlayer[] | undefined
   squadLoading: boolean
   memberships: SearchTeamMembership[]
+  profileSlice: ProfileSlice | undefined
 }) {
   const meta = team.meta
   const [rateMode, setRateMode] = useState<ProfileRateMode>('full')
-  const navigate = useNavigate()
   const { scope, buildScopedPath } = useScope()
+  const [, setSearchParams] = useSearchParams()
+
+  const setProfileSlice = (requested: Partial<ProfileSlice>) => {
+    const next = resolveProfileSlice(memberships, scope, requested)
+    if (!next) return
+    setSearchParams(previous => withProfileSliceParams(previous, next))
+  }
 
   useSeoMeta({
     title: `${team.canonical_team_name} Stats | ${team.season_label} Football Data`,
@@ -165,14 +183,14 @@ function TeamLayout({
           </p>
         </div>
         <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end sm:shrink-0">
-          <ProfileScopeSelector
-            label="team-profile-scope"
-            currentScope={scope}
-            memberships={memberships}
-            onChange={nextScope => {
-              navigate(buildScopedPath(`/team/${team.canonical_team_id}`, nextScope))
-            }}
-          />
+          {profileSlice && (
+            <ProfileScopeSelector
+              label="team-profile-scope"
+              currentScope={profileSlice}
+              memberships={memberships}
+              onChange={nextScope => setProfileSlice(nextScope)}
+            />
+          )}
           <Link
             to={buildTeamCreateChartsPath(team, rateMode)}
             className="relative flex items-center gap-1.5 whitespace-nowrap border border-control-border px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.15em] text-control-fg transition-colors hover:border-electric hover:text-control-fg-hover active:bg-electric/10"
