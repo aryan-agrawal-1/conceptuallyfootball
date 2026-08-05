@@ -197,6 +197,10 @@ function ProfileLayout({
     : availableComparisonScopes[0] ?? ''
   const hasComparisonScope = comparisonScope !== ''
   const comparisonEligibility = player.comparison_eligibility ?? player.eligibility
+  const exportPlayer = useMemo(
+    () => ({ ...player, eligibility: comparisonEligibility }),
+    [comparisonEligibility, player],
+  )
   const showLowSampleBanner = !comparisonEligibility.percentiles_eligible
   const activePercentileMap = hasComparisonContract
     ? player.comparison_percentiles ?? {}
@@ -392,7 +396,7 @@ function ProfileLayout({
       {exportOpen && (
         <Suspense fallback={null}>
           <PlayerProfileExportModal
-            player={player}
+            player={exportPlayer}
             meta={meta}
             initialRateMode={rateMode}
             percentileMap={activePercentileMap}

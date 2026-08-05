@@ -246,6 +246,7 @@ export function PlayerProfileExportModal({
   const notesInvalid = preset.notesEnabled && notes.length > noteMax
   const distributionInvalid =
     preset.distributionEnabled && (!preset.chartEnabled || !distributions)
+  const similarInvalid = preset.similarEnabled && (similarIsLoading || similarIsError)
   const invalidReason = overCap
     ? `This layout supports up to ${statCap} stat tiles. Remove ${validTiles.length - statCap} to export.`
     : underMin
@@ -254,9 +255,13 @@ export function PlayerProfileExportModal({
         ? `Select at least ${PIZZA_SLICE_MIN} available profile chart axes.`
         : distributionInvalid
           ? 'Distribution export requires an available profile chart cohort.'
-          : notesInvalid
-            ? `Notes must be ${noteMax} characters or fewer for this layout.`
-            : null
+          : similarInvalid
+            ? similarIsLoading
+              ? 'Similar players are still loading for the selected comparison cohort.'
+              : 'Similar players are unavailable for the selected comparison cohort.'
+            : notesInvalid
+              ? `Notes must be ${noteMax} characters or fewer for this layout.`
+              : null
   const canExport = !invalidReason && !busy
 
   const fileName = pngFileName(
