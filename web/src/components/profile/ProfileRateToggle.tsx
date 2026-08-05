@@ -18,14 +18,14 @@ export function ProfileRateToggle({
 }: ProfileRateToggleProps) {
   return (
     <div
-      className="relative flex items-center border border-electric/30 bg-mat/60 overflow-hidden shrink-0"
+      className="relative flex h-8 shrink-0 items-center overflow-hidden border border-electric/30 bg-mat/60"
       role="group"
       aria-label={ariaLabel}
     >
       <button
         type="button"
         className={cn(
-          'px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors',
+          'h-full px-3 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors',
           value === 'per90'
             ? 'bg-electric/15 text-electric shadow-[inset_0_0_12px_-4px_rgba(74,158,245,0.6)]'
             : 'text-control-fg hover:text-control-fg-hover',
@@ -34,11 +34,11 @@ export function ProfileRateToggle({
       >
         {per90Label}
       </button>
-      <span className="w-px h-full min-h-[30px] bg-electric/25" />
+      <span className="h-full w-px bg-electric/25" />
       <button
         type="button"
         className={cn(
-          'px-3 py-1.5 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors',
+          'h-full px-3 text-[11px] font-medium tracking-[0.15em] uppercase transition-colors',
           value === 'full'
             ? 'bg-electric/15 text-electric shadow-[inset_0_0_12px_-4px_rgba(74,158,245,0.6)]'
             : 'text-control-fg hover:text-control-fg-hover',

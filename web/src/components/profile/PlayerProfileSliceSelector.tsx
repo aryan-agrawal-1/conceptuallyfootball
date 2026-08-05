@@ -26,8 +26,8 @@ export function PlayerProfileSliceSelector({
 
   return (
     <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:justify-end">
-      <label className="flex min-h-[36px] max-w-full items-center gap-1.5 border border-electric/30 bg-mat/60 px-2 py-1.5">
-        <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-ink-dim">Profile season</span>
+      <label className="flex h-8 max-w-full items-center gap-1.5 border border-electric/30 bg-mat/60 px-2">
+        <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-ink-dim">Season</span>
         <select
           aria-label="Profile season"
           value={value.season}
@@ -37,8 +37,8 @@ export function PlayerProfileSliceSelector({
           {seasons.map(season => <option key={season} value={season}>{season}</option>)}
         </select>
       </label>
-      <label className="flex min-h-[36px] max-w-full items-center gap-1.5 border border-electric/30 bg-mat/60 px-2 py-1.5">
-        <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-ink-dim">Profile competition</span>
+      <label className="flex h-8 max-w-full items-center gap-1.5 border border-electric/30 bg-mat/60 px-2">
+        <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-ink-dim">Competition</span>
         <select
           aria-label="Profile competition"
           value={value.competition}

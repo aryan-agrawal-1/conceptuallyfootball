@@ -15,7 +15,6 @@ import { ProfileEligibilityBanner } from '../components/profile/ProfileEligibili
 import { PlayerProfileSliceSelector } from '../components/profile/PlayerProfileSliceSelector'
 import { ProfileSimilarPlayers } from '../components/profile/ProfileSimilarPlayers'
 import type { ProfileRateMode } from '../lib/profileMetrics'
-import { buildPlayerCreateChartsPath } from '../lib/createChartsUrl'
 import type { PositionGroup, SearchPlayerMembership } from '../types/api'
 import { profileSliceMatchesParams, resolveProfileSlice, withProfileSliceParams, type ProfileSlice } from '../lib/profileSlice'
 import { cn } from '../lib/utils'
@@ -266,17 +265,10 @@ function ProfileLayout({
               />
             )}
             <Link
-              to={buildPlayerCreateChartsPath(player, rateMode)}
-              className="relative flex items-center gap-1.5 whitespace-nowrap border border-control-border px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.15em] text-control-fg transition-colors hover:border-electric hover:text-control-fg-hover active:bg-electric/10"
-            >
-              <BarChart3 size={13} />
-              Create Chart
-            </Link>
-            <Link
               to={buildScopedPath(
                 `/comparisons?players=${player.competition_code}:${player.season_label}:${player.canonical_player_id}`,
               )}
-              className="relative whitespace-nowrap border border-control-border px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.15em] text-control-fg transition-colors hover:border-electric hover:text-control-fg-hover active:bg-electric/10"
+              className="relative flex h-8 items-center whitespace-nowrap border border-control-border px-3 text-[11px] font-medium uppercase tracking-[0.15em] text-control-fg transition-colors hover:border-electric hover:text-control-fg-hover active:bg-electric/10"
             >
               Compare
             </Link>
@@ -285,7 +277,7 @@ function ProfileLayout({
               type="button"
               onClick={() => setExportOpen(true)}
               className={cn(
-                'relative flex min-h-[36px] shrink-0 items-center justify-center gap-1.5 border border-electric bg-electric/15 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.15em] text-electric transition-colors',
+                'relative flex h-8 shrink-0 items-center justify-center gap-1.5 border border-electric bg-electric/15 px-4 text-[11px] font-bold uppercase tracking-[0.15em] text-electric transition-colors',
                 'shadow-[0_0_24px_-8px_rgba(74,158,245,0.8)] hover:bg-electric/25 hover:text-ink',
                 'w-full md:w-auto',
               )}
