@@ -42,6 +42,7 @@ import { VisualiserBarChart, type VisualiserBarDatum } from '../components/visua
 import { VisualiserRadarChart } from '../components/visualizer/VisualiserRadarChart'
 import { filterMetricGroups, usablePlayerMetricKeys, usableTeamMetricKeys } from '../lib/metricAvailability'
 import { HudMultiSelectDropdown, HudSelectDropdown, type HudDropdownGroup } from '../components/hud/HudDropdown'
+import { withPlayerProfileSlice } from '../lib/playerProfileUrl'
 import {
   rankBarCandidates,
   rankScatterPointsByTopRight,
@@ -69,6 +70,14 @@ const RADAR_STROKES = ['#4A9EF5', '#FFBE5C', '#7FE2B8']
 const RADAR_FILLS = ['rgba(74,158,245,0.18)', 'rgba(255,190,92,0.18)', 'rgba(127,226,184,0.18)']
 
 type PickerKind = 'compare' | 'pins' | null
+
+function playerProfileSlice(datum: {
+  profileCompetition?: string
+  profileSeason?: string
+} | undefined): { competition: string; season: string } | null {
+  if (!datum?.profileCompetition || !datum.profileSeason) return null
+  return { competition: datum.profileCompetition, season: datum.profileSeason }
+}
 
 export function DataVisualiser() {
   const navigate = useNavigate()
@@ -198,6 +207,8 @@ export function DataVisualiser() {
           id: row.canonical_player_id,
           label: row.canonical_player_name,
           sublabel: row.canonical_team_name ?? undefined,
+          profileCompetition: row.competition_code,
+          profileSeason: row.season_label,
           x: x.value,
           y: y.value,
           xText: formatValue(x.value, x.formatUnit),
@@ -264,6 +275,8 @@ export function DataVisualiser() {
           id: row.canonical_player_id,
           label: row.canonical_player_name,
           sublabel: row.canonical_team_name ?? undefined,
+          profileCompetition: row.competition_code,
+          profileSeason: row.season_label,
           value: resolved.value,
           valueText: formatValue(resolved.value, resolved.formatUnit),
         },
@@ -454,7 +467,14 @@ export function DataVisualiser() {
           onSelect={
             exportMode
               ? undefined
-              : id => navigate(buildScopedPath(state.tab === 'players' ? `/player/${id}` : `/team/${id}`))
+              : id => {
+                const player = activeScatterPoints.find(point => point.id === id)
+                navigate(buildScopedPath(
+                  state.tab === 'players'
+                    ? withPlayerProfileSlice(`/player/${id}`, playerProfileSlice(player))
+                    : `/team/${id}`,
+                ))
+              }
           }
         />
       )
@@ -472,7 +492,14 @@ export function DataVisualiser() {
           onSelect={
             exportMode
               ? undefined
-              : id => navigate(buildScopedPath(state.tab === 'players' ? `/player/${id}` : `/team/${id}`))
+              : id => {
+                const player = activeBarRows.find(row => row.id === id)
+                navigate(buildScopedPath(
+                  state.tab === 'players'
+                    ? withPlayerProfileSlice(`/player/${id}`, playerProfileSlice(player))
+                    : `/team/${id}`,
+                ))
+              }
           }
         />
       )

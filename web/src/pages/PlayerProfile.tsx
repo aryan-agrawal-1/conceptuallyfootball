@@ -1,23 +1,23 @@
 import { Fragment, lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { BarChart3, Loader2, AlertCircle, FileImage } from 'lucide-react'
 import { fetchGalaxySimilarForPlayer, fetchPlayerDetail } from '../lib/api'
 import type { PlayerDetailResponse, SecondaryTeamBadge } from '../types/api'
-import { useScope } from '../context/ScopeContext'
-import { resolveEntityMembership, resolveEntityScope, useSearchPaletteIndex } from '../hooks/useSearchPaletteIndex'
+import { useScope, type Scope } from '../context/ScopeContext'
+import { useSearchPaletteIndex } from '../hooks/useSearchPaletteIndex'
 import { ProfileBreadcrumb } from '../components/profile/ProfileBreadcrumb'
 import { ProfileRateToggle } from '../components/profile/ProfileRateToggle'
 import { ProfileKeyStats } from '../components/profile/ProfileKeyStats'
 import { ProfileStatBars } from '../components/profile/ProfileStatBars'
 import { ProfilePizzaSection } from '../components/profile/ProfilePizzaSection'
 import { ProfileEligibilityBanner } from '../components/profile/ProfileEligibilityBanner'
-import { ProfileScopeSelector } from '../components/profile/ProfileScopeSelector'
+import { PlayerProfileSliceSelector } from '../components/profile/PlayerProfileSliceSelector'
 import { ProfileSimilarPlayers } from '../components/profile/ProfileSimilarPlayers'
 import type { ProfileRateMode } from '../lib/profileMetrics'
 import { buildPlayerCreateChartsPath } from '../lib/createChartsUrl'
 import type { PositionGroup, SearchPlayerMembership } from '../types/api'
-import { scopeIncludesMembership } from '../lib/scopeMembership'
+import { profileSliceMatchesParams, resolveProfileSlice, withProfileSliceParams, type ProfileSlice } from '../lib/profileSlice'
 import { cn } from '../lib/utils'
 import { useSeoMeta } from '../lib/seo'
 
@@ -43,7 +43,13 @@ function aggregateScopeLabel(code: string): string {
   return code
 }
 
-function FormerClubsNote({ teams }: { teams: SecondaryTeamBadge[] | undefined }) {
+function FormerClubsNote({
+  teams,
+  profileScope,
+}: {
+  teams: SecondaryTeamBadge[] | undefined
+  profileScope: Scope
+}) {
   const { buildScopedPath } = useScope()
   if (!teams?.length) return null
   return (
@@ -56,7 +62,7 @@ function FormerClubsNote({ teams }: { teams: SecondaryTeamBadge[] | undefined })
           {i > 0 && i < teams.length - 1 && <span>, </span>}
           {i > 0 && i === teams.length - 1 && <span> and </span>}
           <Link
-            to={buildScopedPath(`/team/${t.canonical_team_id}`)}
+            to={buildScopedPath(`/team/${t.canonical_team_id}`, profileScope)}
             className="text-electric/90 hover:text-electric hover:underline"
           >
             {t.canonical_team_name}
@@ -72,30 +78,30 @@ export function PlayerProfile() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { scope, buildScopedPath } = useScope()
-  const { globalPlayers } = useSearchPaletteIndex(true)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { globalPlayers, isLoading: searchIndexLoading } = useSearchPaletteIndex(true)
   const playerId = Number(id)
   const playerEntity = useMemo(
     () => globalPlayers.find(p => p.canonical_player_id === playerId),
     [globalPlayers, playerId],
   )
 
-  useEffect(() => {
-    if (!Number.isFinite(playerId) || !playerEntity) return
-    const hasCurrent = playerEntity.memberships.some(m => scopeIncludesMembership(scope, m))
-    if (hasCurrent) return
-    const nextScope = resolveEntityScope(playerEntity.memberships, scope)
-    if (nextScope) {
-      navigate(buildScopedPath(`/player/${playerId}`, nextScope), { replace: true })
-    }
-  }, [buildScopedPath, navigate, playerEntity, playerId, scope])
-
-  const concreteMembership = useMemo(
-    () => (playerEntity ? resolveEntityMembership(playerEntity.memberships, scope) : undefined),
-    [playerEntity, scope],
+  const profileSlice = useMemo(
+    () => playerEntity && resolveProfileSlice(playerEntity.memberships, scope, {
+      competition: searchParams.get('profileCompetition') ?? undefined,
+      season: searchParams.get('profileSeason') ?? undefined,
+    }),
+    [playerEntity, scope, searchParams],
   )
+
+  useEffect(() => {
+    if (!profileSlice || profileSliceMatchesParams(searchParams, profileSlice)) return
+    setSearchParams(previous => withProfileSliceParams(previous, profileSlice), { replace: true })
+  }, [profileSlice, searchParams, setSearchParams])
+
   const isAggregateScope = scope.competition === 'BIG5' || scope.competition === 'ALL'
-  const detailCompetition = concreteMembership?.competition ?? scope.competition
-  const detailSeason = concreteMembership?.season ?? scope.season
+  const detailCompetition = profileSlice?.competition
+  const detailSeason = profileSlice?.season
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: [
@@ -107,17 +113,17 @@ export function PlayerProfile() {
     ],
     queryFn: () =>
       fetchPlayerDetail(Number(id), {
-        competition: detailCompetition,
-        season: detailSeason,
+        competition: detailCompetition!,
+        season: detailSeason!,
         include: isAggregateScope
           ? 'meta,scope_percentiles,profile_distributions'
           : 'meta,profile_distributions',
         percentile_scope: isAggregateScope ? scope.competition : undefined,
       }),
-    enabled: !!id && (!isAggregateScope || concreteMembership != null),
+    enabled: !!id && detailCompetition != null && detailSeason != null,
   })
 
-  if (isLoading) {
+  if (searchIndexLoading || (playerEntity != null && profileSlice != null && isLoading)) {
     return (
       <div className="flex items-center justify-center h-96">
         <Loader2 size={28} className="text-electric animate-spin" />
@@ -154,23 +160,31 @@ export function PlayerProfile() {
     )
   }
 
-  return <ProfileLayout player={data} meta={data.meta} memberships={playerEntity?.memberships ?? []} />
+  return <ProfileLayout player={data} meta={data.meta} memberships={playerEntity?.memberships ?? []} profileSlice={profileSlice} />
 }
 
 function ProfileLayout({
   player,
   meta,
   memberships,
+  profileSlice,
 }: {
   player: PlayerDetailResponse
   meta: NonNullable<PlayerDetailResponse['meta']>
   memberships: SearchPlayerMembership[]
+  profileSlice: ProfileSlice | undefined
 }) {
   const [rateMode, setRateMode] = useState<ProfileRateMode>('per90')
   const [percentileMode, setPercentileMode] = useState<ProfilePercentileMode>('league')
   const [exportOpen, setExportOpen] = useState(false)
-  const navigate = useNavigate()
   const { scope, buildScopedPath } = useScope()
+  const [, setSearchParams] = useSearchParams()
+
+  const setProfileSlice = (requested: Partial<ProfileSlice>) => {
+    const next = resolveProfileSlice(memberships, scope, requested)
+    if (!next) return
+    setSearchParams(previous => withProfileSliceParams(previous, next))
+  }
 
   useSeoMeta({
     title: `${player.canonical_player_name} Stats | ${player.season_label} Football Data`,
@@ -190,6 +204,7 @@ function ProfileLayout({
   const percentileScopeLabel =
     percentileMode === 'scope' && canUseScopePercentiles ? aggregateScopeLabel(scope.competition) : player.competition_code
   const similarScopeLabel = `${player.competition_code} ${player.season_label}`
+  const playerTeamScope = { competition: player.competition_code, season: player.season_label }
   const similarQuery = useQuery({
     queryKey: ['profile-similar-players', player.competition_code, player.season_label, player.canonical_player_id],
     queryFn: () =>
@@ -214,7 +229,7 @@ function ProfileLayout({
             {player.season_label} ·{' '}
             {player.canonical_team_id != null && player.canonical_team_name ? (
               <Link
-                to={buildScopedPath(`/team/${player.canonical_team_id}`)}
+                to={buildScopedPath(`/team/${player.canonical_team_id}`, playerTeamScope)}
                 className="text-electric/90 hover:text-electric hover:underline"
               >
                 {player.canonical_team_name}
@@ -222,7 +237,7 @@ function ProfileLayout({
             ) : (
               <span>{player.canonical_team_name ?? '—'}</span>
             )}
-            <FormerClubsNote teams={player.secondary_teams} />
+            <FormerClubsNote teams={player.secondary_teams} profileScope={playerTeamScope} />
             {' '}
             · {player.minutes.toLocaleString()} min
           </p>
@@ -239,14 +254,17 @@ function ProfileLayout({
         </div>
         <div className="flex w-full flex-col gap-2 lg:w-auto lg:shrink-0 lg:items-end">
           <div className="flex w-full flex-wrap items-center justify-start gap-2 lg:justify-end">
-            <ProfileScopeSelector
-              label="player-profile-scope"
-              currentScope={scope}
-              memberships={memberships}
-              onChange={nextScope => {
-                navigate(buildScopedPath(`/player/${player.canonical_player_id}`, nextScope))
-              }}
-            />
+            {profileSlice && (
+              <PlayerProfileSliceSelector
+                memberships={memberships}
+                value={profileSlice}
+                onSeasonChange={season => setProfileSlice({ season })}
+                onCompetitionChange={competition => setProfileSlice({
+                  season: profileSlice.season,
+                  competition,
+                })}
+              />
+            )}
             <Link
               to={buildPlayerCreateChartsPath(player, rateMode)}
               className="relative flex items-center gap-1.5 whitespace-nowrap border border-control-border px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.15em] text-control-fg transition-colors hover:border-electric hover:text-control-fg-hover active:bg-electric/10"

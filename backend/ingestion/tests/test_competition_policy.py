@@ -3,6 +3,7 @@ from __future__ import annotations
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from ingestion.api_cache import joined_version, model_version, stable_cache_key
 from ingestion.competition_scope import resolve_public_scope
 from ingestion.models import (
     CanonicalPlayer,
@@ -12,6 +13,7 @@ from ingestion.models import (
     IngestionKind,
     IngestionRun,
     IngestionRunStatus,
+    MaterializedApiPayload,
     PlayerSeasonDerivedStats,
     PositionGroup,
     Season,
@@ -188,3 +190,130 @@ class CompetitionPolicyTests(TestCase):
         self.assertEqual(payload["meta"]["minimum_eligible_minutes"], 270)
         self.assertEqual(payload["meta"]["eligibility_thresholds"], {"UCL": 270})
         self.assertEqual(payload["results"][0]["eligibility"]["minimum_eligible_minutes"], 270)
+
+
+class CompetitionCatalogOrderingTests(TestCase):
+    def setUp(self) -> None:
+        self.client = APIClient()
+        self.split_year_season = Season.objects.create(label="2026-27", sort_order=2027)
+        self.calendar_old_season = Season.objects.create(label="2025", sort_order=2025)
+        self.calendar_new_season = Season.objects.create(label="2026", sort_order=2026)
+
+    def add_competition(
+        self,
+        code: str,
+        country: str,
+        *,
+        competition_type: str = CompetitionType.DOMESTIC_LEAGUE,
+        seasons: tuple[Season, ...] | None = None,
+    ) -> None:
+        competition = Competition.objects.create(
+            name=f"{country} {code}",
+            short_code=code,
+            country=country,
+            competition_type=competition_type,
+            include_in_domestic_aggregates=competition_type == CompetitionType.DOMESTIC_LEAGUE,
+        )
+        for season in seasons or (self.split_year_season,):
+            CompetitionSeason.objects.create(
+                competition=competition,
+                season=season,
+                is_published=True,
+            )
+
+    def test_catalog_groups_domestic_divisions_by_country_and_tier_deterministically(
+        self,
+    ) -> None:
+        # Deliberately insert in a non-picker order: the public payload must not
+        # inherit database insertion order.
+        for code, country in (
+            ("SCO2", "Scotland"),
+            ("GER3", "Germany"),
+            ("FRA3", "France"),
+            ("ENG2", "England"),
+            ("BEL2", "Belgium"),
+            ("UECL", "Europe"),
+            ("GER1", "Germany"),
+            ("SCO1", "Scotland"),
+            ("UCL", "Europe"),
+            ("FRA1", "France"),
+            ("ENG1", "England"),
+            ("NED1", "Netherlands"),
+            ("ITA1", "Italy"),
+            ("GER2", "Germany"),
+            ("FRA2", "France"),
+            ("UEL", "Europe"),
+            ("SPA1", "Spain"),
+            ("BEL1", "Belgium"),
+            ("ZZZ1", "Zealand"),
+        ):
+            self.add_competition(
+                code,
+                country,
+                competition_type=(
+                    CompetitionType.CONTINENTAL_CUP
+                    if country == "Europe"
+                    else CompetitionType.DOMESTIC_LEAGUE
+                ),
+            )
+        self.add_competition(
+            "SWE1",
+            "Sweden",
+            seasons=(self.calendar_old_season, self.calendar_new_season),
+        )
+
+        response = self.client.get("/api/v1/competition-seasons")
+
+        self.assertEqual(response.status_code, 200)
+        entries = response.json()["competitions"]
+        self.assertEqual([entry["code"] for entry in entries[:2]], ["ALL", "BIG5"])
+        self.assertEqual(
+            [entry["code"] for entry in entries[2:]],
+            [
+                "ENG1",
+                "ENG2",
+                "GER1",
+                "GER2",
+                "GER3",
+                "SPA1",
+                "ITA1",
+                "FRA1",
+                "FRA2",
+                "FRA3",
+                "SCO1",
+                "SCO2",
+                "BEL1",
+                "BEL2",
+                "NED1",
+                "SWE1",
+                "ZZZ1",
+                "UCL",
+                "UEL",
+                "UECL",
+            ],
+        )
+        self.assertTrue(all(entry["group"] == "domestic" for entry in entries[2:19]))
+        self.assertEqual([entry["group"] for entry in entries[19:]], ["european"] * 3)
+        swe = next(entry for entry in entries if entry["code"] == "SWE1")
+        self.assertEqual([season["label"] for season in swe["seasons"]], ["2026", "2025"])
+
+    def test_catalog_contract_change_rebuilds_a_stale_persistent_payload(self) -> None:
+        self.add_competition("ENG1", "England")
+        MaterializedApiPayload.objects.create(
+            cache_key=stable_cache_key(
+                "competition-seasons",
+                {"path": "/api/v1/competition-seasons"},
+            ),
+            source_version=joined_version(
+                "competition-seasons",
+                model_version(Competition),
+                model_version(CompetitionSeason),
+            ),
+            payload={"competitions": [{"code": "STALE"}]},
+            payload_json='{"competitions":[{"code":"STALE"}]}',
+        )
+
+        entries = self.client.get("/api/v1/competition-seasons").json()["competitions"]
+
+        self.assertNotIn("STALE", {entry["code"] for entry in entries})
+        self.assertIn("ENG1", {entry["code"] for entry in entries})

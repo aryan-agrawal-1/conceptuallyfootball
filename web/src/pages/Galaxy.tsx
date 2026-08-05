@@ -12,6 +12,7 @@ import {
 } from '../components/hud/Hud'
 import { HudMultiSelectDropdown } from '../components/hud/HudDropdown'
 import { useScope } from '../context/ScopeContext'
+import { withPlayerProfileSlice } from '../lib/playerProfileUrl'
 import { buildGalaxyCreateChartsPath } from '../lib/createChartsUrl'
 import { playerNameTitle, shortPlayerName } from '../lib/entityLabels'
 
@@ -694,7 +695,14 @@ export function Galaxy() {
             onHoverEdge={id => setHoveredPlayerId(id)}
             onClear={() => setSelectedPlayerId(null)}
             onOpenProfile={() =>
-              navigate(buildScopedPath(`/player/${selectedPoint.canonical_player_id}`))
+              navigate(
+                buildScopedPath(
+                  withPlayerProfileSlice(`/player/${selectedPoint.canonical_player_id}`, {
+                    competition: selectedPoint.competition_code,
+                    season: selectedPoint.season_label,
+                  }),
+                ),
+              )
             }
             createChartHref={createChartHref}
           />

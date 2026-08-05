@@ -8,6 +8,8 @@ export interface VisualiserBarDatum {
   sublabel?: string
   value: number
   valueText: string
+  profileCompetition?: string
+  profileSeason?: string
   highlighted?: boolean
 }
 
