@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, AlertCircle, FileImage } from 'lucide-react'
 import { fetchGalaxySimilarForPlayer, fetchPlayerDetail } from '../lib/api'
-import type { PlayerDetailResponse, ProfileMode, SecondaryTeamBadge } from '../types/api'
+import type { PlayerDetailResponse, SecondaryTeamBadge } from '../types/api'
 import { useScope, type Scope } from '../context/ScopeContext'
 import { useSearchPaletteIndex } from '../hooks/useSearchPaletteIndex'
 import { ProfileBreadcrumb } from '../components/profile/ProfileBreadcrumb'
@@ -38,20 +38,6 @@ function comparisonScopeLabel(code: string): string {
   if (code === 'BIG5') return 'Big 5'
   if (code === 'ALL') return 'All'
   return code
-}
-
-const PROFILE_MODES: Array<{ value: ProfileMode; label: string }> = [
-  { value: 'domestic', label: 'Domestic' },
-  { value: 'europe', label: 'Europe' },
-  { value: 'combined', label: 'Combined' },
-]
-
-function isProfileMode(value: string | null): value is ProfileMode {
-  return value === 'domestic' || value === 'europe' || value === 'combined'
-}
-
-function resolveProfileMode(value: string | null): ProfileMode {
-  return isProfileMode(value) ? value : 'domestic'
 }
 
 function FormerClubsNote({
@@ -112,7 +98,6 @@ export function PlayerProfile() {
 
   const detailCompetition = profileSlice?.competition
   const detailSeason = profileSlice?.season
-  const requestedMode = resolveProfileMode(searchParams.get('profileMode'))
   const requestedComparisonScope = searchParams.get('comparisonScope') ?? undefined
 
   const { data, isLoading, isError, error } = useQuery({
@@ -121,7 +106,6 @@ export function PlayerProfile() {
       id,
       detailCompetition,
       detailSeason,
-      requestedMode,
       requestedComparisonScope,
     ],
     queryFn: () =>
@@ -129,7 +113,6 @@ export function PlayerProfile() {
         competition: detailCompetition!,
         season: detailSeason!,
         include: 'meta,profile_distributions',
-        mode: requestedMode,
         comparison_scope: requestedComparisonScope,
       }),
     enabled: !!id && detailCompetition != null && detailSeason != null,
@@ -203,9 +186,6 @@ function ProfileLayout({
     canonicalPath: `/player/${player.canonical_player_id}`,
   })
 
-  const requestedMode = resolveProfileMode(searchParams.get('profileMode'))
-  const activeMode = player.mode ?? requestedMode
-  const availableModes = player.available_modes?.length ? player.available_modes : ['domestic']
   const domesticScope = profileSlice?.competition ?? player.competition_code
   const hasComparisonContract = player.comparison_available_scopes !== undefined
   const availableComparisonScopes = hasComparisonContract
@@ -216,30 +196,25 @@ function ProfileLayout({
     ? requestedComparisonScope!
     : availableComparisonScopes[0] ?? ''
   const hasComparisonScope = comparisonScope !== ''
-  const isCombined = activeMode === 'combined'
-  // A combined performance row is not itself a percentile cohort. Until the
-  // API supplies an explicitly selected comparison cohort, do not relabel its
-  // stored/empty percentile fields as an authoritative combined percentile.
   const comparisonEligibility = player.comparison_eligibility ?? player.eligibility
   const showLowSampleBanner = !comparisonEligibility.percentiles_eligible
   const activePercentileMap = hasComparisonContract
     ? player.comparison_percentiles ?? {}
-    : (isCombined ? {} : player.percentiles)
+    : player.percentiles
   const activeDistributions = hasComparisonContract
     ? player.comparison_profile_distributions
-    : (isCombined ? undefined : player.profile_distributions)
+    : player.profile_distributions
   const percentileScopeLabel = hasComparisonScope ? comparisonScopeLabel(comparisonScope) : 'Unavailable'
   const similarScopeLabel = `${percentileScopeLabel} ${player.season_label}`
   const playerTeamScope = { competition: player.competition_code, season: player.season_label }
   const similarQuery = useQuery({
-    queryKey: ['profile-similar-players', player.competition_code, player.season_label, activeMode, comparisonScope, player.canonical_player_id],
+    queryKey: ['profile-similar-players', player.competition_code, player.season_label, comparisonScope, player.canonical_player_id],
     queryFn: () =>
       fetchGalaxySimilarForPlayer(
         player.canonical_player_id,
         player.comparison_source_competition ?? player.competition_code,
         player.season_label,
         comparisonScope,
-        activeMode,
       ),
     enabled: hasComparisonScope && player.position_group !== 'GK',
     staleTime: 10 * 60 * 1000,
@@ -247,27 +222,19 @@ function ProfileLayout({
 
   useEffect(() => {
     if (
-      searchParams.get('profileMode') === activeMode
+      !searchParams.has('profileMode')
       && (hasComparisonScope
         ? searchParams.get('comparisonScope') === comparisonScope
         : !searchParams.has('comparisonScope'))
     ) return
     setSearchParams(previous => {
       const next = new URLSearchParams(previous)
-      next.set('profileMode', activeMode)
+      next.delete('profileMode')
       if (hasComparisonScope) next.set('comparisonScope', comparisonScope)
       else next.delete('comparisonScope')
       return next
     }, { replace: true })
-  }, [activeMode, comparisonScope, hasComparisonScope, searchParams, setSearchParams])
-
-  const setProfileMode = (mode: ProfileMode) => {
-    setSearchParams(previous => {
-      const next = new URLSearchParams(previous)
-      next.set('profileMode', mode)
-      return next
-    })
-  }
+  }, [comparisonScope, hasComparisonScope, searchParams, setSearchParams])
 
   const setComparisonScope = (nextScope: string) => {
     setSearchParams(previous => {
@@ -306,7 +273,7 @@ function ProfileLayout({
             <span className="text-electric/80 font-mono uppercase tracking-[0.15em] mr-2">
               Note
             </span>
-            {isCombined ? 'Combined totals are API-authoritative. ' : ''}Percentiles compare this player against other{' '}
+            Percentiles compare this player against other{' '}
             <span className="text-ink">
               {POSITION_COHORT_LABEL[player.position_group]}
             </span>{' '}
@@ -359,20 +326,6 @@ function ProfileLayout({
       </div>
 
       <div className="mb-6 flex flex-col gap-3">
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Profile performance view">
-          {PROFILE_MODES.map(({ value, label }) => {
-            const available = availableModes.includes(value)
-            return (
-              <button key={value} type="button" disabled={!available} onClick={() => setProfileMode(value)} className={cn(
-                'border px-3 py-1.5 text-[11px] uppercase tracking-[0.15em]',
-                value === activeMode ? 'border-electric/50 bg-electric/10 text-electric' : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
-                !available && 'cursor-not-allowed opacity-40 hover:border-control-border hover:text-control-fg',
-              )}>
-                {label}
-              </button>
-            )
-          })}
-        </div>
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Comparison cohort">
           <span className="mr-1 text-[10px] font-mono uppercase tracking-[0.15em] text-ink-dim">Compare against</span>
           {availableComparisonScopes.map(scopeCode => (
@@ -389,15 +342,6 @@ function ProfileLayout({
             </span>
           )}
         </div>
-        {isCombined && <p className="text-[11px] leading-relaxed text-ink-muted">Combined performance totals include the components below. Percentiles remain tied to the selected comparison cohort; there is no combined percentile cohort.</p>}
-        {player.components && player.components.length > 0 && (
-          <section aria-labelledby="profile-components-heading" className="border border-electric/15 bg-mat/35 px-3 py-2.5">
-            <h2 id="profile-components-heading" className="mb-1.5 text-[10px] font-mono uppercase tracking-[0.15em] text-ink-dim">Performance components</h2>
-            <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-muted">
-              {player.components.map((component, index) => <li key={`${component.competition_code}:${component.season_label}:${index}`}><span className="text-ink">{component.competition_code}</span> · {component.season_label}{component.canonical_team_name ? ` · ${component.canonical_team_name}` : ''}{component.minutes != null ? ` · ${component.minutes.toLocaleString()} min` : ''}</li>)}
-            </ul>
-          </section>
-        )}
       </div>
 
       {showLowSampleBanner && (

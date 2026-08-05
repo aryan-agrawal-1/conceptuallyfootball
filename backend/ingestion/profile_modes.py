@@ -1,65 +1,9 @@
-"""Request-time season profile mode discovery shared by public profile APIs."""
+"""Comparison cohort discovery shared by public player profile APIs."""
 
 from __future__ import annotations
 
-from django.core.exceptions import ValidationError
-
 from ingestion.competition_scope import BIG_FIVE_COMPETITION_CODES
 from ingestion.models import CompetitionSeason, CompetitionType
-
-PROFILE_MODES = ("domestic", "europe", "combined")
-
-
-def requested_profile_mode(request) -> str | None:
-    value = request.query_params.get("mode")
-    if value is None:
-        return None
-    mode = value.strip().lower()
-    if mode not in PROFILE_MODES:
-        raise ValidationError("mode must be one of: domestic, europe, combined.")
-    return mode
-
-
-def profile_component_seasons(selected: CompetitionSeason, mode: str) -> list[CompetitionSeason]:
-    """Return published, deterministic season slices for an explicit profile mode."""
-    seasons = CompetitionSeason.objects.filter(
-        season_id=selected.season_id,
-        is_active=True,
-        is_published=True,
-    ).select_related("competition", "season")
-    if mode == "domestic":
-        seasons = seasons.filter(competition__competition_type=CompetitionType.DOMESTIC_LEAGUE)
-    elif mode == "europe":
-        seasons = seasons.filter(competition__competition_type=CompetitionType.CONTINENTAL_CUP)
-    else:
-        seasons = seasons.filter(competition__competition_type__in=(
-            CompetitionType.DOMESTIC_LEAGUE,
-            CompetitionType.CONTINENTAL_CUP,
-        ))
-    return list(seasons.order_by("competition__short_code", "pk"))
-
-
-def available_profile_modes(*, has_domestic: bool, has_europe: bool) -> list[str]:
-    available: list[str] = []
-    if has_domestic:
-        available.append("domestic")
-    if has_europe:
-        available.append("europe")
-    # Combined includes every available eligible slice. For domestic-only and
-    # Europe-only entities it deterministically equals the available mode.
-    if has_domestic or has_europe:
-        available.append("combined")
-    return available
-
-
-def resolved_profile_mode(requested: str, available: list[str]) -> str:
-    """Normalize an unavailable valid mode so direct links stay deterministic."""
-    if requested in available:
-        return requested
-    for fallback in ("domestic", "europe", "combined"):
-        if fallback in available:
-            return fallback
-    raise ValidationError("No season profile data is available for this entity.")
 
 
 def comparison_scope_options(

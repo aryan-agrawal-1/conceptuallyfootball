@@ -36,13 +36,9 @@ from ingestion.derived_definitions import (
 )
 from ingestion.models import CanonicalTeam, CompetitionSeason, PlayerSeasonDerivedStats
 from ingestion.profile_modes import (
-    available_profile_modes,
     comparison_source_code,
     comparison_scope_options,
-    profile_component_seasons,
-    requested_profile_mode,
     resolved_comparison_scope,
-    resolved_profile_mode,
 )
 from ingestion.profile_distributions import (
     PROFILE_DISTRIBUTION_CACHE_VERSION,
@@ -286,133 +282,11 @@ def _detail_sections(row: PlayerSeasonDerivedStats) -> dict[str, dict]:
     return sections
 
 
-def _player_component_payload(row: PlayerSeasonDerivedStats, secondary_names: dict[int, str]) -> dict:
-    return {
-        "competition_season": row.competition_season_id,
-        "competition_code": row.competition_season.competition.short_code,
-        "competition_type": row.competition_season.competition.competition_type,
-        "season_label": row.competition_season.season.label,
-        "canonical_team_id": row.canonical_display_team_id,
-        "canonical_team_name": row.canonical_display_team.name if row.canonical_display_team else None,
-        "secondary_teams": secondary_teams_payload(row.merged_player_season, secondary_names),
-        "minutes": row.minutes,
-        "metrics": {metric: getattr(row, metric) for metric in METRIC_FIELDS},
-    }
-
-
-def _sum_metric(rows: list[PlayerSeasonDerivedStats], metric: str) -> float | None:
-    values = [getattr(row, metric) for row in rows]
-    if any(value is None for value in values):
-        return None
-    return sum(float(value) for value in values)
-
-
-def _per_90_total(rows: list[PlayerSeasonDerivedStats], metric: str) -> float | None:
-    values = [(getattr(row, metric), row.minutes) for row in rows]
-    if any(value is None or minutes is None for value, minutes in values):
-        return None
-    return sum(float(value) * float(minutes) / 90.0 for value, minutes in values)
-
-
-def _ratio(numerator: float | None, denominator: float | None, *, percentage: bool = False) -> float | None:
-    if numerator is None or denominator is None or denominator <= 0:
-        return None
-    value = numerator / denominator
-    return value * 100.0 if percentage else value
-
-
-def _denominator_from_percentage(numerator: float | None, percentage: float | None) -> float | None:
-    if numerator is None or percentage is None or percentage <= 0:
-        return None
-    return numerator / (percentage / 100.0)
-
-
-def _aggregate_player_metrics(rows: list[PlayerSeasonDerivedStats]) -> tuple[int | None, dict[str, float | None]]:
-    """Aggregate totals and rebuild rates/ratios from their component bases."""
-    minutes = sum(row.minutes for row in rows) if all(row.minutes is not None for row in rows) else None
-    metrics: dict[str, float | None] = {}
-    for metric, definition in METRIC_DEFINITIONS.items():
-        unit = definition["unit"]
-        if unit in {"total", "delta"}:
-            metrics[metric] = _sum_metric(rows, metric)
-        elif unit == "per90":
-            total = _per_90_total(rows, metric)
-            metrics[metric] = _ratio(total * 90.0 if total is not None else None, float(minutes) if minutes is not None else None)
-        else:
-            metrics[metric] = None
-
-    shots = _per_90_total(rows, "shots_per_90")
-    key_passes = _per_90_total(rows, "key_passes_per_90")
-    completed_passes = _per_90_total(rows, "completed_passes_per_90")
-    tackles = _per_90_total(rows, "tackles_per_90")
-    successful_dribbles = _per_90_total(rows, "successful_dribbles_per_90")
-
-    metrics["sot_rate"] = _ratio(metrics["shots_on_target"], (
-        metrics["shots_on_target"] + metrics["shots_off_target"]
-        if metrics["shots_on_target"] is not None and metrics["shots_off_target"] is not None
-        else shots
-    ))
-    metrics["npxg_per_shot"] = _ratio(metrics["npxg"], shots)
-    metrics["xa_per_key_pass"] = _ratio(metrics["xa"], key_passes)
-    metrics["buildup_share"] = _ratio(metrics["xgbuildup"], metrics["xgchain"])
-
-    total_passes = 0.0
-    for row in rows:
-        component_completed = _per_90_total([row], "completed_passes_per_90")
-        component_total = _denominator_from_percentage(component_completed, row.pass_accuracy)
-        if component_total is None:
-            total_passes = -1.0
-            break
-        total_passes += component_total
-    total_passes_value = None if total_passes < 0 else total_passes
-    metrics["pass_accuracy"] = _ratio(completed_passes, total_passes_value, percentage=True)
-    metrics["kp_share_per90"] = _ratio(key_passes, total_passes_value)
-    inaccurate_passes = None if completed_passes is None or total_passes_value is None else total_passes_value - completed_passes
-    metrics["inaccurate_pass_rate"] = _ratio(inaccurate_passes, total_passes_value)
-
-    tackle_attempts = 0.0
-    dribble_attempts = 0.0
-    for row in rows:
-        component_tackles_won = float(row.tackles_won) if row.tackles_won is not None else None
-        component_tackle_attempts = _denominator_from_percentage(component_tackles_won, row.tackles_won_percentage)
-        component_dribbles = _per_90_total([row], "successful_dribbles_per_90")
-        component_dribble_attempts = _denominator_from_percentage(
-            component_dribbles,
-            row.successful_dribbles_percentage,
-        )
-        if component_tackle_attempts is None:
-            tackle_attempts = -1.0
-        elif tackle_attempts >= 0:
-            tackle_attempts += component_tackle_attempts
-        if component_dribble_attempts is None:
-            dribble_attempts = -1.0
-        elif dribble_attempts >= 0:
-            dribble_attempts += component_dribble_attempts
-    metrics["tackles_won_percentage"] = _ratio(
-        metrics["tackles_won"],
-        None if tackle_attempts < 0 else tackle_attempts,
-        percentage=True,
-    )
-    metrics["successful_dribbles_percentage"] = _ratio(
-        successful_dribbles,
-        None if dribble_attempts < 0 else dribble_attempts,
-        percentage=True,
-    )
-
-    goals_minus_npxg = metrics["goals_minus_npxg"]
-    if goals_minus_npxg is not None and shots is not None and shots > 0:
-        reliability = shots / (shots + 35.0)
-        metrics["finishing_shrunk_delta_per_shot"] = goals_minus_npxg / shots * reliability
-    return minutes, metrics
-
-
-def _comparison_eligibility(payload: dict, scope_seasons: list[CompetitionSeason], mode: str) -> dict:
+def _comparison_eligibility(payload: dict, scope_seasons: list[CompetitionSeason]) -> dict:
     minimum = scope_minimum_eligible_minutes(scope_seasons)
     minutes = payload.get("minutes")
     position_group = payload.get("position_group")
-    if mode == "combined":
-        eligible, reason = False, "combined_profile_mode"
-    elif position_group not in ELIGIBLE_OUTFIELD_POSITIONS:
+    if position_group not in ELIGIBLE_OUTFIELD_POSITIONS:
         eligible, reason = False, "ineligible_position"
     elif not minutes or minutes < minimum:
         eligible, reason = False, "below_minutes_threshold"
@@ -433,7 +307,6 @@ def _attach_comparison_context(
     payload: dict,
     selected_season: CompetitionSeason,
     canonical_player_id: int,
-    mode: str,
 ) -> None:
     available, source_code = comparison_scope_options(
         selected=selected_season,
@@ -465,7 +338,7 @@ def _attach_comparison_context(
         return
 
     scope_seasons = resolve_scope_seasons(comparison_scope, selected_season.season.label)
-    eligibility = _comparison_eligibility(payload, scope_seasons, mode)
+    eligibility = _comparison_eligibility(payload, scope_seasons)
     proxy = SimpleNamespace(
         id=-canonical_player_id,
         position_group=payload["position_group"],
@@ -480,7 +353,7 @@ def _attach_comparison_context(
     )
     payload["comparison_percentiles"] = percentiles[proxy.id]
     payload["comparison_eligibility"] = eligibility
-    if _requested_profile_distributions(request) and mode != "combined":
+    if _requested_profile_distributions(request):
         payload["comparison_profile_distributions"] = {
             **build_profile_distributions(
                 scope_queryset=scope_queryset,
@@ -513,7 +386,6 @@ class DerivedPlayerSeasonListApi(APIView):
                         "sort",
                         "include",
                         "percentile_scope",
-                        "mode",
                         "comparison_scope",
                     },
                 ),
@@ -594,7 +466,6 @@ class DerivedPlayerSeasonDetailApi(APIView):
                         "season",
                         "include",
                         "percentile_scope",
-                        "mode",
                         "comparison_scope",
                     },
                 ),
@@ -623,9 +494,6 @@ class DerivedPlayerSeasonDetailApi(APIView):
     def _build_payload(self, request, canonical_player_id: int) -> dict:
         try:
             competition_season = _resolve_competition_season(request)
-            mode = requested_profile_mode(request)
-            if mode is not None:
-                return self._build_mode_payload(request, competition_season, canonical_player_id, mode)
             queryset = _base_queryset(competition_season)
             row = queryset.get(canonical_player_id=canonical_player_id)
             scope_percentiles = None
@@ -681,81 +549,12 @@ class DerivedPlayerSeasonDetailApi(APIView):
                     ),
                 }
         payload["sections"] = _detail_sections(row)
-        if _requested_meta(request):
-            payload["meta"] = _meta_payload([competition_season])
-        return payload
-
-    def _build_mode_payload(self, request, selected_season, canonical_player_id: int, requested_mode: str) -> dict:
-        component_seasons = profile_component_seasons(selected_season, "combined")
-        rows = list(
-            _base_queryset_for_seasons(component_seasons)
-            .filter(canonical_player_id=canonical_player_id)
-            .order_by("competition_season__competition__short_code", "competition_season_id")
-        )
-        if not rows:
-            raise PlayerSeasonDerivedStats.DoesNotExist
-        domestic = [row for row in rows if row.competition_season.competition.competition_type == "domestic_league"]
-        europe = [row for row in rows if row.competition_season.competition.competition_type == "continental_cup"]
-        available = available_profile_modes(has_domestic=bool(domestic), has_europe=bool(europe))
-        mode = resolved_profile_mode(requested_mode, available)
-        selected_rows = domestic if mode == "domestic" else europe if mode == "europe" else rows
-        secondary_names = _secondary_team_names_for_rows(selected_rows)
-        components = [_player_component_payload(row, secondary_names) for row in selected_rows]
-
-        if len(selected_rows) == 1:
-            row = selected_rows[0]
-            payload = _row_payload(row, secondary_names)
-            payload["sections"] = _detail_sections(row)
-            if mode == "combined":
-                payload["percentiles"] = {metric: None for metric in METRIC_FIELDS}
-                for section in payload["sections"].values():
-                    for entry in section["metrics"]:
-                        entry["percentile"] = None
-        else:
-            minutes, metrics = _aggregate_player_metrics(selected_rows)
-            representative = selected_rows[0]
-            payload = {
-                "canonical_player_id": canonical_player_id,
-                "canonical_player_name": representative.canonical_player.display_name,
-                "canonical_team_id": None,
-                "canonical_team_name": None,
-                "secondary_teams": [],
-                "competition_season": selected_season.id,
-                "competition_code": selected_season.competition.short_code,
-                "season_label": selected_season.season.label,
-                "position_group": representative.position_group,
-                "native_position": representative.native_position,
-                "minutes": minutes,
-                "formula_version": representative.formula_version,
-                "derived_run_id": None,
-                "eligibility": {
-                    "minimum_eligible_minutes": None,
-                    "percentiles_eligible": False,
-                    "percentiles_ineligibility_reason": "aggregate_profile_mode",
-                    "scores_eligible": False,
-                    "scores_ineligibility_reason": "aggregate_profile_mode",
-                },
-                "metrics": metrics,
-                "percentiles": {metric: None for metric in METRIC_FIELDS},
-                "scores": {score: None for score in SCORE_FIELDS},
-                "score_raw": {score: None for score in SCORE_FIELDS},
-            }
-            sections = {}
-            for group_key, group_label in METRIC_GROUPS.items():
-                sections[group_key] = {"label": group_label, "metrics": [
-                    {"key": metric, "label": definition["label"], "value": metrics[metric], "percentile": None}
-                    for metric, definition in METRIC_DEFINITIONS.items()
-                    if definition["group"] == group_key and metrics[metric] is not None
-                ]}
-            payload["sections"] = sections
-        payload.update({"mode": mode, "available_modes": available, "components": components})
         _attach_comparison_context(
             request,
             payload=payload,
-            selected_season=selected_season,
+            selected_season=competition_season,
             canonical_player_id=canonical_player_id,
-            mode=mode,
         )
         if _requested_meta(request):
-            payload["meta"] = _meta_payload([row.competition_season for row in selected_rows])
+            payload["meta"] = _meta_payload([competition_season])
         return payload
