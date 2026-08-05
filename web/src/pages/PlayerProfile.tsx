@@ -1,7 +1,7 @@
 import { Fragment, lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { BarChart3, Loader2, AlertCircle, FileImage } from 'lucide-react'
+import { Loader2, AlertCircle, FileImage } from 'lucide-react'
 import { fetchGalaxySimilarForPlayer, fetchPlayerDetail } from '../lib/api'
 import type { PlayerDetailResponse, SecondaryTeamBadge } from '../types/api'
 import { useScope, type Scope } from '../context/ScopeContext'
