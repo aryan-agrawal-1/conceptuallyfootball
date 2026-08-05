@@ -251,6 +251,24 @@ class GalaxyV2Tests(TestCase):
         self.assertEqual(payload["selected_player"]["galaxy_player_id"], embedding.galaxy_player_id)
         self.assertIn("profile_match_score", payload["edges"][0])
 
+    def test_profile_comparison_scope_selects_the_requested_aggregate_snapshot_and_source_membership(self):
+        self._materialize_all()
+
+        response = self.client.get(
+            "/api/v1/galaxy/similar",
+            {
+                "competition": "ENG1",
+                "comparison_scope": "ALL",
+                "season": "2025-26",
+                "player": self.shared.id,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["model_meta"]["scope_code"], "ALL")
+        self.assertEqual(payload["selected_player"]["competition_code"], "ENG1")
+
     def test_galaxy_list_clamps_minutes_to_model_floor(self):
         self._materialize_all()
 

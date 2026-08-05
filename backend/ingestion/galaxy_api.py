@@ -17,8 +17,8 @@ from ingestion.models import GalaxyPlayerEmbedding, GalaxySimilarity
 from ingestion.services.galaxy import latest_galaxy_snapshot
 
 
-def _snapshot_or_404(request):
-    competition_code = (request.query_params.get("competition") or "").strip().upper()
+def _snapshot_or_404(request, *, scope_param: str = "competition"):
+    competition_code = (request.query_params.get(scope_param) or "").strip().upper()
     season_label = (request.query_params.get("season") or "").strip()
     if not competition_code or not season_label:
         raise DjangoValidationError(
@@ -254,7 +254,10 @@ class GalaxyApi(APIView):
 class GalaxySimilarApi(APIView):
     def get(self, request):
         try:
-            snapshot = _snapshot_or_404(request)
+            snapshot = _snapshot_or_404(
+                request,
+                scope_param="comparison_scope" if request.query_params.get("comparison_scope") else "competition",
+            )
         except DjangoValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except GalaxyPlayerEmbedding.DoesNotExist as exc:
@@ -278,7 +281,22 @@ class GalaxySimilarApi(APIView):
         if galaxy_player_id:
             embedding = embedding_qs.filter(galaxy_player_id=galaxy_player_id).first()
         elif player_param and player_param.isdigit():
-            matches = list(embedding_qs.filter(canonical_player_id=int(player_param))[:2])
+            player_matches = embedding_qs.filter(canonical_player_id=int(player_param))
+            source_competition = (request.query_params.get("competition") or "").strip().upper()
+            if source_competition:
+                source_matches = list(
+                    player_matches.filter(
+                        competition_season__competition__short_code=source_competition,
+                    )[:2]
+                )
+            else:
+                source_matches = []
+            matches = source_matches or list(
+                player_matches.order_by(
+                    "competition_season__competition__short_code",
+                    "competition_season_id",
+                )[:2]
+            )
             if len(matches) > 1:
                 return Response(
                     {"detail": "player is ambiguous for this Galaxy scope; use galaxy_player_id."},

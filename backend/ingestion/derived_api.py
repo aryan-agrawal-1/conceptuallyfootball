@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import QuerySet
 from rest_framework import status
@@ -22,6 +24,7 @@ from ingestion.competition_scope import (
     scope_minimum_eligible_minutes,
 )
 from ingestion.derived_definitions import (
+    ELIGIBLE_OUTFIELD_POSITIONS,
     FORMULA_VERSION,
     LIST_SORT_FIELDS,
     METRIC_META_CACHE_VERSION,
@@ -32,6 +35,11 @@ from ingestion.derived_definitions import (
     SCORE_FIELDS,
 )
 from ingestion.models import CanonicalTeam, CompetitionSeason, PlayerSeasonDerivedStats
+from ingestion.profile_modes import (
+    comparison_source_code,
+    comparison_scope_options,
+    resolved_comparison_scope,
+)
 from ingestion.profile_distributions import (
     PROFILE_DISTRIBUTION_CACHE_VERSION,
     build_profile_distributions,
@@ -274,6 +282,92 @@ def _detail_sections(row: PlayerSeasonDerivedStats) -> dict[str, dict]:
     return sections
 
 
+def _comparison_eligibility(payload: dict, scope_seasons: list[CompetitionSeason]) -> dict:
+    minimum = scope_minimum_eligible_minutes(scope_seasons)
+    minutes = payload.get("minutes")
+    position_group = payload.get("position_group")
+    if position_group not in ELIGIBLE_OUTFIELD_POSITIONS:
+        eligible, reason = False, "ineligible_position"
+    elif not minutes or minutes < minimum:
+        eligible, reason = False, "below_minutes_threshold"
+    else:
+        eligible, reason = True, None
+    return {
+        "minimum_eligible_minutes": minimum,
+        "percentiles_eligible": eligible,
+        "percentiles_ineligibility_reason": reason,
+        "scores_eligible": False,
+        "scores_ineligibility_reason": "comparison_cohort_only",
+    }
+
+
+def _attach_comparison_context(
+    request,
+    *,
+    payload: dict,
+    selected_season: CompetitionSeason,
+    canonical_player_id: int,
+) -> None:
+    available, source_code = comparison_scope_options(
+        selected=selected_season,
+        canonical_player_id=canonical_player_id,
+        row_model=PlayerSeasonDerivedStats,
+    )
+    comparison_scope = resolved_comparison_scope(
+        request.query_params.get("comparison_scope"),
+        available,
+    )
+    payload["comparison_available_scopes"] = available
+    payload["comparison_scope"] = comparison_scope
+    payload["comparison_source_competition"] = comparison_source_code(
+        selected=selected_season,
+        canonical_player_id=canonical_player_id,
+        row_model=PlayerSeasonDerivedStats,
+        comparison_scope=comparison_scope,
+        default_code=source_code,
+    )
+    if comparison_scope is None:
+        payload["comparison_percentiles"] = {metric: None for metric in METRIC_FIELDS}
+        payload["comparison_eligibility"] = {
+            "minimum_eligible_minutes": None,
+            "percentiles_eligible": False,
+            "percentiles_ineligibility_reason": "comparison_cohort_unavailable",
+            "scores_eligible": False,
+            "scores_ineligibility_reason": "comparison_cohort_unavailable",
+        }
+        return
+
+    scope_seasons = resolve_scope_seasons(comparison_scope, selected_season.season.label)
+    eligibility = _comparison_eligibility(payload, scope_seasons)
+    proxy = SimpleNamespace(
+        id=-canonical_player_id,
+        position_group=payload["position_group"],
+        percentiles_eligible=eligibility["percentiles_eligible"],
+        **payload["metrics"],
+    )
+    scope_queryset = _base_queryset_for_seasons(scope_seasons)
+    percentiles = build_scope_percentiles(
+        scope_queryset=scope_queryset,
+        rows=[proxy],
+        metric_fields=METRIC_FIELDS,
+    )
+    payload["comparison_percentiles"] = percentiles[proxy.id]
+    payload["comparison_eligibility"] = eligibility
+    if _requested_profile_distributions(request):
+        payload["comparison_profile_distributions"] = {
+            **build_profile_distributions(
+                scope_queryset=scope_queryset,
+                row=proxy,
+                metric_fields=METRIC_FIELDS,
+            ),
+            "context": scope_context(
+                comparison_scope,
+                selected_season.season.label,
+                scope_seasons,
+            ),
+        }
+
+
 class DerivedPlayerSeasonListApi(APIView):
     def get(self, request):
         cache_key = stable_cache_key(
@@ -292,6 +386,7 @@ class DerivedPlayerSeasonListApi(APIView):
                         "sort",
                         "include",
                         "percentile_scope",
+                        "comparison_scope",
                     },
                 ),
             },
@@ -301,6 +396,7 @@ class DerivedPlayerSeasonListApi(APIView):
             METRIC_META_CACHE_VERSION,
             SCOPE_PERCENTILES_CACHE_VERSION,
             model_version(PlayerSeasonDerivedStats, {"is_current": True}),
+            model_version(CompetitionSeason),
         )
         try:
             response, _ = get_or_build_payload_response(
@@ -370,6 +466,7 @@ class DerivedPlayerSeasonDetailApi(APIView):
                         "season",
                         "include",
                         "percentile_scope",
+                        "comparison_scope",
                     },
                 ),
             },
@@ -380,6 +477,7 @@ class DerivedPlayerSeasonDetailApi(APIView):
             PROFILE_DISTRIBUTION_CACHE_VERSION,
             SCOPE_PERCENTILES_CACHE_VERSION,
             model_version(PlayerSeasonDerivedStats, {"is_current": True}),
+            model_version(CompetitionSeason),
         )
         try:
             payload, _ = get_or_build_payload(
@@ -451,6 +549,12 @@ class DerivedPlayerSeasonDetailApi(APIView):
                     ),
                 }
         payload["sections"] = _detail_sections(row)
+        _attach_comparison_context(
+            request,
+            payload=payload,
+            selected_season=competition_season,
+            canonical_player_id=canonical_player_id,
+        )
         if _requested_meta(request):
             payload["meta"] = _meta_payload([competition_season])
         return payload

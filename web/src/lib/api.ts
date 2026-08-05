@@ -62,13 +62,18 @@ export async function fetchGkStatMatrix(
  */
 export async function fetchPlayerDetail(
   playerId: number,
-  filters: Pick<MatrixFilters, 'competition' | 'season'> & { include?: string; percentile_scope?: string },
+  filters: Pick<MatrixFilters, 'competition' | 'season'> & {
+    include?: string
+    percentile_scope?: string
+    comparison_scope?: string
+  },
 ): Promise<PlayerDetailResponse> {
   const p = new URLSearchParams()
   p.set('competition', filters.competition)
   p.set('season', filters.season)
   if (filters.include) p.set('include', filters.include)
   if (filters.percentile_scope) p.set('percentile_scope', filters.percentile_scope)
+  if (filters.comparison_scope) p.set('comparison_scope', filters.comparison_scope)
   const q = p.toString()
   const outfieldUrl = `${BASE}/player-seasons/derived-stats/${playerId}?${q}`
   // Detail payloads can carry scope percentiles. Force HTTP-cache revalidation so
@@ -192,11 +197,13 @@ export async function fetchGalaxySimilarForPlayer(
   playerId: number,
   competition: string,
   season: string,
+  comparisonScope?: string,
 ): Promise<GalaxySimilarResponse> {
   const p = new URLSearchParams()
   p.set('competition', competition)
   p.set('season', season)
   p.set('player', String(playerId))
+  if (comparisonScope) p.set('comparison_scope', comparisonScope)
   const res = await fetch(`${BASE}/galaxy/similar?${p}`)
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))

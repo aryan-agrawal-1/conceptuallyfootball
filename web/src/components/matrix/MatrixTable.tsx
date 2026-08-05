@@ -43,6 +43,8 @@ import {
 import { getGroupHeaderTooltip, getStatHeaderTooltip } from '../../lib/statTooltips'
 import { logMatrixPerfPhases } from '../../lib/perfDebug'
 import { playerNameTitle, shortPlayerName } from '../../lib/entityLabels'
+import { withPlayerProfileSlice } from '../../lib/playerProfileUrl'
+import { useScope } from '../../context/ScopeContext'
 import { MatrixDisplayContext, useMatrixDisplay, type MatrixVariant } from './MatrixDisplayContext'
 import { useMatrixHeaderTooltip } from './MatrixHeaderTooltipPortal'
 import type { MetricDefinition, PlayerRow, PositionGroup } from '../../types/api'
@@ -501,6 +503,7 @@ export function MatrixTable({
   metricDefinitions = {},
 }: MatrixTableProps) {
   const navigate = useNavigate()
+  const { buildScopedPath } = useScope()
   const sortInteractionStartRef = useRef<number | null>(null)
 
   const { portal: headerTipPortal, show: showHeaderTip, scheduleHide: scheduleHeaderTipHide, hide: hideHeaderTip } =
@@ -780,7 +783,12 @@ export function MatrixTable({
                         key={row.id}
                         onClick={() =>
                           navigate(
-                            `/player/${row.original.canonical_player_id}?competition=${encodeURIComponent(row.original.competition_code)}&season=${encodeURIComponent(row.original.season_label)}`,
+                            buildScopedPath(
+                              withPlayerProfileSlice(`/player/${row.original.canonical_player_id}`, {
+                                competition: row.original.competition_code,
+                                season: row.original.season_label,
+                              }),
+                            ),
                           )
                         }
                         className="group cursor-pointer"

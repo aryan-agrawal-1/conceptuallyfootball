@@ -11,6 +11,7 @@ import { useScope, type Scope } from '../../context/ScopeContext'
 import type { SearchPlayerEntity, SearchTeamEntity } from '../../types/api'
 import { HudCornerMarks } from '../hud/Hud'
 import { membershipPriority } from '../../lib/scopeMembership'
+import { withPlayerProfileSlice } from '../../lib/playerProfileUrl'
 
 const DEFAULT_VISIBLE = 5
 const SEARCH_VISIBLE_LIMIT = 12
@@ -179,9 +180,13 @@ export function CommandPalette({
     globalPlayers.length + globalTeams.length > 0
 
   const handleSelectPlayer = (entity: SearchPlayerEntity) => {
-    const nextScope = resolveEntityScope(entity.memberships, scope)
+    const membership = resolveEntityMembership(entity.memberships, scope)
     handleOpenChange(false)
-    navigate(buildScopedPath(`/player/${entity.canonical_player_id}`, nextScope ?? undefined))
+    navigate(
+      buildScopedPath(
+        withPlayerProfileSlice(`/player/${entity.canonical_player_id}`, membership),
+      ),
+    )
   }
 
   const handleSelectTeam = (entity: SearchTeamEntity) => {

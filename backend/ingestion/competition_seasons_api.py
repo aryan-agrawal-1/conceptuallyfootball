@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections import OrderedDict
 
 from rest_framework.views import APIView
@@ -10,36 +11,35 @@ from ingestion.derived_definitions import CORE_METRIC_MIN_COVERAGE, STYLE_METRIC
 from ingestion.models import Competition, CompetitionSeason, CompetitionType
 from ingestion.services.season_labels import season_label_aliases
 
-COMPETITION_ORDER = {
-    "ENG1": 0,
-    "GER1": 1,
-    "GER2": 2,
-    "GER3": 3,
-    "SPA1": 4,
-    "FRA1": 5,
-    "ITA1": 6,
-    "SCO1": 7,
-    "BEL1": 8,
-    "NED1": 9,
-    "POR1": 10,
-    "ENG2": 11,
-    "TUR1": 12,
-    "POL1": 13,
-    "CZE1": 14,
-    "DEN1": 15,
-    "GRE1": 16,
-    "CYP1": 17,
-    "NOR1": 18,
-    "EST1": 19,
-    "BEL2": 20,
-    "FRA2": 21,
-    "FRA3": 22,
-    "SCO2": 23,
-    "SWE1": 24,
-    "UCL": 30,
-    "UEL": 31,
-    "UECL": 32,
+DOMESTIC_COUNTRY_ORDER = ("england", "germany", "spain", "italy", "france", "scotland")
+DOMESTIC_COUNTRY_RANK = {
+    country: rank for rank, country in enumerate(DOMESTIC_COUNTRY_ORDER)
 }
+UEFA_COMPETITION_ORDER = {"UCL": 0, "UEL": 1, "UECL": 2}
+CATALOG_CONTRACT_VERSION = "country-tier-order-v1"
+
+
+def _normalized_country(country: str) -> str:
+    return " ".join(country.split()).casefold()
+
+
+def _competition_tier(code: str) -> int:
+    """Return the numeric division in a provider competition code, if present."""
+    match = re.search(r"(\d+)$", code)
+    return int(match.group(1)) if match else 999
+
+
+def _competition_catalog_order_key(competition: Competition) -> tuple:
+    """Keep picker groups stable without relying on seed or database insertion order."""
+    code = competition.short_code.upper()
+    if competition.competition_type == CompetitionType.CONTINENTAL_CUP:
+        return (1, UEFA_COMPETITION_ORDER.get(code, 999), code.casefold(), code)
+
+    country = _normalized_country(competition.country)
+    country_rank = DOMESTIC_COUNTRY_RANK.get(country, len(DOMESTIC_COUNTRY_RANK))
+    # The country name is deliberately included after the preferred-country rank so
+    # new domestic countries sort predictably, while all divisions remain adjacent.
+    return (0, country_rank, country, _competition_tier(code), code.casefold(), code)
 
 
 def _aggregate_metric_availability(items):
@@ -136,6 +136,7 @@ class CompetitionSeasonsCatalogApi(APIView):
         cache_key = stable_cache_key("competition-seasons", {"path": request.path})
         source_version = joined_version(
             "competition-seasons",
+            CATALOG_CONTRACT_VERSION,
             model_version(Competition),
             model_version(CompetitionSeason),
         )
@@ -156,7 +157,7 @@ class CompetitionSeasonsCatalogApi(APIView):
         rows = sorted(
             rows,
             key=lambda cs: (
-                COMPETITION_ORDER.get(cs.competition.short_code, 100),
+                _competition_catalog_order_key(cs.competition),
                 -cs.season.sort_order,
                 cs.season.label,
             ),

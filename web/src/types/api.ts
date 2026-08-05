@@ -205,6 +205,13 @@ export interface PlayerDetailResponse extends PlayerRow {
   sections?: ProfileSectionsPayload
   profile_distributions?: ProfileDistributionPayload
   scope_profile_distributions?: ProfileDistributionPayload
+  /** Explicit comparison cohort selected with `comparison_scope`. */
+  comparison_scope?: string | null
+  comparison_source_competition?: string | null
+  comparison_available_scopes?: string[]
+  comparison_percentiles?: Record<string, number | null>
+  comparison_profile_distributions?: ProfileDistributionPayload
+  comparison_eligibility?: Eligibility
 }
 
 interface ProfileSectionsPayload {

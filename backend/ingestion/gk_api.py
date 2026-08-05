@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import QuerySet
 from rest_framework import status
@@ -31,6 +33,11 @@ from ingestion.gk_definitions import (
 )
 from ingestion.derived_api import _resolve_competition_scope
 from ingestion.models import CanonicalTeam, CompetitionSeason, PlayerSeasonGkDerivedStats
+from ingestion.profile_modes import (
+    comparison_source_code,
+    comparison_scope_options,
+    resolved_comparison_scope,
+)
 from ingestion.profile_distributions import (
     PROFILE_DISTRIBUTION_CACHE_VERSION,
     build_profile_distributions,
@@ -213,6 +220,82 @@ def _attach_scope_percentiles(payload: dict, row: PlayerSeasonGkDerivedStats, sc
     payload["scope_percentiles"] = scope_payload.get(row.id, {metric: None for metric in GK_METRIC_FIELDS})
 
 
+def _attach_gk_comparison_context(
+    request,
+    *,
+    payload: dict,
+    selected_season: CompetitionSeason,
+    canonical_player_id: int,
+) -> None:
+    available, source_code = comparison_scope_options(
+        selected=selected_season,
+        canonical_player_id=canonical_player_id,
+        row_model=PlayerSeasonGkDerivedStats,
+    )
+    comparison_scope = resolved_comparison_scope(
+        request.query_params.get("comparison_scope"),
+        available,
+    )
+    payload["comparison_available_scopes"] = available
+    payload["comparison_scope"] = comparison_scope
+    payload["comparison_source_competition"] = comparison_source_code(
+        selected=selected_season,
+        canonical_player_id=canonical_player_id,
+        row_model=PlayerSeasonGkDerivedStats,
+        comparison_scope=comparison_scope,
+        default_code=source_code,
+    )
+    if comparison_scope is None:
+        payload["comparison_percentiles"] = {metric: None for metric in GK_METRIC_FIELDS}
+        payload["comparison_eligibility"] = {
+            "minimum_eligible_minutes": None,
+            "percentiles_eligible": False,
+            "percentiles_ineligibility_reason": "comparison_cohort_unavailable",
+            "scores_eligible": False,
+            "scores_ineligibility_reason": "goalkeeper_matrix",
+        }
+        return
+
+    scope_seasons = resolve_scope_seasons(comparison_scope, selected_season.season.label)
+    minimum = scope_minimum_eligible_minutes(scope_seasons)
+    eligible = bool(payload.get("minutes")) and payload["minutes"] >= minimum
+    reason = None if eligible else "below_minutes_threshold"
+    proxy = SimpleNamespace(
+        id=-canonical_player_id,
+        percentiles_eligible=eligible,
+        **payload["metrics"],
+    )
+    scope_queryset = _base_queryset_for_seasons(scope_seasons)
+    percentiles = build_scope_percentiles(
+        scope_queryset=scope_queryset,
+        rows=[proxy],
+        metric_fields=GK_METRIC_FIELDS,
+        percentile_metric_fields=GK_METRICS_WITH_PERCENTILE,
+    )
+    payload["comparison_percentiles"] = percentiles[proxy.id]
+    payload["comparison_eligibility"] = {
+        "minimum_eligible_minutes": minimum,
+        "percentiles_eligible": eligible,
+        "percentiles_ineligibility_reason": reason,
+        "scores_eligible": False,
+        "scores_ineligibility_reason": "goalkeeper_matrix",
+    }
+    if _requested_profile_distributions(request):
+        payload["comparison_profile_distributions"] = {
+            **build_profile_distributions(
+                scope_queryset=scope_queryset,
+                row=proxy,
+                metric_fields=GK_METRIC_FIELDS,
+                percentile_metric_fields=GK_METRICS_WITH_PERCENTILE,
+            ),
+            "context": scope_context(
+                comparison_scope,
+                selected_season.season.label,
+                scope_seasons,
+            ),
+        }
+
+
 class GkDerivedPlayerSeasonListApi(APIView):
     def get(self, request):
         cache_key = stable_cache_key(
@@ -230,6 +313,7 @@ class GkDerivedPlayerSeasonListApi(APIView):
                         "sort",
                         "include",
                         "percentile_scope",
+                        "comparison_scope",
                     },
                 ),
             },
@@ -239,6 +323,7 @@ class GkDerivedPlayerSeasonListApi(APIView):
             METRIC_META_CACHE_VERSION,
             SCOPE_PERCENTILES_CACHE_VERSION,
             model_version(PlayerSeasonGkDerivedStats, {"is_current": True}),
+            model_version(CompetitionSeason),
         )
         try:
             response, _ = get_or_build_payload_response(
@@ -310,6 +395,7 @@ class GkDerivedPlayerSeasonDetailApi(APIView):
                         "season",
                         "include",
                         "percentile_scope",
+                        "comparison_scope",
                     },
                 ),
             },
@@ -320,6 +406,7 @@ class GkDerivedPlayerSeasonDetailApi(APIView):
             PROFILE_DISTRIBUTION_CACHE_VERSION,
             SCOPE_PERCENTILES_CACHE_VERSION,
             model_version(PlayerSeasonGkDerivedStats, {"is_current": True}),
+            model_version(CompetitionSeason),
         )
         try:
             payload, _ = get_or_build_payload(
@@ -393,6 +480,12 @@ class GkDerivedPlayerSeasonDetailApi(APIView):
                         scope_seasons,
                     ),
                 }
+        _attach_gk_comparison_context(
+            request,
+            payload=payload,
+            selected_season=competition_season,
+            canonical_player_id=canonical_player_id,
+        )
         if _requested_meta(request):
             payload["meta"] = _gk_meta_payload([competition_season])
         return payload

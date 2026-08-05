@@ -80,20 +80,47 @@ const PROFILE_EXPORT_BASE_DIMENSIONS: Record<
   landscape: { width: 1600, height: 900 },
 }
 
-function profileExportDimensions(preset: ProfileExportPreset): { width: number; height: number } {
+interface ProfileExportLayout {
+  width: number
+  height: number
+  chartScale: number
+  chartPanelHeight: number
+}
+
+/**
+ * Orientation is a layout mode, not a permanent aspect-ratio lock. Width stays
+ * fixed for a predictable export policy; height reserves the complete 760px
+ * chart surface when present, with one bounded increment for lower content.
+ * Similar players alone therefore use the base card rather than enlarging it.
+ */
+function profileExportLayout(preset: ProfileExportPreset): ProfileExportLayout {
   const base = PROFILE_EXPORT_BASE_DIMENSIONS[preset.orientation]
-  const lowerPanelCount = Number(preset.notesEnabled) + Number(preset.similarEnabled)
-  const growth =
-    lowerPanelCount === 2 || preset.similarEnabled
-      ? 1.45
-      : lowerPanelCount === 1
-        ? 1.35
-        : preset.orientation === 'landscape' && preset.chartEnabled
-          ? 1.08
-          : 1
+  const hasLowerPanel = preset.notesEnabled || preset.similarEnabled
+  const hasDistribution = preset.chartEnabled && preset.distributionEnabled
+  const chartScale = preset.orientation === 'landscape'
+    ? hasDistribution ? 0.7 : 0.72
+    : 1.06
+
+  if (!preset.chartEnabled) {
+    return { ...base, chartScale, chartPanelHeight: 0 }
+  }
+
+  if (preset.orientation === 'portrait') {
+    return {
+      width: base.width,
+      height: hasLowerPanel ? 1770 : 1450,
+      chartScale,
+      // 760px chart × 1.06 plus heading, raw-profile text, and label-safe insets.
+      chartPanelHeight: 920,
+    }
+  }
+
   return {
-    width: Math.round(base.width * growth),
-    height: Math.round(base.height * growth),
+    width: base.width,
+    height: hasLowerPanel ? 1280 : hasDistribution ? 1040 : 1000,
+    chartScale,
+    // Landscape charts are smaller, but retain title and SVG-label breathing room.
+    chartPanelHeight: 616,
   }
 }
 
@@ -128,8 +155,8 @@ const THEME_LABEL: Record<ProfileExportTheme, string> = {
 }
 
 const ORIENTATION_LABEL: Record<ProfileExportOrientation, string> = {
-  portrait: 'Portrait 4:5',
-  landscape: 'Landscape 16:9',
+  portrait: 'Portrait',
+  landscape: 'Landscape',
 }
 
 function layoutStatCap(): number {
@@ -246,6 +273,7 @@ export function PlayerProfileExportModal({
   const notesInvalid = preset.notesEnabled && notes.length > noteMax
   const distributionInvalid =
     preset.distributionEnabled && (!preset.chartEnabled || !distributions)
+  const similarInvalid = preset.similarEnabled && (similarIsLoading || similarIsError)
   const invalidReason = overCap
     ? `This layout supports up to ${statCap} stat tiles. Remove ${validTiles.length - statCap} to export.`
     : underMin
@@ -254,9 +282,13 @@ export function PlayerProfileExportModal({
         ? `Select at least ${PIZZA_SLICE_MIN} available profile chart axes.`
         : distributionInvalid
           ? 'Distribution export requires an available profile chart cohort.'
-          : notesInvalid
-            ? `Notes must be ${noteMax} characters or fewer for this layout.`
-            : null
+          : similarInvalid
+            ? similarIsLoading
+              ? 'Similar players are still loading for the selected comparison cohort.'
+              : 'Similar players are unavailable for the selected comparison cohort.'
+            : notesInvalid
+              ? `Notes must be ${noteMax} characters or fewer for this layout.`
+              : null
   const canExport = !invalidReason && !busy
 
   const fileName = pngFileName(
@@ -667,7 +699,7 @@ function ExportSurfacePreview({
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(0.4)
-  const dimensions = profileExportDimensions(preset)
+  const layout = profileExportLayout(preset)
 
   useEffect(() => {
     const container = containerRef.current
@@ -678,29 +710,29 @@ function ExportSurfacePreview({
       const width = observedContainer.clientWidth
       const height = observedContainer.clientHeight
       if (!width || !height) return
-      setScale(Math.min(1, width / dimensions.width, height / dimensions.height))
+      setScale(Math.min(1, width / layout.width, height / layout.height))
     }
 
     fitSurface()
     const observer = new ResizeObserver(fitSurface)
     observer.observe(observedContainer)
     return () => observer.disconnect()
-  }, [dimensions.height, dimensions.width])
+  }, [layout.height, layout.width])
 
   return (
     <div ref={containerRef} className="flex min-h-full w-full items-start justify-center">
       <div
         className="relative shrink-0"
         style={{
-          width: dimensions.width * scale,
-          height: dimensions.height * scale,
+          width: layout.width * scale,
+          height: layout.height * scale,
         }}
       >
         <div
           className="absolute left-0 top-0"
           style={{
-            width: dimensions.width,
-            height: dimensions.height,
+            width: layout.width,
+            height: layout.height,
             transform: `scale(${scale})`,
             transformOrigin: 'top left',
           }}
@@ -917,29 +949,21 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
   const theme = surfaceTheme(preset.theme)
   const orientation = preset.orientation
   const isLandscape = orientation === 'landscape'
-  const dimensions = profileExportDimensions(preset)
+  const layout = profileExportLayout(preset)
   const hasLowerPanel = preset.notesEnabled || preset.similarEnabled
   const hasDistribution = Boolean(
     preset.chartEnabled && preset.distributionEnabled && distributions,
   )
   const hasSupplement = preset.chartEnabled || hasLowerPanel
-  const chartScale = isLandscape
-    ? hasDistribution ? 0.7 : 0.72
-    : 1.06
-  const chartViewportSize = 760 * chartScale
-  const chartPanelHeight = chartViewportSize + (isLandscape ? 72 : 80)
-  const supplementRows =
-    preset.chartEnabled && hasLowerPanel
-      ? `${chartPanelHeight}px minmax(0, 1fr)`
-      : 'auto'
+  const chartViewportSize = 760 * layout.chartScale
 
   return (
     <div
       ref={ref}
       className="relative overflow-hidden font-sans"
       style={{
-        width: dimensions.width,
-        height: dimensions.height,
+        width: layout.width,
+        height: layout.height,
         background: theme.background,
         color: theme.text,
       }}
@@ -1045,8 +1069,10 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
           <section
             className={cn(
               'grid gap-4',
-              hasSupplement
+              preset.chartEnabled
                 ? 'shrink-0 grid-cols-4'
+                : hasLowerPanel
+                  ? isLandscape ? 'shrink-0 grid-cols-4' : 'shrink-0 grid-cols-2'
                 : isLandscape
                   ? 'min-h-0 flex-1 grid-cols-4 auto-rows-fr'
                   : 'min-h-0 flex-1 grid-cols-2 auto-rows-fr',
@@ -1059,7 +1085,7 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
                 theme={preset.theme}
                 showPercentile={preset.showPercentiles && !rawOnly}
                 semanticColor={metricSemanticColor(meta.metrics[tile.key])}
-                compact={hasSupplement}
+                compact={preset.chartEnabled}
                 landscape={isLandscape}
               />
             ))}
@@ -1068,29 +1094,29 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
           {hasSupplement && (
             <div
               className={cn(
-                'grid min-h-0 flex-1',
+                'flex shrink-0 flex-col',
                 isLandscape ? 'gap-[18px]' : 'gap-6',
               )}
-              style={{ gridTemplateRows: supplementRows }}
             >
               {preset.chartEnabled && (
                 <div
                   className={cn(
-                    'grid min-h-0',
+                    'grid shrink-0',
                     isLandscape ? 'gap-[18px]' : 'gap-6',
                     hasDistribution ? 'grid-cols-2' : 'grid-cols-1',
                   )}
+                  style={{ height: layout.chartPanelHeight }}
                 >
                   <section
                     data-export-section="profile-chart"
                     className={cn(
-                      'relative grid min-h-0 place-items-center overflow-hidden border',
-                      isLandscape ? 'px-3 py-3' : 'px-4 py-5',
+                      'relative grid h-full place-items-center overflow-visible border',
+                      isLandscape ? 'px-4 py-4' : 'px-5 py-7',
                     )}
                     style={{ borderColor: theme.border, background: theme.panel }}
                   >
                     {preset.theme === 'conceptually-football' && <HudCornerMarks size="size-4" />}
-                    <div className="flex min-h-0 flex-col items-center">
+                    <div className="flex shrink-0 flex-col items-center">
                       <p
                         style={{ color: theme.accent }}
                         className={cn(
@@ -1114,7 +1140,7 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
                           style={{
                             width: 760,
                             height: 760,
-                            transform: `scale(${chartScale})`,
+                            transform: `scale(${layout.chartScale})`,
                             transformOrigin: 'top left',
                           }}
                         >
@@ -1178,7 +1204,7 @@ const PlayerProfileExportSurface = forwardRef<HTMLDivElement, PlayerProfileExpor
               {hasLowerPanel && (
                 <div
                   className={cn(
-                    'grid min-h-0',
+                    'grid shrink-0 items-start',
                     isLandscape ? 'gap-[18px]' : 'gap-6',
                     preset.notesEnabled && preset.similarEnabled ? 'grid-cols-2' : 'grid-cols-1',
                   )}

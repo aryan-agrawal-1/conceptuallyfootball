@@ -35,6 +35,7 @@ import { ProfileEligibilityBanner } from '../components/profile/ProfileEligibili
 import { ChartShareCard } from '../components/visualizer/ChartShareCard'
 import { scopeIncludesMembership } from '../lib/scopeMembership'
 import { playerNameTitle, shortPlayerName } from '../lib/entityLabels'
+import { withPlayerProfileSlice } from '../lib/playerProfileUrl'
 
 const POSITION_COHORT_LABEL: Record<PositionGroup, string> = {
   FWD: 'Forwards',
@@ -476,7 +477,12 @@ export function Comparisons() {
                         <div className="flex items-start justify-between gap-2 mb-1">
                           <div className="min-w-0">
                             <Link
-                              to={buildScopedPath(`/player/${ref.id}`, { competition: ref.competition, season: ref.season })}
+                              to={buildScopedPath(
+                                withPlayerProfileSlice(`/player/${ref.id}`, {
+                                  competition: ref.competition,
+                                  season: ref.season,
+                                }),
+                              )}
                               className="text-[13px] font-semibold text-ink truncate block hover:text-electric/90 hover:underline"
                               title={playerNameTitle(label)}
                             >

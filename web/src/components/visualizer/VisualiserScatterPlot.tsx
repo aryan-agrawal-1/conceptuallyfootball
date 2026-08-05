@@ -33,6 +33,8 @@ export interface VisualiserScatterDatum {
   xText: string
   yText: string
   tieBreak?: number
+  profileCompetition?: string
+  profileSeason?: string
   highlighted?: boolean
 }
 
