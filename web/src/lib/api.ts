@@ -5,6 +5,7 @@ import type {
   MatrixFilters,
   MatrixResponse,
   PlayerDetailResponse,
+  ProfileMode,
   RegressionLabFitResponse,
   SearchEntitiesResponse,
   TeamDetailResponse,
@@ -62,13 +63,20 @@ export async function fetchGkStatMatrix(
  */
 export async function fetchPlayerDetail(
   playerId: number,
-  filters: Pick<MatrixFilters, 'competition' | 'season'> & { include?: string; percentile_scope?: string },
+  filters: Pick<MatrixFilters, 'competition' | 'season'> & {
+    include?: string
+    percentile_scope?: string
+    comparison_scope?: string
+    mode?: ProfileMode
+  },
 ): Promise<PlayerDetailResponse> {
   const p = new URLSearchParams()
   p.set('competition', filters.competition)
   p.set('season', filters.season)
   if (filters.include) p.set('include', filters.include)
   if (filters.percentile_scope) p.set('percentile_scope', filters.percentile_scope)
+  if (filters.comparison_scope) p.set('comparison_scope', filters.comparison_scope)
+  if (filters.mode) p.set('mode', filters.mode)
   const q = p.toString()
   const outfieldUrl = `${BASE}/player-seasons/derived-stats/${playerId}?${q}`
   // Detail payloads can carry scope percentiles. Force HTTP-cache revalidation so
@@ -92,12 +100,13 @@ export async function fetchPlayerDetail(
 
 export async function fetchTeamDetail(
   canonicalTeamId: number,
-  filters: Pick<MatrixFilters, 'competition' | 'season'> & { include?: string },
+  filters: Pick<MatrixFilters, 'competition' | 'season'> & { include?: string; mode?: ProfileMode },
 ): Promise<TeamDetailResponse> {
   const p = new URLSearchParams()
   p.set('competition', filters.competition)
   p.set('season', filters.season)
   if (filters.include) p.set('include', filters.include)
+  if (filters.mode) p.set('mode', filters.mode)
   const res = await fetch(
     `${BASE}/team-seasons/stats/${canonicalTeamId}?${p.toString()}`,
   )
@@ -192,11 +201,15 @@ export async function fetchGalaxySimilarForPlayer(
   playerId: number,
   competition: string,
   season: string,
+  comparisonScope?: string,
+  mode?: ProfileMode,
 ): Promise<GalaxySimilarResponse> {
   const p = new URLSearchParams()
   p.set('competition', competition)
   p.set('season', season)
   p.set('player', String(playerId))
+  if (comparisonScope) p.set('comparison_scope', comparisonScope)
+  if (mode) p.set('mode', mode)
   const res = await fetch(`${BASE}/galaxy/similar?${p}`)
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))

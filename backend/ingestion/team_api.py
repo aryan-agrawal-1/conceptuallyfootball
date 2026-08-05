@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Sum
 from rest_framework import status
@@ -15,7 +17,13 @@ from ingestion.api_cache import (
     stable_cache_key,
 )
 from ingestion.derived_api import _resolve_competition_scope, _resolve_competition_season
-from ingestion.models import CanonicalTeam, MergedPlayerSeason, MergedTeamSeason
+from ingestion.models import CanonicalTeam, CompetitionSeason, MergedPlayerSeason, MergedTeamSeason
+from ingestion.profile_modes import (
+    available_profile_modes,
+    profile_component_seasons,
+    requested_profile_mode,
+    resolved_profile_mode,
+)
 from ingestion.team_definitions import (
     MERGED_TEAM_SEASON_STAT_FIELDS,
     TEAM_STAT_DIRECTION,
@@ -200,6 +208,79 @@ def _stat_values_for_team_row(
     return out
 
 
+TEAM_PERCENTAGE_BASES = {
+    "accurate_passes_percentage": ("accurate_passes", "total_passes"),
+    "accurate_long_balls_percentage": ("accurate_long_balls", "total_long_balls"),
+    "accurate_crosses_percentage": ("accurate_crosses", "total_crosses"),
+}
+
+TEAM_RECONSTRUCTED_PERCENTAGE_BASES = {
+    "duels_won_percentage": "duels_won",
+    "aerial_duels_won_percentage": "aerial_duels_won",
+    "ground_duels_won_percentage": "ground_duels_won",
+}
+
+
+def _aggregate_team_stats(rows: list[MergedTeamSeason]) -> dict[str, object]:
+    """Aggregate counts; calculate percentages only from their source totals."""
+    component_stats = [
+        _stat_values_for_team_row(
+            row,
+            _squad_us_xg_xa_by_team(row.competition_season_id),
+        )
+        for row in rows
+    ]
+    stats: dict[str, object] = {}
+    for field in MERGED_TEAM_SEASON_STAT_FIELDS:
+        if field == "rank" or field == "average_ball_possession" or field.endswith("_percentage"):
+            stats[field] = None
+        else:
+            values = [component[field] for component in component_stats]
+            stats[field] = None if any(value is None for value in values) else sum(values)
+    if stats["goals_for"] is not None and stats["goals_against"] is not None:
+        stats["goal_difference"] = stats["goals_for"] - stats["goals_against"]
+    for field, (numerator, denominator) in TEAM_PERCENTAGE_BASES.items():
+        num, denom = stats[numerator], stats[denominator]
+        stats[field] = None if num is None or denom is None or denom <= 0 else float(num) / float(denom) * 100.0
+    for field, numerator in TEAM_RECONSTRUCTED_PERCENTAGE_BASES.items():
+        attempts = 0.0
+        for component in component_stats:
+            won = component[numerator]
+            percentage = component[field]
+            if won is None or percentage is None or percentage <= 0:
+                attempts = -1.0
+                break
+            attempts += float(won) / (float(percentage) / 100.0)
+        stats[field] = (
+            None
+            if stats[numerator] is None or attempts <= 0
+            else float(stats[numerator]) / attempts * 100.0
+        )
+    possession_parts = [
+        (component["average_ball_possession"], component["matches"])
+        for component in component_stats
+    ]
+    if all(value is not None and matches is not None for value, matches in possession_parts):
+        total_matches = sum(float(matches) for _, matches in possession_parts)
+        stats["average_ball_possession"] = (
+            None
+            if total_matches <= 0
+            else sum(float(value) * float(matches) for value, matches in possession_parts) / total_matches
+        )
+    return stats
+
+
+def _team_component_payload(row: MergedTeamSeason) -> dict:
+    return {
+        "competition_season": row.competition_season_id,
+        "competition_code": row.competition_season.competition.short_code,
+        "competition_type": row.competition_season.competition.competition_type,
+        "season_label": row.competition_season.season.label,
+        "canonical_team_id": row.canonical_team_id,
+        "canonical_team_name": row.canonical_team.name,
+    }
+
+
 class TeamSeasonDetailApi(APIView):
     """
     Public: merged team-season stats for one canonical team + league ranks (season + per-match).
@@ -214,7 +295,7 @@ class TeamSeasonDetailApi(APIView):
                 "team": canonical_team_id,
                 "query": canonical_query_params(
                     request,
-                    include={"competition_season", "competition", "season", "include"},
+                    include={"competition_season", "competition", "season", "include", "mode"},
                 ),
             },
         )
@@ -222,6 +303,7 @@ class TeamSeasonDetailApi(APIView):
             "team-season-detail",
             model_version(MergedTeamSeason, {"is_current": True}),
             model_version(MergedPlayerSeason, {"is_current": True}),
+            model_version(CompetitionSeason),
         )
         try:
             payload, _ = get_or_build_payload(
@@ -243,6 +325,10 @@ class TeamSeasonDetailApi(APIView):
 
         if not CanonicalTeam.objects.filter(pk=canonical_team_id).exists():
             raise MergedTeamSeason.DoesNotExist("Team not found.")
+
+        mode = requested_profile_mode(request)
+        if mode is not None:
+            return self._build_mode_payload(competition_season, canonical_team_id, mode, request)
 
         league_rows = list(
             MergedTeamSeason.objects.filter(
@@ -278,6 +364,66 @@ class TeamSeasonDetailApi(APIView):
             "ranks": ranks,
             "ranks_per_match": ranks_per_match,
             "sections": team_sections_for_row(row, ranks, ranks_per_match, stat_values),
+        }
+        if _requested_meta(request):
+            payload["meta"] = team_meta_payload()
+        return payload
+
+    def _build_mode_payload(self, selected_season, canonical_team_id: int, requested_mode: str, request) -> dict:
+        seasons = profile_component_seasons(selected_season, "combined")
+        rows = list(
+            MergedTeamSeason.objects.filter(
+                competition_season__in=seasons,
+                canonical_team_id=canonical_team_id,
+                is_current=True,
+            ).select_related("canonical_team", "competition_season__competition", "competition_season__season")
+            .order_by("competition_season__competition__short_code", "competition_season_id")
+        )
+        domestic = [r for r in rows if r.competition_season.competition.competition_type == "domestic_league"]
+        europe = [r for r in rows if r.competition_season.competition.competition_type == "continental_cup"]
+        available = available_profile_modes(has_domestic=bool(domestic), has_europe=bool(europe))
+        mode = resolved_profile_mode(requested_mode, available)
+        selected_rows = domestic if mode == "domestic" else europe if mode == "europe" else rows
+        components = [_team_component_payload(row) for row in selected_rows]
+
+        # A single concrete slice retains its established competition context
+        # and ranks. Aggregate modes deliberately do not invent a cohort.
+        if len(selected_rows) == 1:
+            row = selected_rows[0]
+            league_rows = list(MergedTeamSeason.objects.filter(competition_season=row.competition_season, is_current=True))
+            squad_sums = _squad_us_xg_xa_by_team(row.competition_season_id)
+            rank_maps = _build_all_ranks(league_rows, per_match=False, squad_sums=squad_sums)
+            rank_maps_pm = _build_all_ranks(league_rows, per_match=True, squad_sums=squad_sums)
+            stat_values = _stat_values_for_team_row(row, squad_sums)
+            ranks = {key: rank_maps[key].get(canonical_team_id) for key in MERGED_TEAM_SEASON_STAT_FIELDS}
+            ranks_pm = {key: rank_maps_pm[key].get(canonical_team_id) for key in MERGED_TEAM_SEASON_STAT_FIELDS}
+            team_name = row.canonical_team.name
+        else:
+            stat_values = _aggregate_team_stats(selected_rows)
+            ranks = {key: None for key in MERGED_TEAM_SEASON_STAT_FIELDS}
+            ranks_pm = {key: None for key in MERGED_TEAM_SEASON_STAT_FIELDS}
+            team_name = rows[0].canonical_team.name
+
+        if mode == "combined":
+            # There is no combined league table or points/rank cohort.
+            stat_values["rank"] = None
+            stat_values["points"] = None
+            ranks = {key: None for key in MERGED_TEAM_SEASON_STAT_FIELDS}
+            ranks_pm = {key: None for key in MERGED_TEAM_SEASON_STAT_FIELDS}
+
+        payload = {
+            "canonical_team_id": canonical_team_id,
+            "canonical_team_name": team_name,
+            "competition_season": selected_season.id,
+            "competition_code": selected_season.competition.short_code,
+            "season_label": selected_season.season.label,
+            "mode": mode,
+            "available_modes": available,
+            "components": components,
+            "stats": stat_values,
+            "ranks": ranks,
+            "ranks_per_match": ranks_pm,
+            "sections": team_sections_for_row(SimpleNamespace(**stat_values), ranks, ranks_pm, stat_values),
         }
         if _requested_meta(request):
             payload["meta"] = team_meta_payload()

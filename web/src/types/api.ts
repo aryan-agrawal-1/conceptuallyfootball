@@ -157,6 +157,20 @@ export interface ProfileDistributionPayload {
   metrics: Record<string, ProfileMetricDistribution>
 }
 
+export type ProfileMode = 'domestic' | 'europe' | 'combined'
+
+/** A source competition contributing to a domestic, European, or combined profile. */
+export interface ProfileModeComponent {
+  competition_season: number
+  competition_code: string
+  season_label: string
+  competition_type: 'domestic_league' | 'continental_cup'
+  canonical_team_id: number | null
+  canonical_team_name: string | null
+  minutes?: number | null
+  metrics?: Record<string, number | null>
+}
+
 export interface MetricDefinition {
   label: string
   group: string
@@ -205,6 +219,17 @@ export interface PlayerDetailResponse extends PlayerRow {
   sections?: ProfileSectionsPayload
   profile_distributions?: ProfileDistributionPayload
   scope_profile_distributions?: ProfileDistributionPayload
+  /** Selected performance view. Values are calculated by the API, never by the client. */
+  mode?: ProfileMode
+  available_modes?: ProfileMode[]
+  components?: ProfileModeComponent[]
+  /** Explicit comparison cohort selected with `comparison_scope`. */
+  comparison_scope?: string | null
+  comparison_source_competition?: string | null
+  comparison_available_scopes?: string[]
+  comparison_percentiles?: Record<string, number | null>
+  comparison_profile_distributions?: ProfileDistributionPayload
+  comparison_eligibility?: Eligibility
 }
 
 interface ProfileSectionsPayload {
@@ -372,6 +397,9 @@ export interface TeamDetailResponse {
     }
   >
   meta?: TeamStatMeta
+  mode?: ProfileMode
+  available_modes?: ProfileMode[]
+  components?: ProfileModeComponent[]
 }
 
 export interface TeamSeasonRow {

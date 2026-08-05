@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, AlertCircle, FileImage } from 'lucide-react'
 import { fetchGalaxySimilarForPlayer, fetchPlayerDetail } from '../lib/api'
-import type { PlayerDetailResponse, SecondaryTeamBadge } from '../types/api'
+import type { PlayerDetailResponse, ProfileMode, SecondaryTeamBadge } from '../types/api'
 import { useScope, type Scope } from '../context/ScopeContext'
 import { useSearchPaletteIndex } from '../hooks/useSearchPaletteIndex'
 import { ProfileBreadcrumb } from '../components/profile/ProfileBreadcrumb'
@@ -34,12 +34,24 @@ const POSITION_COHORT_LABEL: Record<PositionGroup, string> = {
   UNK: 'players',
 }
 
-type ProfilePercentileMode = 'league' | 'scope'
-
-function aggregateScopeLabel(code: string): string {
+function comparisonScopeLabel(code: string): string {
   if (code === 'BIG5') return 'Big 5'
   if (code === 'ALL') return 'All'
   return code
+}
+
+const PROFILE_MODES: Array<{ value: ProfileMode; label: string }> = [
+  { value: 'domestic', label: 'Domestic' },
+  { value: 'europe', label: 'Europe' },
+  { value: 'combined', label: 'Combined' },
+]
+
+function isProfileMode(value: string | null): value is ProfileMode {
+  return value === 'domestic' || value === 'europe' || value === 'combined'
+}
+
+function resolveProfileMode(value: string | null): ProfileMode {
+  return isProfileMode(value) ? value : 'domestic'
 }
 
 function FormerClubsNote({
@@ -98,9 +110,10 @@ export function PlayerProfile() {
     setSearchParams(previous => withProfileSliceParams(previous, profileSlice), { replace: true })
   }, [profileSlice, searchParams, setSearchParams])
 
-  const isAggregateScope = scope.competition === 'BIG5' || scope.competition === 'ALL'
   const detailCompetition = profileSlice?.competition
   const detailSeason = profileSlice?.season
+  const requestedMode = resolveProfileMode(searchParams.get('profileMode'))
+  const requestedComparisonScope = searchParams.get('comparisonScope') ?? undefined
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: [
@@ -108,16 +121,16 @@ export function PlayerProfile() {
       id,
       detailCompetition,
       detailSeason,
-      isAggregateScope ? scope.competition : null,
+      requestedMode,
+      requestedComparisonScope,
     ],
     queryFn: () =>
       fetchPlayerDetail(Number(id), {
         competition: detailCompetition!,
         season: detailSeason!,
-        include: isAggregateScope
-          ? 'meta,scope_percentiles,profile_distributions'
-          : 'meta,profile_distributions',
-        percentile_scope: isAggregateScope ? scope.competition : undefined,
+        include: 'meta,profile_distributions',
+        mode: requestedMode,
+        comparison_scope: requestedComparisonScope,
       }),
     enabled: !!id && detailCompetition != null && detailSeason != null,
   })
@@ -174,10 +187,9 @@ function ProfileLayout({
   profileSlice: ProfileSlice | undefined
 }) {
   const [rateMode, setRateMode] = useState<ProfileRateMode>('per90')
-  const [percentileMode, setPercentileMode] = useState<ProfilePercentileMode>('league')
   const [exportOpen, setExportOpen] = useState(false)
   const { scope, buildScopedPath } = useScope()
-  const [, setSearchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const setProfileSlice = (requested: Partial<ProfileSlice>) => {
     const next = resolveProfileSlice(memberships, scope, requested)
@@ -191,29 +203,79 @@ function ProfileLayout({
     canonicalPath: `/player/${player.canonical_player_id}`,
   })
 
-  const showLowSampleBanner = !player.eligibility.percentiles_eligible
-  const isAggregateScope = scope.competition === 'BIG5' || scope.competition === 'ALL'
-  const canUseScopePercentiles = isAggregateScope && player.scope_percentiles != null
-  const activePercentileMap =
-    percentileMode === 'scope' && canUseScopePercentiles ? player.scope_percentiles ?? {} : player.percentiles
-  const activeDistributions =
-    percentileMode === 'scope' && canUseScopePercentiles
-      ? player.scope_profile_distributions
-      : player.profile_distributions
-  const percentileScopeLabel =
-    percentileMode === 'scope' && canUseScopePercentiles ? aggregateScopeLabel(scope.competition) : player.competition_code
-  const similarScopeLabel = `${player.competition_code} ${player.season_label}`
+  const requestedMode = resolveProfileMode(searchParams.get('profileMode'))
+  const activeMode = player.mode ?? requestedMode
+  const availableModes = player.available_modes?.length ? player.available_modes : ['domestic']
+  const domesticScope = profileSlice?.competition ?? player.competition_code
+  const hasComparisonContract = player.comparison_available_scopes !== undefined
+  const availableComparisonScopes = hasComparisonContract
+    ? player.comparison_available_scopes ?? []
+    : [domesticScope]
+  const requestedComparisonScope = searchParams.get('comparisonScope')
+  const comparisonScope = availableComparisonScopes.includes(requestedComparisonScope ?? '')
+    ? requestedComparisonScope!
+    : availableComparisonScopes[0] ?? ''
+  const hasComparisonScope = comparisonScope !== ''
+  const isCombined = activeMode === 'combined'
+  // A combined performance row is not itself a percentile cohort. Until the
+  // API supplies an explicitly selected comparison cohort, do not relabel its
+  // stored/empty percentile fields as an authoritative combined percentile.
+  const comparisonEligibility = player.comparison_eligibility ?? player.eligibility
+  const showLowSampleBanner = !comparisonEligibility.percentiles_eligible
+  const activePercentileMap = hasComparisonContract
+    ? player.comparison_percentiles ?? {}
+    : (isCombined ? {} : player.percentiles)
+  const activeDistributions = hasComparisonContract
+    ? player.comparison_profile_distributions
+    : (isCombined ? undefined : player.profile_distributions)
+  const percentileScopeLabel = hasComparisonScope ? comparisonScopeLabel(comparisonScope) : 'Unavailable'
+  const similarScopeLabel = `${percentileScopeLabel} ${player.season_label}`
   const playerTeamScope = { competition: player.competition_code, season: player.season_label }
   const similarQuery = useQuery({
-    queryKey: ['profile-similar-players', player.competition_code, player.season_label, player.canonical_player_id],
+    queryKey: ['profile-similar-players', player.competition_code, player.season_label, activeMode, comparisonScope, player.canonical_player_id],
     queryFn: () =>
       fetchGalaxySimilarForPlayer(
         player.canonical_player_id,
-        player.competition_code,
+        player.comparison_source_competition ?? player.competition_code,
         player.season_label,
+        comparisonScope,
+        activeMode,
       ),
+    enabled: hasComparisonScope && player.position_group !== 'GK',
     staleTime: 10 * 60 * 1000,
   })
+
+  useEffect(() => {
+    if (
+      searchParams.get('profileMode') === activeMode
+      && (hasComparisonScope
+        ? searchParams.get('comparisonScope') === comparisonScope
+        : !searchParams.has('comparisonScope'))
+    ) return
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous)
+      next.set('profileMode', activeMode)
+      if (hasComparisonScope) next.set('comparisonScope', comparisonScope)
+      else next.delete('comparisonScope')
+      return next
+    }, { replace: true })
+  }, [activeMode, comparisonScope, hasComparisonScope, searchParams, setSearchParams])
+
+  const setProfileMode = (mode: ProfileMode) => {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous)
+      next.set('profileMode', mode)
+      return next
+    })
+  }
+
+  const setComparisonScope = (nextScope: string) => {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous)
+      next.set('comparisonScope', nextScope)
+      return next
+    })
+  }
 
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-5 pb-24 sm:px-6 sm:py-8 lg:px-10 lg:pb-20">
@@ -238,17 +300,19 @@ function ProfileLayout({
             )}
             <FormerClubsNote teams={player.secondary_teams} profileScope={playerTeamScope} />
             {' '}
-            · {player.minutes.toLocaleString()} min
+            · {player.minutes != null ? player.minutes.toLocaleString() : '—'} min
           </p>
           <p className="mt-2 text-[11px] text-ink-dim leading-relaxed">
             <span className="text-electric/80 font-mono uppercase tracking-[0.15em] mr-2">
               Note
             </span>
-            Percentiles compare this player against other{' '}
+            {isCombined ? 'Combined totals are API-authoritative. ' : ''}Percentiles compare this player against other{' '}
             <span className="text-ink">
               {POSITION_COHORT_LABEL[player.position_group]}
             </span>{' '}
-            in {percentileScopeLabel} {player.season_label}.
+            {hasComparisonScope
+              ? <>in {percentileScopeLabel} {player.season_label}.</>
+              : <>in an available domestic cohort. No eligible domestic comparison cohort exists for this season.</>}
           </p>
         </div>
         <div className="flex w-full flex-col gap-2 lg:w-auto lg:shrink-0 lg:items-end">
@@ -265,9 +329,14 @@ function ProfileLayout({
               />
             )}
             <Link
-              to={buildScopedPath(
-                `/comparisons?players=${player.competition_code}:${player.season_label}:${player.canonical_player_id}`,
-              )}
+              to={hasComparisonScope
+                ? buildScopedPath(
+                  `/comparisons?players=${player.competition_code}:${player.season_label}:${player.canonical_player_id}`,
+                  { competition: comparisonScope, season: player.season_label },
+                )
+                : buildScopedPath(
+                  `/comparisons?players=${player.competition_code}:${player.season_label}:${player.canonical_player_id}`,
+                )}
               className="relative flex h-8 items-center whitespace-nowrap border border-control-border px-3 text-[11px] font-medium uppercase tracking-[0.15em] text-control-fg transition-colors hover:border-electric hover:text-control-fg-hover active:bg-electric/10"
             >
               Compare
@@ -289,35 +358,56 @@ function ProfileLayout({
         </div>
       </div>
 
+      <div className="mb-6 flex flex-col gap-3">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Profile performance view">
+          {PROFILE_MODES.map(({ value, label }) => {
+            const available = availableModes.includes(value)
+            return (
+              <button key={value} type="button" disabled={!available} onClick={() => setProfileMode(value)} className={cn(
+                'border px-3 py-1.5 text-[11px] uppercase tracking-[0.15em]',
+                value === activeMode ? 'border-electric/50 bg-electric/10 text-electric' : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
+                !available && 'cursor-not-allowed opacity-40 hover:border-control-border hover:text-control-fg',
+              )}>
+                {label}
+              </button>
+            )
+          })}
+        </div>
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Comparison cohort">
+          <span className="mr-1 text-[10px] font-mono uppercase tracking-[0.15em] text-ink-dim">Compare against</span>
+          {availableComparisonScopes.map(scopeCode => (
+            <button key={scopeCode} type="button" onClick={() => setComparisonScope(scopeCode)} className={cn(
+              'border px-3 py-1.5 text-[11px] uppercase tracking-[0.15em]',
+              scopeCode === comparisonScope ? 'border-electric/50 bg-electric/10 text-electric' : 'border-control-border text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10',
+            )}>
+              {comparisonScopeLabel(scopeCode)}
+            </button>
+          ))}
+          {!availableComparisonScopes.length && (
+            <span className="border border-control-border px-3 py-1.5 text-[11px] uppercase tracking-[0.15em] text-ink-dim">
+              Unavailable
+            </span>
+          )}
+        </div>
+        {isCombined && <p className="text-[11px] leading-relaxed text-ink-muted">Combined performance totals include the components below. Percentiles remain tied to the selected comparison cohort; there is no combined percentile cohort.</p>}
+        {player.components && player.components.length > 0 && (
+          <section aria-labelledby="profile-components-heading" className="border border-electric/15 bg-mat/35 px-3 py-2.5">
+            <h2 id="profile-components-heading" className="mb-1.5 text-[10px] font-mono uppercase tracking-[0.15em] text-ink-dim">Performance components</h2>
+            <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-muted">
+              {player.components.map((component, index) => <li key={`${component.competition_code}:${component.season_label}:${index}`}><span className="text-ink">{component.competition_code}</span> · {component.season_label}{component.canonical_team_name ? ` · ${component.canonical_team_name}` : ''}{component.minutes != null ? ` · ${component.minutes.toLocaleString()} min` : ''}</li>)}
+            </ul>
+          </section>
+        )}
+      </div>
+
       {showLowSampleBanner && (
         <div className="mb-6">
           <ProfileEligibilityBanner
-            reason={player.eligibility.percentiles_ineligibility_reason}
+            reason={comparisonEligibility.percentiles_ineligibility_reason}
             minimumEligibleMinutes={
-              player.eligibility.minimum_eligible_minutes ?? player.meta?.minimum_eligible_minutes
+              comparisonEligibility.minimum_eligible_minutes ?? player.meta?.minimum_eligible_minutes
             }
           />
-        </div>
-      )}
-
-      {canUseScopePercentiles && (
-        <div className="mb-6 flex flex-wrap items-center gap-2">
-          {(['league', 'scope'] as const).map(mode => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => setPercentileMode(mode)}
-              className={
-                mode === percentileMode
-                  ? 'border border-electric/50 bg-electric/10 px-3 py-1.5 text-[11px] uppercase tracking-[0.15em] text-electric'
-                  : 'border border-control-border px-3 py-1.5 text-[11px] uppercase tracking-[0.15em] text-control-fg hover:border-electric hover:text-control-fg-hover active:bg-electric/10'
-              }
-            >
-              {mode === 'league'
-                ? 'Compare in league'
-                : `Compare in ${aggregateScopeLabel(scope.competition)}`}
-            </button>
-          ))}
         </div>
       )}
 
@@ -337,7 +427,7 @@ function ProfileLayout({
               <ProfileSimilarPlayers
                 edges={similarQuery.data?.edges ?? []}
                 isLoading={similarQuery.isLoading}
-                isError={similarQuery.isError}
+                isError={!hasComparisonScope || player.position_group === 'GK' || similarQuery.isError}
                 scopeLabel={similarScopeLabel}
               />
             }
@@ -369,7 +459,7 @@ function ProfileLayout({
             distributions={activeDistributions}
             similarEdges={similarQuery.data?.edges ?? []}
             similarIsLoading={similarQuery.isLoading}
-            similarIsError={similarQuery.isError}
+            similarIsError={!hasComparisonScope || player.position_group === 'GK' || similarQuery.isError}
             similarScopeLabel={similarScopeLabel}
             onClose={() => setExportOpen(false)}
           />
