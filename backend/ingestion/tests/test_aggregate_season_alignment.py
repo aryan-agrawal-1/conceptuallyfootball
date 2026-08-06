@@ -171,6 +171,10 @@ class AggregateSeasonConstituentTests(TestCase):
                 self.slices[("EST1", 2025)].id,
             },
         )
+        self.assertEqual(
+            profile["comparison_profile_distributions"]["context"]["season_label"],
+            "2025-26",
+        )
 
 
 class AggregateSeasonDiagnosticTests(TestCase):
