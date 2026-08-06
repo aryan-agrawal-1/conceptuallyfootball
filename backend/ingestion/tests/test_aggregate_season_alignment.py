@@ -12,6 +12,7 @@ from ingestion.models import (
     Competition,
     CompetitionSeason,
     CompetitionType,
+    GalaxySnapshot,
     IngestionRunStatus,
     PlayerSeasonDerivedStats,
     PlayerSeasonGkDerivedStats,
@@ -188,6 +189,38 @@ class AggregateSeasonDiagnosticTests(TestCase):
         self.assertEqual(row["competition"], "NEW1")
         self.assertEqual(row["aggregate_season"], "2025-26")
         self.assertTrue(row["included_in_all_scope"])
+
+    def test_diagnostic_distinguishes_quality_exclusion_from_label_omission(self):
+        player = CanonicalPlayer.objects.create(display_name="Quality Excluded")
+        PlayerSeasonDerivedStats.objects.create(
+            competition_season=self.competition_season,
+            canonical_player=player,
+            formula_version="test",
+            position_group=PositionGroup.FWD,
+            minutes=900,
+            percentiles_eligible=True,
+            scores_eligible=True,
+        )
+        GalaxySnapshot.objects.create(
+            scope_code="ALL",
+            season_label="2025-26",
+            included_competition_season_ids=[],
+            excluded_competitions=[
+                {
+                    "competition_season_id": self.competition_season.id,
+                    "competition": "NEW1",
+                    "reason": "low_broad_profile_coverage",
+                }
+            ],
+        )
+
+        report = calendar_aggregate_coverage()
+
+        self.assertTrue(report["ok"])
+        self.assertEqual(
+            report["calendar_slices"][0]["galaxy_exclusion_reasons"],
+            ["low_broad_profile_coverage"],
+        )
 
     @patch("ingestion.services.aggregate_season_alignment.resolve_public_scope", return_value=[])
     def test_fail_on_warning_detects_label_only_omission(self, resolve_scope):

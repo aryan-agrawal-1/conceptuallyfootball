@@ -48,6 +48,11 @@ def calendar_aggregate_coverage() -> dict[str, Any]:
         included_in_galaxy = bool(
             snapshot and competition_season.id in snapshot.included_competition_season_ids
         )
+        galaxy_exclusions = [
+            exclusion
+            for exclusion in (snapshot.excluded_competitions if snapshot else [])
+            if exclusion.get("competition_season_id") == competition_season.id
+        ]
         counts = {
             "outfield_rows": PlayerSeasonDerivedStats.objects.filter(
                 competition_season=competition_season,
@@ -85,6 +90,9 @@ def calendar_aggregate_coverage() -> dict[str, Any]:
             "aggregate_constituent_count": len(expected_constituents),
             "included_in_all_scope": included_in_scope,
             "included_in_current_all_galaxy": included_in_galaxy,
+            "galaxy_exclusion_reasons": sorted(
+                {str(exclusion.get("reason") or "unknown") for exclusion in galaxy_exclusions}
+            ),
             **counts,
         }
         rows.append(row)
@@ -92,10 +100,14 @@ def calendar_aggregate_coverage() -> dict[str, Any]:
             warnings.append(
                 f"{competition_season} is omitted from ALL {aggregate_label} by season-label alignment."
             )
-        if counts["eligible_outfield_rows"] and not included_in_galaxy:
+        if (
+            counts["eligible_outfield_rows"]
+            and not included_in_galaxy
+            and not galaxy_exclusions
+        ):
             warnings.append(
                 f"{competition_season} has eligible players but is absent from the current "
-                f"ALL {aggregate_label} Galaxy snapshot."
+                f"ALL {aggregate_label} Galaxy snapshot without a recorded quality exclusion."
             )
 
     aggregate_counts = {}
