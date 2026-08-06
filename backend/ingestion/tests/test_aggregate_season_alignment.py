@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
+from django.core.management import CommandError, call_command
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -9,11 +12,13 @@ from ingestion.models import (
     Competition,
     CompetitionSeason,
     CompetitionType,
+    IngestionRunStatus,
     PlayerSeasonDerivedStats,
     PlayerSeasonGkDerivedStats,
     PositionGroup,
     Season,
 )
+from ingestion.services.aggregate_season_alignment import calendar_aggregate_coverage
 from ingestion.services.season_labels import (
     aggregate_constituent_season_labels,
     aggregate_season_label,
@@ -165,3 +170,49 @@ class AggregateSeasonConstituentTests(TestCase):
                 self.slices[("EST1", 2025)].id,
             },
         )
+
+
+class AggregateSeasonDiagnosticTests(TestCase):
+    def setUp(self):
+        calendar = Season.objects.create(label="2025", sort_order=2025)
+        competition = Competition.objects.create(name="Future League", short_code="NEW1")
+        self.competition_season = CompetitionSeason.objects.create(
+            competition=competition,
+            season=calendar,
+            is_published=True,
+        )
+
+    def test_diagnostic_reports_every_published_calendar_slice(self):
+        report = calendar_aggregate_coverage()
+        row = report["calendar_slices"][0]
+        self.assertEqual(row["competition"], "NEW1")
+        self.assertEqual(row["aggregate_season"], "2025-26")
+        self.assertTrue(row["included_in_all_scope"])
+
+    @patch("ingestion.services.aggregate_season_alignment.resolve_public_scope", return_value=[])
+    def test_fail_on_warning_detects_label_only_omission(self, resolve_scope):
+        with self.assertRaisesMessage(CommandError, "alignment warnings detected"):
+            call_command("repair_aggregate_season_alignment", "--fail-on-warning")
+        resolve_scope.assert_called_once_with("ALL", "2025-26")
+
+    @patch(
+        "ingestion.management.commands.repair_aggregate_season_alignment.invalidate_materialized_api_payloads",
+        return_value=3,
+    )
+    @patch("ingestion.services.galaxy.materialize_galaxy_scope")
+    def test_apply_repairs_every_affected_aggregate_and_invalidates_payloads(
+        self,
+        materialize_scope,
+        invalidate_payloads,
+    ):
+        def succeed(scope, season, *, run):
+            run.status = IngestionRunStatus.SUCCESS
+            run.save(update_fields=["status"])
+
+        materialize_scope.side_effect = succeed
+
+        call_command("repair_aggregate_season_alignment", "--apply")
+
+        materialize_scope.assert_called_once()
+        self.assertEqual(materialize_scope.call_args.args, ("ALL", "2025-26"))
+        invalidate_payloads.assert_called_once_with()
