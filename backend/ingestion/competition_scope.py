@@ -6,7 +6,10 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import QuerySet
 
 from ingestion.models import CompetitionSeason, CompetitionType
-from ingestion.services.season_labels import candidate_season_labels
+from ingestion.services.season_labels import (
+    aggregate_constituent_season_labels,
+    candidate_season_labels,
+)
 
 
 BIG_FIVE_COMPETITION_CODES = ("ENG1", "GER1", "SPA1", "FRA1", "ITA1")
@@ -29,15 +32,14 @@ def resolve_public_scope(scope_code: str, season_label: str) -> list[Competition
     if not code or not season_label:
         raise DjangoValidationError("Provide competition and season.")
 
-    requested_labels = [season_label]
-    if code not in AGGREGATE_SCOPE_CODES:
-        requested_labels = candidate_season_labels(code, season_label)
+    requested_labels = (
+        aggregate_constituent_season_labels(season_label)
+        if code in AGGREGATE_SCOPE_CODES
+        else candidate_season_labels(code, season_label)
+    )
 
     rows = public_competition_seasons().select_related("competition", "season")
-    if code in AGGREGATE_SCOPE_CODES:
-        rows = rows.filter(season__label__iexact=season_label)
-    else:
-        rows = rows.filter(season__label__in=requested_labels)
+    rows = rows.filter(season__label__in=requested_labels)
     if code in AGGREGATE_SCOPE_CODES:
         rows = domestic_aggregate_seasons(rows)
         if code == "BIG5":

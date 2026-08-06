@@ -13,7 +13,6 @@ from django.db import connection, transaction
 from django.utils import timezone
 
 from ingestion.competition_scope import resolve_public_scope
-from ingestion.services.season_labels import candidate_season_labels, canonical_season_label
 from ingestion.models import (
     CompetitionSeason,
     GalaxyArchetype,
@@ -25,6 +24,11 @@ from ingestion.models import (
     PlayerSeasonDerivedStats,
     PositionGroup,
     SofascorePlayerSeasonSource,
+)
+from ingestion.services.season_labels import (
+    aggregate_season_label,
+    candidate_season_labels,
+    canonical_season_label,
 )
 
 MODEL_VERSION = "galaxy_v2"
@@ -247,7 +251,11 @@ def resolve_galaxy_competition_seasons(scope_code: str, season_label: str) -> li
 
 def latest_galaxy_snapshot(scope_code: str, season_label: str) -> GalaxySnapshot | None:
     scope = scope_code.strip().upper()
-    labels = [season_label] if scope in {"ALL", "BIG5"} else candidate_season_labels(scope, season_label)
+    labels = (
+        [aggregate_season_label(season_label)]
+        if scope in {"ALL", "BIG5"}
+        else candidate_season_labels(scope, season_label)
+    )
     snapshots = list(
         GalaxySnapshot.objects.filter(
             scope_code=scope,
@@ -1184,7 +1192,7 @@ def materialize_galaxy_scope(
     _mark_run_start(run)
     scope = scope_code.strip().upper()
     season_label = (
-        season_label
+        aggregate_season_label(season_label)
         if scope in {"ALL", "BIG5"}
         else canonical_season_label(scope, season_label)
     )

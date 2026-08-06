@@ -5,7 +5,7 @@ const BIG_FIVE_COMPETITION_CODES = new Set(['ENG1', 'GER1', 'SPA1', 'FRA1', 'ITA
 
 type Membership = Pick<
   SearchPlayerMembership | SearchTeamMembership,
-  'competition' | 'season' | 'competition_type' | 'include_in_domestic_aggregates'
+  'competition' | 'season' | 'aggregate_season' | 'competition_type' | 'include_in_domestic_aggregates'
 >
 
 function isDomesticAggregateMembership(membership: Membership): boolean {
@@ -16,7 +16,11 @@ function isDomesticAggregateMembership(membership: Membership): boolean {
 }
 
 export function scopeIncludesMembership(scope: Scope, membership: Membership): boolean {
-  if (membership.season !== scope.season) return false
+  const membershipSeason =
+    scope.competition === 'ALL' || scope.competition === 'BIG5'
+      ? membership.aggregate_season ?? membership.season
+      : membership.season
+  if (membershipSeason !== scope.season) return false
   if (membership.competition === scope.competition) return true
   if (scope.competition === 'ALL') return isDomesticAggregateMembership(membership)
   if (scope.competition === 'BIG5') {

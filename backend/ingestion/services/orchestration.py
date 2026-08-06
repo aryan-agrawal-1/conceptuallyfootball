@@ -34,6 +34,7 @@ from ingestion.services.ingest import (
     run_team_merge_job,
 )
 from ingestion.services.position_resolution import run_position_resolution_job
+from ingestion.services.season_labels import aggregate_season_label
 from ingestion.services.sofascore_client import (
     reset_request_metrics,
     set_request_cap,
@@ -529,7 +530,8 @@ def materialize_aggregate_scopes(batch_id: int) -> dict[str, Any]:
     ]
     items_by_season: dict[str, list[IngestionBatchItem]] = {}
     for item in domestic_items:
-        items_by_season.setdefault(item.competition_season.season.label, []).append(item)
+        label = aggregate_season_label(item.competition_season.season.label)
+        items_by_season.setdefault(label, []).append(item)
     from ingestion.services.galaxy import materialize_galaxy_scope
 
     aggregate_run_ids = dict(batch.aggregate_run_ids or {})

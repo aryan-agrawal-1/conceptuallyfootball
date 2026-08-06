@@ -267,15 +267,11 @@ class AggregateBatchTests(TestCase):
         keys = set(result["aggregate_run_ids"])
         self.assertIn("BIG5:2025-26", keys)
         self.assertIn("ALL:2025-26", keys)
-        self.assertIn("ALL:2026", keys)
-        self.assertNotIn("ALL:2026-27", keys)
-        self.assertNotEqual(
-            result["aggregate_run_ids"]["ALL:2025-26"],
-            result["aggregate_run_ids"]["ALL:2026"],
-        )
+        self.assertIn("ALL:2026-27", keys)
+        self.assertNotIn("ALL:2026", keys)
         self.assertEqual(
             [(call.args[0], call.args[1]) for call in mock_materialize.call_args_list],
-            [("BIG5", "2025-26"), ("ALL", "2025-26"), ("ALL", "2026")],
+            [("BIG5", "2025-26"), ("ALL", "2025-26"), ("ALL", "2026-27")],
         )
 
 

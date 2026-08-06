@@ -207,6 +207,38 @@ class GalaxyV2Tests(TestCase):
             GalaxyPlayerEmbedding.objects.filter(snapshot=snapshot).count(),
         )
 
+    def test_all_snapshot_includes_same_start_year_calendar_league(self):
+        calendar_season = Season.objects.create(label="2025", sort_order=2025)
+        calendar_competition = Competition.objects.create(name="Allsvenskan", short_code="SWE1")
+        swe = CompetitionSeason.objects.create(
+            competition=calendar_competition,
+            season=calendar_season,
+            has_understat=False,
+            has_sofascore=True,
+            sofascore_unique_tournament_id=40,
+            sofascore_season_id=69956,
+            is_published=True,
+        )
+        swe_team = CanonicalTeam.objects.create(name="Malmo")
+        for idx in range(12):
+            self._create_player_row(
+                swe,
+                swe_team,
+                CanonicalPlayer.objects.create(display_name=f"SWE Player {idx}"),
+                idx=idx + 60,
+                position=PositionGroup.FWD if idx < 6 else PositionGroup.MID,
+            )
+
+        snapshot = self._materialize_all()
+
+        self.assertEqual(
+            set(snapshot.included_competition_season_ids),
+            {self.eng.id, self.spa.id, swe.id},
+        )
+        self.assertTrue(
+            GalaxyPlayerEmbedding.objects.filter(snapshot=snapshot, competition_season=swe).exists()
+        )
+
     def test_prunes_superseded_galaxy_snapshots(self):
         old_snapshot = self._materialize_all()
         new_snapshot = self._materialize_all()

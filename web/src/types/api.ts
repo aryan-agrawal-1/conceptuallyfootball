@@ -50,6 +50,7 @@ interface SearchScopeMembership {
   include_in_domestic_aggregates?: boolean
   minimum_eligible_minutes?: number
   season: string
+  aggregate_season?: string
   competition_season_id: number
 }
 
