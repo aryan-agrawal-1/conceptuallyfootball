@@ -17,7 +17,7 @@ import {
   type MatrixStarterView,
   type MatrixStarterVariant,
 } from '../lib/matrixStarterViews'
-import type { MatrixRateMode } from '../lib/matrixRateMode'
+import { resolveMatrixMetric, type MatrixRateMode } from '../lib/matrixRateMode'
 import type { MatrixFilters, MetricAvailability, PlayerRow } from '../types/api'
 import { useScope } from '../context/ScopeContext'
 
@@ -50,22 +50,27 @@ function metricAvailable(
 function columnAvailable(
   col: ColDef,
   availability: MetricAvailability | undefined,
-  position: MatrixFilters['position_group'],
+  players: PlayerRow[],
+  rateMode: MatrixRateMode,
 ): boolean {
-  void position
   if (col.isMeta) return true
-  return metricAvailable(availability, col.id)
+  if (metricAvailable(availability, col.id)) return true
+  if (players.some(player => player.eligibility.percentiles_eligible)) return false
+  return players.some(player => resolveMatrixMetric(player, col.id, rateMode).value != null)
 }
 
 function filterAvailableColumnGroups(
   groups: ColGroupDef[],
   availability: MetricAvailability | undefined,
-  position: MatrixFilters['position_group'],
+  players: PlayerRow[],
+  rateMode: MatrixRateMode,
 ): ColGroupDef[] {
   return groups.flatMap(group => {
     const next = {
       ...group,
-      cols: group.cols.filter(col => columnAvailable(col, availability, position)),
+      cols: group.cols.filter(col =>
+        columnAvailable(col, availability, players, rateMode),
+      ),
     }
     return next.cols.length > 0 ? [next] : []
   })
@@ -135,8 +140,13 @@ export function StatMatrix() {
     () =>
       filters.position_group === 'GK'
         ? COLUMN_GROUPS_GK
-        : filterAvailableColumnGroups(COLUMN_GROUPS, metricAvailability, filters.position_group),
-    [filters.position_group, metricAvailability],
+        : filterAvailableColumnGroups(
+            COLUMN_GROUPS,
+            metricAvailability,
+            allPlayers,
+            rateMode,
+          ),
+    [allPlayers, filters.position_group, metricAvailability, rateMode],
   )
 
   const effectiveVisibleCols = visibleCols

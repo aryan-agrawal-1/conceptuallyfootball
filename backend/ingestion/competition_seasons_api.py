@@ -56,16 +56,20 @@ def _aggregate_metric_availability(items):
             out.update(payload.get(key) or [])
         return sorted(out)
 
+    def coverage_weight(payload):
+        player_rows = payload.get("player_rows") or {}
+        return int(player_rows.get("coverage_outfield") or player_rows.get("eligible_outfield") or 0)
+
     aggregate_coverage = {}
     coverage_metrics = set()
     total_weight = 0
     for payload in payloads:
         coverage_metrics.update((payload.get("coverage") or {}).keys())
-        total_weight += int(((payload.get("player_rows") or {}).get("eligible_outfield") or 0))
+        total_weight += coverage_weight(payload)
     for metric_name in coverage_metrics:
         weighted_total = 0.0
         for payload in payloads:
-            weight = int(((payload.get("player_rows") or {}).get("eligible_outfield") or 0))
+            weight = coverage_weight(payload)
             weighted_total += float((payload.get("coverage") or {}).get(metric_name) or 0.0) * weight
         aggregate_coverage[metric_name] = weighted_total / total_weight if total_weight else 0.0
 
