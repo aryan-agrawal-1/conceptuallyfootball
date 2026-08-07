@@ -5,7 +5,7 @@ import type { MatrixFilters, MatrixResponse, PlayerRow } from '../types/api'
 export const DEFAULT_FILTERS: MatrixFilters = {
   competition: 'ENG1',
   season: '2025-26',
-  min_minutes: 900,
+  min_minutes: 0,
 }
 
 /**
