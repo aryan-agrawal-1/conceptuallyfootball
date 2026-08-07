@@ -90,3 +90,4 @@ concept.ai
 docs/
 backups/
 backend/reports/
+scripts/deploy-production.sh
