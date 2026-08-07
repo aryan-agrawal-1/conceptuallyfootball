@@ -622,7 +622,7 @@ export function MatrixTable({
     columns,
     state: { sorting },
     manualSorting: true,
-    getRowId: row => String(row.canonical_player_id),
+    getRowId: row => `${row.competition_season}:${row.canonical_player_id}`,
     onSortingChange: updater => {
       sortInteractionStartRef.current = performance.now()
       const nextSorting = typeof updater === 'function' ? updater(sorting) : updater
@@ -638,7 +638,10 @@ export function MatrixTable({
     estimateSize: () => cellSize,
     overscan: 10,
     paddingStart: TABLE_HEADER_TOTAL_PX,
-    getItemKey: index => String(sortedPlayers[index]?.canonical_player_id ?? index),
+    getItemKey: index => {
+      const player = sortedPlayers[index]
+      return player ? `${player.competition_season}:${player.canonical_player_id}` : String(index)
+    },
   })
 
   // Invalidate the virtualizer's cached row metrics when the dynamic cell size changes so the total scroll height and row offsets recompute from the new `estimateSize`.

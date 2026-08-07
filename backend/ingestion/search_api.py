@@ -9,6 +9,7 @@ from ingestion.models import (
     PlayerSeasonDerivedStats,
     PlayerSeasonGkDerivedStats,
 )
+from ingestion.services.season_labels import aggregate_season_label
 
 
 class SearchEntitiesApi(APIView):
@@ -93,6 +94,9 @@ class SearchEntitiesApi(APIView):
                     "competition_season__competition__minimum_eligible_minutes"
                 ],
                 "season": row["competition_season__season__label"],
+                "aggregate_season": aggregate_season_label(
+                    row["competition_season__season__label"]
+                ),
                 "competition_season_id": row["competition_season_id"],
             }
             seen_key = (player_id, scope["competition"], scope["season"])
@@ -136,6 +140,9 @@ class SearchEntitiesApi(APIView):
                     "competition_season__competition__minimum_eligible_minutes"
                 ],
                 "season": row["competition_season__season__label"],
+                "aggregate_season": aggregate_season_label(
+                    row["competition_season__season__label"]
+                ),
                 "competition_season_id": row["competition_season_id"],
             }
             seen_key = (player_id, scope["competition"], scope["season"])
@@ -200,6 +207,9 @@ class SearchEntitiesApi(APIView):
                     "competition_season__competition__minimum_eligible_minutes"
                 ],
                 "season": row["competition_season__season__label"],
+                "aggregate_season": aggregate_season_label(
+                    row["competition_season__season__label"]
+                ),
                 "competition_season_id": row["competition_season_id"],
             }
             seen_key = (team_id, scope["competition"], scope["season"])

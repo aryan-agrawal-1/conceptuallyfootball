@@ -297,8 +297,7 @@ class CalendarLabelReconciliationTests(TestCase):
             is_published=True,
         )
         self.assertEqual(resolve_public_scope("EST1", "2025-26")[0].id, canonical_slice.id)
-        with self.assertRaisesMessage(Exception, "Unknown competition and season combination"):
-            resolve_public_scope("ALL", "2025-26")
+        self.assertEqual(resolve_public_scope("ALL", "2025-26")[0].id, canonical_slice.id)
 
         canonical_slice.delete()
         legacy_season = Season.objects.create(label="2025-26", sort_order=2026)

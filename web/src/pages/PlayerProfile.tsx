@@ -209,7 +209,8 @@ function ProfileLayout({
     ? player.comparison_profile_distributions
     : player.profile_distributions
   const percentileScopeLabel = hasComparisonScope ? comparisonScopeLabel(comparisonScope) : 'Unavailable'
-  const similarScopeLabel = `${percentileScopeLabel} ${player.season_label}`
+  const comparisonSeasonLabel = activeDistributions?.context.season_label ?? player.season_label
+  const similarScopeLabel = `${percentileScopeLabel} ${comparisonSeasonLabel}`
   const playerTeamScope = { competition: player.competition_code, season: player.season_label }
   const similarQuery = useQuery({
     queryKey: ['profile-similar-players', player.competition_code, player.season_label, comparisonScope, player.canonical_player_id],
@@ -282,7 +283,7 @@ function ProfileLayout({
               {POSITION_COHORT_LABEL[player.position_group]}
             </span>{' '}
             {hasComparisonScope
-              ? <>in {percentileScopeLabel} {player.season_label}.</>
+              ? <>in {percentileScopeLabel} {comparisonSeasonLabel}.</>
               : <>in an available domestic cohort. No eligible domestic comparison cohort exists for this season.</>}
           </p>
         </div>
@@ -300,7 +301,7 @@ function ProfileLayout({
               to={hasComparisonScope
                 ? buildScopedPath(
                   `/comparisons?players=${player.competition_code}:${player.season_label}:${player.canonical_player_id}`,
-                  { competition: comparisonScope, season: player.season_label },
+                  { competition: comparisonScope, season: comparisonSeasonLabel },
                 )
                 : buildScopedPath(
                   `/comparisons?players=${player.competition_code}:${player.season_label}:${player.canonical_player_id}`,

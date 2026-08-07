@@ -9,7 +9,7 @@ from ingestion.api_cache import get_or_build_payload_response, joined_version, m
 from ingestion.competition_scope import BIG_FIVE_COMPETITION_CODES, public_competition_seasons
 from ingestion.derived_definitions import CORE_METRIC_MIN_COVERAGE, STYLE_METRIC_MIN_COVERAGE, STYLE_PROXY_METRICS
 from ingestion.models import Competition, CompetitionSeason, CompetitionType
-from ingestion.services.season_labels import season_label_aliases
+from ingestion.services.season_labels import aggregate_season_label, season_label_aliases
 
 DOMESTIC_COUNTRY_ORDER = ("england", "germany", "spain", "italy", "france", "scotland")
 DOMESTIC_COUNTRY_RANK = {
@@ -201,10 +201,11 @@ class CompetitionSeasonsCatalogApi(APIView):
             by_code[code]["seasons"].append(season_payload)
             if not is_domestic_aggregate_member:
                 continue
+            aggregate_label = aggregate_season_label(cs.season.label)
             all_seasons.setdefault(
-                cs.season.label,
+                aggregate_label,
                 {
-                    "label": cs.season.label,
+                    "label": aggregate_label,
                     "competition_season_id": 0,
                     "player_data_mode": "aggregate",
                     "has_understat": None,
@@ -213,13 +214,13 @@ class CompetitionSeasonsCatalogApi(APIView):
                     "metric_availability": None,
                 },
             )
-            all_season_availability.setdefault(cs.season.label, []).append(cs.metric_availability)
-            all_season_thresholds.setdefault(cs.season.label, {})[code] = cs.minimum_eligible_minutes
+            all_season_availability.setdefault(aggregate_label, []).append(cs.metric_availability)
+            all_season_thresholds.setdefault(aggregate_label, {})[code] = cs.minimum_eligible_minutes
             if code in BIG_FIVE_COMPETITION_CODES:
                 big_five_seasons.setdefault(
-                    cs.season.label,
+                    aggregate_label,
                     {
-                        "label": cs.season.label,
+                        "label": aggregate_label,
                         "competition_season_id": 0,
                         "player_data_mode": "aggregate",
                         "has_understat": None,
@@ -228,8 +229,8 @@ class CompetitionSeasonsCatalogApi(APIView):
                         "metric_availability": None,
                     },
                 )
-                big_five_season_availability.setdefault(cs.season.label, []).append(cs.metric_availability)
-                big_five_season_thresholds.setdefault(cs.season.label, {})[
+                big_five_season_availability.setdefault(aggregate_label, []).append(cs.metric_availability)
+                big_five_season_thresholds.setdefault(aggregate_label, {})[
                     code
                 ] = cs.minimum_eligible_minutes
 

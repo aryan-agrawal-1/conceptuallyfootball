@@ -13,6 +13,7 @@ from ingestion.competition_scope import (
     resolve_public_scope,
 )
 from ingestion.models import CompetitionSeason
+from ingestion.services.season_labels import aggregate_season_label
 
 SCOPE_PERCENTILES_CACHE_VERSION = "v2"
 
@@ -47,9 +48,10 @@ def resolve_scope_seasons(scope_code: str, season_label: str) -> list[Competitio
 
 def scope_context(scope_code: str, season_label: str, competition_seasons: Iterable[CompetitionSeason]) -> dict:
     seasons = list(competition_seasons)
+    code = scope_code.strip().upper()
     return {
-        "competition_code": scope_code.strip().upper(),
-        "season_label": season_label,
+        "competition_code": code,
+        "season_label": aggregate_season_label(season_label) if is_aggregate_scope(code) else season_label,
         "competition_season_ids": [cs.id for cs in seasons],
     }
 

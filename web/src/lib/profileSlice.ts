@@ -5,6 +5,7 @@ export interface ProfileSliceMembership {
   competition_type?: 'domestic_league' | 'continental_cup'
   competition_season_id: number
   season: string
+  aggregate_season?: string
 }
 
 export interface ProfileSlice {
@@ -35,9 +36,14 @@ export function resolveProfileSlice<T extends ProfileSliceMembership>(
   if (!memberships.length) return undefined
 
   const seasons = [...new Set(memberships.map(membership => membership.season))]
+  const globalAggregateSeason =
+    globalScope.competition === 'ALL' || globalScope.competition === 'BIG5'
+      ? memberships.find(membership => membership.aggregate_season === globalScope.season)?.season
+      : undefined
   const season =
     (requested.season && seasons.includes(requested.season) ? requested.season : undefined) ??
     (seasons.includes(globalScope.season) ? globalScope.season : undefined) ??
+    globalAggregateSeason ??
     seasons[0]
   if (!season) return undefined
 
