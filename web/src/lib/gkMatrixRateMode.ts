@@ -144,10 +144,12 @@ export function buildGkCohortPercentileMaps(
       : Object.keys(GK_TOTAL_RATE_TOGGLE)
 
   for (const colId of cohortColumnIds) {
-    const resolved = players.map(p => ({
-      id: p.canonical_player_id,
-      v: resolveGkMatrixMetric(p, colId, 'full').value,
-    }))
+    const resolved = players
+      .filter(p => p.eligibility.percentiles_eligible)
+      .map(p => ({
+        id: p.canonical_player_id,
+        v: resolveGkMatrixMetric(p, colId, 'full').value,
+      }))
 
     const numeric = resolved.flatMap(r =>
       r.v != null && !Number.isNaN(r.v) ? [r.v] : [],

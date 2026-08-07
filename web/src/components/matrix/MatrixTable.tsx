@@ -9,7 +9,7 @@ import {
   type SortingState,
   type ColumnDef,
 } from '@tanstack/react-table'
-import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
+import { AlertTriangle, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { formatValue } from '../../lib/format'
 import {
@@ -43,6 +43,7 @@ import {
 import { getGroupHeaderTooltip, getStatHeaderTooltip } from '../../lib/statTooltips'
 import { logMatrixPerfPhases } from '../../lib/perfDebug'
 import { playerNameTitle, shortPlayerName } from '../../lib/entityLabels'
+import { percentileIneligibilityMessage } from '../../lib/eligibility'
 import { withPlayerProfileSlice } from '../../lib/playerProfileUrl'
 import { useScope } from '../../context/ScopeContext'
 import { MatrixDisplayContext, useMatrixDisplay, type MatrixVariant } from './MatrixDisplayContext'
@@ -258,9 +259,17 @@ function StatCellBody({
   )
 }
 
-function MinutesMatrixCell({ minutes }: { minutes: number }) {
+function MinutesMatrixCell({
+  minutes,
+  percentilesEligible,
+}: {
+  minutes: number
+  percentilesEligible: boolean
+}) {
   const { heatmapEnabled, minutesRange } = useMatrixDisplay()
-  const percentile = minutesHeatPercentileFromRange(minutes, minutesRange)
+  const percentile = percentilesEligible
+    ? minutesHeatPercentileFromRange(minutes, minutesRange)
+    : null
   const hStyle = getHeatmapStyle(percentile, heatmapEnabled)
   return <StatCellBody hStyle={hStyle}>{formatValue(minutes, 'integer')}</StatCellBody>
 }
@@ -332,13 +341,31 @@ function buildMetaColumn(col: ColDef): ColumnDef<PlayerRow, unknown> {
           const pos = row.position_group
           const team = row.canonical_team_name ?? ''
           const name = info.getValue() as string
+          const ineligibilityMessage = row.eligibility.percentiles_eligible
+            ? null
+            : percentileIneligibilityMessage(
+                row.eligibility.percentiles_ineligibility_reason,
+                row.eligibility.minimum_eligible_minutes,
+              )
           return (
             <div
               className="flex flex-col justify-center px-3 h-full"
               style={{ minHeight: 'var(--matrix-row-h)', gap: 2 }}
             >
-              <span className="text-[12px] font-normal text-ink leading-none truncate" title={playerNameTitle(name)}>
-                {shortPlayerName(name)}
+              <span className="flex min-w-0 items-center gap-1.5 text-[12px] font-normal leading-none text-ink">
+                <span className="truncate" title={playerNameTitle(name)}>
+                  {shortPlayerName(name)}
+                </span>
+                {ineligibilityMessage && (
+                  <span
+                    role="img"
+                    aria-label={ineligibilityMessage}
+                    title={ineligibilityMessage}
+                    className="shrink-0 text-ember"
+                  >
+                    <AlertTriangle size={11} aria-hidden />
+                  </span>
+                )}
               </span>
               <span className="text-[10px] font-normal leading-none truncate" style={{ color: 'rgba(138,149,184,0.7)' }}>
                 <span style={{ color: POSITION_COLORS[pos] }}>{pos}</span>
@@ -404,7 +431,12 @@ function buildMetaColumn(col: ColDef): ColumnDef<PlayerRow, unknown> {
         size: col.width,
         enableSorting: true,
         sortDescFirst: true,
-        cell: info => <MinutesMatrixCell minutes={info.getValue() as number} />,
+        cell: info => (
+          <MinutesMatrixCell
+            minutes={info.getValue() as number}
+            percentilesEligible={info.row.original.eligibility.percentiles_eligible}
+          />
+        ),
       }) as ColumnDef<PlayerRow, unknown>
 
     case 'appearances':
@@ -517,7 +549,10 @@ export function MatrixTable({
     return () => el.removeEventListener('scroll', onScroll)
   }, [scrollParentRef, hideHeaderTip])
 
-  const minutesRange = useMemo(() => getMinutesHeatRangeFromPlayers(players), [players])
+  const minutesRange = useMemo(
+    () => getMinutesHeatRangeFromPlayers(players.filter(player => player.eligibility.percentiles_eligible)),
+    [players],
+  )
 
   const rawColumnGroups = columnGroupsOverride ?? (variant === 'gk' ? COLUMN_GROUPS_GK : COLUMN_GROUPS)
 
