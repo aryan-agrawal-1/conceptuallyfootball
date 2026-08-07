@@ -5,6 +5,7 @@ from unittest.mock import patch
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from ingestion.competition_seasons_api import _aggregate_metric_availability
 from ingestion.models import (
     CanonicalPlayer,
     CanonicalTeam,
@@ -276,6 +277,36 @@ class DerivedStatsTests(TestCase):
         self.assertEqual(delta_row.percentiles_ineligibility_reason, "below_minutes_threshold")
         self.assertFalse(delta_row.scores_eligible)
         self.assertIsNone(delta_row.creation_score)
+
+    def test_early_season_rows_still_publish_metric_availability(self):
+        self.cs.competition.minimum_eligible_minutes = 5000
+        self.cs.competition.save(update_fields=["minimum_eligible_minutes"])
+
+        self._materialize()
+
+        self.cs.refresh_from_db()
+        availability = self.cs.metric_availability
+        self.assertEqual(availability["player_rows"]["eligible_outfield"], 0)
+        self.assertEqual(availability["player_rows"]["coverage_outfield"], 4)
+        self.assertIn("xg_per_90", availability["ui_available_metrics"])
+        self.assertNotIn("tackles_won", availability["ui_available_metrics"])
+
+    def test_aggregate_availability_weights_early_season_rows(self):
+        availability = _aggregate_metric_availability(
+            [
+                {
+                    "player_rows": {"eligible_outfield": 0, "coverage_outfield": 4},
+                    "coverage": {"xg_per_90": 1.0},
+                },
+                {
+                    "player_rows": {"eligible_outfield": 2, "coverage_outfield": 2},
+                    "coverage": {"xg_per_90": 0.5},
+                },
+            ]
+        )
+
+        self.assertEqual(availability["coverage"]["xg_per_90"], 0.8333)
+        self.assertIn("xg_per_90", availability["ui_available_metrics"])
 
     def test_failed_rematerialization_preserves_last_good_published_rows(self):
         first_run = self._materialize()

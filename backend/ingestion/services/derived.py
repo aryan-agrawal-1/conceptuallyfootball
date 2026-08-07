@@ -400,13 +400,16 @@ def _build_metric_row(
 
 
 def _build_coverage_report(metric_rows: list[dict], eligible_player_ids: set[int]) -> dict[str, float]:
-    if not eligible_player_ids:
-        return {}
     eligible_rows = [row for row in metric_rows if row["canonical_player_id"] in eligible_player_ids]
+    coverage_rows = eligible_rows or [
+        row for row in metric_rows if row["position_group"] in ELIGIBLE_OUTFIELD_POSITIONS
+    ]
+    if not coverage_rows:
+        return {}
     report: dict[str, float] = {}
-    total = len(eligible_rows)
+    total = len(coverage_rows)
     for field_name in METRIC_FIELDS:
-        populated = sum(1 for row in eligible_rows if row[field_name] is not None)
+        populated = sum(1 for row in coverage_rows if row[field_name] is not None)
         report[field_name] = populated / total if total else 0.0
     return report
 
@@ -501,6 +504,9 @@ def _slice_metric_availability(
     coverage_report: dict[str, float],
     position_coverage_report: dict[str, dict[str, float]],
 ) -> dict:
+    coverage_outfield_count = len(eligible_player_ids) or sum(
+        1 for row in merged_rows if row.position_group in ELIGIBLE_OUTFIELD_POSITIONS
+    )
     available_metrics = sorted(
         metric_name
         for metric_name, coverage in coverage_report.items()
@@ -536,6 +542,7 @@ def _slice_metric_availability(
         "player_rows": {
             "merged_current": len(merged_rows),
             "eligible_outfield": len(eligible_player_ids),
+            "coverage_outfield": coverage_outfield_count,
         },
         "available_metrics": available_metrics,
         "ui_available_metrics": ui_available_metrics,
