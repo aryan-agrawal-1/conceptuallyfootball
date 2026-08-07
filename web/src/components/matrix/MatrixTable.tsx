@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { createPortal } from 'react-dom'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
   useReactTable,
@@ -11,6 +12,7 @@ import {
 } from '@tanstack/react-table'
 import { AlertTriangle, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { HudCornerMarks } from '../hud/Hud'
 import { formatValue } from '../../lib/format'
 import {
   getHeatmapStyle,
@@ -105,6 +107,128 @@ function TargetBrackets({ side }: { side: 'left' | 'right' }) {
         )}
       />
     </>
+  )
+}
+
+type MatrixWarningAnchor = { left: number; top: number; width: number; height: number }
+
+const MATRIX_WARNING_VIEWPORT_PAD = 12
+
+function MatrixEligibilityWarning({ message }: { message: string }) {
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const [anchor, setAnchor] = useState<MatrixWarningAnchor | null>(null)
+  const tooltipId = useId()
+
+  const show = useCallback(() => {
+    const el = buttonRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    setAnchor({ left: r.left, top: r.top, width: r.width, height: r.height })
+  }, [])
+
+  const hide = useCallback(() => setAnchor(null), [])
+
+  useEffect(() => {
+    if (!anchor) return
+    window.addEventListener('resize', hide)
+    window.addEventListener('scroll', hide, true)
+    return () => {
+      window.removeEventListener('resize', hide)
+      window.removeEventListener('scroll', hide, true)
+    }
+  }, [anchor, hide])
+
+  const portal =
+    anchor &&
+    typeof document !== 'undefined' &&
+    createPortal(
+      <MatrixEligibilityTooltipFloater id={tooltipId} anchor={anchor} message={message} />,
+      document.body,
+    )
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label="Percentile eligibility warning"
+        aria-describedby={anchor ? tooltipId : undefined}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+        onPointerDown={event => event.stopPropagation()}
+        onClick={event => event.stopPropagation()}
+        onKeyDown={event => {
+          if (event.key !== 'Escape') return
+          event.preventDefault()
+          event.stopPropagation()
+          hide()
+        }}
+        className="shrink-0 rounded-sm text-ember outline-none transition-colors hover:text-ink focus-visible:ring-1 focus-visible:ring-ember/70"
+      >
+        <AlertTriangle size={11} aria-hidden />
+      </button>
+      {portal}
+    </>
+  )
+}
+
+function MatrixEligibilityTooltipFloater({
+  id,
+  anchor,
+  message,
+}: {
+  id: string
+  anchor: MatrixWarningAnchor
+  message: string
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [dx, setDx] = useState(0)
+  const [flipUp, setFlipUp] = useState(false)
+
+  const cx = anchor.left + anchor.width / 2
+  const gap = 7
+  const belowTop = anchor.top + anchor.height + gap
+
+  useLayoutEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const el = wrapRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      const halfW = rect.width / 2
+      const minCenter = MATRIX_WARNING_VIEWPORT_PAD + halfW
+      const maxCenter = window.innerWidth - MATRIX_WARNING_VIEWPORT_PAD - halfW
+      const clampedCx =
+        minCenter <= maxCenter
+          ? Math.min(Math.max(cx, minCenter), maxCenter)
+          : window.innerWidth / 2
+      setDx(clampedCx - cx)
+
+      const spaceBelow = window.innerHeight - belowTop - MATRIX_WARNING_VIEWPORT_PAD
+      const spaceAbove = anchor.top - MATRIX_WARNING_VIEWPORT_PAD
+      setFlipUp(rect.height > spaceBelow && spaceAbove >= spaceBelow)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [anchor, belowTop, cx])
+
+  return (
+    <div
+      id={id}
+      ref={wrapRef}
+      role="tooltip"
+      className="pointer-events-none fixed z-[200] w-max max-w-[min(360px,calc(100vw-24px))] border border-ember/35 bg-panel/95 px-3 py-2.5 text-left text-[11px] font-normal leading-snug tracking-normal text-ink-dim shadow-[0_12px_40px_-8px_rgba(239,68,68,0.38)] backdrop-blur-md"
+      style={{
+        left: cx,
+        top: flipUp ? anchor.top - gap : belowTop,
+        transform: flipUp
+          ? `translate(calc(-50% + ${dx}px), calc(-100% - ${gap}px))`
+          : `translate(calc(-50% + ${dx}px), 0)`,
+      }}
+    >
+      <HudCornerMarks className="border-ember" />
+      {message}
+    </div>
   )
 }
 
@@ -357,14 +481,7 @@ function buildMetaColumn(col: ColDef): ColumnDef<PlayerRow, unknown> {
                   {shortPlayerName(name)}
                 </span>
                 {ineligibilityMessage && (
-                  <span
-                    role="img"
-                    aria-label={ineligibilityMessage}
-                    title={ineligibilityMessage}
-                    className="shrink-0 text-ember"
-                  >
-                    <AlertTriangle size={11} aria-hidden />
-                  </span>
+                  <MatrixEligibilityWarning message={ineligibilityMessage} />
                 )}
               </span>
               <span className="text-[10px] font-normal leading-none truncate" style={{ color: 'rgba(138,149,184,0.7)' }}>
