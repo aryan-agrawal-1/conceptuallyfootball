@@ -266,6 +266,7 @@ class NormalizedMatchEvent:
     is_set_piece: bool
     is_regular_play: bool
     is_big_chance: bool
+    is_defensive: bool
     body_part: int
     shot_situation: int
     shot_outcome: int
@@ -688,6 +689,7 @@ def normalize_event(
         ),
         is_regular_play=bool(qualifier_names & {"RegularPlay", "OpenPlay"}),
         is_big_chance="BigChance" in qualifier_names,
+        is_defensive="Defensive" in qualifier_names,
         body_part=normalized_body_part(qualifier_names),
         shot_situation=normalized_shot_situation(qualifier_names),
         shot_outcome=normalized_shot_outcome(event_name, qualifier_names),

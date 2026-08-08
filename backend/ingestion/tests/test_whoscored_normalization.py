@@ -280,6 +280,26 @@ class WhoScoredParserTests(SimpleTestCase):
             MatchEventShotOutcome.BLOCKED,
         )
 
+    def test_defensive_qualifier_is_preserved_in_normalized_model_values(self):
+        defensive = copy.deepcopy(self.payload["events"][0])
+        defensive["id"] = 999001
+        defensive["eventId"] = 999001
+        defensive["type"] = {"value": 10, "displayName": "Aerial"}
+        defensive["qualifiers"] = [{"type": {"value": 777, "displayName": "Defensive"}}]
+        regular = copy.deepcopy(defensive)
+        regular["id"] = 999002
+        regular["eventId"] = 999002
+        regular["qualifiers"] = []
+        payload = copy.deepcopy(self.payload)
+        payload["events"] = [defensive, regular]
+
+        result = parse_match_payload(payload, policy=FIXTURE_POLICY)
+        by_id = {event.provider_event_id: event for event in result.events}
+        self.assertTrue(by_id["999001"].is_defensive)
+        self.assertTrue(by_id["999001"].model_values()["is_defensive"])
+        self.assertFalse(by_id["999002"].is_defensive)
+        self.assertFalse(by_id["999002"].model_values()["is_defensive"])
+
     def test_ordering_and_canonical_normalized_bytes_are_deterministic(self):
         first = parse_match_payload(self.payload, policy=FIXTURE_POLICY)
         second = parse_match_payload(copy.deepcopy(self.payload), policy=FIXTURE_POLICY)

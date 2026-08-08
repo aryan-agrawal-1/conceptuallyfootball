@@ -848,6 +848,9 @@ class ProviderMatchEvent(models.Model):
     is_set_piece = models.BooleanField(default=False)
     is_regular_play = models.BooleanField(default=False)
     is_big_chance = models.BooleanField(default=False)
+    # WhoScored's ``Defensive`` qualifier is needed to distinguish defensive
+    # Aerial/Challenge events from their attacking counterparts.
+    is_defensive = models.BooleanField(default=False)
     body_part = models.PositiveSmallIntegerField(
         choices=MatchEventBodyPart.choices,
         default=MatchEventBodyPart.UNKNOWN,
