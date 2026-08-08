@@ -177,7 +177,9 @@ class EventProfileMaterializationTests(TestCase):
 
     def test_public_gates_offline_and_command_scope(self):
         self.seed_hand_calculated_fixture(); self.cs.is_published = True; self.cs.whoscored_expected_match_count = 3; self.cs.save()
-        failed, result = self.materialize(); self.assertIsNone(result); self.assertEqual(failed.status, IngestionRunStatus.FAILED)
+        internal, result = self.materialize(internal_pilot=True); self.assertIsNotNone(result); self.assertEqual(internal.status, IngestionRunStatus.SUCCESS)
+        self.assertFalse(internal.stats["public_complete"])
+        self.assertTrue(internal.stats["internal_pilot"])
         self.cs.whoscored_expected_match_count = 2; self.cs.save(update_fields=["whoscored_expected_match_count"])
         with patch("ingestion.services.whoscored_client.SoccerdataWhoScoredClient", side_effect=AssertionError("offline"), create=True):
             succeeded, result = self.materialize()

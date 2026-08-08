@@ -148,6 +148,7 @@ def _profile_events(competition_season: CompetitionSeason) -> list[ProviderMatch
 def materialize_event_profiles(
     competition_season: CompetitionSeason, *, run: IngestionRun,
     affected_player_ids: Iterable[int] | None = None, affected_team_ids: Iterable[int] | None = None,
+    internal_pilot: bool = False,
 ) -> BuildResult | None:
     """Publish a full or affected-entity rebuild; failures leave current rows intact."""
     if run.kind != IngestionKind.EVENT_PROFILES:
@@ -172,6 +173,7 @@ def materialize_event_profiles(
                 "event_identity": report.as_dict(),
                 "coverage": coverage,
                 "public_complete": public_complete,
+                "internal_pilot": internal_pilot,
             }
             validate_event_identity_publication(report)
             if not all_events:
@@ -186,7 +188,7 @@ def materialize_event_profiles(
                 team_ids.update(TeamSeasonEventProfile.objects.filter(competition_season=competition_season, is_current=True).values_list("team_id", flat=True))
             else:
                 team_ids = set(affected_team_ids)
-            if competition_season.is_published and not public_complete:
+            if competition_season.is_published and not public_complete and not internal_pilot:
                 raise ValueError("Published event profiles require mapped teams and complete WhoScored coverage.")
             result = _publish(competition_season, run, all_events, player_ids, team_ids)
             stats = run.stats | {
@@ -217,6 +219,11 @@ def _coverage_report(competition_season: CompetitionSeason, events: list[Provide
     )
     return {"completed_matches": len(completed), "observed_matches": len(observed), "expected_matches": expected,
             "discovered_complete": discovered_complete, "complete": discovered_complete and expected_complete}
+
+
+def event_profile_is_public(profile: PlayerSeasonEventProfile | TeamSeasonEventProfile) -> bool:
+    """Return whether an internally materialized profile passed every public gate."""
+    return profile.is_current and profile.materialized_ingestion_run.stats.get("public_complete") is True
 
 
 def _publish(cs: CompetitionSeason, run: IngestionRun, events: list[ProviderMatchEvent], player_ids: set[int], team_ids: set[int]) -> BuildResult:

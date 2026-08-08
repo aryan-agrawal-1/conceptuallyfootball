@@ -5,7 +5,7 @@ from ingestion.models import (
     PlayerSeasonEventProfile,
     TeamSeasonEventProfile,
 )
-from ingestion.services.event_profiles import event_profile_availability
+from ingestion.services.event_profiles import event_profile_availability, event_profile_is_public
 
 
 def unavailable_event_profile_flag() -> dict:
@@ -30,7 +30,7 @@ def player_event_profile_flag(competition_season, canonical_player_id: int) -> d
         .select_related("materialized_ingestion_run")
         .first()
     )
-    if profile is None:
+    if profile is None or not event_profile_is_public(profile):
         return unavailable_event_profile_flag()
 
     modules = event_profile_availability(
@@ -57,8 +57,8 @@ def team_event_profile_flag(competition_season, canonical_team_id: int) -> dict:
         competition_season=competition_season,
         team_id=canonical_team_id,
         is_current=True,
-    ).first()
-    if profile is None:
+    ).select_related("materialized_ingestion_run").first()
+    if profile is None or not event_profile_is_public(profile):
         return unavailable_event_profile_flag()
     return {
         "available": True,

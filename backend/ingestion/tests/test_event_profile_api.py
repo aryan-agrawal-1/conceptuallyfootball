@@ -367,3 +367,27 @@ class EventProfileApiTests(TestCase):
         )
         self.assertFalse(player.json()["event_profile"]["available"])
         self.assertFalse(team.json()["event_profile"]["available"])
+
+    def test_incomplete_internal_pilot_remains_unavailable_publicly(self):
+        run = PlayerSeasonEventProfile.objects.get(
+            player=self.player,
+            split_type="season_total",
+            is_current=True,
+        ).materialized_ingestion_run
+        run.stats = run.stats | {"public_complete": False}
+        run.save(update_fields=["stats"])
+
+        for url in (self.player_url, self.passes_url, self.team_url):
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url, self.scope).status_code, 404)
+
+        player = self.client.get(
+            f"/api/v1/player-seasons/derived-stats/{self.player.id}",
+            self.scope,
+        )
+        team = self.client.get(
+            f"/api/v1/team-seasons/stats/{self.home.id}",
+            self.scope,
+        )
+        self.assertFalse(player.json()["event_profile"]["available"])
+        self.assertFalse(team.json()["event_profile"]["available"])

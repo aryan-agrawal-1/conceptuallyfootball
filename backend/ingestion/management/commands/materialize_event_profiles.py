@@ -16,6 +16,11 @@ class Command(BaseCommand):
         parser.add_argument("--affected-player-id", action="append", type=int, default=[])
         parser.add_argument("--affected-team-id", action="append", type=int, default=[])
         parser.add_argument("--affected-match-id", action="append", default=[], help="WhoScored provider match id to recompute.")
+        parser.add_argument(
+            "--internal-pilot",
+            action="store_true",
+            help="Materialize an incomplete internal pilot without enabling public event profiles.",
+        )
 
     def handle(self, *args, **options) -> None:
         cid = options["competition_season_id"]
@@ -51,7 +56,8 @@ class Command(BaseCommand):
         run = IngestionRun.objects.create(kind=IngestionKind.EVENT_PROFILES, competition_season=competition_season,
                                           status=IngestionRunStatus.PENDING)
         materialize_event_profiles(competition_season, run=run,
-                                   affected_player_ids=players or None, affected_team_ids=teams or None)
+                                   affected_player_ids=players or None, affected_team_ids=teams or None,
+                                   internal_pilot=options["internal_pilot"])
         run.refresh_from_db()
         if run.status != IngestionRunStatus.SUCCESS:
             raise CommandError(run.error_detail or "Event profile materialization failed")
