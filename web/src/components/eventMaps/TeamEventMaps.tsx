@@ -81,6 +81,11 @@ export function TeamEventMaps({
   const territory = view === 'territory_against'
     ? profile.opponentActionTerritory
     : profile.actionTerritory
+  const sparse = view === 'flow'
+    ? nonzeroFlows.reduce((total, flow) => total + flow.completedCount, 0) < 100
+    : view === 'shots_for' || view === 'shots_against'
+      ? shots.length < 5
+      : territory.reduce((total, cell) => total + cell.rawCount, 0) < 100
 
   const renderPitch = () => {
     if (view === 'flow') {
@@ -170,6 +175,11 @@ export function TeamEventMaps({
             { label: 'Shots against', value: profile.summary.shots_against?.toLocaleString() ?? '—' },
           ]} />
           <EventCoverage coverage={profile.coverage} />
+          {sparse ? (
+            <EventMapNotice kind="sparse" title="Small event sample">
+              Treat the visible pattern as directional context, not a settled season tendency.
+            </EventMapNotice>
+          ) : null}
           {(view === 'shots_for' || view === 'shots_against') ? (
             <EventSelectionDetails selection={selection} matches={profile.matches} />
           ) : null}
