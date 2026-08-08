@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { BarChart3, Loader2, AlertCircle } from 'lucide-react'
@@ -16,6 +16,13 @@ import { buildTeamCreateChartsPath } from '../lib/createChartsUrl'
 import type { SearchTeamMembership } from '../types/api'
 import { profileSliceMatchesParams, resolveProfileSlice, withProfileSliceParams, type ProfileSlice } from '../lib/profileSlice'
 import { useSeoMeta } from '../lib/seo'
+import { ProfileContentTabs, type ProfileContentTab } from '../components/profile/ProfileContentTabs'
+
+const TeamEventMaps = lazy(() =>
+  import('../components/eventMaps/TeamEventMaps').then(module => ({
+    default: module.TeamEventMaps,
+  })),
+)
 
 export function TeamProfile() {
   const { id } = useParams<{ id: string }>()
@@ -134,12 +141,26 @@ function TeamLayout({
   const meta = team.meta
   const [rateMode, setRateMode] = useState<ProfileRateMode>('full')
   const { scope, buildScopedPath } = useScope()
-  const [, setSearchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const eventMapsAvailable = team.event_profile.available
+  const contentTab: ProfileContentTab =
+    eventMapsAvailable && searchParams.get('profileTab') === 'event-maps'
+      ? 'event-maps'
+      : 'overview'
 
   const setProfileSlice = (requested: Partial<ProfileSlice>) => {
     const next = resolveProfileSlice(memberships, scope, requested)
     if (!next) return
     setSearchParams(previous => withProfileSliceParams(previous, next))
+  }
+
+  const setContentTab = (nextTab: ProfileContentTab) => {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous)
+      if (nextTab === 'event-maps') next.set('profileTab', 'event-maps')
+      else next.delete('profileTab')
+      return next
+    })
   }
 
   useSeoMeta({
@@ -202,6 +223,13 @@ function TeamLayout({
         </div>
       </div>
 
+      <ProfileContentTabs
+        value={contentTab}
+        eventMapsAvailable={eventMapsAvailable}
+        onChange={setContentTab}
+      />
+
+      {contentTab === 'overview' ? (
       <div className="flex flex-col gap-8">
         <TeamKeyStats team={team} meta={meta} rateMode={rateMode} />
         <TeamStatSections team={team} rateMode={rateMode} />
@@ -213,6 +241,15 @@ function TeamLayout({
         )}
         {!squadLoading && squad && <TeamSquadList squad={squad} />}
       </div>
+      ) : (
+        <Suspense fallback={<div className="flex h-64 items-center justify-center"><Loader2 size={24} className="animate-spin text-electric" /></div>}>
+          <TeamEventMaps
+            teamId={team.canonical_team_id}
+            competition={team.competition_code}
+            season={team.season_label}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }

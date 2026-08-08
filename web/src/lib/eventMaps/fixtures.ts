@@ -43,6 +43,7 @@ export const eventPassFixture: EventPass[] = [
   {
     id: 'pass-01',
     matchRef: 'mci_ars_2026_02_21',
+    teamId: 101,
     minute: 8,
     second: 14,
     start: { x: 18, y: 72 },
@@ -59,6 +60,7 @@ export const eventPassFixture: EventPass[] = [
   {
     id: 'pass-02',
     matchRef: 'mci_ars_2026_02_21',
+    teamId: 101,
     minute: 26,
     second: 41,
     start: { x: 55, y: 48 },
@@ -75,6 +77,7 @@ export const eventPassFixture: EventPass[] = [
   {
     id: 'pass-03',
     matchRef: 'liv_mci_2026_03_08',
+    teamId: 101,
     minute: 49,
     second: 3,
     start: { x: 36, y: 12 },
@@ -91,6 +94,7 @@ export const eventPassFixture: EventPass[] = [
   {
     id: 'pass-04',
     matchRef: 'liv_mci_2026_03_08',
+    teamId: 101,
     minute: 77,
     second: 52,
     start: { x: 71, y: 83 },
@@ -110,6 +114,7 @@ export const eventShotFixture: EventShot[] = [
   {
     id: 'shot-01',
     matchRef: 'mci_ars_2026_02_21',
+    teamId: 101,
     minute: 27,
     location: { x: 88, y: 46 },
     outcome: 'goal',
@@ -123,6 +128,7 @@ export const eventShotFixture: EventShot[] = [
   {
     id: 'shot-02',
     matchRef: 'mci_ars_2026_02_21',
+    teamId: 101,
     minute: 64,
     second: 19,
     location: { x: 79, y: 68 },
@@ -137,6 +143,7 @@ export const eventShotFixture: EventShot[] = [
   {
     id: 'shot-03',
     matchRef: 'liv_mci_2026_03_08',
+    teamId: 202,
     minute: 83,
     location: { x: 91, y: 37 },
     outcome: 'saved',
@@ -221,8 +228,11 @@ export const playerEventProfileFixture: PlayerEventProfilePayload = {
   competition: 'ENG1',
   season: '2025-26',
   teamId: 101,
+  teamName: 'Fixture City',
+  splitType: 'team',
   coverage: fixtureCoverage,
   metadata: fixtureMetadata,
+  summary: { pass_attempts: 1984, shots: 38, valid_location_actions: 2814 },
   modules: {
     passMap: { available: true, sparse: false },
     shotMap: { available: true, sparse: true },
@@ -252,8 +262,10 @@ export const teamEventProfileFixture: TeamEventProfilePayload = {
   season: '2025-26',
   coverage: fixtureCoverage,
   metadata: fixtureMetadata,
+  summary: { pass_attempts: 19840, shots_for: 428, shots_against: 312 },
   passFlows: teamPassFlowFixture,
   shots: eventShotFixture,
   actionTerritory: eventActionGridFixture,
+  opponentActionTerritory: eventActionGridFixture,
   matches: eventMapMatchFixture,
 }

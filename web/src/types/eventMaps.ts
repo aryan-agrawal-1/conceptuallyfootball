@@ -18,6 +18,7 @@ export type PassOutcome = 'successful' | 'unsuccessful'
 export type EventPass = {
   id: string
   matchRef: string
+  teamId?: number | null
   minute: number
   second?: number
   start: PitchCoordinate
@@ -34,7 +35,14 @@ export type EventPass = {
 
 export type ShotOutcome = 'goal' | 'saved' | 'blocked' | 'off_target' | 'woodwork'
 export type ShotBodyPart = 'left_foot' | 'right_foot' | 'head' | 'other'
-export type ShotSituation = 'open_play' | 'set_piece' | 'corner' | 'penalty' | 'fast_break'
+export type ShotSituation =
+  | 'open_play'
+  | 'set_piece'
+  | 'corner'
+  | 'direct_free_kick'
+  | 'penalty'
+  | 'fast_break'
+  | 'unknown'
 
 export type GoalMouthCoordinate = {
   y: number
@@ -44,6 +52,7 @@ export type GoalMouthCoordinate = {
 export type EventShot = {
   id: string
   matchRef: string
+  teamId?: number | null
   minute: number
   second?: number
   location: PitchCoordinate
@@ -97,14 +106,27 @@ export type EventProfileMetadata = {
   updatedAt: string
 }
 
+export type PlayerPassFilter =
+  | 'completed'
+  | 'progressive'
+  | 'final_third_entry'
+  | 'box_entry'
+  | 'key_pass'
+  | 'cross'
+  | 'long_ball'
+  | 'failed'
+
 export type PlayerEventProfilePayload = {
   playerId: number
   playerName: string
   competition: string
   season: string
   teamId: number | null
+  teamName: string | null
+  splitType: 'season_total' | 'team'
   coverage: EventProfileCoverage
   metadata: EventProfileMetadata
+  summary: Record<string, number>
   modules: {
     passMap: EventModuleState
     shotMap: EventModuleState
@@ -120,15 +142,7 @@ export type PlayerPassMapPayload = {
   playerId: number
   competition: string
   season: string
-  filter:
-    | 'completed'
-    | 'progressive'
-    | 'final_third_entries'
-    | 'box_entries'
-    | 'key_passes'
-    | 'crosses'
-    | 'long_balls'
-    | 'failed'
+  filter: PlayerPassFilter
   truncated: boolean
   totalMatching: number
   passes: EventPass[]
@@ -142,8 +156,10 @@ export type TeamEventProfilePayload = {
   season: string
   coverage: EventProfileCoverage
   metadata: EventProfileMetadata
+  summary: Record<string, number>
   passFlows: TeamPassFlow[]
   shots: EventShot[]
   actionTerritory: ActionGridCell[]
+  opponentActionTerritory: ActionGridCell[]
   matches: EventMatchLookup
 }
