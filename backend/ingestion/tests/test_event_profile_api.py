@@ -160,6 +160,7 @@ class EventProfileApiTests(TestCase):
         self.assertEqual(len(payload["action_grid"]), 96)
         self.assertEqual(len(payload["shots"]), 1)
         self.assertEqual(payload["shots"][0]["match_ref"], 0)
+        self.assertEqual(payload["shots"][0]["team_id"], self.home.id)
         self.assertEqual(payload["matches"][0]["ref"], 0)
         self.assertNotIn("passes", payload)
         self.assertNotIn("pass_rows", payload)
@@ -214,6 +215,7 @@ class EventProfileApiTests(TestCase):
                 self.assertEqual(payload["total_matching_count"], expected)
                 self.assertEqual(len(payload["passes"]), expected)
                 self.assertEqual(payload["passes"][0]["match_ref"], payload["matches"][0]["ref"])
+                self.assertEqual(payload["passes"][0]["team_id"], self.home.id)
                 self.assertNotIn("provider_match_id", str(payload))
 
         invalid = self.client.get(self.passes_url, {**self.scope, "filter": "sampled"})
@@ -270,6 +272,8 @@ class EventProfileApiTests(TestCase):
         self.assertEqual(len(payload["shots_against"]), 1)
         self.assertEqual(payload["shots_for"][0]["match_ref"], 0)
         self.assertEqual(payload["shots_against"][0]["match_ref"], 0)
+        self.assertEqual(payload["shots_for"][0]["team_id"], self.home.id)
+        self.assertEqual(payload["shots_against"][0]["team_id"], self.away.id)
 
     def test_cache_hits_are_stable_and_profile_version_invalidates(self):
         first = self.client.get(self.player_url, self.scope)

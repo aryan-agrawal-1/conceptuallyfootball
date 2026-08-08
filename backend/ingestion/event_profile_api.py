@@ -181,6 +181,7 @@ def compact_match_lookup(events: list[ProviderMatchEvent]) -> tuple[list[dict], 
 def compact_shot(event: ProviderMatchEvent, match_references: dict[int, int]) -> dict:
     return {
         "match_ref": match_references[event.provider_match_id],
+        "team_id": event.team_id,
         "event_index": event.event_index,
         "match_seconds": event.match_seconds,
         "x": event.x,
@@ -202,6 +203,7 @@ def compact_shot(event: ProviderMatchEvent, match_references: dict[int, int]) ->
 def compact_pass(event: ProviderMatchEvent, match_references: dict[int, int]) -> dict:
     return {
         "match_ref": match_references[event.provider_match_id],
+        "team_id": event.team_id,
         "event_index": event.event_index,
         "match_seconds": event.match_seconds,
         "x": event.x,
