@@ -34,7 +34,13 @@ from ingestion.derived_definitions import (
     SCORE_DEFINITIONS,
     SCORE_FIELDS,
 )
-from ingestion.models import CanonicalTeam, CompetitionSeason, PlayerSeasonDerivedStats
+from ingestion.event_profile_flags import player_event_profile_flag
+from ingestion.models import (
+    CanonicalTeam,
+    CompetitionSeason,
+    PlayerSeasonDerivedStats,
+    PlayerSeasonEventProfile,
+)
 from ingestion.profile_modes import (
     comparison_source_code,
     comparison_scope_options,
@@ -477,6 +483,10 @@ class DerivedPlayerSeasonDetailApi(APIView):
             PROFILE_DISTRIBUTION_CACHE_VERSION,
             SCOPE_PERCENTILES_CACHE_VERSION,
             model_version(PlayerSeasonDerivedStats, {"is_current": True}),
+            model_version(
+                PlayerSeasonEventProfile,
+                {"is_current": True, "player_id": canonical_player_id},
+            ),
             model_version(CompetitionSeason),
         )
         try:
@@ -549,6 +559,10 @@ class DerivedPlayerSeasonDetailApi(APIView):
                     ),
                 }
         payload["sections"] = _detail_sections(row)
+        payload["event_profile"] = player_event_profile_flag(
+            competition_season,
+            canonical_player_id,
+        )
         _attach_comparison_context(
             request,
             payload=payload,

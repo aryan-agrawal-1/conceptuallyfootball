@@ -14,6 +14,7 @@ from ingestion.models import (
     MaterializedApiPayload,
     MatchEventShotOutcome,
     MatchEventType,
+    MergedTeamSeason,
     PlayerSeasonDerivedStats,
     PlayerSeasonEventProfile,
     Provider,
@@ -50,6 +51,11 @@ class EventProfileApiTests(TestCase):
             canonical_player=self.player,
             canonical_display_team=self.home,
             minutes=90,
+        )
+        MergedTeamSeason.objects.create(
+            competition_season=self.competition_season,
+            canonical_team=self.home,
+            matches=1,
         )
         self.match = ProviderMatch.objects.create(
             provider=Provider.WHOSCORED,
@@ -317,3 +323,37 @@ class EventProfileApiTests(TestCase):
                 rendered = response.content.decode("utf-8")
                 for field in forbidden:
                     self.assertNotIn(field, rendered)
+
+    def test_existing_detail_endpoints_expose_only_lightweight_flags(self):
+        player = self.client.get(
+            f"/api/v1/player-seasons/derived-stats/{self.player.id}",
+            self.scope,
+        )
+        team = self.client.get(
+            f"/api/v1/team-seasons/stats/{self.home.id}",
+            self.scope,
+        )
+
+        self.assertEqual(player.status_code, 200)
+        self.assertEqual(team.status_code, 200)
+        for payload in (player.json(), team.json()):
+            flag = payload["event_profile"]
+            self.assertTrue(flag["available"])
+            self.assertEqual(flag["formula_version"], "event_profiles_v1")
+            self.assertIn("coverage", flag)
+            self.assertNotIn("action_grid", flag)
+            self.assertNotIn("pass_flow", flag)
+            self.assertNotIn("shots", flag)
+
+        PlayerSeasonEventProfile.objects.filter(player=self.player).update(is_current=False)
+        TeamSeasonEventProfile.objects.filter(team=self.home).update(is_current=False)
+        player = self.client.get(
+            f"/api/v1/player-seasons/derived-stats/{self.player.id}",
+            self.scope,
+        )
+        team = self.client.get(
+            f"/api/v1/team-seasons/stats/{self.home.id}",
+            self.scope,
+        )
+        self.assertFalse(player.json()["event_profile"]["available"])
+        self.assertFalse(team.json()["event_profile"]["available"])
