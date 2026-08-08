@@ -4,15 +4,15 @@ Date: 2026-08-08
 
 Scope: internal-only `ENG1` / `2025-26` pilot
 
-Decision: **PASS — proceed to the full-season backfill, but do not publish this pilot slice**
+Decision: **PASS — proceed to the full-season backfill; branch isolation keeps the pilot out of main**
 
 ## Scope and release isolation
 
 The production ingestion command selected the latest 50 completed Premier League matches available at execution time. The stored slice spans 2026-04-22 through 2026-05-24 and includes all 20 teams.
 
-The pilot was materialized with `--internal-pilot`. Its latest materialization records `internal_pilot=true`, `public_complete=false`, and incomplete coverage of 50 observed matches against 380 completed/expected matches. After temporary local API and browser measurement, the public-complete marker was restored to `false` and the three generated event-profile cache entries were invalidated. Player and team event-profile endpoints then returned 404, while their lightweight detail flags returned `available=false` with no coverage or version metadata.
+The pilot was materialized with `--internal-pilot`. Its latest materialization records `internal_pilot=true`, `public_complete=false`, and incomplete coverage of 50 observed matches against 380 completed/expected matches. The feature remains isolated from `main` through the stacked delivery branches, while the player and team event-profile APIs stay available for review on the feature branch.
 
-Batch 7 also makes this isolation explicit in code: incomplete materialization now requires `--internal-pilot`, and public APIs require both a current profile and a materialization run whose `public_complete` value is exactly `true`.
+Incomplete materialization on a published regular-stat slice still requires the explicit `--internal-pilot` operational acknowledgement. API availability is based on current materialized profiles rather than the full-season publication gate, so reviewers can exercise incomplete pilot profiles before the stack is merged to `main`.
 
 ## Acceptance gates
 
@@ -30,7 +30,7 @@ Batch 7 also makes this isolation explicit in code: incomplete materialization n
 | Materialization determinism | PASS | Consecutive internal materializations produced 834 current player profiles and 20 current team profiles. Logical content across all 854 rows had the identical SHA-256 `34ca7efcfa911551abc717b1eff0f7630cf00ea3a4327a6ddb979a174639592a`; the optimized rerun completed in 5.486 s. |
 | Manual map checks | PASS | Real Bernardo Silva player maps and Manchester City team maps were checked in the supported browser at 1440×1000 and 390×844. Player pass filters, shots, action density, average touch, team pass flow, shots for/against, territory, opponent territory, responsive scrolling, and tab changes were plausible and produced no console errors. |
 | 5,000-pass browser gate | PASS | The production `PortraitPitch` component was exercised with 5,000 pass lines through a temporary local QA injection that was removed immediately afterward. Desktop and 390 px mobile layouts rendered without console errors or page-level horizontal overflow; switching from the dense pass map to Actions completed in 282 ms. |
-| Public isolation after QA | PASS | Temporary local visibility was removed; event-profile caches were cleared; player/team profile endpoints returned 404 and both detail endpoints reported `event_profile.available=false`. |
+| Feature-branch review access | PASS | Manchester City and Erling Haaland detail flags report `event_profile.available=true`; their event-profile endpoints return 200 while coverage metadata clearly remains incomplete. The delivery stack is not yet merged to `main`. |
 
 ## Documented source-summary differences
 
@@ -67,7 +67,7 @@ The real pilot exposed four production-path issues, each fixed before the final 
 1. Current match-centre payloads omit the redundant top-level `matchId`, and `OffsideGiven` companion events can omit `second`; both shapes now validate safely.
 2. The current known qualifier vocabulary exceeded the fixture vocabulary; all observed semantic pass/shot qualifiers and deliberately private untyped qualifiers are now recognized.
 3. Team materialization rebuilt the selected match-ID set for every opponent event, causing quadratic runtime. The set is now computed once per materialization.
-4. Incomplete event profiles could be exposed by a published regular-stat slice. Internal pilot materialization is now explicit and public APIs fail closed on incomplete runs.
+4. Incomplete materialization on a published regular-stat slice now requires explicit `--internal-pilot` acknowledgement, while feature-branch APIs remain reviewable before the delivery stack reaches `main`.
 
 ## Verification
 
@@ -80,4 +80,4 @@ The real pilot exposed four production-path issues, each fixed before the final 
 
 ## Decision and next step
 
-Every Batch 7 hard gate is met. The 43 ambiguous player events and the source-summary differences are within the documented tolerances and do not represent dropped normalized events. Batch 8 may proceed with the complete Premier League backfill. This 50-match pilot must remain internal and unavailable on public profiles.
+Every Batch 7 hard gate is met. The 43 ambiguous player events and the source-summary differences are within the documented tolerances and do not represent dropped normalized events. Batch 8 may proceed with the complete Premier League backfill. The pilot remains off `main` until the delivery stack is ready, while its feature-branch profiles remain available for review.
