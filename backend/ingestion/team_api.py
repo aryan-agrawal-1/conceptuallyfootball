@@ -15,7 +15,13 @@ from ingestion.api_cache import (
     stable_cache_key,
 )
 from ingestion.derived_api import _resolve_competition_scope, _resolve_competition_season
-from ingestion.models import CanonicalTeam, MergedPlayerSeason, MergedTeamSeason
+from ingestion.event_profile_flags import team_event_profile_flag
+from ingestion.models import (
+    CanonicalTeam,
+    MergedPlayerSeason,
+    MergedTeamSeason,
+    TeamSeasonEventProfile,
+)
 from ingestion.team_definitions import (
     MERGED_TEAM_SEASON_STAT_FIELDS,
     TEAM_STAT_DIRECTION,
@@ -222,6 +228,10 @@ class TeamSeasonDetailApi(APIView):
             "team-season-detail",
             model_version(MergedTeamSeason, {"is_current": True}),
             model_version(MergedPlayerSeason, {"is_current": True}),
+            model_version(
+                TeamSeasonEventProfile,
+                {"is_current": True, "team_id": canonical_team_id},
+            ),
         )
         try:
             payload, _ = get_or_build_payload(
@@ -278,6 +288,10 @@ class TeamSeasonDetailApi(APIView):
             "ranks": ranks,
             "ranks_per_match": ranks_per_match,
             "sections": team_sections_for_row(row, ranks, ranks_per_match, stat_values),
+            "event_profile": team_event_profile_flag(
+                competition_season,
+                canonical_team_id,
+            ),
         }
         if _requested_meta(request):
             payload["meta"] = team_meta_payload()
