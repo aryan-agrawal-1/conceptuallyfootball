@@ -95,6 +95,19 @@ interface Eligibility {
   scores_ineligibility_reason: string | null
 }
 
+export interface EventProfileFlag {
+  available: boolean
+  coverage: {
+    observed_matches?: number
+    expected_matches?: number
+    competition_complete?: boolean
+    ratio?: number | null
+  } | null
+  formula_version: string | null
+  materialization_run_id: number | null
+  profile_version: number | null
+}
+
 /** Additional clubs from the same league-season aggregate (multi-club Understat row). */
 export interface SecondaryTeamBadge {
   canonical_team_id: number
@@ -202,6 +215,7 @@ export interface MatrixResponse {
 
 /** `GET /player-seasons/derived-stats/:id` — player row + optional grouped sections + meta. */
 export interface PlayerDetailResponse extends PlayerRow {
+  event_profile: EventProfileFlag
   meta?: StatMeta
   sections?: ProfileSectionsPayload
   profile_distributions?: ProfileDistributionPayload
@@ -361,6 +375,7 @@ export interface TeamDetailResponse {
   competition_season: number
   competition_code: string
   season_label: string
+  event_profile: EventProfileFlag
   stats: Record<string, number | null>
   /** League rank on season totals (same ordering as raw `stats`). */
   ranks: Record<string, number | null>
