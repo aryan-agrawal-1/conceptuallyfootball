@@ -166,6 +166,68 @@ KNOWN_UNTYPED_QUALIFIER_NAMES = frozenset(
         "Diving",
         "NoTouch",
         "PullBack",
+        # Current Opta/WhoScored match-centre qualifier vocabulary that v1
+        # deliberately preserves only in the private raw payload.
+        "AerialFoul",
+        "BigChanceCreated",
+        "BlockedCross",
+        "CaptainPlayerId",
+        "Collected",
+        "DeepBoxLeft",
+        "DeepBoxRight",
+        "DivingSave",
+        "Feet",
+        "FirstTouch",
+        "Foul",
+        "FromShotOffTarget",
+        "GoalDisallowed",
+        "GoalKick",
+        "Hands",
+        "HighCentre",
+        "HighClaim",
+        "HighLeft",
+        "HighRight",
+        "IndirectFreekickTaken",
+        "IndividualPlay",
+        "InvolvedPlayers",
+        "JerseyNumber",
+        "KeeperMissed",
+        "KeeperSaveInSixYard",
+        "KeeperSaveInTheBox",
+        "KeeperSaveObox",
+        "KeeperThrow",
+        "LastMan",
+        "LayOff",
+        "LowCentre",
+        "LowLeft",
+        "LowRight",
+        "MissHigh",
+        "MissLeft",
+        "MissRight",
+        "Offensive",
+        "OneOnOne",
+        "OutOfBoxCentre",
+        "OutOfBoxLeft",
+        "OutOfBoxRight",
+        "OutfielderBlock",
+        "OverRun",
+        "OwnGoal",
+        "ParriedDanger",
+        "ParriedSafe",
+        "PlayerCaughtOffside",
+        "Red",
+        "SavedOffline",
+        "SixYardBlock",
+        "SmallBoxCentre",
+        "SmallBoxLeft",
+        "SmallBoxRight",
+        "StandingSave",
+        "TeamFormation",
+        "TeamPlayerFormation",
+        "ThrowinSetPiece",
+        "Volley",
+        "Yellow",
+        "FormationSlot",
     }
 )
 
@@ -507,7 +569,7 @@ def validate_match_structure(
     payload: Mapping[str, Any],
     diagnostics: NormalizationDiagnostics,
 ) -> None:
-    for field_name in ("matchId", "home", "away", "events"):
+    for field_name in ("home", "away", "events"):
         if field_name not in payload:
             diagnostics.errors.append(
                 {"code": "missing_match_field", "field": field_name}
@@ -552,7 +614,6 @@ def normalize_event(
         "type": event.get("type"),
         "period": event.get("period"),
         "minute": event.get("minute"),
-        "second": event.get("second"),
     }
     missing = [name for name, value in required_values.items() if value in (None, "")]
     if missing:
@@ -566,7 +627,14 @@ def normalize_event(
         return None
 
     minute = strict_nonnegative_int(event.get("minute"))
-    second = strict_nonnegative_int(event.get("second"))
+    # Current OffsideGiven companion events consistently omit seconds. They
+    # are minute-granularity annotations rather than the primary offside event.
+    second_value = (
+        0
+        if event_name == "OffsideGiven" and event.get("second") in (None, "")
+        else event.get("second")
+    )
+    second = strict_nonnegative_int(second_value)
     period = normalized_period(event.get("period"))
     expanded_minute = optional_int(event.get("expandedMinute"))
     if (
