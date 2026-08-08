@@ -2,7 +2,11 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { fetchPlayerEventProfile, fetchPlayerPassMap } from '../../lib/eventMaps/api'
 import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
-import type { PlayerPassFilter } from '../../types/eventMaps'
+import type {
+  PlayerEventProfilePayload,
+  PlayerPassFilter,
+  PlayerPassMapPayload,
+} from '../../types/eventMaps'
 import { cn } from '../../lib/utils'
 import { PortraitPitch } from './PortraitPitch'
 import {
@@ -36,16 +40,35 @@ const PASS_FILTERS: Array<{ value: PlayerPassFilter; label: string }> = [
 
 export type PlayerEventMapTeam = { id: number; name: string }
 
+type PlayerEventProfileLoader = (
+  playerId: number,
+  competition: string,
+  season: string,
+  teamId?: number | null,
+) => Promise<PlayerEventProfilePayload>
+
+type PlayerPassMapLoader = (
+  playerId: number,
+  competition: string,
+  season: string,
+  filter: PlayerPassFilter,
+  teamId?: number | null,
+) => Promise<PlayerPassMapPayload>
+
 export function PlayerEventMaps({
   playerId,
   competition,
   season,
   teams,
+  loadProfile = fetchPlayerEventProfile,
+  loadPasses = fetchPlayerPassMap,
 }: {
   playerId: number
   competition: string
   season: string
   teams: PlayerEventMapTeam[]
+  loadProfile?: PlayerEventProfileLoader
+  loadPasses?: PlayerPassMapLoader
 }) {
   const [view, setView] = useState<PlayerMapView>('passes')
   const [passFilter, setPassFilter] = useState<PlayerPassFilter>('completed')
@@ -55,13 +78,13 @@ export function PlayerEventMaps({
 
   const profileQuery = useQuery({
     queryKey: ['player-event-profile', playerId, competition, season, teamId],
-    queryFn: () => fetchPlayerEventProfile(playerId, competition, season, teamId),
+    queryFn: () => loadProfile(playerId, competition, season, teamId),
     staleTime: 10 * 60 * 1000,
   })
 
   const passQuery = useQuery({
     queryKey: ['player-event-passes', playerId, competition, season, teamId, passFilter],
-    queryFn: () => fetchPlayerPassMap(playerId, competition, season, passFilter, teamId),
+    queryFn: () => loadPasses(playerId, competition, season, passFilter, teamId),
     enabled: view === 'passes' && profileQuery.data?.modules.passMap.available === true,
     staleTime: 10 * 60 * 1000,
   })

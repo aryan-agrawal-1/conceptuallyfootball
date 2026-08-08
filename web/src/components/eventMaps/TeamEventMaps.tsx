@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { fetchTeamEventProfile } from '../../lib/eventMaps/api'
 import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
-import type { TeamPassFlow } from '../../types/eventMaps'
+import type { TeamEventProfilePayload, TeamPassFlow } from '../../types/eventMaps'
 import { PortraitPitch } from './PortraitPitch'
 import {
   EventCoverage,
@@ -32,10 +32,16 @@ export function TeamEventMaps({
   teamId,
   competition,
   season,
+  loadProfile = fetchTeamEventProfile,
 }: {
   teamId: number
   competition: string
   season: string
+  loadProfile?: (
+    teamId: number,
+    competition: string,
+    season: string,
+  ) => Promise<TeamEventProfilePayload>
 }) {
   const [view, setView] = useState<TeamMapView>('flow')
   const [selection, setSelection] = useState<SelectablePitchEvent | null>(null)
@@ -43,7 +49,7 @@ export function TeamEventMaps({
   const [expanded, setExpanded] = useState(false)
   const profileQuery = useQuery({
     queryKey: ['team-event-profile', teamId, competition, season],
-    queryFn: () => fetchTeamEventProfile(teamId, competition, season),
+    queryFn: () => loadProfile(teamId, competition, season),
     staleTime: 10 * 60 * 1000,
   })
 

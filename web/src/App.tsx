@@ -26,6 +26,11 @@ const RegressionLab = lazy(() =>
 const DataVisualiser = lazy(() =>
   import('./pages/DataVisualiser').then(m => ({ default: m.DataVisualiser })),
 )
+const EventMapsPreview = import.meta.env.DEV
+  ? lazy(() =>
+      import('./pages/EventMapsPreview').then(m => ({ default: m.EventMapsPreview })),
+    )
+  : null
 
 function RouteFallback() {
   return (
@@ -132,6 +137,9 @@ export default function App() {
           <Route path="/regression-lab" element={<RegressionLab />} />
           <Route path={CREATE_CHARTS_PATH} element={<DataVisualiser />} />
           <Route path={LEGACY_DATA_VISUALISER_PATH} element={<DataVisualiser />} />
+          {EventMapsPreview ? (
+            <Route path="/dev/event-maps" element={<EventMapsPreview />} />
+          ) : null}
         </Routes>
       </Suspense>
     </Layout>
