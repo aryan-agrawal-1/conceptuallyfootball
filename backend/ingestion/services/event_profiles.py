@@ -279,7 +279,12 @@ def _player_row(cs, run, player_id, team_id, split_type, events, minutes, match_
 
 def _team_row(cs, run, team_id, events, all_events):
     summary = _summary(events); grid, _ = _grid(events, 0)
-    opponents = [e for e in all_events if e.team_id != team_id and e.provider_match_id in {mine.provider_match_id for mine in events}]
+    match_ids = {event.provider_match_id for event in events}
+    opponents = [
+        event
+        for event in all_events
+        if event.team_id != team_id and event.provider_match_id in match_ids
+    ]
     opponent_grid, _ = _grid(opponents, 0); against = _summary(opponents)
     observed = len({e.provider_match_id for e in events})
     expected = (
