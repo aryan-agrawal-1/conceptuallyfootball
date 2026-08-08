@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { fetchPlayerEventProfile, fetchPlayerPassMap } from '../../lib/eventMaps/api'
 import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
 import type { PlayerPassFilter } from '../../types/eventMaps'
@@ -65,8 +65,6 @@ export function PlayerEventMaps({
     enabled: view === 'passes' && profileQuery.data?.modules.passMap.available === true,
     staleTime: 10 * 60 * 1000,
   })
-
-  useEffect(() => setSelection(null), [passFilter, teamId, view])
 
   const profile = profileQuery.data
   const selectedMatches = view === 'passes' ? passQuery.data?.matches ?? {} : profile?.matches ?? {}
@@ -196,7 +194,10 @@ export function PlayerEventMaps({
             Team split
             <select
               value={teamId ?? ''}
-              onChange={event => setTeamId(event.target.value ? Number(event.target.value) : null)}
+              onChange={event => {
+                setSelection(null)
+                setTeamId(event.target.value ? Number(event.target.value) : null)
+              }}
               className="h-9 min-w-40 border border-control-border bg-panel px-3 text-[10px] text-control-fg outline-none hover:border-electric focus:border-electric"
             >
               <option value="">Season total</option>
@@ -207,14 +208,25 @@ export function PlayerEventMaps({
       </div>
 
       <div className="mb-4 flex flex-col gap-3">
-        <EventMapViewTabs value={view} options={availableViews} onChange={setView} label="Player event map" />
+        <EventMapViewTabs
+          value={view}
+          options={availableViews}
+          onChange={nextView => {
+            setSelection(null)
+            setView(nextView)
+          }}
+          label="Player event map"
+        />
         {view === 'passes' ? (
           <div className="flex gap-1.5 overflow-x-auto pb-1" aria-label="Pass filter">
             {PASS_FILTERS.map(filter => (
               <button
                 key={filter.value}
                 type="button"
-                onClick={() => setPassFilter(filter.value)}
+                onClick={() => {
+                  setSelection(null)
+                  setPassFilter(filter.value)
+                }}
                 className={cn(
                   'h-8 shrink-0 border px-2.5 text-[9px] font-bold uppercase tracking-[0.11em] transition-colors',
                   filter.value === passFilter

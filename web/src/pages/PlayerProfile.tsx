@@ -14,6 +14,7 @@ import { ProfilePizzaSection } from '../components/profile/ProfilePizzaSection'
 import { ProfileEligibilityBanner } from '../components/profile/ProfileEligibilityBanner'
 import { ProfileScopeSelector } from '../components/profile/ProfileScopeSelector'
 import { ProfileSimilarPlayers } from '../components/profile/ProfileSimilarPlayers'
+import { ProfileContentTabs, type ProfileContentTab } from '../components/profile/ProfileContentTabs'
 import type { ProfileRateMode } from '../lib/profileMetrics'
 import type { PositionGroup, SearchPlayerMembership } from '../types/api'
 import { profileSliceMatchesParams, resolveProfileSlice, withProfileSliceParams, type ProfileSlice } from '../lib/profileSlice'
@@ -23,6 +24,12 @@ import { useSeoMeta } from '../lib/seo'
 const PlayerProfileExportModal = lazy(() =>
   import('../components/profile/PlayerProfileExportModal').then(module => ({
     default: module.PlayerProfileExportModal,
+  })),
+)
+
+const PlayerEventMaps = lazy(() =>
+  import('../components/eventMaps/PlayerEventMaps').then(module => ({
+    default: module.PlayerEventMaps,
   })),
 )
 
@@ -173,6 +180,11 @@ function ProfileLayout({
   const [exportOpen, setExportOpen] = useState(false)
   const { scope, buildScopedPath } = useScope()
   const [searchParams, setSearchParams] = useSearchParams()
+  const eventMapsAvailable = player.event_profile.available
+  const contentTab: ProfileContentTab =
+    eventMapsAvailable && searchParams.get('profileTab') === 'event-maps'
+      ? 'event-maps'
+      : 'overview'
 
   const setProfileSlice = (requested: Partial<ProfileSlice>) => {
     const next = resolveProfileSlice(memberships, scope, requested)
@@ -221,7 +233,7 @@ function ProfileLayout({
         player.season_label,
         comparisonScope,
       ),
-    enabled: hasComparisonScope && player.position_group !== 'GK',
+    enabled: contentTab === 'overview' && hasComparisonScope && player.position_group !== 'GK',
     staleTime: 10 * 60 * 1000,
   })
 
@@ -248,6 +260,26 @@ function ProfileLayout({
       return next
     })
   }
+
+  const setContentTab = (nextTab: ProfileContentTab) => {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous)
+      if (nextTab === 'event-maps') next.set('profileTab', 'event-maps')
+      else next.delete('profileTab')
+      return next
+    })
+  }
+
+  const eventMapTeams = useMemo(() => {
+    const values = new Map<number, string>()
+    if (player.canonical_team_id != null && player.canonical_team_name) {
+      values.set(player.canonical_team_id, player.canonical_team_name)
+    }
+    for (const team of player.secondary_teams ?? []) {
+      values.set(team.canonical_team_id, team.canonical_team_name)
+    }
+    return [...values].map(([id, name]) => ({ id, name }))
+  }, [player.canonical_team_id, player.canonical_team_name, player.secondary_teams])
 
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-5 pb-24 sm:px-6 sm:py-8 lg:px-10 lg:pb-20">
@@ -327,6 +359,13 @@ function ProfileLayout({
         </div>
       </div>
 
+      <ProfileContentTabs
+        value={contentTab}
+        eventMapsAvailable={eventMapsAvailable}
+        onChange={setContentTab}
+      />
+
+      {contentTab === 'overview' ? <>
       <div className="mb-6 flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Comparison cohort">
           <span className="mr-1 text-[10px] font-mono uppercase tracking-[0.15em] text-ink-dim">Compare against</span>
@@ -393,6 +432,16 @@ function ProfileLayout({
           />
         </section>
       </div>
+      </> : (
+        <Suspense fallback={<div className="flex h-64 items-center justify-center"><Loader2 size={24} className="animate-spin text-electric" /></div>}>
+          <PlayerEventMaps
+            playerId={player.canonical_player_id}
+            competition={player.competition_code}
+            season={player.season_label}
+            teams={eventMapTeams}
+          />
+        </Suspense>
+      )}
 
       {exportOpen && (
         <Suspense fallback={null}>

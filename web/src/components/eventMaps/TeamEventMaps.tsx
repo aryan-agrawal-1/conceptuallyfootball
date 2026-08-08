@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { fetchTeamEventProfile } from '../../lib/eventMaps/api'
 import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
 import type { TeamPassFlow } from '../../types/eventMaps'
@@ -46,8 +46,6 @@ export function TeamEventMaps({
     queryFn: () => fetchTeamEventProfile(teamId, competition, season),
     staleTime: 10 * 60 * 1000,
   })
-
-  useEffect(() => setSelection(null), [view])
 
   const profile = profileQuery.data
   const nonzeroFlows = useMemo(
@@ -132,7 +130,15 @@ export function TeamEventMaps({
       </div>
 
       <div className="mb-4 flex flex-col gap-3">
-        <EventMapViewTabs value={view} options={TEAM_VIEWS} onChange={setView} label="Team event map" />
+        <EventMapViewTabs
+          value={view}
+          options={TEAM_VIEWS}
+          onChange={nextView => {
+            setSelection(null)
+            setView(nextView)
+          }}
+          label="Team event map"
+        />
         {view === 'flow' ? (
           <div className="flex flex-wrap items-center justify-between gap-2 border border-line-bright bg-panel px-3 py-2">
             <p className="text-[9px] leading-relaxed text-ink-dim">
