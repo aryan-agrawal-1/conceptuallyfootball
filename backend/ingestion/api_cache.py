@@ -169,3 +169,15 @@ def get_or_build_payload_response(
 def invalidate_materialized_api_payloads() -> int:
     deleted, _ = MaterializedApiPayload.objects.all().delete()
     return deleted
+
+
+def invalidate_event_profile_api_payloads(competition_season_id: int) -> int:
+    """Remove only event-profile payloads for one competition-season.
+
+    Event-profile API cache keys are intentionally namespaced and include the
+    season id as a stable string, e.g. ``event-profile:42:player:7``.
+    """
+    deleted, _ = MaterializedApiPayload.objects.filter(
+        cache_key__startswith=f"event-profile:{competition_season_id}:"
+    ).delete()
+    return deleted
