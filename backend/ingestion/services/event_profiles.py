@@ -221,11 +221,6 @@ def _coverage_report(competition_season: CompetitionSeason, events: list[Provide
             "discovered_complete": discovered_complete, "complete": discovered_complete and expected_complete}
 
 
-def event_profile_is_public(profile: PlayerSeasonEventProfile | TeamSeasonEventProfile) -> bool:
-    """Return whether an internally materialized profile passed every public gate."""
-    return profile.is_current and profile.materialized_ingestion_run.stats.get("public_complete") is True
-
-
 def _publish(cs: CompetitionSeason, run: IngestionRun, events: list[ProviderMatchEvent], player_ids: set[int], team_ids: set[int]) -> BuildResult:
     by_player, by_player_team, by_team = defaultdict(list), defaultdict(list), defaultdict(list)
     for event in events:

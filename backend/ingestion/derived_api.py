@@ -34,7 +34,10 @@ from ingestion.derived_definitions import (
     SCORE_DEFINITIONS,
     SCORE_FIELDS,
 )
-from ingestion.event_profile_flags import player_event_profile_flag
+from ingestion.event_profile_flags import (
+    EVENT_PROFILE_FLAG_CACHE_VERSION,
+    player_event_profile_flag,
+)
 from ingestion.models import (
     CanonicalTeam,
     CompetitionSeason,
@@ -479,6 +482,7 @@ class DerivedPlayerSeasonDetailApi(APIView):
         )
         source_version = joined_version(
             "derived-detail",
+            EVENT_PROFILE_FLAG_CACHE_VERSION,
             METRIC_META_CACHE_VERSION,
             PROFILE_DISTRIBUTION_CACHE_VERSION,
             SCOPE_PERCENTILES_CACHE_VERSION,

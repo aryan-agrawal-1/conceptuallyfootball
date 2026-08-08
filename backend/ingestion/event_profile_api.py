@@ -19,7 +19,7 @@ from ingestion.models import (
     ProviderMatchEvent,
     TeamSeasonEventProfile,
 )
-from ingestion.services.event_profiles import event_profile_availability, event_profile_is_public
+from ingestion.services.event_profiles import event_profile_availability
 
 
 PASS_RESPONSE_LIMIT = 5_000
@@ -276,7 +276,7 @@ class PlayerEventProfileMixin:
         ).exists():
             raise PlayerSeasonEventProfile.DoesNotExist
         profile = player_profile_queryset(competition_season, canonical_player_id, team_id).first()
-        if profile is None or not event_profile_is_public(profile) or not any(
+        if profile is None or not any(
             module["available"] for module in availability_for_player(profile).values()
         ):
             raise PlayerSeasonEventProfile.DoesNotExist
@@ -415,8 +415,6 @@ class TeamEventProfileApi(APIView):
                 team_id=canonical_team_id,
                 is_current=True,
             )
-            if not event_profile_is_public(profile):
-                raise TeamSeasonEventProfile.DoesNotExist
             cache_key = stable_cache_key(
                 f"event-profile:{profile.competition_season_id}:team",
                 {

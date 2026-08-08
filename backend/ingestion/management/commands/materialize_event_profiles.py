@@ -19,7 +19,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--internal-pilot",
             action="store_true",
-            help="Materialize an incomplete internal pilot without enabling public event profiles.",
+            help="Materialize an incomplete pilot on an isolated delivery branch.",
         )
 
     def handle(self, *args, **options) -> None:
