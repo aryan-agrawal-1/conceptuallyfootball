@@ -189,10 +189,14 @@ function shotSituation(value: string): ShotSituation {
   return supported.includes(normalized) ? normalized : 'unknown'
 }
 
-function mapMatches(matches: ApiMatch[], eventTeamIds: Map<number, number | null>): EventMatchLookup {
+function mapMatches(
+  matches: ApiMatch[],
+  eventTeamIds: Map<number, number | null>,
+  viewedTeamId?: number,
+): EventMatchLookup {
   return Object.fromEntries(
     matches.map(match => {
-      const teamId = eventTeamIds.get(match.ref)
+      const teamId = viewedTeamId ?? eventTeamIds.get(match.ref)
       const isHome = teamId != null && teamId === match.home_team_id
       const isAway = teamId != null && teamId === match.away_team_id
       return [
@@ -403,6 +407,6 @@ export async function fetchTeamEventProfile(
     ],
     actionTerritory: mapGrid(raw.action_grid),
     opponentActionTerritory: mapGrid(raw.opponent_action_grid),
-    matches: mapMatches(raw.matches, matchTeamIds(allShots)),
+    matches: mapMatches(raw.matches, matchTeamIds(allShots), raw.canonical_team_id),
   }
 }
