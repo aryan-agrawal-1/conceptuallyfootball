@@ -23,6 +23,7 @@ from ingestion.services.event_profiles import event_profile_availability
 
 
 PASS_RESPONSE_LIMIT = 5_000
+COORDINATE_SCALE = 100
 
 PLAYER_SUMMARY_FIELDS = (
     "minutes",
@@ -178,23 +179,29 @@ def compact_match_lookup(events: list[ProviderMatchEvent]) -> tuple[list[dict], 
     return lookup, references
 
 
+def public_coordinate(value: int | None) -> float | None:
+    if value is None:
+        return None
+    return value / COORDINATE_SCALE
+
+
 def compact_shot(event: ProviderMatchEvent, match_references: dict[int, int]) -> dict:
     return {
         "match_ref": match_references[event.provider_match_id],
         "team_id": event.team_id,
         "event_index": event.event_index,
         "match_seconds": event.match_seconds,
-        "x": event.x,
-        "y": event.y,
+        "x": public_coordinate(event.x),
+        "y": public_coordinate(event.y),
         "outcome": event.get_shot_outcome_display(),
         "body_part": event.get_body_part_display(),
         "situation": event.get_shot_situation_display(),
         "big_chance": event.is_big_chance,
         "assisted": event.is_shot_assist,
-        "goal_mouth_y": event.goal_mouth_y,
-        "goal_mouth_z": event.goal_mouth_z,
-        "blocked_x": event.blocked_x,
-        "blocked_y": event.blocked_y,
+        "goal_mouth_y": public_coordinate(event.goal_mouth_y),
+        "goal_mouth_z": public_coordinate(event.goal_mouth_z),
+        "blocked_x": public_coordinate(event.blocked_x),
+        "blocked_y": public_coordinate(event.blocked_y),
         "player_id": event.player_id,
         "player_name": event.player.display_name if event.player else None,
     }
@@ -206,10 +213,10 @@ def compact_pass(event: ProviderMatchEvent, match_references: dict[int, int]) ->
         "team_id": event.team_id,
         "event_index": event.event_index,
         "match_seconds": event.match_seconds,
-        "x": event.x,
-        "y": event.y,
-        "end_x": event.end_x,
-        "end_y": event.end_y,
+        "x": public_coordinate(event.x),
+        "y": public_coordinate(event.y),
+        "end_x": public_coordinate(event.end_x),
+        "end_y": public_coordinate(event.end_y),
         "completed": event.outcome_successful is True,
         "progressive": event.is_progressive_pass,
         "final_third_entry": event.is_final_third_entry,
@@ -328,8 +335,8 @@ class PlayerEventProfileApi(PlayerEventProfileMixin, APIView):
             "materialization": materialization_metadata(profile),
             "summary": {field: getattr(profile, field) for field in PLAYER_SUMMARY_FIELDS},
             "average_touch_location": {
-                "x": profile.average_touch_x,
-                "y": profile.average_touch_y,
+                "x": public_coordinate(profile.average_touch_x),
+                "y": public_coordinate(profile.average_touch_y),
                 "sample_size": profile.touches,
             },
             "action_grid": profile.action_grid,
