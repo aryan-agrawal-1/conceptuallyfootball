@@ -421,6 +421,13 @@ class DerivedStatsTests(TestCase):
     def test_list_endpoint_paginates_filters_and_rejects_oversized_pages(self):
         self._materialize()
 
+        default_response = self.client.get(
+            "/api/v1/player-seasons/derived-stats",
+            {"competition": "EPL", "season": "2025-26"},
+        )
+        self.assertEqual(default_response.status_code, 200)
+        self.assertEqual(default_response.json()["page_size"], 500)
+
         response = self.client.get(
             "/api/v1/player-seasons/derived-stats",
             {

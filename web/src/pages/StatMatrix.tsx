@@ -309,7 +309,6 @@ export function StatMatrix() {
         onHeatmapToggle={() => setHeatmapEnabled(e => !e)}
         onRateModeChange={handleRateModeChange}
         onColGroupToggle={handleColGroupToggle}
-        playerCount={filteredPlayers.length}
         totalCount={data?.count ?? 0}
         refetching={isFetching && isPlaceholderData}
         starterViews={starterViews}
@@ -338,9 +337,12 @@ export function StatMatrix() {
               page={data?.page ?? page}
               totalPages={data?.total_pages ?? 0}
               count={data?.count ?? 0}
-              pageSize={data?.page_size ?? 200}
+              pageSize={data?.page_size ?? 500}
               fetching={isFetching}
-              onPageChange={setPage}
+              onPageChange={nextPage => {
+                if (matrixScrollParentRef.current) matrixScrollParentRef.current.scrollTop = 0
+                setPage(nextPage)
+              }}
             />
           </>
         )}

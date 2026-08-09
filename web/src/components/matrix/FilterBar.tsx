@@ -37,7 +37,6 @@ interface FilterBarProps {
   onHeatmapToggle: () => void
   onRateModeChange: (mode: MatrixRateMode) => void
   onColGroupToggle: (groupId: string) => void
-  playerCount: number
   totalCount: number
   /** True while a new matrix request is in flight but stale rows are still shown. */
   refetching?: boolean
@@ -57,7 +56,6 @@ export function FilterBar({
   onHeatmapToggle,
   onRateModeChange,
   onColGroupToggle,
-  playerCount,
   totalCount,
   refetching = false,
   starterViews,
@@ -103,7 +101,6 @@ export function FilterBar({
   return (
     <div className="sticky top-[64px] z-40 flex min-h-[58px] shrink-0 flex-wrap items-center gap-2 overflow-visible border-b border-electric/25 bg-panel/80 px-3 py-2 shadow-[0_8px_28px_-14px_rgba(74,158,245,0.45)] backdrop-blur-md lg:top-[52px] lg:h-[54px] lg:flex-nowrap lg:gap-3 lg:px-6 lg:py-0">
       <MatrixReadout
-        playerCount={playerCount}
         totalCount={totalCount}
         refetching={refetching}
       />
@@ -182,11 +179,9 @@ export function FilterBar({
 
 
 function MatrixReadout({
-  playerCount,
   totalCount,
   refetching,
 }: {
-  playerCount: number
   totalCount: number
   refetching: boolean
 }) {
@@ -200,9 +195,8 @@ function MatrixReadout({
         {refetching && (
           <Loader2 size={12} className="text-electric animate-spin" aria-hidden />
         )}
-        <span className="text-electric">{playerCount.toLocaleString()}</span>
-        <span className="text-electric/30">/</span>
-        <span className="text-ink-dim">{totalCount.toLocaleString()}</span>
+        <span className="text-electric">{totalCount.toLocaleString()}</span>
+        <span className="text-ink-dim">players</span>
       </span>
     </span>
   )

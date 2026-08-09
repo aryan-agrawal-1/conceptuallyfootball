@@ -45,7 +45,7 @@ export function useStatMatrix(filters: MatrixFilters, options: StatMatrixQueryOp
     sort,
     rate_mode: options.rateMode ?? 'per90',
     page: options.page ?? 1,
-    page_size: options.pageSize ?? 200,
+    page_size: options.pageSize ?? 500,
   }
   const includeScopePercentiles = options.includeScopePercentiles !== false
   return useQuery<MatrixResponse, Error>({

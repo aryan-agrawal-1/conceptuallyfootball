@@ -5,7 +5,7 @@ import math
 from django.core.exceptions import ValidationError as DjangoValidationError
 
 
-DEFAULT_PAGE_SIZE = 200
+DEFAULT_PAGE_SIZE = 500
 MAX_PAGE_SIZE = 500
 
 
