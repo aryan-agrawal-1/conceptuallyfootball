@@ -114,6 +114,25 @@ class StaffAccessApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    def test_login_accepts_same_origin_vite_proxy_request(self):
+        response = self.client.get(
+            reverse("staff-csrf"),
+            HTTP_HOST="127.0.0.1:5173",
+        )
+        token = response.cookies["csrftoken"].value
+
+        response = self.client.post(
+            reverse("staff-login"),
+            data=json.dumps({"email": self.user.email, "password": TEMPORARY_PASSWORD}),
+            content_type="application/json",
+            HTTP_HOST="127.0.0.1:5173",
+            HTTP_ORIGIN="http://127.0.0.1:5173",
+            HTTP_X_CSRFTOKEN=token,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["authenticated"])
+
     def test_private_responses_are_never_publicly_cached(self):
         response = self.client.get(reverse("staff-session"))
         self.assertIn("private", response["Cache-Control"])

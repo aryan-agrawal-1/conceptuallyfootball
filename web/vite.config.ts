@@ -9,7 +9,9 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
-        changeOrigin: true,
+        // Preserve the browser host so Django's same-origin CSRF check sees the
+        // same localhost origin on both sides of the development proxy.
+        changeOrigin: false,
       },
     },
   },
