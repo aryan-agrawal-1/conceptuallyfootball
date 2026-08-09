@@ -602,10 +602,15 @@ function buildMetricColumn(
         let percentile: number | null = null
         if (row.eligibility.percentiles_eligible) {
           if (resolved.useCohortPercentile) {
-            const p = cohortMaps.get(col.id)?.get(row.canonical_player_id)
+            const p =
+              row.scope_percentiles?.[col.id] ??
+              cohortMaps.get(col.id)?.get(row.canonical_player_id)
             percentile = p != null && !Number.isNaN(p) ? p : null
           } else if (resolved.percentileKey) {
-            percentile = row.percentiles[resolved.percentileKey] ?? null
+            percentile =
+              row.scope_percentiles?.[resolved.percentileKey] ??
+              row.percentiles[resolved.percentileKey] ??
+              null
           }
         }
         return (

@@ -195,6 +195,14 @@ export interface MatrixResponse {
   /** Present on goalkeeper matrix responses. */
   matrix_kind?: 'gk' | 'outfield'
   count: number
+  page?: number
+  page_size?: number
+  total_pages?: number
+  has_previous?: boolean
+  has_next?: boolean
+  facets?: {
+    teams: string[]
+  }
   results: PlayerRow[]
   meta?: StatMeta
   scope_percentile_context?: ScopePercentileContext
@@ -233,6 +241,13 @@ export interface MatrixFilters {
   teams?: string[]
   position_group?: string
   min_minutes: number
+}
+
+export interface MatrixRequest extends MatrixFilters {
+  page?: number
+  page_size?: number
+  sort?: string
+  rate_mode?: 'per90' | 'full'
 }
 
 interface GalaxyArchetype {

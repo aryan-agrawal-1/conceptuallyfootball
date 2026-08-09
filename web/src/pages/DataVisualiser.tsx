@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { fetchTeamStatMatrix } from '../lib/api'
-import { applyClientFilters, useStatMatrix } from '../hooks/useStatMatrix'
+import { usePlayerCohort, useStatMatrix } from '../hooks/useStatMatrix'
 import {
   DEFAULT_BAR_COUNT,
   MAX_BAR_COUNT,
@@ -23,9 +23,11 @@ import {
   groupMetricsForPizzaPicker,
   resolveProfileMetric,
   stripPer90Suffix,
+  profileMetricDataKeys,
 } from '../lib/profileMetrics'
 import type {
   PlayerRow,
+  MetricAvailability,
   StatMeta,
   TeamSeasonRow,
   TeamStatMeta,
@@ -40,7 +42,7 @@ import { VisualiserEntityPicker, type VisualiserEntityOption } from '../componen
 import { VisualiserScatterPlot, type VisualiserScatterDatum } from '../components/visualizer/VisualiserScatterPlot'
 import { VisualiserBarChart, type VisualiserBarDatum } from '../components/visualizer/VisualiserBarChart'
 import { VisualiserRadarChart } from '../components/visualizer/VisualiserRadarChart'
-import { filterMetricGroups, usablePlayerMetricKeys, usableTeamMetricKeys } from '../lib/metricAvailability'
+import { filterMetricGroups, usableTeamMetricKeys } from '../lib/metricAvailability'
 import { HudMultiSelectDropdown, HudSelectDropdown, type HudDropdownGroup } from '../components/hud/HudDropdown'
 import { withPlayerProfileSlice } from '../lib/playerProfileUrl'
 import {
@@ -79,23 +81,42 @@ function playerProfileSlice(datum: {
   return { competition: datum.profileCompetition, season: datum.profileSeason }
 }
 
+function metricAvailable(availability: MetricAvailability | undefined, key: string): boolean {
+  if (!availability) return true
+  if (availability.unavailable_metrics?.includes(key)) return false
+  return !availability.ui_available_metrics || availability.ui_available_metrics.includes(key)
+}
+
 export function DataVisualiser() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [pickerKind, setPickerKind] = useState<PickerKind>(null)
-  const { scopeLabel, buildScopedPath } = useScope()
+  const { scopeLabel, buildScopedPath, metricAvailability } = useScope()
   const state = useMemo(() => parseDataVisualiserParams(searchParams), [searchParams])
 
   const playerFetchFilters = useMemo(
     () => ({
       competition: state.competition,
       season: state.season,
+      min_minutes: state.minMinutes,
+      teams: state.playerTeams.length ? state.playerTeams : undefined,
+      position_group: state.position === 'ALL' ? undefined : state.position,
+    }),
+    [state.competition, state.minMinutes, state.playerTeams, state.position, state.season],
+  )
+  const playerMetaQuery = useStatMatrix(
+    {
+      competition: state.competition,
+      season: state.season,
       min_minutes: 0,
       position_group: state.position === 'GK' ? 'GK' : undefined,
-    }),
-    [state.competition, state.season, state.position],
+    },
+    {
+      enabled: state.tab === 'players',
+      pageSize: 1,
+      includeScopePercentiles: false,
+    },
   )
-  const playerQuery = useStatMatrix(playerFetchFilters, state.tab === 'players')
   const teamQuery = useQuery({
     queryKey: ['team-stat-matrix', state.competition, state.season],
     queryFn: () => fetchTeamStatMatrix({ competition: state.competition, season: state.season, include: 'meta' }),
@@ -103,28 +124,11 @@ export function DataVisualiser() {
     enabled: state.tab === 'teams',
   })
 
-  const playerRows = useMemo(() => {
-    const raw = playerQuery.data?.results ?? []
-    return applyClientFilters(raw, {
-      teams: state.playerTeams.length ? state.playerTeams : undefined,
-      position_group: state.position === 'ALL' || state.position === 'GK' ? undefined : state.position,
-      min_minutes: state.minMinutes,
-    })
-  }, [playerQuery.data?.results, state.playerTeams, state.position, state.minMinutes])
-
   const playerTeamOptions = useMemo(() => {
-    const all = playerQuery.data?.results ?? []
-    const names = new Set<string>()
-    for (const row of all) {
-      if (row.canonical_team_name) names.add(row.canonical_team_name)
-    }
-    return [...names].toSorted()
-  }, [playerQuery.data?.results])
+    return playerMetaQuery.data?.facets?.teams ?? []
+  }, [playerMetaQuery.data?.facets?.teams])
 
-  const activeLoading = state.tab === 'players' ? playerQuery.isLoading : teamQuery.isLoading
-  const activeError = state.tab === 'players' ? playerQuery.error : teamQuery.error
-  const activeIsError = state.tab === 'players' ? playerQuery.isError : teamQuery.isError
-  const playerMeta = playerQuery.data?.meta
+  const playerMeta = playerMetaQuery.data?.meta
   const teamMeta = teamQuery.data?.meta
 
   const rawPlayerMetricGroups = useMemo(() => {
@@ -143,11 +147,12 @@ export function DataVisualiser() {
     [rawPlayerMetricGroups],
   )
   const usablePlayerKeys = useMemo(
-    () =>
-      playerMeta
-        ? usablePlayerMetricKeys(rawPlayerMetricKeys, playerRows, state.mode, playerMeta)
-        : [],
-    [playerMeta, playerRows, rawPlayerMetricKeys, state.mode],
+    () => rawPlayerMetricKeys.filter(key =>
+      profileMetricDataKeys([key], state.mode).some(metricKey =>
+        metricAvailable(metricAvailability, metricKey),
+      ),
+    ),
+    [metricAvailability, rawPlayerMetricKeys, state.mode],
   )
   const playerMetricGroups = useMemo(
     () => filterMetricGroups(rawPlayerMetricGroups, usablePlayerKeys),
@@ -195,6 +200,31 @@ export function DataVisualiser() {
         playerDefaults.radar,
       ).slice(0, 12)
     : coerceMetricKeys(state.radarMetrics, teamMetricKeys, teamDefaults.radar).slice(0, 12)
+
+  const requestedPlayerMetricKeys = useMemo(
+    () => {
+      const visibleMetrics = state.chart === 'scatter'
+        ? [xMetric, yMetric]
+        : state.chart === 'bar'
+          ? [barMetric]
+          : radarMetrics
+      return profileMetricDataKeys(visibleMetrics, state.mode)
+    },
+    [barMetric, radarMetrics, state.chart, state.mode, xMetric, yMetric],
+  )
+  const playerQuery = usePlayerCohort(
+    playerFetchFilters,
+    requestedPlayerMetricKeys,
+    state.tab === 'players' && requestedPlayerMetricKeys.length > 0,
+  )
+  const playerRows = useMemo(() => playerQuery.data?.results ?? [], [playerQuery.data?.results])
+  const activeLoading = state.tab === 'players'
+    ? playerMetaQuery.isLoading || playerQuery.isLoading
+    : teamQuery.isLoading
+  const activeError = state.tab === 'players' ? playerMetaQuery.error ?? playerQuery.error : teamQuery.error
+  const activeIsError = state.tab === 'players'
+    ? playerMetaQuery.isError || playerQuery.isError
+    : teamQuery.isError
 
   const playerScatterPoints = useMemo(() => {
     if (!playerMeta || !xMetric || !yMetric) return []
@@ -406,7 +436,7 @@ export function DataVisualiser() {
           id: row.canonical_player_id,
           label: row.canonical_player_name,
           sublabel: row.canonical_team_name ?? undefined,
-          meta: `${row.minutes.toLocaleString()}′`,
+          meta: row.minutes == null ? 'Minutes unavailable' : `${row.minutes.toLocaleString()}′`,
         }))
         .toSorted((left, right) =>
           (relevanceOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
