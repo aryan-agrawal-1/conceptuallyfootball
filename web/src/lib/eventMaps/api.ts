@@ -218,8 +218,10 @@ function mapMatches(
 
 function mapGrid(cells: ApiGridCell[]): ActionGridCell[] {
   return cells.map(cell => ({
-    column: cell.column,
-    row: cell.row,
+    // The API indexes the pitch length as columns and width as rows; the
+    // portrait renderer uses rows for length and columns for width.
+    column: cell.row,
+    row: cell.column,
     rawCount: cell.raw_count,
     per90Count: cell.per90_count ?? 0,
     share: cell.share,
