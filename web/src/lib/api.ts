@@ -3,6 +3,7 @@ import type {
   GalaxyResponse,
   GalaxySimilarResponse,
   MatrixFilters,
+  MatrixRequest,
   MatrixResponse,
   PlayerDetailResponse,
   RegressionLabFitResponse,
@@ -14,19 +15,13 @@ import type {
 
 const BASE = '/api/v1'
 
-/**
- * Fetches ALL player rows for a competition + season.
- * All subsequent filtering (team, position, min_minutes) and sorting happen
- * client-side so nothing triggers another network request.
- */
+/** Fetches one filtered, sorted page of outfield player-season rows. */
 export async function fetchStatMatrix(
-  competition: string,
-  season: string,
+  filters: MatrixRequest,
   include?: string,
 ): Promise<MatrixResponse> {
   const p = new URLSearchParams()
-  p.set('competition', competition)
-  p.set('season', season)
+  appendMatrixRequest(p, filters)
   if (include) p.set('include', include)
   const res = await fetch(`${BASE}/player-seasons/derived-stats?${p}`)
   if (!res.ok) {
@@ -38,15 +33,49 @@ export async function fetchStatMatrix(
 
 /** Goalkeeper-only matrix (Sofascore shot stopping + distribution). */
 export async function fetchGkStatMatrix(
-  competition: string,
-  season: string,
+  filters: MatrixRequest,
   include?: string,
 ): Promise<MatrixResponse> {
   const p = new URLSearchParams()
-  p.set('competition', competition)
-  p.set('season', season)
+  appendMatrixRequest(p, filters)
   if (include) p.set('include', include)
   const res = await fetch(`${BASE}/player-seasons/gk-derived-stats?${p}`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.detail ?? `API error ${res.status}`)
+  }
+  return res.json()
+}
+
+function appendMatrixRequest(p: URLSearchParams, filters: MatrixRequest) {
+  p.set('competition', filters.competition)
+  p.set('season', filters.season)
+  p.set('min_minutes', String(filters.min_minutes))
+  if (filters.position_group && filters.position_group !== 'GK') {
+    p.set('position_group', filters.position_group)
+  }
+  for (const team of filters.teams ?? []) p.append('team_name', team)
+  if (filters.sort) p.set('sort', filters.sort)
+  if (filters.rate_mode) p.set('rate_mode', filters.rate_mode)
+  if (filters.page) p.set('page', String(filters.page))
+  if (filters.page_size) p.set('page_size', String(filters.page_size))
+}
+
+export async function fetchPlayerCohort(
+  filters: Pick<MatrixFilters, 'competition' | 'season' | 'position_group' | 'teams' | 'min_minutes'>,
+  metrics: string[],
+  includePercentiles = true,
+): Promise<MatrixResponse> {
+  const p = new URLSearchParams()
+  p.set('competition', filters.competition)
+  p.set('season', filters.season)
+  p.set('min_minutes', String(filters.min_minutes))
+  if (filters.position_group === 'GK') p.set('kind', 'gk')
+  else if (filters.position_group) p.set('position_group', filters.position_group)
+  for (const team of filters.teams ?? []) p.append('team_name', team)
+  for (const metric of metrics) p.append('metric', metric)
+  if (!includePercentiles) p.set('include_percentiles', '0')
+  const res = await fetch(`${BASE}/player-seasons/cohort?${p}`)
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.detail ?? `API error ${res.status}`)
@@ -216,7 +245,8 @@ export interface RegressionLabFitRequest {
   competition: string
   season: string
   position_group: string
-  canonical_player_ids: number[]
+  teams?: string[]
+  min_minutes: number
   target_key: string
   predictor_keys: string[]
 }

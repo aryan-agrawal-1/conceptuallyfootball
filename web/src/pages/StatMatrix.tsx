@@ -6,7 +6,7 @@ import { FilterBar } from '../components/matrix/FilterBar'
 import { MatrixTable } from '../components/matrix/MatrixTable'
 import { HudFrame } from '../components/hud/Hud'
 import { cn } from '../lib/utils'
-import { useStatMatrix, DEFAULT_FILTERS, applyClientFilters } from '../hooks/useStatMatrix'
+import { useStatMatrix, DEFAULT_FILTERS } from '../hooks/useStatMatrix'
 import { COLUMN_GROUPS, type ColDef, type ColGroupDef } from '../lib/columns'
 import { COLUMN_GROUPS_GK, buildMatrixVisibilityAll } from '../lib/gkColumns'
 import { logMatrixPerfPhases } from '../lib/perfDebug'
@@ -89,6 +89,7 @@ export function StatMatrix() {
   const [rateMode, setRateMode] = useState<MatrixRateMode>('per90')
   const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(buildMatrixVisibilityAll)
   const [sorting, setSorting] = useState<SortingState>(DEFAULT_MATRIX_SORT)
+  const [page, setPage] = useState(1)
   const [activeStarterViewId, setActiveStarterViewId] = useState<string | null>(null)
   const [chartCta, setChartCta] = useState<MatrixChartCtaState | null>(null)
   const [dismissedChartCtaKey, setDismissedChartCtaKey] = useState<string | null>(null)
@@ -106,19 +107,14 @@ export function StatMatrix() {
         teams: undefined,
       }
     })
+    setPage(1)
   }, [scope.competition, scope.season])
 
-  // Only competition + season determine what we fetch. Everything else is local.
   const { data, isLoading, isFetching, isError, error, isPlaceholderData } =
-    useStatMatrix(filters)
+    useStatMatrix(filters, { sorting, rateMode, page })
 
   const allPlayers = data?.results ?? EMPTY_PLAYER_ROWS
-
-  // Client-side: instant, no network
-  const filteredPlayers = useMemo(
-    () => applyClientFilters(allPlayers, filters),
-    [allPlayers, filters],
-  )
+  const filteredPlayers = allPlayers
 
   useLayoutEffect(() => {
     if (filterInteractionStartRef.current === null) return
@@ -127,14 +123,7 @@ export function StatMatrix() {
     logMatrixPerfPhases('filter → first layout', t0)
   }, [filteredPlayers])
 
-  // Derived from ALL players so the club list doesn't shrink when you filter by position/minutes
-  const teams = useMemo(() => {
-    const names = new Set<string>()
-    for (const player of allPlayers) {
-      if (player.canonical_team_name) names.add(player.canonical_team_name)
-    }
-    return [...names].toSorted()
-  }, [allPlayers])
+  const teams = data?.facets?.teams ?? []
 
   const activeColumnGroups = useMemo(
     () =>
@@ -229,6 +218,7 @@ export function StatMatrix() {
       setDismissedChartCtaKey(null)
       setClosingChartCtaKey(null)
     }
+    setPage(1)
     setFilters(prev => ({ ...prev, ...partial }))
   }
 
@@ -249,6 +239,7 @@ export function StatMatrix() {
       ...visibilityForStarterView(view, activeColumnGroups),
     }))
     setSorting([{ id: view.sortId, desc: view.sortDesc }])
+    setPage(1)
     setActiveStarterViewId(view.id)
     setChartCta(null)
     setDismissedChartCtaKey(null)
@@ -257,6 +248,7 @@ export function StatMatrix() {
 
   function handleSortingChange(nextSorting: SortingState) {
     setSorting(nextSorting)
+    setPage(1)
     setActiveStarterViewId(null)
 
     const primary = nextSorting[0]
@@ -286,6 +278,11 @@ export function StatMatrix() {
     setClosingChartCtaKey(null)
   }
 
+  function handleRateModeChange(nextRateMode: MatrixRateMode) {
+    setRateMode(nextRateMode)
+    setPage(1)
+  }
+
   function closeChartCta(key: string, dismissForSort: boolean) {
     if (dismissForSort) setDismissedChartCtaKey(key)
     setClosingChartCtaKey(key)
@@ -310,10 +307,9 @@ export function StatMatrix() {
         visibleCols={effectiveVisibleCols}
         onFiltersChange={handleFiltersChange}
         onHeatmapToggle={() => setHeatmapEnabled(e => !e)}
-        onRateModeChange={setRateMode}
+        onRateModeChange={handleRateModeChange}
         onColGroupToggle={handleColGroupToggle}
-        playerCount={filteredPlayers.length}
-        totalCount={allPlayers.length}
+        totalCount={data?.count ?? 0}
         refetching={isFetching && isPlaceholderData}
         starterViews={starterViews}
         activeStarterViewId={effectiveActiveStarterViewId}
@@ -324,18 +320,31 @@ export function StatMatrix() {
         {isLoading && <LoadingState />}
         {isError && <ErrorState message={error?.message} />}
         {!isLoading && !isError && (
-          <MatrixTable
-            players={filteredPlayers}
-            visibleCols={effectiveVisibleCols}
-            columnGroups={activeColumnGroups}
-            heatmapEnabled={heatmapEnabled}
-            rateMode={rateMode}
-            sorting={effectiveSorting}
-            onSortingChange={handleSortingChange}
-            scrollParentRef={matrixScrollParentRef}
-            variant={matrixVariant}
-            metricDefinitions={data?.meta?.metrics}
-          />
+          <>
+            <MatrixTable
+              players={filteredPlayers}
+              visibleCols={effectiveVisibleCols}
+              columnGroups={activeColumnGroups}
+              heatmapEnabled={heatmapEnabled}
+              rateMode={rateMode}
+              sorting={effectiveSorting}
+              onSortingChange={handleSortingChange}
+              scrollParentRef={matrixScrollParentRef}
+              variant={matrixVariant}
+              metricDefinitions={data?.meta?.metrics}
+            />
+            <MatrixPagination
+              page={data?.page ?? page}
+              totalPages={data?.total_pages ?? 0}
+              count={data?.count ?? 0}
+              pageSize={data?.page_size ?? 500}
+              fetching={isFetching}
+              onPageChange={nextPage => {
+                if (matrixScrollParentRef.current) matrixScrollParentRef.current.scrollTop = 0
+                setPage(nextPage)
+              }}
+            />
+          </>
         )}
       </div>
 
@@ -347,6 +356,49 @@ export function StatMatrix() {
           onDismiss={handleChartCtaDismiss}
         />
       )}
+    </div>
+  )
+}
+
+function MatrixPagination({
+  page,
+  totalPages,
+  count,
+  pageSize,
+  fetching,
+  onPageChange,
+}: {
+  page: number
+  totalPages: number
+  count: number
+  pageSize: number
+  fetching: boolean
+  onPageChange: (page: number) => void
+}) {
+  if (totalPages <= 1) return null
+  const first = (page - 1) * pageSize + 1
+  const last = Math.min(page * pageSize, count)
+  return (
+    <div className="flex shrink-0 items-center justify-center gap-4 border-t border-electric/20 bg-panel/90 px-4 py-2 text-[11px] text-ink-muted">
+      <button
+        type="button"
+        className="rounded border border-electric/30 px-3 py-1 text-electric disabled:cursor-not-allowed disabled:opacity-35"
+        disabled={page <= 1 || fetching}
+        onClick={() => onPageChange(page - 1)}
+      >
+        Previous
+      </button>
+      <span className="tabular-nums">
+        {first.toLocaleString()}–{last.toLocaleString()} of {count.toLocaleString()} · page {page} of {totalPages}
+      </span>
+      <button
+        type="button"
+        className="rounded border border-electric/30 px-3 py-1 text-electric disabled:cursor-not-allowed disabled:opacity-35"
+        disabled={page >= totalPages || fetching}
+        onClick={() => onPageChange(page + 1)}
+      >
+        Next
+      </button>
     </div>
   )
 }

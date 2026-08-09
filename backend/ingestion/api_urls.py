@@ -1,6 +1,7 @@
 from django.urls import path
 
 from ingestion.competition_seasons_api import CompetitionSeasonsCatalogApi
+from ingestion.cohort_api import PlayerSeasonCohortApi
 from ingestion.derived_api import DerivedPlayerSeasonDetailApi, DerivedPlayerSeasonListApi
 from ingestion.event_profile_api import (
     PlayerEventProfileApi,
@@ -17,6 +18,7 @@ from ingestion.search_api import SearchEntitiesApi
 urlpatterns = [
     path("competition-seasons", CompetitionSeasonsCatalogApi.as_view()),
     path("search/entities", SearchEntitiesApi.as_view()),
+    path("player-seasons/cohort", PlayerSeasonCohortApi.as_view()),
     path("player-seasons/gk-derived-stats", GkDerivedPlayerSeasonListApi.as_view()),
     path(
         "player-seasons/gk-derived-stats/<int:canonical_player_id>",

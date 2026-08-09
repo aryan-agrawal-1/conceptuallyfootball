@@ -1,6 +1,8 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { fetchGkStatMatrix, fetchStatMatrix } from '../lib/api'
-import type { MatrixFilters, MatrixResponse, PlayerRow } from '../types/api'
+import { fetchGkStatMatrix, fetchPlayerCohort, fetchStatMatrix } from '../lib/api'
+import type { MatrixFilters, MatrixResponse } from '../types/api'
+import type { SortingState } from '@tanstack/react-table'
+import type { MatrixRateMode } from '../lib/matrixRateMode'
 
 export const DEFAULT_FILTERS: MatrixFilters = {
   competition: 'ENG1',
@@ -8,38 +10,52 @@ export const DEFAULT_FILTERS: MatrixFilters = {
   min_minutes: 0,
 }
 
-/**
- * Fetches all rows for a competition+season once and caches them.
- * queryKey only contains competition+season — team/position/min_minutes
- * are all handled client-side so changing them never triggers a fetch.
- */
-export function useStatMatrix(filters: MatrixFilters, enabled = true) {
-  const isGk = filters.position_group === 'GK'
+
+export function usePlayerCohort(
+  filters: MatrixFilters,
+  metrics: string[],
+  enabled = true,
+  includePercentiles = true,
+) {
   return useQuery<MatrixResponse, Error>({
-    queryKey: ['stat-matrix', isGk ? 'gk' : 'outfield', filters.competition, filters.season],
-    queryFn: () =>
-      isGk
-        ? fetchGkStatMatrix(filters.competition, filters.season, 'meta')
-        : fetchStatMatrix(filters.competition, filters.season, 'meta'),
+    queryKey: ['player-cohort', filters, metrics, includePercentiles],
+    queryFn: () => fetchPlayerCohort(filters, metrics, includePercentiles),
     staleTime: 10 * 60 * 1000,
     placeholderData: keepPreviousData,
     enabled,
   })
 }
 
-/**
- * Pure client-side filter applied over the full cached dataset.
- * O(n) per keystroke, zero network.
- */
-export function applyClientFilters(
-  rows: PlayerRow[],
-  filters: Pick<MatrixFilters, 'teams' | 'position_group' | 'min_minutes'>,
-): PlayerRow[] {
-  const teamsSet = filters.teams?.length ? new Set(filters.teams) : null
-  return rows.filter(p => {
-    if (filters.min_minutes > 0 && p.minutes < filters.min_minutes) return false
-    if (filters.position_group && p.position_group !== filters.position_group) return false
-    if (teamsSet && !teamsSet.has(p.canonical_team_name ?? '')) return false
-    return true
+interface StatMatrixQueryOptions {
+  enabled?: boolean
+  sorting?: SortingState
+  rateMode?: MatrixRateMode
+  page?: number
+  pageSize?: number
+  includeScopePercentiles?: boolean
+}
+
+export function useStatMatrix(filters: MatrixFilters, options: StatMatrixQueryOptions = {}) {
+  const isGk = filters.position_group === 'GK'
+  const sorting = options.sorting ?? [{ id: 'canonical_player_name', desc: false }]
+  const primarySort = sorting[0]
+  const sort = primarySort ? `${primarySort.desc ? '-' : ''}${primarySort.id}` : 'canonical_player_name'
+  const request = {
+    ...filters,
+    sort,
+    rate_mode: options.rateMode ?? 'per90',
+    page: options.page ?? 1,
+    page_size: options.pageSize ?? 500,
+  }
+  const includeScopePercentiles = options.includeScopePercentiles !== false
+  return useQuery<MatrixResponse, Error>({
+    queryKey: ['stat-matrix', isGk ? 'gk' : 'outfield', request],
+    queryFn: () =>
+      isGk
+        ? fetchGkStatMatrix(request, includeScopePercentiles ? 'meta,scope_percentiles' : 'meta')
+        : fetchStatMatrix(request, includeScopePercentiles ? 'meta,scope_percentiles' : 'meta'),
+    staleTime: 10 * 60 * 1000,
+    placeholderData: keepPreviousData,
+    enabled: options.enabled ?? true,
   })
 }

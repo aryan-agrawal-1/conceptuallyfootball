@@ -31,7 +31,6 @@ import {
 import { COLUMN_GROUPS_GK } from '../../lib/gkColumns'
 import {
   buildGkCohortPercentileMaps,
-  getGkSortValue,
   headerTooltipGkMetricKey,
   resolveGkMatrixMetric,
 } from '../../lib/gkMatrixRateMode'
@@ -43,7 +42,6 @@ import {
   resolveMatrixMetric,
 } from '../../lib/matrixRateMode'
 import { getGroupHeaderTooltip, getStatHeaderTooltip } from '../../lib/statTooltips'
-import { logMatrixPerfPhases } from '../../lib/perfDebug'
 import { playerNameTitle, shortPlayerName } from '../../lib/entityLabels'
 import { percentileIneligibilityMessage } from '../../lib/eligibility'
 import { withPlayerProfileSlice } from '../../lib/playerProfileUrl'
@@ -233,38 +231,6 @@ function MatrixEligibilityTooltipFloater({
 }
 
 const helper = createColumnHelper<PlayerRow>()
-type SortValue = number | string | null
-const MATRIX_SORT_COLLATOR = new Intl.Collator(undefined, {
-  numeric: true,
-  sensitivity: 'base',
-})
-
-function getSortValue(
-  row: PlayerRow,
-  columnId: string,
-  rateMode: MatrixRateMode,
-  variant: MatrixVariant,
-): SortValue {
-  if (variant === 'gk') return getGkSortValue(row, columnId, rateMode)
-  switch (columnId) {
-    case 'canonical_player_name':
-      return row.canonical_player_name
-    case 'canonical_team_name':
-      return row.canonical_team_name ?? ''
-    case 'minutes':
-      return row.minutes
-    default:
-      break
-  }
-  return resolveMatrixMetric(row, columnId, rateMode).value
-}
-
-function compareSortValues(a: SortValue, b: SortValue): number {
-  if (typeof a === 'string' && typeof b === 'string') {
-    return MATRIX_SORT_COLLATOR.compare(a, b)
-  }
-  return Number(a) - Number(b)
-}
 
 function MatrixGroupHeaderTitle({
   columnId,
@@ -602,10 +568,15 @@ function buildMetricColumn(
         let percentile: number | null = null
         if (row.eligibility.percentiles_eligible) {
           if (resolved.useCohortPercentile) {
-            const p = cohortMaps.get(col.id)?.get(row.canonical_player_id)
+            const p =
+              row.scope_percentiles?.[col.id] ??
+              cohortMaps.get(col.id)?.get(row.canonical_player_id)
             percentile = p != null && !Number.isNaN(p) ? p : null
           } else if (resolved.percentileKey) {
-            percentile = row.percentiles[resolved.percentileKey] ?? null
+            percentile =
+              row.scope_percentiles?.[resolved.percentileKey] ??
+              row.percentiles[resolved.percentileKey] ??
+              null
           }
         }
         return (
@@ -653,8 +624,6 @@ export function MatrixTable({
 }: MatrixTableProps) {
   const navigate = useNavigate()
   const { buildScopedPath } = useScope()
-  const sortInteractionStartRef = useRef<number | null>(null)
-
   const { portal: headerTipPortal, show: showHeaderTip, scheduleHide: scheduleHeaderTipHide, hide: hideHeaderTip } =
     useMatrixHeaderTooltip()
 
@@ -746,37 +715,13 @@ export function MatrixTable({
     [columnGroups, visibleCols, rateMode, cohortMaps, resolveMetricFn, metricDefinitions],
   )
 
-  const sortedPlayers = useMemo(() => {
-    const [primarySort] = sorting
-    if (!primarySort) return players
-
-    const sorted = players
-      .map(player => ({
-        player,
-        sortValue: getSortValue(player, primarySort.id, rateMode, variant),
-      }))
-      .sort((a, b) => {
-      const aValue = a.sortValue
-      const bValue = b.sortValue
-      if (aValue == null && bValue == null) return 0
-      if (aValue == null) return 1
-      if (bValue == null) return -1
-      const cmp = compareSortValues(aValue, bValue)
-      return primarySort.desc ? -cmp : cmp
-    })
-      .map(entry => entry.player)
-
-    return sorted
-  }, [players, sorting, rateMode, variant])
-
   const table = useReactTable({
-    data: sortedPlayers,
+    data: players,
     columns,
     state: { sorting },
     manualSorting: true,
     getRowId: row => `${row.competition_season}:${row.canonical_player_id}`,
     onSortingChange: updater => {
-      sortInteractionStartRef.current = performance.now()
       const nextSorting = typeof updater === 'function' ? updater(sorting) : updater
       onSortingChange(nextSorting)
     },
@@ -785,13 +730,13 @@ export function MatrixTable({
   const rowModel = table.getRowModel()
 
   const virtualizer = useVirtualizer({
-    count: sortedPlayers.length,
+    count: players.length,
     getScrollElement: () => scrollParentRef?.current ?? null,
     estimateSize: () => cellSize,
     overscan: 10,
     paddingStart: TABLE_HEADER_TOTAL_PX,
     getItemKey: index => {
-      const player = sortedPlayers[index]
+      const player = players[index]
       return player ? `${player.competition_season}:${player.canonical_player_id}` : String(index)
     },
   })
@@ -800,13 +745,6 @@ export function MatrixTable({
   useLayoutEffect(() => {
     virtualizer.measure()
   }, [cellSize, virtualizer])
-
-  useLayoutEffect(() => {
-    if (sortInteractionStartRef.current === null) return
-    const t0 = sortInteractionStartRef.current
-    sortInteractionStartRef.current = null
-    logMatrixPerfPhases('sort → first layout', t0)
-  }, [sorting, sortedPlayers])
 
   const [groupRow, leafRow] = table.getHeaderGroups()
 
@@ -827,7 +765,7 @@ export function MatrixTable({
       <div ref={scrollParentRef} className="flex-1 min-h-0 overflow-auto">
         {headerTipPortal}
         <div className="overflow-x-auto min-h-0" onScroll={hideHeaderTip}>
-          {sortedPlayers.length === 0 ? (
+          {players.length === 0 ? (
             <div className="flex items-center justify-center py-24 text-ink-muted text-[13px]">
               No players match the current filters.
             </div>

@@ -134,6 +134,21 @@ export function profileSectionOrderForPosition(pos: PositionGroup): ProfileUiSec
   return pos === 'GK' ? PROFILE_SECTION_ORDER_GK : PROFILE_SECTION_ORDER_OUTFIELD
 }
 
+export function profileMetricDataKeys(
+  metricKeys: Array<string | undefined>,
+  mode: ProfileRateMode,
+): string[] {
+  const keys = new Set<string>()
+  for (const metricKey of metricKeys) {
+    if (!metricKey) continue
+    const bar = barKindForMetricKey(metricKey)
+    if (bar.kind === 'paired') keys.add(mode === 'per90' ? bar.per90 : bar.full)
+    else if (bar.kind === 'invariant') keys.add(bar.key)
+    else keys.add(bar.per90)
+  }
+  return [...keys]
+}
+
 export const PROFILE_BAR_SPECS: ProfileBarSpec[] = [
   // Attacking
   { id: 'xg', section: 'attacking', bar: { kind: 'paired', per90: 'xg_per_90', full: 'xg' } },
@@ -202,7 +217,7 @@ export function resolveProfileMetric(
   mode: ProfileRateMode,
   bar: ProfileBarKind,
   meta: { metrics: Record<string, MetricDefinition> },
-  percentileMap: Record<string, number | null> = row.percentiles,
+  percentileMap: Record<string, number | null> = row.scope_percentiles ?? row.percentiles,
 ): ResolvedProfileMetric {
   const pctEligible = row.eligibility.percentiles_eligible
 
@@ -322,7 +337,7 @@ export function resolveHeaderCard(
   mode: ProfileRateMode,
   spec: ProfileHeaderCardSpec,
   meta: { metrics: Record<string, MetricDefinition> },
-  percentileMap: Record<string, number | null> = row.percentiles,
+  percentileMap: Record<string, number | null> = row.scope_percentiles ?? row.percentiles,
 ): ResolvedProfileMetric & { label: string } {
   if (spec.bar.kind === 'invariant' && spec.bar.key === 'minutes_display') {
     return {

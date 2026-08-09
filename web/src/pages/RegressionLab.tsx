@@ -6,7 +6,7 @@ import { HudActionButton, HudFrame, HudLabel, HudPill, HudVSep } from '../compon
 import { LabHelpHover } from '../components/regression/LabHelpHover'
 import { RegressionScatterPlot } from '../components/regression/RegressionScatterPlot'
 import { RegressionLabWalkthrough } from '../components/regression/RegressionLabWalkthrough'
-import { applyClientFilters, useStatMatrix } from '../hooks/useStatMatrix'
+import { usePlayerCohort, useStatMatrix } from '../hooks/useStatMatrix'
 import { fetchRegressionLabFit } from '../lib/api'
 import {
   groupPredictorPool,
@@ -39,6 +39,12 @@ import type {
 import { useScope } from '../context/ScopeContext'
 
 const EMPTY: PlayerRow[] = []
+const REGRESSION_DATA_KEYS = [
+  ...new Set([
+    ...PREDICTOR_METRIC_POOL,
+    ...Object.values(TARGETS_BY_POSITION).flat(),
+  ]),
+]
 
 const LAB_POSITIONS: { value: LabPosition; label: string }[] = [
   { value: 'FWD', label: 'FWD' },
@@ -129,34 +135,33 @@ export function RegressionLab() {
     })
   }, [scope.competition, scope.season])
 
-  const fetchFilters = useMemo(
-    (): MatrixFilters => ({
+  const metaQuery = useStatMatrix(
+    {
       competition: filters.competition,
       season: filters.season,
-      min_minutes: filters.min_minutes,
-    }),
-    [filters.competition, filters.season, filters.min_minutes],
+      min_minutes: 0,
+    },
+    { pageSize: 1, includeScopePercentiles: false },
   )
-
-  const { data, isLoading, isError, error } = useStatMatrix(fetchFilters)
-  const allPlayers = data?.results ?? EMPTY
-  const meta: StatMeta | undefined = data?.meta
+  const cohortQuery = usePlayerCohort(
+    filters,
+    REGRESSION_DATA_KEYS,
+    isLabPosition(filters.position_group),
+    false,
+  )
+  const allPlayers = cohortQuery.data?.results ?? EMPTY
+  const meta: StatMeta | undefined = metaQuery.data?.meta
+  const isLoading = metaQuery.isLoading || (isLabPosition(filters.position_group) && cohortQuery.isLoading)
+  const isError = metaQuery.isError || cohortQuery.isError
+  const error = metaQuery.error ?? cohortQuery.error
 
   const teams = useMemo(() => {
-    const names = new Set<string>()
-    for (const player of allPlayers) {
-      if (player.canonical_team_name) names.add(player.canonical_team_name)
-    }
-    return [...names].toSorted()
-  }, [allPlayers])
+    return metaQuery.data?.facets?.teams ?? []
+  }, [metaQuery.data?.facets?.teams])
 
   const cohortRows = useMemo(() => {
     if (!filters.position_group || !isLabPosition(filters.position_group)) return []
-    return applyClientFilters(allPlayers, {
-      teams: filters.teams,
-      position_group: filters.position_group,
-      min_minutes: filters.min_minutes,
-    })
+    return allPlayers
   }, [allPlayers, filters])
 
   const position = toLabPosition(filters.position_group)
@@ -233,7 +238,6 @@ export function RegressionLab() {
   )
 
   const configKey = useMemo(() => {
-    const ids = cohortRows.map(r => r.canonical_player_id).sort((a, b) => a - b)
     return JSON.stringify({
       c: filters.competition,
       s: filters.season,
@@ -242,9 +246,8 @@ export function RegressionLab() {
       m: filters.min_minutes,
       target,
       preds: predictors.toSorted(),
-      ids,
     })
-  }, [cohortRows, filters, target, predictors])
+  }, [filters, target, predictors])
 
   const resultsStale = Boolean(lastFit && lastFitKey && lastFitKey !== configKey)
 
@@ -276,12 +279,12 @@ export function RegressionLab() {
       if (hasTargetPredictorLeakage(target, predictors)) {
         throw new Error('The target metric cannot also be used as a predictor.')
       }
-      const ids = cohortRows.map(r => r.canonical_player_id)
       return fetchRegressionLabFit({
         competition: filters.competition,
         season: filters.season,
         position_group: position,
-        canonical_player_ids: ids,
+        teams: filters.teams,
+        min_minutes: filters.min_minutes,
         target_key: target,
         predictor_keys: predictors,
       })
