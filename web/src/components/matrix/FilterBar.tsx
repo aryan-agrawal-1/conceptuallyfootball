@@ -196,7 +196,7 @@ function MatrixReadout({
           <Loader2 size={12} className="text-electric animate-spin" aria-hidden />
         )}
         <span className="text-electric">{totalCount.toLocaleString()}</span>
-        <span className="text-ink-dim">players</span>
+        <span className="text-electric">Players</span>
       </span>
     </span>
   )
