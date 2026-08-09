@@ -84,6 +84,7 @@ function playerProfileSlice(datum: {
 function metricAvailable(availability: MetricAvailability | undefined, key: string): boolean {
   if (!availability) return true
   if (availability.unavailable_metrics?.includes(key)) return false
+  if (availability.available_metrics) return availability.available_metrics.includes(key)
   return !availability.ui_available_metrics || availability.ui_available_metrics.includes(key)
 }
 
