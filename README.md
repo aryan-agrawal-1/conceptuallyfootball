@@ -94,6 +94,12 @@ cd backend
 python manage.py diagnose_season_rollover <competition-season-id> --candidate-file path/to/candidate-teams.json --fail-on-anomaly
 ```
 
+## Inviting editorial staff
+
+Staff access is invite-only. After applying migrations, a superuser can open Django admin and add a record under **Staff access**. Enter the invitee's email, role, and a temporary password, then share those credentials with them securely.
+
+Writers sign in at `/staff/login` and must replace the temporary password before `/analysis` becomes available. Use the same Staff access record to assign a new temporary password, revoke access, reactivate access, or change roles. Editorial writers and approvers do not receive Django `is_staff` access; operations users receive `is_staff` plus a separate operations permission.
+
 ## Status
 
 This is an active project. APIs, ingestion commands, and data coverage may change as more competitions, seasons, and visualisation tools are added.
