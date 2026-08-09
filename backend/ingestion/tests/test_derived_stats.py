@@ -393,7 +393,7 @@ class DerivedStatsTests(TestCase):
         self.assertEqual(payload["meta"]["formula_version"], "v4")
         self.assertIn("npxg_per_shot", payload["meta"]["metrics"])
 
-    def test_list_endpoint_cache_key_ignores_unknown_query_params(self):
+    def test_list_endpoint_ignores_unknown_query_params_without_materializing_payload_cache(self):
         self._materialize()
 
         common = {
@@ -415,11 +415,106 @@ class DerivedStatsTests(TestCase):
         self.assertEqual(first.json(), second.json())
         self.assertEqual(
             MaterializedApiPayload.objects.filter(cache_key__startswith="derived-player-season-list:").count(),
-            1,
+            0,
         )
-        cached = MaterializedApiPayload.objects.get(cache_key__startswith="derived-player-season-list:")
-        self.assertTrue(cached.payload_json)
-        self.assertTrue(cached.payload_etag)
+
+    def test_list_endpoint_paginates_filters_and_rejects_oversized_pages(self):
+        self._materialize()
+
+        response = self.client.get(
+            "/api/v1/player-seasons/derived-stats",
+            {
+                "competition": "EPL",
+                "season": "2025-26",
+                "position_group": "FWD",
+                "sort": "-creation_score",
+                "page": 1,
+                "page_size": 1,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["count"], 2)
+        self.assertEqual(payload["page_size"], 1)
+        self.assertEqual(payload["total_pages"], 2)
+        self.assertTrue(payload["has_next"])
+        self.assertEqual(len(payload["results"]), 1)
+        self.assertIn("teams", payload["facets"])
+
+        oversized = self.client.get(
+            "/api/v1/player-seasons/derived-stats",
+            {
+                "competition": "EPL",
+                "season": "2025-26",
+                "page_size": 501,
+            },
+        )
+        self.assertEqual(oversized.status_code, 400)
+        self.assertIn("between 1 and 500", oversized.json()["detail"])
+
+    def test_list_endpoint_ranks_rate_adjusted_values_against_the_full_scope(self):
+        self._materialize()
+        PlayerSeasonDerivedStats.objects.filter(canonical_player=self.alpha).update(
+            shots_on_target=10,
+            minutes=900,
+        )
+        PlayerSeasonDerivedStats.objects.filter(canonical_player=self.beta).update(
+            shots_on_target=20,
+            minutes=3000,
+        )
+
+        response = self.client.get(
+            "/api/v1/player-seasons/derived-stats",
+            {
+                "competition": "EPL",
+                "season": "2025-26",
+                "position_group": "FWD",
+                "include": "scope_percentiles",
+                "rate_mode": "per90",
+                "page_size": 1,
+                "sort": "-shots_on_target",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["results"][0]["canonical_player_name"], "Alpha Forward")
+        self.assertAlmostEqual(payload["results"][0]["scope_percentiles"]["shots_on_target"], 75.0)
+
+    def test_projected_cohort_returns_only_requested_metrics(self):
+        self._materialize()
+
+        response = self.client.get(
+            "/api/v1/player-seasons/cohort",
+            {
+                "competition": "EPL",
+                "season": "2025-26",
+                "position_group": "FWD",
+                "metric": ["xg_per_90", "xa_per_90"],
+                "include_percentiles": 0,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["count"], 2)
+        self.assertEqual(
+            set(payload["results"][0]["metrics"]),
+            {"xg_per_90", "xa_per_90"},
+        )
+        self.assertTrue(all(value is None for value in payload["results"][0]["percentiles"].values()))
+
+        with patch("ingestion.cohort_api.MAX_COHORT_CELLS", 1):
+            oversized = self.client.get(
+                "/api/v1/player-seasons/cohort",
+                {
+                    "competition": "EPL",
+                    "season": "2025-26",
+                    "position_group": "FWD",
+                    "metric": ["xg_per_90", "xa_per_90"],
+                },
+            )
+        self.assertEqual(oversized.status_code, 400)
+        self.assertIn("metric cells", oversized.json()["detail"])
 
     def test_detail_endpoint_groups_sections(self):
         self._materialize()
