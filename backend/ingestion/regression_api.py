@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-MAX_REGRESSION_PLAYER_IDS = 500
+MAX_REGRESSION_COHORT_ROWS = 5000
 MAX_REGRESSION_PREDICTORS = 8
 
 
@@ -32,6 +32,8 @@ class RegressionLabFitApi(APIView):
         season = (data.get("season") or "").strip()
         position_group = (data.get("position_group") or "").strip().upper()
         ids = data.get("canonical_player_ids")
+        teams = data.get("teams") or []
+        min_minutes = data.get("min_minutes", 0)
         target_key = (data.get("target_key") or "").strip()
         predictor_keys = data.get("predictor_keys")
 
@@ -40,7 +42,7 @@ class RegressionLabFitApi(APIView):
                 {"detail": "competition and season are required."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if (
+        if ids is not None and (
             not isinstance(ids, list)
             or not ids
             or not all(isinstance(i, int) and i > 0 for i in ids)
@@ -49,9 +51,19 @@ class RegressionLabFitApi(APIView):
                 {"detail": "canonical_player_ids must be a non-empty list of positive integers."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if len(ids) > MAX_REGRESSION_PLAYER_IDS:
+        if ids is not None and len(ids) > MAX_REGRESSION_COHORT_ROWS:
             return Response(
-                {"detail": f"canonical_player_ids cannot contain more than {MAX_REGRESSION_PLAYER_IDS} players."},
+                {"detail": f"canonical_player_ids cannot contain more than {MAX_REGRESSION_COHORT_ROWS} players."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not isinstance(teams, list) or not all(isinstance(team, str) and team.strip() for team in teams):
+            return Response(
+                {"detail": "teams must be a list of non-empty strings."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not isinstance(min_minutes, int) or min_minutes < 0:
+            return Response(
+                {"detail": "min_minutes must be a non-negative integer."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if not isinstance(predictor_keys, list) or not predictor_keys:
@@ -84,6 +96,9 @@ class RegressionLabFitApi(APIView):
                 season=season,
                 position_group=position_group,
                 canonical_player_ids=ids,
+                team_names=[team.strip() for team in teams],
+                min_minutes=min_minutes,
+                max_cohort_rows=MAX_REGRESSION_COHORT_ROWS,
                 target_key=target_key,
                 predictor_keys=predictor_keys,
             )

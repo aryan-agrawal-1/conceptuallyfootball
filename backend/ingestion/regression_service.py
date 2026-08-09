@@ -117,9 +117,12 @@ def fit_player_regression(
     competition: str,
     season: str,
     position_group: str,
-    canonical_player_ids: list[int],
+    canonical_player_ids: list[int] | None,
     target_key: str,
     predictor_keys: list[str],
+    team_names: list[str] | None = None,
+    min_minutes: int = 0,
+    max_cohort_rows: int = 5000,
 ) -> RegressionFitResult:
     if position_group not in {"FWD", "MID", "DEF"}:
         raise DjangoValidationError("position_group must be FWD, MID, or DEF.")
@@ -134,20 +137,33 @@ def fit_player_regression(
     _validate_predictors(target_key, predictor_keys)
 
     competition_code, season_label, competition_seasons = _resolve_competition_seasons(competition, season)
-    rows = list(
-        PlayerSeasonDerivedStats.objects.filter(
-            competition_season__in=competition_seasons,
-            is_current=True,
-            position_group__iexact=position_group,
-            canonical_player_id__in=canonical_player_ids,
-        ).select_related("canonical_player", "canonical_display_team")
+    queryset = PlayerSeasonDerivedStats.objects.filter(
+        competition_season__in=competition_seasons,
+        is_current=True,
+        position_group__iexact=position_group,
     )
-    cohort_rows = len(rows)
+    if min_minutes > 0:
+        queryset = queryset.filter(minutes__gte=min_minutes)
+    if canonical_player_ids is not None:
+        queryset = queryset.filter(canonical_player_id__in=canonical_player_ids)
+    if team_names:
+        queryset = queryset.filter(canonical_display_team__name__in=team_names)
+    queryset = queryset.select_related("canonical_player", "canonical_display_team").order_by(
+        "canonical_player_id", "-minutes", "competition_season_id", "id"
+    )
+    raw_count = queryset.count()
+    if raw_count > max_cohort_rows:
+        raise DjangoValidationError(
+            f"Cohort contains {raw_count} rows; narrow it below {max_cohort_rows}."
+        )
+    rows = list(queryset)
+    by_player = {}
+    for row in rows:
+        by_player.setdefault(row.canonical_player_id, row)
+    ordered_rows = list(by_player.values())
+    cohort_rows = len(ordered_rows)
     if cohort_rows == 0:
         raise DjangoValidationError("No matching players for this cohort.")
-
-    id_to_row = {r.canonical_player_id: r for r in rows}
-    ordered_rows = [id_to_row[i] for i in canonical_player_ids if i in id_to_row]
 
     y_list: list[float] = []
     X_rows: list[list[float]] = []

@@ -23,7 +23,7 @@ class RegressionApiGuardrailTests(TestCase):
                 "competition": "EPL",
                 "season": "2025-26",
                 "position_group": "MID",
-                "canonical_player_ids": list(range(1, 502)),
+                "canonical_player_ids": list(range(1, 5002)),
                 "target_key": "xa_per_90",
                 "predictor_keys": ["key_passes_per_90"],
             },
@@ -31,7 +31,29 @@ class RegressionApiGuardrailTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("more than 500 players", response.json()["detail"])
+        self.assertIn("more than 5000 players", response.json()["detail"])
+
+    @patch("ingestion.regression_service.fit_player_regression")
+    def test_accepts_backend_resolved_filter_cohort(self, fit_regression):
+        fit_regression.return_value.payload = {"ok": True}
+        response = self.client.post(
+            "/api/v1/labs/regression/fit",
+            {
+                "competition": "ALL",
+                "season": "2025-26",
+                "position_group": "MID",
+                "teams": ["Example FC"],
+                "min_minutes": 450,
+                "target_key": "xa_per_90",
+                "predictor_keys": ["key_passes_per_90"],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(fit_regression.call_args.kwargs["canonical_player_ids"])
+        self.assertEqual(fit_regression.call_args.kwargs["team_names"], ["Example FC"])
+        self.assertEqual(fit_regression.call_args.kwargs["min_minutes"], 450)
 
     def test_rejects_excessive_predictor_count(self):
         response = self.client.post(

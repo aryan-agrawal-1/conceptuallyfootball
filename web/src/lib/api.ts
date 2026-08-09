@@ -245,7 +245,8 @@ export interface RegressionLabFitRequest {
   competition: string
   season: string
   position_group: string
-  canonical_player_ids: number[]
+  teams?: string[]
+  min_minutes: number
   target_key: string
   predictor_keys: string[]
 }
