@@ -94,7 +94,7 @@ export function BlockEditor({
 
   return (
     <section className="group relative -mx-4 px-4 py-1.5" data-block-type={block.type}>
-      <div className="absolute -left-9 top-0 z-10 hidden w-8 flex-col items-center gap-0.5 border border-line bg-panel p-0.5 shadow-lg group-hover:flex group-focus-within:flex lg:flex lg:opacity-0 lg:transition-opacity lg:group-hover:opacity-100 lg:group-focus-within:opacity-100">
+      <div className="pointer-events-none absolute -left-9 top-0 z-10 hidden w-8 flex-col items-center gap-0.5 border border-line bg-panel p-0.5 opacity-0 shadow-lg group-hover:pointer-events-auto group-hover:flex group-hover:opacity-100 lg:flex lg:transition-opacity">
         <BlockAction label="Add block below" onClick={() => onInsertAfter({ id: crypto.randomUUID(), type: 'paragraph', content: inlineText('') })}><Plus /></BlockAction>
         <label className="relative flex size-7 cursor-pointer items-center justify-center border border-transparent text-ink-muted transition-[color,background-color,border-color,transform] duration-150 hover:-translate-y-px hover:border-electric hover:bg-electric hover:text-mat focus-within:border-electric focus-within:bg-electric focus-within:text-mat" title="Change block type">
           <GripVertical className="size-3.5" />
