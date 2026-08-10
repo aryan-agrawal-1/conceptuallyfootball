@@ -73,6 +73,42 @@ class StaffAccessApiTests(TestCase):
             ).exists()
         )
 
+        token = self.client.cookies["csrftoken"].value
+        logout_response = self.post_json("staff-logout", {}, token)
+        self.assertEqual(logout_response.status_code, 200)
+
+        old_password_response = self.post_json(
+            "staff-login",
+            {"email": self.user.email, "password": TEMPORARY_PASSWORD},
+            token,
+        )
+        self.assertEqual(old_password_response.status_code, 401)
+
+        new_password_response = self.post_json(
+            "staff-login",
+            {"email": self.user.email, "password": NEW_PASSWORD},
+            token,
+        )
+        self.assertEqual(new_password_response.status_code, 200)
+        self.assertFalse(new_password_response.json()["user"]["must_change_password"])
+
+    def test_temporary_password_cannot_be_reused_as_new_password(self):
+        token = self.csrf_token()
+        self.sign_in(token)
+        token = self.client.cookies["csrftoken"].value
+
+        response = self.post_json(
+            "staff-change-password",
+            {"current_password": TEMPORARY_PASSWORD, "new_password": TEMPORARY_PASSWORD},
+            token,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "password_reused")
+        self.access.refresh_from_db()
+        self.assertTrue(self.access.must_change_password)
+        self.assertEqual(self.client.get(reverse("editorial-workspace")).status_code, 403)
+
     def test_private_endpoint_distinguishes_unauthenticated_and_unauthorized_users(self):
         unauthenticated_response = self.client.get(reverse("editorial-workspace"))
         self.assertEqual(unauthenticated_response.status_code, 401)

@@ -146,6 +146,14 @@ def change_password(request: HttpRequest) -> JsonResponse:
             {"detail": "The current password is incorrect.", "code": "invalid_password"},
             status=400,
         )
+    if user.check_password(new_password):
+        return private_json(
+            {
+                "detail": "Your new password must be different from your current password.",
+                "code": "password_reused",
+            },
+            status=400,
+        )
     try:
         password_validation.validate_password(new_password, user)
     except ValidationError as error:

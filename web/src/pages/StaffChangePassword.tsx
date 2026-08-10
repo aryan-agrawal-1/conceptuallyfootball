@@ -28,6 +28,10 @@ function ChangePasswordForm() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
+    if (newPassword === currentPassword) {
+      setErrors(['Your new password must be different from your temporary password.'])
+      return
+    }
     if (newPassword !== confirmation) {
       setErrors(['The new passwords do not match.'])
       return
