@@ -42,6 +42,7 @@ import {
 
 const ARTICLE_LIST_KEY = ['editorial-articles'] as const
 const PAGE_LOADED_AT = Date.now()
+const REVISION_CHECKPOINT_INTERVAL_MS = 5 * 60 * 1_000
 
 export function EditorialWorkspace() {
   return (
@@ -188,7 +189,9 @@ function ArticleEditor() {
   const savedSerialRef = useRef(0)
   const savingRef = useRef(false)
   const pendingSaveRef = useRef(false)
-  const performSaveRef = useRef<() => Promise<boolean>>(async () => false)
+  const pendingCheckpointRef = useRef(false)
+  const lastCheckpointAtRef = useRef(Date.now())
+  const performSaveRef = useRef<(createRevision?: boolean) => Promise<boolean>>(async () => false)
 
   useEffect(() => {
     const serverArticle = articleQuery.data
@@ -198,6 +201,9 @@ function ArticleEditor() {
     const initialDraft = hasNewerRecovery ? recovery.draft : articleToDraft(serverArticle)
     initializedIdRef.current = serverArticle.id
     revisionRef.current = serverArticle.revision
+    lastCheckpointAtRef.current = serverArticle.revisions[0]
+      ? new Date(serverArticle.revisions[0].created_at).getTime()
+      : Date.now()
     editSerialRef.current = hasNewerRecovery ? 1 : 0
     savedSerialRef.current = 0
     draftRef.current = initialDraft
@@ -219,20 +225,28 @@ function ArticleEditor() {
     })
   }
 
-  async function performSave(): Promise<boolean> {
+  async function performSave(createRevision = false): Promise<boolean> {
     const currentDraft = draftRef.current
     const serial = editSerialRef.current
-    if (!currentDraft || serial === savedSerialRef.current) return true
+    const checkpointRequested = createRevision
+      || Date.now() - lastCheckpointAtRef.current >= REVISION_CHECKPOINT_INTERVAL_MS
+    if (!currentDraft || (serial === savedSerialRef.current && !checkpointRequested)) return true
     if (savingRef.current) {
       pendingSaveRef.current = true
+      pendingCheckpointRef.current = pendingCheckpointRef.current || checkpointRequested
       return false
     }
     savingRef.current = true
     setSaveState('saving')
     setSaveError('')
     try {
-      const savedArticle = await saveArticle(articleId, currentDraft, revisionRef.current)
+      const savedArticle = await saveArticle(articleId, currentDraft, revisionRef.current, checkpointRequested)
       revisionRef.current = savedArticle.revision
+      if (checkpointRequested) {
+        lastCheckpointAtRef.current = savedArticle.revisions[0]
+          ? new Date(savedArticle.revisions[0].created_at).getTime()
+          : Date.now()
+      }
       savedSerialRef.current = serial
       setArticle(savedArticle)
       queryClient.setQueryData(['editorial-article', articleId], savedArticle)
@@ -254,7 +268,9 @@ function ArticleEditor() {
       savingRef.current = false
       if (pendingSaveRef.current) {
         pendingSaveRef.current = false
-        window.setTimeout(() => void performSaveRef.current(), 0)
+        const pendingCheckpoint = pendingCheckpointRef.current
+        pendingCheckpointRef.current = false
+        window.setTimeout(() => void performSaveRef.current(pendingCheckpoint), 0)
       }
     }
   }
@@ -321,7 +337,7 @@ function ArticleEditor() {
   }
 
   async function togglePreview(enabled: boolean, rotate = false) {
-    const saved = await performSaveRef.current()
+    const saved = await performSaveRef.current(true)
     if (!saved && editSerialRef.current !== savedSerialRef.current) return
     try {
       const updated = await setArticlePreview(articleId, enabled, rotate)
@@ -353,7 +369,7 @@ function ArticleEditor() {
               <button type="button" onClick={() => setMode('write')} className={`px-3 py-1.5 text-[8px] font-bold uppercase tracking-[0.15em] ${mode === 'write' ? 'bg-electric-dim text-electric' : 'text-ink-muted'}`}>Write</button>
               <button type="button" onClick={() => setMode('reader')} className={`px-3 py-1.5 text-[8px] font-bold uppercase tracking-[0.15em] ${mode === 'reader' ? 'bg-electric-dim text-electric' : 'text-ink-muted'}`}>Reader view</button>
             </div>
-            <button type="button" onClick={() => void performSaveRef.current()} disabled={saveState === 'saving'} className="inline-flex h-9 items-center gap-2 border border-line-bright px-3 text-[8px] font-bold uppercase tracking-[0.14em] text-ink-dim hover:border-electric hover:text-ink"><Save className="size-3.5" /> Save</button>
+            <button type="button" onClick={() => void performSaveRef.current(true)} disabled={saveState === 'saving'} className="inline-flex h-9 items-center gap-2 border border-line-bright px-3 text-[8px] font-bold uppercase tracking-[0.14em] text-ink-dim hover:border-electric hover:text-ink"><Save className="size-3.5" /> Save</button>
             {article.preview_enabled && previewUrl ? <a href={previewUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 bg-electric px-3 text-[8px] font-black uppercase tracking-[0.14em] text-mat"><ExternalLink className="size-3.5" /> Preview</a> : null}
           </div>
         </div>

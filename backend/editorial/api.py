@@ -153,6 +153,7 @@ def article_detail(request: HttpRequest, article_id) -> JsonResponse:
         return private_json({"deleted": True})
 
     payload = json_body(request)
+    create_revision = payload.get("create_revision") is True
     try:
         expected_revision = int(payload.get("revision"))
     except (TypeError, ValueError):
@@ -193,6 +194,10 @@ def article_detail(request: HttpRequest, article_id) -> JsonResponse:
             article.document = document
             article.revision += 1
             article.save(update_fields=("title", "subtitle", "document", "revision", "updated_at"))
+        if create_revision and not ArticleRevision.objects.filter(
+            article=article,
+            number=article.revision,
+        ).exists():
             ArticleRevision.objects.create(
                 article=article,
                 number=article.revision,

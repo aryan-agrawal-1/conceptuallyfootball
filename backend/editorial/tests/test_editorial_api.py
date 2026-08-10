@@ -53,6 +53,7 @@ class EditorialApiTests(TestCase):
                 "revision": created["revision"],
                 "title": "The spare midfielder",
                 "subtitle": "How a small rotation opens the pitch.",
+                "create_revision": True,
                 "document": {
                     "version": 1,
                     "blocks": [
@@ -77,6 +78,54 @@ class EditorialApiTests(TestCase):
         self.assertEqual(reopened.json()["article"]["subtitle"], "How a small rotation opens the pitch.")
         listed = self.client.get(reverse("editorial-articles"), {"q": "midfielder"})
         self.assertEqual([item["id"] for item in listed.json()["articles"]], [created["id"]])
+
+    def test_autosave_updates_the_live_draft_without_creating_a_revision_until_checkpoint(self):
+        created = self.create_article()
+        document = {
+            "version": 1,
+            "blocks": [{"id": "draft", "type": "paragraph", "content": [{"text": "Autosaved"}]}],
+        }
+
+        autosaved = self.patch_article(
+            created["id"],
+            {"revision": 1, "title": "Live draft", "subtitle": "", "document": document},
+        )
+
+        self.assertEqual(autosaved.status_code, 200)
+        self.assertEqual(autosaved.json()["article"]["revision"], 2)
+        self.assertEqual(ArticleRevision.objects.filter(article_id=created["id"]).count(), 1)
+        saved_document = autosaved.json()["article"]["document"]
+
+        checkpoint = self.patch_article(
+            created["id"],
+            {
+                "revision": 2,
+                "title": "Live draft",
+                "subtitle": "",
+                "document": saved_document,
+                "create_revision": True,
+            },
+        )
+
+        self.assertEqual(checkpoint.status_code, 200)
+        self.assertEqual(checkpoint.json()["article"]["revision"], 2)
+        self.assertEqual(
+            list(ArticleRevision.objects.filter(article_id=created["id"]).values_list("number", flat=True)),
+            [2, 1],
+        )
+
+        repeated = self.patch_article(
+            created["id"],
+            {
+                "revision": 2,
+                "title": "Live draft",
+                "subtitle": "",
+                "document": saved_document,
+                "create_revision": True,
+            },
+        )
+        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(ArticleRevision.objects.filter(article_id=created["id"]).count(), 2)
 
     def test_stale_revision_cannot_overwrite_a_newer_save(self):
         created = self.create_article()

@@ -128,10 +128,10 @@ export async function getArticle(id: string): Promise<Article> {
   return body.article
 }
 
-export async function saveArticle(id: string, draft: ArticleDraft, revision: number): Promise<Article> {
+export async function saveArticle(id: string, draft: ArticleDraft, revision: number, createRevision = false): Promise<Article> {
   const body = await privateRequest<{ article: Article }>(`/articles/${id}`, {
     method: 'PATCH',
-    body: JSON.stringify({ ...draft, revision }),
+    body: JSON.stringify({ ...draft, revision, create_revision: createRevision }),
   })
   return body.article
 }
