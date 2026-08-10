@@ -14,7 +14,8 @@ interface InlineTextEditorProps {
   onEnter: (before: InlineContent, after: InlineContent) => void
   onRequestLink?: (editor: InlineTextEditorHandle) => void
   onActivate?: (editor: InlineTextEditorHandle) => void
-  onCommandEnter?: () => boolean
+  onCommandKeyDown?: (key: 'ArrowDown' | 'ArrowUp' | 'Enter') => boolean
+  onBackspaceEmpty?: () => boolean
   placeholder: string
   className?: string
 }
@@ -26,7 +27,8 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
   onEnter,
   onRequestLink,
   onActivate,
-  onCommandEnter,
+  onCommandKeyDown,
+  onBackspaceEmpty,
   placeholder,
   className = '',
 }, forwardedRef) {
@@ -36,14 +38,16 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
   const onEnterRef = useRef(onEnter)
   const onRequestLinkRef = useRef(onRequestLink)
   const onActivateRef = useRef(onActivate)
-  const onCommandEnterRef = useRef(onCommandEnter)
+  const onCommandKeyDownRef = useRef(onCommandKeyDown)
+  const onBackspaceEmptyRef = useRef(onBackspaceEmpty)
   useEffect(() => {
     onChangeRef.current = onChange
     onEnterRef.current = onEnter
     onRequestLinkRef.current = onRequestLink
     onActivateRef.current = onActivate
-    onCommandEnterRef.current = onCommandEnter
-  }, [onActivate, onChange, onCommandEnter, onEnter, onRequestLink])
+    onCommandKeyDownRef.current = onCommandKeyDown
+    onBackspaceEmptyRef.current = onBackspaceEmpty
+  }, [onActivate, onBackspaceEmpty, onChange, onCommandKeyDown, onEnter, onRequestLink])
 
   const rememberSelection = useCallback(() => {
     const root = rootRef.current
@@ -101,10 +105,23 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
       onRequestLinkRef.current?.(api)
       return
     }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      if (onCommandKeyDownRef.current?.(event.key)) event.preventDefault()
+      return
+    }
+    if (event.key === 'Backspace') {
+      const root = rootRef.current
+      const current = root ? readContent(root) : content
+      const selection = root ? selectionOffsets(root) : null
+      if (plainText(current).length === 0 && selection?.start === 0 && selection.end === 0 && onBackspaceEmptyRef.current?.()) {
+        event.preventDefault()
+      }
+      return
+    }
     if (event.key !== 'Enter' || event.shiftKey) return
     event.preventDefault()
     rememberSelection()
-    if (onCommandEnterRef.current?.()) return
+    if (onCommandKeyDownRef.current?.('Enter')) return
     const root = rootRef.current
     if (!root) return
     const current = readContent(root)

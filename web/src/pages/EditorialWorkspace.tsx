@@ -310,6 +310,20 @@ function ArticleEditor() {
     })
   }
 
+  function removeEmptyBlock(index: number): boolean {
+    if (!draft || index === 0) return false
+    const precedingBlockIds = draft.document.blocks.slice(0, index).map(block => block.id).reverse()
+    editDraft(current => ({
+      ...current,
+      document: {
+        ...current.document,
+        blocks: current.document.blocks.filter((_, blockIndex) => blockIndex !== index),
+      },
+    }))
+    requestAnimationFrame(() => focusLastEditableBlock(precedingBlockIds))
+    return true
+  }
+
   async function togglePreview(enabled: boolean, rotate = false) {
     const saved = await performSaveRef.current()
     if (!saved && editSerialRef.current !== savedSerialRef.current) return
@@ -363,7 +377,7 @@ function ArticleEditor() {
               <div className="mt-8 border-t border-line pt-10">
                 <div className="space-y-4">
                   {draft.document.blocks.map((block, index) => (
-                    <BlockEditor key={block.id} block={block} index={index} total={draft.document.blocks.length} onChange={next => updateBlock(block.id, next)} onMove={direction => moveBlock(index, direction)} onRemove={() => removeBlock(index)} onInsertAfter={next => insertBlockAfter(index, next)} />
+                    <BlockEditor key={block.id} block={block} index={index} total={draft.document.blocks.length} onChange={next => updateBlock(block.id, next)} onMove={direction => moveBlock(index, direction)} onRemove={() => removeBlock(index)} onInsertAfter={next => insertBlockAfter(index, next)} onBackspaceEmpty={() => removeEmptyBlock(index)} />
                   ))}
                 </div>
                 <button type="button" onClick={() => addBlock('paragraph')} className="mt-8 flex w-full items-center justify-center gap-2 border border-dashed border-line-bright py-4 text-[9px] font-bold uppercase tracking-[0.16em] text-ink-muted hover:border-electric hover:text-electric"><FilePlus2 className="size-4" /> Continue writing</button>
@@ -433,4 +447,20 @@ function relativeDate(value: string): string {
 
 function shortDate(value: string): string {
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
+}
+
+function focusLastEditableBlock(blockIds: string[]) {
+  for (const blockId of blockIds) {
+    const editors = document.querySelectorAll<HTMLElement>(`[data-editor-block-id="${blockId}"], [data-editor-block-id^="${blockId}-"]`)
+    const editor = editors.item(editors.length - 1)
+    if (!editor) continue
+    editor.focus()
+    const range = document.createRange()
+    range.selectNodeContents(editor)
+    range.collapse(false)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    return
+  }
 }

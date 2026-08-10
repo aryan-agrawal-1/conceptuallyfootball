@@ -27,6 +27,7 @@ export function BlockEditor({
   onMove,
   onRemove,
   onInsertAfter,
+  onBackspaceEmpty,
 }: {
   block: ArticleBlock
   index: number
@@ -35,15 +36,18 @@ export function BlockEditor({
   onMove: (direction: -1 | 1) => void
   onRemove: () => void
   onInsertAfter: (block: ArticleBlock) => void
+  onBackspaceEmpty: () => boolean
 }) {
   const activeEditorRef = useRef<InlineTextEditorHandle | null>(null)
   const [linkEditor, setLinkEditor] = useState<InlineTextEditorHandle | null>(null)
   const [linkUrl, setLinkUrl] = useState('')
   const [linkError, setLinkError] = useState('')
+  const [selectedCommand, setSelectedCommand] = useState<BlockTypeChoice | null>(null)
   const slashQuery = block.type === 'paragraph' && plainText(block.content).startsWith('/')
     ? plainText(block.content).slice(1).trim().toLowerCase()
     : null
-  const matchingCommands = useMemo(() => slashQuery === null ? [] : BLOCK_TYPES.filter(command => `${command.label} ${command.keywords}`.toLowerCase().includes(slashQuery)).slice(0, 6), [slashQuery])
+  const matchingCommands = useMemo(() => slashQuery === null ? [] : BLOCK_TYPES.filter(command => `${command.label} ${command.keywords}`.toLowerCase().includes(slashQuery)), [slashQuery])
+  const selectedCommandIndex = Math.max(0, matchingCommands.findIndex(command => command.value === selectedCommand))
 
   function changeType(value: BlockTypeChoice) {
     onChange(convertBlock(block, value))
@@ -53,6 +57,7 @@ export function BlockEditor({
   function chooseCommand(value: BlockTypeChoice) {
     const commandBlock = block.type === 'paragraph' ? { ...block, content: inlineText('') } : block
     onChange(convertBlock(commandBlock, value))
+    setSelectedCommand(null)
     requestAnimationFrame(() => focusEditor(block.id))
   }
 
@@ -63,7 +68,7 @@ export function BlockEditor({
       return
     }
     setLinkEditor(editor)
-    setLinkUrl('https://')
+    setLinkUrl('')
     setLinkError('')
   }
 
@@ -89,7 +94,7 @@ export function BlockEditor({
 
   return (
     <section className="group relative -mx-4 px-4 py-1.5" data-block-type={block.type}>
-      <div className="absolute -left-12 top-1 z-10 hidden items-center border border-line bg-panel p-0.5 shadow-lg group-hover:flex group-focus-within:flex lg:flex lg:opacity-0 lg:transition-opacity lg:group-hover:opacity-100 lg:group-focus-within:opacity-100">
+      <div className="absolute -left-9 top-0 z-10 hidden w-8 flex-col items-center border border-line bg-panel p-0.5 shadow-lg group-hover:flex group-focus-within:flex lg:flex lg:opacity-0 lg:transition-opacity lg:group-hover:opacity-100 lg:group-focus-within:opacity-100">
         <BlockAction label="Add block below" onClick={() => onInsertAfter({ id: crypto.randomUUID(), type: 'paragraph', content: inlineText('') })}><Plus /></BlockAction>
         <label className="relative flex cursor-pointer items-center p-1.5 text-ink-muted hover:text-electric" title="Change block type">
           <GripVertical className="size-3.5" />
@@ -116,11 +121,17 @@ export function BlockEditor({
         block={block}
         onChange={onChange}
         onInsertAfter={onInsertAfter}
+        onBackspaceEmpty={onBackspaceEmpty}
         inlineProps={inlineProps}
-        onCommandEnter={() => {
-          const command = matchingCommands[0]
-          if (!command) return false
-          chooseCommand(command.value)
+        onCommandKeyDown={key => {
+          if (!matchingCommands.length) return false
+          if (key === 'Enter') {
+            chooseCommand(matchingCommands[selectedCommandIndex].value)
+            return true
+          }
+          const direction = key === 'ArrowDown' ? 1 : -1
+          const nextIndex = (selectedCommandIndex + direction + matchingCommands.length) % matchingCommands.length
+          setSelectedCommand(matchingCommands[nextIndex].value)
           return true
         }}
       />
@@ -129,8 +140,8 @@ export function BlockEditor({
         <div className="absolute left-4 top-full z-20 mt-1 w-64 border border-line-bright bg-panel p-1 shadow-2xl">
           <p className="px-3 py-2 font-mono text-[7px] uppercase tracking-[0.18em] text-ink-muted">Turn into</p>
           {matchingCommands.map((command, commandIndex) => (
-            <button key={command.value} type="button" onMouseDown={event => event.preventDefault()} onClick={() => chooseCommand(command.value)} className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs ${commandIndex === 0 ? 'bg-electric-dim text-electric' : 'text-ink-dim hover:bg-mat hover:text-ink'}`}>
-              <span>{command.label}</span>{commandIndex === 0 ? <span className="font-mono text-[7px] uppercase">Enter</span> : null}
+            <button key={command.value} type="button" onMouseDown={event => event.preventDefault()} onMouseEnter={() => setSelectedCommand(command.value)} onClick={() => chooseCommand(command.value)} className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs ${commandIndex === selectedCommandIndex ? 'bg-electric-dim text-electric' : 'text-ink-dim hover:bg-mat hover:text-ink'}`}>
+              <span>{command.label}</span>{commandIndex === selectedCommandIndex ? <span className="font-mono text-[7px] uppercase">Enter</span> : null}
             </button>
           ))}
         </div>
@@ -143,14 +154,16 @@ function BlockFields({
   block,
   onChange,
   onInsertAfter,
+  onBackspaceEmpty,
   inlineProps,
-  onCommandEnter,
+  onCommandKeyDown,
 }: {
   block: ArticleBlock
   onChange: (block: ArticleBlock) => void
   onInsertAfter: (block: ArticleBlock) => void
+  onBackspaceEmpty: () => boolean
   inlineProps: { onActivate: (editor: InlineTextEditorHandle) => void; onRequestLink: (editor: InlineTextEditorHandle) => void }
-  onCommandEnter: () => boolean
+  onCommandKeyDown: (key: 'ArrowDown' | 'ArrowUp' | 'Enter') => boolean
 }) {
   const splitIntoParagraph = (before: InlineContent, after: InlineContent) => {
     if (!('content' in block)) return
@@ -161,16 +174,16 @@ function BlockFields({
 
   switch (block.type) {
     case 'heading':
-      return <InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} placeholder={block.level === 2 ? 'Section heading' : 'Subheading'} className={block.level === 2 ? 'py-1 text-2xl font-black leading-tight tracking-[-0.035em] text-ink sm:text-3xl' : 'py-1 text-xl font-bold tracking-[-0.025em] text-ink'} />
+      return <InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} onBackspaceEmpty={onBackspaceEmpty} placeholder={block.level === 2 ? 'Section heading' : 'Subheading'} className={block.level === 2 ? 'py-1 text-2xl font-black leading-tight tracking-[-0.035em] text-ink sm:text-3xl' : 'py-1 text-xl font-bold tracking-[-0.025em] text-ink'} />
     case 'paragraph':
-      return <InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} onCommandEnter={onCommandEnter} placeholder="Write the next thought… Type / for blocks" className="text-[15px] leading-8 text-ink-dim" />
+      return <InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} onCommandKeyDown={onCommandKeyDown} onBackspaceEmpty={onBackspaceEmpty} placeholder="Write the next thought… Type / for blocks" className="text-[15px] leading-8 text-ink-dim" />
     case 'quote':
-      return <div className="border-l-2 border-electric py-2 pl-6"><InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} placeholder="A telling line or key conclusion…" className="text-xl font-semibold leading-8 tracking-[-0.02em] text-ink" /></div>
+      return <div className="border-l-2 border-electric py-2 pl-6"><InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} onBackspaceEmpty={onBackspaceEmpty} placeholder="A telling line or key conclusion…" className="text-xl font-semibold leading-8 tracking-[-0.02em] text-ink" /></div>
     case 'callout':
       return (
         <div className={`border p-5 ${block.tone === 'warning' ? 'border-gold/40 bg-gold-dim/35' : 'border-electric/35 bg-electric-dim/35'}`}>
           <select value={block.tone} onChange={event => onChange({ ...block, tone: event.target.value as typeof block.tone })} className="mb-3 bg-transparent font-mono text-[8px] uppercase tracking-[0.18em] text-electric focus:outline-none" aria-label="Callout tone"><option value="insight">Key insight</option><option value="note">Note</option><option value="warning">Caveat</option></select>
-          <InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} placeholder="Give this observation extra weight…" className="text-sm leading-6 text-ink" />
+          <InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} onBackspaceEmpty={onBackspaceEmpty} placeholder="Give this observation extra weight…" className="text-sm leading-6 text-ink" />
         </div>
       )
     case 'bulleted_list':
@@ -186,6 +199,13 @@ function BlockFields({
                 content={item}
                 onChange={content => { const items = [...block.items]; items[itemIndex] = content; onChange({ ...block, items }) }}
                 onEnter={(before, after) => { const items = [...block.items]; items.splice(itemIndex, 1, before, after); onChange({ ...block, items }); requestAnimationFrame(() => focusEditor(`${block.id}-${itemIndex + 1}`)) }}
+                onBackspaceEmpty={() => {
+                  if (block.items.length === 1) return onBackspaceEmpty()
+                  const items = block.items.filter((_, index) => index !== itemIndex)
+                  onChange({ ...block, items })
+                  requestAnimationFrame(() => focusEditor(`${block.id}-${Math.max(0, itemIndex - 1)}`, 'end'))
+                  return true
+                }}
                 placeholder="List item"
                 className="min-w-0 flex-1 text-[15px] leading-7 text-ink-dim"
               />
@@ -250,9 +270,16 @@ function normalizeLink(value: string): string {
   }
 }
 
-function focusEditor(blockId: string) {
+function focusEditor(blockId: string, position: 'start' | 'end' = 'start') {
   const editor = document.querySelector<HTMLElement>(`[data-editor-block-id="${blockId}"]`)
-  editor?.focus()
+  if (!editor) return
+  editor.focus()
+  const range = document.createRange()
+  range.selectNodeContents(editor)
+  range.collapse(position === 'start')
+  const selection = window.getSelection()
+  selection?.removeAllRanges()
+  selection?.addRange(range)
 }
 
 function FieldLabel({ children }: { children: string }) {
