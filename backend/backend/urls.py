@@ -22,5 +22,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/v1/auth/", include("accounts.auth_urls")),
     path("api/v1/private/", include("accounts.private_urls")),
+    path("api/v1/private/editorial/", include("editorial.private_urls")),
+    path("api/v1/analysis/", include("editorial.public_urls")),
     path("api/v1/", include("ingestion.api_urls")),
 ]

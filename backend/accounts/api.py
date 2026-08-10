@@ -17,7 +17,15 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
 from accounts.access import require_staff_permission
-from accounts.models import AccessAuditAction, AccessAuditEvent, StaffAccess
+from accounts.models import AccessAuditAction, AccessAuditEvent, StaffAccess, WriterProfile
+from accounts.profiles import (
+    display_name_for,
+    needs_writer_onboarding,
+    social_links_for,
+    validate_display_name,
+    validate_social_links,
+    writer_profile_for,
+)
 
 
 User = get_user_model()
@@ -47,18 +55,21 @@ def staff_access_for(user) -> StaffAccess | None:
 
 def user_payload(user) -> dict:
     access = staff_access_for(user) if user.is_authenticated else None
+    can_access_editorial = user.is_superuser or user.has_perm("accounts.access_editorial_workspace")
     return {
         "id": user.id,
         "email": user.email,
-        "display_name": user.get_full_name() or user.email or user.username,
+        "display_name": display_name_for(user),
+        "social_links": social_links_for(user),
         "role": access.role if access else "superuser" if user.is_superuser else None,
         "must_change_password": bool(access and access.must_change_password),
-        "can_access_editorial": user.is_superuser
-        or user.has_perm("accounts.access_editorial_workspace"),
+        "can_access_editorial": can_access_editorial,
         "can_approve_editorial": user.is_superuser
         or user.has_perm("accounts.approve_editorial_content"),
         "can_access_operations": user.is_superuser
         or (user.is_staff and user.has_perm("accounts.access_operations_console")),
+        "onboarding_required": not bool(access and access.must_change_password)
+        and needs_writer_onboarding(user, can_access_editorial=can_access_editorial),
     }
 
 
@@ -176,6 +187,46 @@ def change_password(request: HttpRequest) -> JsonResponse:
         after_values={"must_change_password": False},
     )
     update_session_auth_hash(request, user)
+    return private_json({"authenticated": True, "user": user_payload(user)})
+
+
+@require_POST
+@never_cache
+def save_writer_profile(request: HttpRequest) -> JsonResponse:
+    user = request.user
+    if not user.is_authenticated:
+        return private_json(
+            {"detail": "Authentication credentials were not provided.", "code": "not_authenticated"},
+            status=401,
+        )
+    access = staff_access_for(user) if not user.is_superuser else None
+    if access and (not access.is_access_active or access.must_change_password):
+        code = "password_change_required" if access.must_change_password else "access_denied"
+        return private_json(
+            {"detail": "Complete the required account steps first.", "code": code},
+            status=403,
+        )
+    if not (user.is_superuser or user.has_perm("accounts.access_editorial_workspace")):
+        return private_json(
+            {"detail": "Editorial access is required.", "code": "permission_denied"},
+            status=403,
+        )
+
+    payload = json_body(request)
+    try:
+        display_name = validate_display_name(payload.get("display_name"))
+        social_links = validate_social_links(payload.get("social_links"))
+    except ValidationError as error:
+        return private_json(
+            {"detail": "Check your writer profile.", "code": "invalid_profile", "errors": error.messages},
+            status=400,
+        )
+
+    profile = writer_profile_for(user) or WriterProfile(user=user)
+    profile.display_name = display_name
+    profile.social_links = social_links
+    profile.mark_complete()
+    profile.save()
     return private_json({"authenticated": True, "user": user_payload(user)})
 
 

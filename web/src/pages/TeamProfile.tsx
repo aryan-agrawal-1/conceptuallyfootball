@@ -177,7 +177,7 @@ function TeamLayout({
             <span className="text-electric/80 font-mono uppercase tracking-[0.15em] mr-2">
               Note
             </span>
-            Per 90 scales volume stats by matches. xG / xA use Sofascore team totals when the feed
+            Per 90 scales volume stats by matches. xG / xA use Opta sourced team totals when the feed
             includes them; otherwise they are the sum of squad players&apos; Understat xG/xA. Rank
             chips follow the toggle (season vs per-match leaderboard).
           </p>

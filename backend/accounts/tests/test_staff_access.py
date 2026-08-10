@@ -7,7 +7,7 @@ from django.test import Client, TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from accounts.models import AccessAuditAction, AccessAuditEvent, StaffAccess, StaffRole
+from accounts.models import AccessAuditAction, AccessAuditEvent, StaffAccess, StaffRole, WriterProfile
 from accounts.roles import ROLE_GROUPS, configure_user_role
 
 
@@ -65,6 +65,7 @@ class StaffAccessApiTests(TestCase):
         )
         self.assertEqual(password_response.status_code, 200)
         self.assertFalse(password_response.json()["user"]["must_change_password"])
+        self.assertTrue(password_response.json()["user"]["onboarding_required"])
         self.assertEqual(self.client.get(reverse("editorial-workspace")).status_code, 200)
         self.assertTrue(
             AccessAuditEvent.objects.filter(
@@ -227,6 +228,72 @@ class StaffRoleTests(TestCase):
         self.assertTrue(user.is_staff)
         self.assertTrue(user.has_perm("accounts.access_operations_console"))
         self.assertFalse(user.has_perm("accounts.access_editorial_workspace"))
+
+
+class WriterProfileTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="profile@example.com",
+            email="profile@example.com",
+            password=TEMPORARY_PASSWORD,
+        )
+        StaffAccess.objects.create(
+            user=self.user,
+            role=StaffRole.WRITER,
+            must_change_password=False,
+        )
+        configure_user_role(self.user, StaffRole.WRITER)
+        self.client.force_login(self.user)
+
+    def test_editorial_user_must_complete_writer_profile(self):
+        session_response = self.client.get(reverse("staff-session"))
+
+        self.assertEqual(session_response.status_code, 200)
+        self.assertTrue(session_response.json()["user"]["onboarding_required"])
+        self.assertEqual(session_response.json()["user"]["display_name"], self.user.email)
+
+    def test_writer_can_set_public_name_and_social_links(self):
+        response = self.client.post(
+            reverse("staff-writer-profile"),
+            data=json.dumps(
+                {
+                    "display_name": "Alex Morgan",
+                    "social_links": {
+                        "x": "https://x.com/alexmorgan",
+                        "instagram": "https://instagram.com/alexmorgan",
+                        "bluesky": "https://bsky.app/profile/alexmorgan.bsky.social",
+                        "youtube": "https://youtube.com/@alexmorgan",
+                        "discord": "https://discord.com/users/123456",
+                        "website": "https://alexmorgan.example.com",
+                    },
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        user_payload = response.json()["user"]
+        self.assertEqual(user_payload["display_name"], "Alex Morgan")
+        self.assertFalse(user_payload["onboarding_required"])
+        self.assertEqual(user_payload["social_links"]["x"], "https://x.com/alexmorgan")
+        profile = WriterProfile.objects.get(user=self.user)
+        self.assertTrue(profile.is_complete)
+
+    def test_writer_profile_rejects_mismatched_social_domain(self):
+        response = self.client.post(
+            reverse("staff-writer-profile"),
+            data=json.dumps(
+                {
+                    "display_name": "Alex Morgan",
+                    "social_links": {"instagram": "https://example.com/not-instagram"},
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "invalid_profile")
+        self.assertFalse(WriterProfile.objects.filter(user=self.user).exists())
 
 
 class StaffAccessAdminTests(TestCase):
