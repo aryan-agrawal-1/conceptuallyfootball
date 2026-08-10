@@ -5,16 +5,8 @@ import {
   Copy,
   ExternalLink,
   FilePlus2,
-  Heading2,
-  Image,
-  Lightbulb,
-  List,
-  ListOrdered,
   LogOut,
-  Minus,
   MoreHorizontal,
-  Pilcrow,
-  Quote,
   RefreshCw,
   Save,
   Search,
@@ -302,6 +294,22 @@ function ArticleEditor() {
     editDraft(current => ({ ...current, document: { ...current.document, blocks: [...current.document.blocks, newBlock(type)] } }))
   }
 
+  function insertBlockAfter(index: number, block: ArticleBlock) {
+    editDraft(current => {
+      const blocks = [...current.document.blocks]
+      blocks.splice(index + 1, 0, block)
+      return { ...current, document: { ...current.document, blocks } }
+    })
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-editor-block-id="${block.id}"]`)?.focus())
+  }
+
+  function removeBlock(index: number) {
+    editDraft(current => {
+      const blocks = current.document.blocks.filter((_, blockIndex) => blockIndex !== index)
+      return { ...current, document: { ...current.document, blocks: blocks.length ? blocks : [newBlock('paragraph')] } }
+    })
+  }
+
   async function togglePreview(enabled: boolean, rotate = false) {
     const saved = await performSaveRef.current()
     if (!saved && editSerialRef.current !== savedSerialRef.current) return
@@ -343,21 +351,7 @@ function ArticleEditor() {
 
       {saveError ? <div className="border-b border-ember/35 bg-ember-dim/55 px-6 py-2 text-center text-xs text-ink">{saveError}</div> : null}
 
-      <div className="mx-auto grid max-w-[1500px] lg:grid-cols-[210px_minmax(0,1fr)_260px]">
-        <aside className="border-b border-line p-4 lg:sticky lg:top-16 lg:h-[calc(100svh-4rem)] lg:border-b-0 lg:border-r lg:p-5">
-          <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-ink-muted">Insert block</p>
-          <div className="mt-4 grid grid-cols-4 gap-1 lg:grid-cols-1">
-            <BlockTool icon={<Pilcrow />} label="Paragraph" onClick={() => addBlock('paragraph')} />
-            <BlockTool icon={<Heading2 />} label="Heading" onClick={() => addBlock('heading')} />
-            <BlockTool icon={<List />} label="Bulleted list" onClick={() => addBlock('bulleted_list')} />
-            <BlockTool icon={<ListOrdered />} label="Numbered list" onClick={() => addBlock('numbered_list')} />
-            <BlockTool icon={<Quote />} label="Quote" onClick={() => addBlock('quote')} />
-            <BlockTool icon={<Lightbulb />} label="Callout" onClick={() => addBlock('callout')} />
-            <BlockTool icon={<Image />} label="Image" onClick={() => addBlock('image')} />
-            <BlockTool icon={<Minus />} label="Divider" onClick={() => addBlock('divider')} />
-          </div>
-        </aside>
-
+      <div className="mx-auto grid max-w-[1500px] lg:grid-cols-[minmax(0,1fr)_260px]">
         <section className="min-h-[calc(100svh-4rem)] bg-panel/30">
           {mode === 'reader' ? (
             <ArticleCanvas title={draft.title} subtitle={draft.subtitle} document={draft.document} author={article.author} updatedAt={article.updated_at} />
@@ -369,7 +363,7 @@ function ArticleEditor() {
               <div className="mt-8 border-t border-line pt-10">
                 <div className="space-y-4">
                   {draft.document.blocks.map((block, index) => (
-                    <BlockEditor key={block.id} block={block} index={index} total={draft.document.blocks.length} onChange={next => updateBlock(block.id, next)} onMove={direction => moveBlock(index, direction)} onRemove={() => editDraft(current => ({ ...current, document: { ...current.document, blocks: current.document.blocks.filter(item => item.id !== block.id) } }))} />
+                    <BlockEditor key={block.id} block={block} index={index} total={draft.document.blocks.length} onChange={next => updateBlock(block.id, next)} onMove={direction => moveBlock(index, direction)} onRemove={() => removeBlock(index)} onInsertAfter={next => insertBlockAfter(index, next)} />
                   ))}
                 </div>
                 <button type="button" onClick={() => addBlock('paragraph')} className="mt-8 flex w-full items-center justify-center gap-2 border border-dashed border-line-bright py-4 text-[9px] font-bold uppercase tracking-[0.16em] text-ink-muted hover:border-electric hover:text-electric"><FilePlus2 className="size-4" /> Continue writing</button>
@@ -420,10 +414,6 @@ function EditorMessage({ children, error = false }: { children: ReactNode; error
 function SaveStatus({ state }: { state: SaveState }) {
   const labels: Record<SaveState, string> = { saved: 'Saved', unsaved: 'Unsaved changes', saving: 'Saving…', recovered: 'Recovered locally · saving…', error: 'Save interrupted' }
   return <p className={`mt-1 flex items-center gap-1.5 font-mono text-[7px] uppercase tracking-[0.14em] ${state === 'error' ? 'text-ember' : state === 'saved' ? 'text-mint' : 'text-ink-muted'}`}><span className={`size-1.5 rounded-full ${state === 'error' ? 'bg-ember' : state === 'saved' ? 'bg-mint' : 'bg-gold'}`} />{labels[state]}</p>
-}
-
-function BlockTool({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
-  return <button type="button" onClick={onClick} title={label} className="flex items-center justify-center gap-3 border border-transparent p-2.5 text-ink-muted hover:border-line hover:bg-panel hover:text-electric lg:justify-start lg:[&>span]:inline"><span className="[&>svg]:size-4">{icon}</span><span className="hidden text-[8px] font-bold uppercase tracking-[0.13em] lg:inline">{label}</span></button>
 }
 
 function InspectorSection({ title, children }: { title: string; children: ReactNode }) {

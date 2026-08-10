@@ -1,9 +1,23 @@
-import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2 } from 'lucide-react'
-import type { ReactElement } from 'react'
-import { inlineText, plainText, type ArticleBlock } from '../../lib/editorial'
+import { ArrowDown, ArrowUp, GripVertical, Link2, Plus, Trash2 } from 'lucide-react'
+import { useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactElement } from 'react'
+import { inlineText, plainText, type ArticleBlock, type InlineContent } from '../../lib/editorial'
+import { InlineTextEditor, type InlineTextEditorHandle } from './InlineTextEditor'
 
-const fieldClass = 'w-full resize-none bg-transparent text-ink placeholder:text-ink-muted focus:outline-none'
 const metaInputClass = 'h-9 w-full border border-line bg-mat px-3 text-xs text-ink placeholder:text-ink-muted focus:border-electric focus:outline-none'
+
+const BLOCK_TYPES = [
+  { value: 'paragraph', label: 'Text', keywords: 'paragraph text' },
+  { value: 'heading:2', label: 'Heading 2', keywords: 'heading section h2' },
+  { value: 'heading:3', label: 'Heading 3', keywords: 'heading subheading h3' },
+  { value: 'bulleted_list', label: 'Bulleted list', keywords: 'bullet unordered list' },
+  { value: 'numbered_list', label: 'Numbered list', keywords: 'number ordered list' },
+  { value: 'quote', label: 'Quote', keywords: 'quote pullquote' },
+  { value: 'callout', label: 'Callout', keywords: 'callout insight note warning' },
+  { value: 'image', label: 'Image', keywords: 'image photo media' },
+  { value: 'divider', label: 'Divider', keywords: 'divider rule separator' },
+] as const
+
+type BlockTypeChoice = typeof BLOCK_TYPES[number]['value']
 
 export function BlockEditor({
   block,
@@ -12,6 +26,7 @@ export function BlockEditor({
   onChange,
   onMove,
   onRemove,
+  onInsertAfter,
 }: {
   block: ArticleBlock
   index: number
@@ -19,89 +34,163 @@ export function BlockEditor({
   onChange: (block: ArticleBlock) => void
   onMove: (direction: -1 | 1) => void
   onRemove: () => void
+  onInsertAfter: (block: ArticleBlock) => void
 }) {
+  const activeEditorRef = useRef<InlineTextEditorHandle | null>(null)
+  const [linkEditor, setLinkEditor] = useState<InlineTextEditorHandle | null>(null)
+  const [linkUrl, setLinkUrl] = useState('')
+  const [linkError, setLinkError] = useState('')
+  const slashQuery = block.type === 'paragraph' && plainText(block.content).startsWith('/')
+    ? plainText(block.content).slice(1).trim().toLowerCase()
+    : null
+  const matchingCommands = useMemo(() => slashQuery === null ? [] : BLOCK_TYPES.filter(command => `${command.label} ${command.keywords}`.toLowerCase().includes(slashQuery)).slice(0, 6), [slashQuery])
+
+  function changeType(value: BlockTypeChoice) {
+    onChange(convertBlock(block, value))
+    requestAnimationFrame(() => focusEditor(block.id))
+  }
+
+  function chooseCommand(value: BlockTypeChoice) {
+    const commandBlock = block.type === 'paragraph' ? { ...block, content: inlineText('') } : block
+    onChange(convertBlock(commandBlock, value))
+    requestAnimationFrame(() => focusEditor(block.id))
+  }
+
+  function openLink(editor = activeEditorRef.current) {
+    if (!editor?.hasSelection()) {
+      setLinkError('Highlight some text first.')
+      setLinkEditor(null)
+      return
+    }
+    setLinkEditor(editor)
+    setLinkUrl('https://')
+    setLinkError('')
+  }
+
+  function applyLink(event: FormEvent) {
+    event.preventDefault()
+    const normalized = normalizeLink(linkUrl)
+    if (linkUrl.trim() && !normalized) {
+      setLinkError('Use a valid http or https URL.')
+      return
+    }
+    if (!linkEditor?.applyLink(normalized || undefined)) {
+      setLinkError('Highlight some text first.')
+      return
+    }
+    setLinkEditor(null)
+    setLinkError('')
+  }
+
+  const inlineProps = {
+    onActivate: (editor: InlineTextEditorHandle) => { activeEditorRef.current = editor },
+    onRequestLink: openLink,
+  }
+
   return (
-    <section className="group relative -mx-4 border border-transparent px-4 py-2 transition-colors hover:border-line hover:bg-panel/45 focus-within:border-line-bright focus-within:bg-panel/65">
-      <div className="absolute -left-11 top-2 hidden w-9 flex-col items-center border border-line bg-panel py-1 group-hover:flex group-focus-within:flex lg:flex lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100">
-        <GripVertical className="mb-1 size-3.5 text-ink-muted" />
+    <section className="group relative -mx-4 px-4 py-1.5" data-block-type={block.type}>
+      <div className="absolute -left-12 top-1 z-10 hidden items-center border border-line bg-panel p-0.5 shadow-lg group-hover:flex group-focus-within:flex lg:flex lg:opacity-0 lg:transition-opacity lg:group-hover:opacity-100 lg:group-focus-within:opacity-100">
+        <BlockAction label="Add block below" onClick={() => onInsertAfter({ id: crypto.randomUUID(), type: 'paragraph', content: inlineText('') })}><Plus /></BlockAction>
+        <label className="relative flex cursor-pointer items-center p-1.5 text-ink-muted hover:text-electric" title="Change block type">
+          <GripVertical className="size-3.5" />
+          <select value={blockChoice(block)} onChange={event => changeType(event.target.value as BlockTypeChoice)} className="absolute inset-0 cursor-pointer opacity-0" aria-label="Change block type">
+            {BLOCK_TYPES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
+        {isTextBlock(block) ? <BlockAction label="Link selected text" onMouseDown={event => event.preventDefault()} onClick={() => openLink()}><Link2 /></BlockAction> : null}
         <BlockAction label="Move up" disabled={index === 0} onClick={() => onMove(-1)}><ArrowUp /></BlockAction>
         <BlockAction label="Move down" disabled={index === total - 1} onClick={() => onMove(1)}><ArrowDown /></BlockAction>
         <BlockAction label="Delete block" onClick={onRemove} destructive><Trash2 /></BlockAction>
       </div>
-      <BlockFields block={block} onChange={onChange} />
+
+      {linkEditor ? (
+        <form onSubmit={applyLink} className="absolute left-0 top-full z-30 mt-1 flex w-full max-w-md gap-2 border border-line-bright bg-panel p-2 shadow-xl">
+          <input autoFocus value={linkUrl} onChange={event => setLinkUrl(event.target.value)} className={metaInputClass} aria-label="Link URL" placeholder="https://…" />
+          <button type="submit" className="shrink-0 bg-electric px-3 text-[8px] font-black uppercase tracking-[0.14em] text-mat">Apply</button>
+          <button type="button" onClick={() => setLinkEditor(null)} className="shrink-0 px-2 text-[8px] uppercase text-ink-muted">Cancel</button>
+        </form>
+      ) : null}
+      {linkError ? <p className="absolute left-0 top-full z-20 mt-1 bg-panel px-2 py-1 text-[9px] text-ember">{linkError}</p> : null}
+
+      <BlockFields
+        block={block}
+        onChange={onChange}
+        onInsertAfter={onInsertAfter}
+        inlineProps={inlineProps}
+        onCommandEnter={() => {
+          const command = matchingCommands[0]
+          if (!command) return false
+          chooseCommand(command.value)
+          return true
+        }}
+      />
+
+      {matchingCommands.length ? (
+        <div className="absolute left-4 top-full z-20 mt-1 w-64 border border-line-bright bg-panel p-1 shadow-2xl">
+          <p className="px-3 py-2 font-mono text-[7px] uppercase tracking-[0.18em] text-ink-muted">Turn into</p>
+          {matchingCommands.map((command, commandIndex) => (
+            <button key={command.value} type="button" onMouseDown={event => event.preventDefault()} onClick={() => chooseCommand(command.value)} className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs ${commandIndex === 0 ? 'bg-electric-dim text-electric' : 'text-ink-dim hover:bg-mat hover:text-ink'}`}>
+              <span>{command.label}</span>{commandIndex === 0 ? <span className="font-mono text-[7px] uppercase">Enter</span> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </section>
   )
 }
 
-function BlockFields({ block, onChange }: { block: ArticleBlock; onChange: (block: ArticleBlock) => void }) {
+function BlockFields({
+  block,
+  onChange,
+  onInsertAfter,
+  inlineProps,
+  onCommandEnter,
+}: {
+  block: ArticleBlock
+  onChange: (block: ArticleBlock) => void
+  onInsertAfter: (block: ArticleBlock) => void
+  inlineProps: { onActivate: (editor: InlineTextEditorHandle) => void; onRequestLink: (editor: InlineTextEditorHandle) => void }
+  onCommandEnter: () => boolean
+}) {
+  const splitIntoParagraph = (before: InlineContent, after: InlineContent) => {
+    if (!('content' in block)) return
+    onChange({ ...block, content: before })
+    const next = { id: crypto.randomUUID(), type: 'paragraph' as const, content: after }
+    onInsertAfter(next)
+  }
+
   switch (block.type) {
     case 'heading':
-      return (
-        <div>
-          <div className="mb-2 flex items-center gap-2">
-            <span className="font-mono text-[8px] uppercase tracking-[0.18em] text-ink-muted">Heading</span>
-            <select
-              value={block.level}
-              onChange={event => onChange({ ...block, level: Number(event.target.value) as 2 | 3 })}
-              className="bg-transparent font-mono text-[8px] uppercase text-electric focus:outline-none"
-              aria-label="Heading level"
-            >
-              <option value={2}>H2</option>
-              <option value={3}>H3</option>
-            </select>
-          </div>
-          <textarea
-            value={plainText(block.content)}
-            onChange={event => onChange({ ...block, content: inlineText(event.target.value) })}
-            rows={block.level === 2 ? 2 : 1}
-            placeholder={block.level === 2 ? 'Section heading' : 'Subheading'}
-            className={`${fieldClass} ${block.level === 2 ? 'text-2xl font-black leading-tight tracking-[-0.035em] sm:text-3xl' : 'text-xl font-bold tracking-[-0.025em]'}`}
-          />
-        </div>
-      )
+      return <InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} placeholder={block.level === 2 ? 'Section heading' : 'Subheading'} className={block.level === 2 ? 'py-1 text-2xl font-black leading-tight tracking-[-0.035em] text-ink sm:text-3xl' : 'py-1 text-xl font-bold tracking-[-0.025em] text-ink'} />
     case 'paragraph':
-      return <textarea value={plainText(block.content)} onChange={event => onChange({ ...block, content: inlineText(event.target.value) })} rows={4} placeholder="Write the next thought…" className={`${fieldClass} text-[15px] leading-8 text-ink-dim`} />
+      return <InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} onCommandEnter={onCommandEnter} placeholder="Write the next thought… Type / for blocks" className="text-[15px] leading-8 text-ink-dim" />
     case 'quote':
-      return (
-        <div className="border-l-2 border-electric py-2 pl-6">
-          <textarea value={plainText(block.content)} onChange={event => onChange({ ...block, content: inlineText(event.target.value) })} rows={3} placeholder="A telling line or key conclusion…" className={`${fieldClass} text-xl font-semibold leading-8 tracking-[-0.02em]`} />
-        </div>
-      )
+      return <div className="border-l-2 border-electric py-2 pl-6"><InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} placeholder="A telling line or key conclusion…" className="text-xl font-semibold leading-8 tracking-[-0.02em] text-ink" /></div>
     case 'callout':
       return (
         <div className={`border p-5 ${block.tone === 'warning' ? 'border-gold/40 bg-gold-dim/35' : 'border-electric/35 bg-electric-dim/35'}`}>
-          <select value={block.tone} onChange={event => onChange({ ...block, tone: event.target.value as typeof block.tone })} className="mb-3 bg-transparent font-mono text-[8px] uppercase tracking-[0.18em] text-electric focus:outline-none" aria-label="Callout tone">
-            <option value="insight">Key insight</option>
-            <option value="note">Note</option>
-            <option value="warning">Caveat</option>
-          </select>
-          <textarea value={plainText(block.content)} onChange={event => onChange({ ...block, content: inlineText(event.target.value) })} rows={3} placeholder="Give this observation extra weight…" className={`${fieldClass} text-sm leading-6`} />
+          <select value={block.tone} onChange={event => onChange({ ...block, tone: event.target.value as typeof block.tone })} className="mb-3 bg-transparent font-mono text-[8px] uppercase tracking-[0.18em] text-electric focus:outline-none" aria-label="Callout tone"><option value="insight">Key insight</option><option value="note">Note</option><option value="warning">Caveat</option></select>
+          <InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} placeholder="Give this observation extra weight…" className="text-sm leading-6 text-ink" />
         </div>
       )
     case 'bulleted_list':
     case 'numbered_list':
       return (
-        <div className="space-y-3">
+        <div className="space-y-1">
           {block.items.map((item, itemIndex) => (
             <div key={`${block.id}-${itemIndex}`} className="flex items-start gap-3">
               <span className="mt-2.5 w-4 shrink-0 text-right font-mono text-[9px] text-electric">{block.type === 'numbered_list' ? `${itemIndex + 1}.` : '•'}</span>
-              <textarea
-                value={plainText(item)}
-                onChange={event => {
-                  const items = [...block.items]
-                  items[itemIndex] = inlineText(event.target.value)
-                  onChange({ ...block, items })
-                }}
-                rows={2}
+              <InlineTextEditor
+                {...inlineProps}
+                blockId={`${block.id}-${itemIndex}`}
+                content={item}
+                onChange={content => { const items = [...block.items]; items[itemIndex] = content; onChange({ ...block, items }) }}
+                onEnter={(before, after) => { const items = [...block.items]; items.splice(itemIndex, 1, before, after); onChange({ ...block, items }); requestAnimationFrame(() => focusEditor(`${block.id}-${itemIndex + 1}`)) }}
                 placeholder="List item"
-                className={`${fieldClass} text-[15px] leading-7 text-ink-dim`}
+                className="min-w-0 flex-1 text-[15px] leading-7 text-ink-dim"
               />
-              {block.items.length > 1 ? (
-                <button type="button" onClick={() => onChange({ ...block, items: block.items.filter((_, index) => index !== itemIndex) })} className="mt-1 p-1.5 text-ink-muted hover:text-ember" aria-label={`Delete list item ${itemIndex + 1}`}><Trash2 className="size-3.5" /></button>
-              ) : null}
             </div>
           ))}
-          <button type="button" onClick={() => onChange({ ...block, items: [...block.items, inlineText('')] })} className="ml-7 inline-flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.15em] text-ink-muted hover:text-electric"><Plus className="size-3.5" /> Add item</button>
         </div>
       )
     case 'image':
@@ -120,10 +209,56 @@ function BlockFields({ block, onChange }: { block: ArticleBlock; onChange: (bloc
   }
 }
 
+function convertBlock(block: ArticleBlock, choice: BlockTypeChoice): ArticleBlock {
+  const content = contentFromBlock(block)
+  const id = block.id
+  switch (choice) {
+    case 'paragraph': return { id, type: 'paragraph', content }
+    case 'heading:2': return { id, type: 'heading', level: 2, content }
+    case 'heading:3': return { id, type: 'heading', level: 3, content }
+    case 'quote': return { id, type: 'quote', content }
+    case 'callout': return { id, type: 'callout', tone: 'insight', content }
+    case 'bulleted_list': return { id, type: 'bulleted_list', items: [content] }
+    case 'numbered_list': return { id, type: 'numbered_list', items: [content] }
+    case 'image': return { id, type: 'image', url: '', caption: '', alt: '' }
+    case 'divider': return { id, type: 'divider' }
+  }
+}
+
+function contentFromBlock(block: ArticleBlock): InlineContent {
+  if (block.type === 'heading' || block.type === 'paragraph' || block.type === 'quote' || block.type === 'callout') return block.content
+  if (block.type === 'bulleted_list' || block.type === 'numbered_list') return block.items[0] ?? inlineText('')
+  if (block.type === 'image') return inlineText(block.caption || block.alt)
+  return inlineText('')
+}
+
+function blockChoice(block: ArticleBlock): BlockTypeChoice {
+  return block.type === 'heading' ? `heading:${block.level}` : block.type
+}
+
+function isTextBlock(block: ArticleBlock): boolean {
+  return block.type !== 'image' && block.type !== 'divider'
+}
+
+function normalizeLink(value: string): string {
+  if (!value.trim()) return ''
+  try {
+    const url = new URL(value.trim())
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : ''
+  } catch {
+    return ''
+  }
+}
+
+function focusEditor(blockId: string) {
+  const editor = document.querySelector<HTMLElement>(`[data-editor-block-id="${blockId}"]`)
+  editor?.focus()
+}
+
 function FieldLabel({ children }: { children: string }) {
   return <span className="block font-mono text-[8px] uppercase tracking-[0.16em] text-ink-muted">{children}</span>
 }
 
-function BlockAction({ children, label, onClick, disabled = false, destructive = false }: { children: ReactElement<{ className?: string }>; label: string; onClick: () => void; disabled?: boolean; destructive?: boolean }) {
-  return <button type="button" onClick={onClick} disabled={disabled} className={`p-1.5 disabled:opacity-25 ${destructive ? 'text-ink-muted hover:text-ember' : 'text-ink-muted hover:text-electric'}`} aria-label={label}>{children && <span className="[&>svg]:size-3.5">{children}</span>}</button>
+function BlockAction({ children, label, onClick, onMouseDown, disabled = false, destructive = false }: { children: ReactElement<{ className?: string }>; label: string; onClick: () => void; onMouseDown?: (event: MouseEvent<HTMLButtonElement>) => void; disabled?: boolean; destructive?: boolean }) {
+  return <button type="button" onMouseDown={onMouseDown} onClick={onClick} disabled={disabled} className={`p-1.5 disabled:opacity-25 ${destructive ? 'text-ink-muted hover:text-ember' : 'text-ink-muted hover:text-electric'}`} aria-label={label} title={label}><span className="[&>svg]:size-3.5">{children}</span></button>
 }
