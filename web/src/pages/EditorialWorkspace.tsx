@@ -290,10 +290,6 @@ function ArticleEditor() {
     })
   }
 
-  function addBlock(type: ArticleBlock['type']) {
-    editDraft(current => ({ ...current, document: { ...current.document, blocks: [...current.document.blocks, newBlock(type)] } }))
-  }
-
   function insertBlockAfter(index: number, block: ArticleBlock) {
     editDraft(current => {
       const blocks = [...current.document.blocks]
@@ -380,7 +376,6 @@ function ArticleEditor() {
                     <BlockEditor key={block.id} block={block} index={index} total={draft.document.blocks.length} onChange={next => updateBlock(block.id, next)} onMove={direction => moveBlock(index, direction)} onRemove={() => removeBlock(index)} onInsertAfter={next => insertBlockAfter(index, next)} onBackspaceEmpty={() => removeEmptyBlock(index)} />
                   ))}
                 </div>
-                <button type="button" onClick={() => addBlock('paragraph')} className="mt-8 flex w-full items-center justify-center gap-2 border border-dashed border-line-bright py-4 text-[9px] font-bold uppercase tracking-[0.16em] text-ink-muted hover:border-electric hover:text-electric"><FilePlus2 className="size-4" /> Continue writing</button>
               </div>
             </div>
           )}

@@ -1,23 +1,23 @@
 import { useState, type FormEvent } from 'react'
-import { AtSign, Camera, Check, Globe2, MessageCircleMore, Play, Sparkles } from 'lucide-react'
+import { Check } from 'lucide-react'
 import { StaffFrame } from '../components/staff/StaffFrame'
 import { StaffRoute } from '../components/staff/StaffRoute'
 import { useStaffAuth } from '../context/StaffAuthContext'
 import { StaffAuthError, type SocialLinks, type SocialPlatform } from '../lib/staffAuth'
 import { useNavigate } from 'react-router-dom'
+import { SocialBrandIcon } from '../components/social/SocialBrandIcon'
 
 const SOCIAL_FIELDS: Array<{
   key: SocialPlatform
   label: string
   placeholder: string
-  icon: typeof AtSign
 }> = [
-  { key: 'x', label: 'X', placeholder: 'https://x.com/yourname', icon: AtSign },
-  { key: 'instagram', label: 'Instagram', placeholder: 'https://instagram.com/yourname', icon: Camera },
-  { key: 'bluesky', label: 'Bluesky', placeholder: 'https://bsky.app/profile/yourname.bsky.social', icon: Sparkles },
-  { key: 'youtube', label: 'YouTube', placeholder: 'https://youtube.com/@yourchannel', icon: Play },
-  { key: 'discord', label: 'Discord', placeholder: 'https://discord.com/users/…', icon: MessageCircleMore },
-  { key: 'website', label: 'Personal site', placeholder: 'https://yourname.com', icon: Globe2 },
+  { key: 'x', label: 'X', placeholder: 'https://x.com/yourname' },
+  { key: 'instagram', label: 'Instagram', placeholder: 'https://instagram.com/yourname' },
+  { key: 'bluesky', label: 'Bluesky', placeholder: 'https://bsky.app/profile/yourname.bsky.social' },
+  { key: 'youtube', label: 'YouTube', placeholder: 'https://youtube.com/@yourchannel' },
+  { key: 'discord', label: 'Discord', placeholder: 'https://discord.com/users/…' },
+  { key: 'website', label: 'Personal site', placeholder: 'https://yourname.com' },
 ]
 
 export function StaffOnboarding() {
@@ -79,9 +79,9 @@ function WriterProfileForm() {
 
             <div className="mt-8 border-t border-line pt-7">
               <div className="grid gap-4 sm:grid-cols-2">
-                {SOCIAL_FIELDS.map(({ key, label, placeholder, icon: Icon }) => (
+                {SOCIAL_FIELDS.map(({ key, label, placeholder }) => (
                   <label key={key} className="block">
-                    <span className="mb-2 flex items-center gap-2 font-mono text-[8px] uppercase tracking-[0.16em] text-ink-dim"><Icon className="size-3.5 text-electric" />{label}</span>
+                    <span className="mb-2 flex items-center gap-2 font-mono text-[8px] uppercase tracking-[0.16em] text-ink-dim"><span className="grid size-6 place-items-center border border-line-bright bg-panel text-electric"><SocialBrandIcon platform={key} className="size-3" /></span>{label}</span>
                     <input type="url" value={socialLinks[key] ?? ''} onChange={event => setSocialLinks(current => ({ ...current, [key]: event.target.value }))} placeholder={placeholder} className="h-11 w-full border border-line bg-mat px-3 text-xs text-ink outline-none placeholder:text-ink-muted focus:border-electric" />
                   </label>
                 ))}

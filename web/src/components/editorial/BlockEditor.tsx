@@ -94,9 +94,9 @@ export function BlockEditor({
 
   return (
     <section className="group relative -mx-4 px-4 py-1.5" data-block-type={block.type}>
-      <div className="absolute -left-9 top-0 z-10 hidden w-8 flex-col items-center border border-line bg-panel p-0.5 shadow-lg group-hover:flex group-focus-within:flex lg:flex lg:opacity-0 lg:transition-opacity lg:group-hover:opacity-100 lg:group-focus-within:opacity-100">
+      <div className="absolute -left-9 top-0 z-10 hidden w-8 flex-col items-center gap-0.5 border border-line bg-panel p-0.5 shadow-lg group-hover:flex group-focus-within:flex lg:flex lg:opacity-0 lg:transition-opacity lg:group-hover:opacity-100 lg:group-focus-within:opacity-100">
         <BlockAction label="Add block below" onClick={() => onInsertAfter({ id: crypto.randomUUID(), type: 'paragraph', content: inlineText('') })}><Plus /></BlockAction>
-        <label className="relative flex cursor-pointer items-center p-1.5 text-ink-muted hover:text-electric" title="Change block type">
+        <label className="relative flex size-7 cursor-pointer items-center justify-center border border-transparent text-ink-muted transition-[color,background-color,border-color,transform] duration-150 hover:-translate-y-px hover:border-electric hover:bg-electric hover:text-mat focus-within:border-electric focus-within:bg-electric focus-within:text-mat" title="Change block type">
           <GripVertical className="size-3.5" />
           <select value={blockChoice(block)} onChange={event => changeType(event.target.value as BlockTypeChoice)} className="absolute inset-0 cursor-pointer opacity-0" aria-label="Change block type">
             {BLOCK_TYPES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -287,5 +287,5 @@ function FieldLabel({ children }: { children: string }) {
 }
 
 function BlockAction({ children, label, onClick, onMouseDown, disabled = false, destructive = false }: { children: ReactElement<{ className?: string }>; label: string; onClick: () => void; onMouseDown?: (event: MouseEvent<HTMLButtonElement>) => void; disabled?: boolean; destructive?: boolean }) {
-  return <button type="button" onMouseDown={onMouseDown} onClick={onClick} disabled={disabled} className={`p-1.5 disabled:opacity-25 ${destructive ? 'text-ink-muted hover:text-ember' : 'text-ink-muted hover:text-electric'}`} aria-label={label} title={label}><span className="[&>svg]:size-3.5">{children}</span></button>
+  return <button type="button" onMouseDown={onMouseDown} onClick={onClick} disabled={disabled} className={`grid size-7 place-items-center border border-transparent text-ink-muted transition-[color,background-color,border-color,transform] duration-150 hover:-translate-y-px focus-visible:-translate-y-px focus-visible:outline-none active:translate-y-0 disabled:pointer-events-none disabled:opacity-25 ${destructive ? 'hover:border-ember hover:bg-ember hover:text-mat focus-visible:border-ember focus-visible:bg-ember focus-visible:text-mat' : 'hover:border-electric hover:bg-electric hover:text-mat focus-visible:border-electric focus-visible:bg-electric focus-visible:text-mat'}`} aria-label={label} title={label}><span className="[&>svg]:size-3.5">{children}</span></button>
 }

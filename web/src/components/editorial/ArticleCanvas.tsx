@@ -1,6 +1,7 @@
-import { AtSign, Camera, Globe2, ImageIcon, Lightbulb, MessageCircleMore, Play, Sparkles, TriangleAlert } from 'lucide-react'
+import { ImageIcon, Lightbulb, TriangleAlert } from 'lucide-react'
 import type { Article, ArticleBlock, ArticleDocument, InlineContent } from '../../lib/editorial'
 import type { SocialPlatform } from '../../lib/staffAuth'
+import { SocialBrandIcon } from '../social/SocialBrandIcon'
 
 export function ArticleCanvas({
   title,
@@ -40,15 +41,6 @@ export function ArticleCanvas({
   )
 }
 
-const SOCIAL_ICONS: Record<SocialPlatform, typeof AtSign> = {
-  x: AtSign,
-  instagram: Camera,
-  discord: MessageCircleMore,
-  bluesky: Sparkles,
-  youtube: Play,
-  website: Globe2,
-}
-
 const SOCIAL_LABELS: Record<SocialPlatform, string> = {
   x: 'X',
   instagram: 'Instagram',
@@ -63,11 +55,7 @@ function AuthorByline({ author, updatedAt }: { author: Article['author']; update
   return (
     <div className="mt-8 flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-[9px] uppercase tracking-[0.18em] text-ink-muted">
       <span>By {author.display_name}</span>
-      {socialEntries.length ? <span aria-hidden="true" className="text-line-bright">·</span> : null}
-      {socialEntries.map(([platform, url]) => {
-        const Icon = SOCIAL_ICONS[platform]
-        return <a key={platform} href={url} target="_blank" rel="me noreferrer" title={SOCIAL_LABELS[platform]} aria-label={`${author.display_name} on ${SOCIAL_LABELS[platform]}`} className="text-ink-muted transition-colors hover:text-electric"><Icon className="size-3.5" /></a>
-      })}
+      {socialEntries.length ? <div className="flex overflow-hidden border border-line-bright bg-panel/60">{socialEntries.map(([platform, url]) => <a key={platform} href={url} target="_blank" rel="me noreferrer" title={SOCIAL_LABELS[platform]} aria-label={`${author.display_name} on ${SOCIAL_LABELS[platform]}`} className="grid size-7 place-items-center border-r border-line-bright text-ink-muted transition-colors last:border-r-0 hover:bg-electric hover:text-mat focus-visible:bg-electric focus-visible:text-mat focus-visible:outline-none"><SocialBrandIcon platform={platform} className="size-3.5" /></a>)}</div> : null}
       {updatedAt ? <><span aria-hidden="true" className="text-line-bright">·</span><span>Updated {formatPreviewDate(updatedAt)}</span></> : null}
     </div>
   )
