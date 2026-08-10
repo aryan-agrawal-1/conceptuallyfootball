@@ -5,8 +5,9 @@ import json
 from django.contrib.auth.models import User
 from django.test import Client, TestCase
 from django.urls import reverse
+from django.utils import timezone
 
-from accounts.models import StaffAccess, StaffRole
+from accounts.models import StaffAccess, StaffRole, WriterProfile
 from accounts.roles import configure_user_role
 from editorial.models import Article, ArticleRevision
 
@@ -21,6 +22,11 @@ class EditorialApiTests(TestCase):
         user = User.objects.create_user(username=email, email=email, password="Touchline-Notebook-2026!")
         StaffAccess.objects.create(user=user, role=StaffRole.WRITER, must_change_password=False)
         configure_user_role(user, StaffRole.WRITER)
+        WriterProfile.objects.create(
+            user=user,
+            display_name=email.split("@")[0].title(),
+            completed_at=timezone.now(),
+        )
         return User.objects.get(pk=user.pk)
 
     def create_article(self) -> dict:

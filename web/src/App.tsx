@@ -34,6 +34,9 @@ const StaffLogin = lazy(() =>
 const StaffChangePassword = lazy(() =>
   import('./pages/StaffChangePassword').then(m => ({ default: m.StaffChangePassword })),
 )
+const StaffOnboarding = lazy(() =>
+  import('./pages/StaffOnboarding').then(m => ({ default: m.StaffOnboarding })),
+)
 const EditorialWorkspace = lazy(() =>
   import('./pages/EditorialWorkspace').then(m => ({ default: m.EditorialWorkspace })),
 )
@@ -152,6 +155,7 @@ export default function App() {
           <Route element={<StaffAuthLayout />}>
             <Route path="/staff/login" element={<StaffLogin />} />
             <Route path="/staff/change-password" element={<StaffChangePassword />} />
+            <Route path="/staff/onboarding" element={<StaffOnboarding />} />
             <Route path="/analysis" element={<EditorialWorkspace />} />
             <Route path="/analysis/:articleId" element={<EditorialArticleEditor />} />
           </Route>

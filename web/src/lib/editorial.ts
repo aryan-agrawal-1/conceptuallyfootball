@@ -1,3 +1,5 @@
+import type { SocialLinks } from './staffAuth'
+
 export type ArticleStatus = 'draft'
 export type CalloutTone = 'note' | 'insight' | 'warning'
 
@@ -32,7 +34,7 @@ export interface ArticleSummary {
 }
 
 export interface Article extends ArticleSummary {
-  author: { id: number; display_name: string }
+  author: { id: number; display_name: string; social_links: SocialLinks }
   document: ArticleDocument
   preview_token: string | null
   revisions: { number: number; created_at: string }[]

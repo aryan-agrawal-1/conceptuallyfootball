@@ -32,7 +32,7 @@ export function ArticlePreview() {
           <span className="flex items-center gap-2 font-mono text-[8px] uppercase tracking-[0.17em] text-ink-muted"><LockKeyhole className="size-3.5" /> Review copy</span>
         </div>
       </header>
-      <ArticleCanvas title={article.title} subtitle={article.subtitle} document={article.document} author={article.author.display_name} updatedAt={article.updated_at} preview />
+      <ArticleCanvas title={article.title} subtitle={article.subtitle} document={article.document} author={article.author} updatedAt={article.updated_at} preview />
     </main>
   )
 }

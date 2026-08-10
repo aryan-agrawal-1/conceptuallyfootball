@@ -1,5 +1,6 @@
-import { ExternalLink, ImageIcon, Lightbulb, TriangleAlert } from 'lucide-react'
-import type { ArticleBlock, ArticleDocument } from '../../lib/editorial'
+import { AtSign, Camera, ExternalLink, Globe2, ImageIcon, Lightbulb, MessageCircleMore, Play, Sparkles, TriangleAlert } from 'lucide-react'
+import type { Article, ArticleBlock, ArticleDocument } from '../../lib/editorial'
+import type { SocialPlatform } from '../../lib/staffAuth'
 
 export function ArticleCanvas({
   title,
@@ -12,7 +13,7 @@ export function ArticleCanvas({
   title: string
   subtitle: string
   document: ArticleDocument
-  author?: string
+  author?: Article['author']
   updatedAt?: string
   preview?: boolean
 }) {
@@ -28,12 +29,7 @@ export function ArticleCanvas({
         {subtitle ? (
           <p className="mt-6 text-base leading-7 text-ink-dim sm:text-lg">{subtitle}</p>
         ) : null}
-        {author ? (
-          <p className="mt-8 font-mono text-[9px] uppercase tracking-[0.18em] text-ink-muted">
-            By {author}
-            {updatedAt ? ` · Updated ${formatPreviewDate(updatedAt)}` : ''}
-          </p>
-        ) : null}
+        {author ? <AuthorByline author={author} updatedAt={updatedAt} /> : null}
       </header>
       <div className="space-y-7 pt-10">
         {document.blocks.map(block => (
@@ -41,6 +37,39 @@ export function ArticleCanvas({
         ))}
       </div>
     </article>
+  )
+}
+
+const SOCIAL_ICONS: Record<SocialPlatform, typeof AtSign> = {
+  x: AtSign,
+  instagram: Camera,
+  discord: MessageCircleMore,
+  bluesky: Sparkles,
+  youtube: Play,
+  website: Globe2,
+}
+
+const SOCIAL_LABELS: Record<SocialPlatform, string> = {
+  x: 'X',
+  instagram: 'Instagram',
+  discord: 'Discord',
+  bluesky: 'Bluesky',
+  youtube: 'YouTube',
+  website: 'Website',
+}
+
+function AuthorByline({ author, updatedAt }: { author: Article['author']; updatedAt?: string }) {
+  const socialEntries = Object.entries(author.social_links) as Array<[SocialPlatform, string]>
+  return (
+    <div className="mt-8 flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-[9px] uppercase tracking-[0.18em] text-ink-muted">
+      <span>By {author.display_name}</span>
+      {socialEntries.length ? <span aria-hidden="true" className="text-line-bright">·</span> : null}
+      {socialEntries.map(([platform, url]) => {
+        const Icon = SOCIAL_ICONS[platform]
+        return <a key={platform} href={url} target="_blank" rel="me noreferrer" title={SOCIAL_LABELS[platform]} aria-label={`${author.display_name} on ${SOCIAL_LABELS[platform]}`} className="text-ink-muted transition-colors hover:text-electric"><Icon className="size-3.5" /></a>
+      })}
+      {updatedAt ? <><span aria-hidden="true" className="text-line-bright">·</span><span>Updated {formatPreviewDate(updatedAt)}</span></> : null}
+    </div>
   )
 }
 

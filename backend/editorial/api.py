@@ -12,6 +12,7 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods
 
 from accounts.access import access_error
+from accounts.profiles import display_name_for, needs_writer_onboarding, social_links_for
 from editorial.content import clean_text, normalize_document
 from editorial.models import Article, ArticleRevision, ArticleStatus
 
@@ -56,9 +57,8 @@ def article_payload(article: Article, *, include_preview_token: bool = True) -> 
         **article_summary(article),
         "author": {
             "id": article.author_id,
-            "display_name": article.author.get_full_name()
-            or article.author.email
-            or article.author.username,
+            "display_name": display_name_for(article.author),
+            "social_links": social_links_for(article.author),
         },
         "document": article.document,
         "revisions": [
@@ -72,7 +72,15 @@ def article_payload(article: Article, *, include_preview_token: bool = True) -> 
 
 
 def editorial_error(request: HttpRequest) -> JsonResponse | None:
-    return access_error(request, "accounts.access_editorial_workspace")
+    error = access_error(request, "accounts.access_editorial_workspace")
+    if error is not None:
+        return error
+    if needs_writer_onboarding(request.user):
+        return private_json(
+            {"detail": "Complete your writer profile to continue.", "code": "onboarding_required"},
+            status=403,
+        )
+    return None
 
 
 def owned_article(request: HttpRequest, article_id) -> Article:

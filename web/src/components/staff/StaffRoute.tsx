@@ -5,9 +5,11 @@ import { useStaffAuth } from '../../context/StaffAuthContext'
 export function StaffRoute({
   children,
   allowPasswordChange = false,
+  allowOnboarding = false,
 }: {
   children: ReactNode
   allowPasswordChange?: boolean
+  allowOnboarding?: boolean
 }) {
   const { user, isLoading } = useStaffAuth()
   const location = useLocation()
@@ -27,6 +29,9 @@ export function StaffRoute({
   }
   if (user.must_change_password && !allowPasswordChange) {
     return <Navigate to="/staff/change-password" replace />
+  }
+  if (user.onboarding_required && !allowOnboarding && !user.must_change_password) {
+    return <Navigate to="/staff/onboarding" replace />
   }
   return children
 }

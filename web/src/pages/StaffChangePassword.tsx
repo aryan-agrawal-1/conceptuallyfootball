@@ -40,7 +40,7 @@ function ChangePasswordForm() {
     setErrors([])
     try {
       await changePassword(currentPassword, newPassword)
-      navigate('/analysis', { replace: true })
+      navigate('/staff/onboarding', { replace: true })
     } catch (caughtError) {
       if (caughtError instanceof StaffAuthError) {
         setErrors(caughtError.errors.length ? caughtError.errors : [caughtError.message])

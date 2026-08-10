@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   Trash2,
   Unlink,
+  UserRound,
 } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArticleCanvas } from '../components/editorial/ArticleCanvas'
@@ -119,6 +120,7 @@ function WorkspaceDashboard() {
             <p className="mt-3 max-w-2xl text-sm leading-6 text-ink-dim">Draft, shape and privately share football ideas before they enter the publishing workflow.</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <Link to="/staff/onboarding" className="inline-flex h-11 items-center gap-2 border border-line-bright px-4 text-[9px] font-bold uppercase tracking-[0.15em] text-ink-dim hover:border-electric hover:text-ink"><UserRound className="size-4" /> Profile</Link>
             <button type="button" onClick={handleLogout} className="inline-flex h-11 items-center gap-2 border border-line-bright px-4 text-[9px] font-bold uppercase tracking-[0.15em] text-ink-dim hover:border-electric hover:text-ink"><LogOut className="size-4" /> Sign out</button>
             <button type="button" onClick={() => createMutation.mutate()} disabled={createMutation.isPending} className="inline-flex h-11 items-center gap-2 bg-electric px-5 text-[9px] font-black uppercase tracking-[0.16em] text-mat hover:bg-ink disabled:opacity-60"><FilePlus2 className="size-4" /> {createMutation.isPending ? 'Opening…' : 'New analysis'}</button>
           </div>
@@ -360,7 +362,7 @@ function ArticleEditor() {
 
         <section className="min-h-[calc(100svh-4rem)] bg-panel/30">
           {mode === 'reader' ? (
-            <ArticleCanvas title={draft.title} subtitle={draft.subtitle} document={draft.document} author={article.author.display_name} updatedAt={article.updated_at} />
+            <ArticleCanvas title={draft.title} subtitle={draft.subtitle} document={draft.document} author={article.author} updatedAt={article.updated_at} />
           ) : (
             <div className="mx-auto max-w-[760px] px-7 py-12 sm:px-12 sm:py-16">
               <p className="font-mono text-[8px] uppercase tracking-[0.22em] text-electric">Draft · Revision {article.revision}</p>
