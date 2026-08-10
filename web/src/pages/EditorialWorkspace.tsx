@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
+  ChevronRight,
   Copy,
   ExternalLink,
   FilePlus2,
   LogOut,
   MoreHorizontal,
   RefreshCw,
+  RotateCcw,
   Save,
   Search,
   Share2,
@@ -15,6 +17,7 @@ import {
   Trash2,
   Unlink,
   UserRound,
+  X,
 } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArticleCanvas } from '../components/editorial/ArticleCanvas'
@@ -28,6 +31,7 @@ import {
   deleteArticle,
   EditorialApiError,
   getArticle,
+  getArticleRevision,
   listArticles,
   loadDraftRecovery,
   newBlock,
@@ -37,6 +41,7 @@ import {
   type Article,
   type ArticleBlock,
   type ArticleDraft,
+  type ArticleRevision,
   type ArticleSummary,
 } from '../lib/editorial'
 
@@ -176,6 +181,13 @@ function ArticleEditor() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const articleQuery = useQuery({ queryKey: ['editorial-article', articleId], queryFn: () => getArticle(articleId), enabled: Boolean(articleId), retry: false })
+  const [selectedRevisionNumber, setSelectedRevisionNumber] = useState<number | null>(null)
+  const revisionQuery = useQuery({
+    queryKey: ['editorial-article-revision', articleId, selectedRevisionNumber],
+    queryFn: () => getArticleRevision(articleId, selectedRevisionNumber as number),
+    enabled: selectedRevisionNumber !== null,
+    retry: false,
+  })
   const [article, setArticle] = useState<Article | null>(null)
   const [draft, setDraft] = useState<ArticleDraft | null>(null)
   const [saveState, setSaveState] = useState<SaveState>('saved')
@@ -356,6 +368,23 @@ function ArticleEditor() {
     window.setTimeout(() => setCopied(false), 1_500)
   }
 
+  async function continueFromRevision(revision: ArticleRevision) {
+    const currentCheckpointSaved = await performSaveRef.current(true)
+    if (!currentCheckpointSaved) return
+    const restoredDraft = articleToDraft(revision)
+    editSerialRef.current += 1
+    draftRef.current = restoredDraft
+    setDraft(restoredDraft)
+    storeDraftRecovery(articleId, restoredDraft)
+    setSaveState('unsaved')
+    setSaveError('')
+    const restored = await performSaveRef.current(true)
+    if (restored) {
+      setSelectedRevisionNumber(null)
+      setMode('write')
+    }
+  }
+
   return (
     <main className="min-h-svh bg-mat">
       <header className="sticky top-0 z-30 border-b border-line bg-mat/95 px-4 backdrop-blur sm:px-6">
@@ -411,12 +440,57 @@ function ArticleEditor() {
 
           <InspectorSection title="Revision trail">
             <div className="space-y-3">
-              {article.revisions.slice(0, 8).map(revision => <div key={revision.number} className="flex items-center justify-between border-b border-line pb-3 font-mono text-[8px] uppercase tracking-[0.12em]"><span className="text-ink-dim">Revision {revision.number}</span><span className="text-ink-muted">{shortDate(revision.created_at)}</span></div>)}
+              {article.revisions.slice(0, 8).map(revision => (
+                <button key={revision.number} type="button" onClick={() => setSelectedRevisionNumber(revision.number)} className="group/revision flex w-full items-center justify-between border-b border-line pb-3 text-left font-mono text-[8px] uppercase tracking-[0.12em] transition-colors hover:border-electric focus-visible:border-electric focus-visible:outline-none">
+                  <span className="text-ink-dim group-hover/revision:text-electric">Revision {revision.number}</span>
+                  <span className="flex items-center gap-2 text-ink-muted"><span>{shortDate(revision.created_at)}</span><ChevronRight className="size-3 transition-transform group-hover/revision:translate-x-0.5 group-hover/revision:text-electric" /></span>
+                </button>
+              ))}
             </div>
           </InspectorSection>
         </aside> : null}
       </div>
+
+      {selectedRevisionNumber !== null ? (
+        <RevisionViewer
+          article={article}
+          revisionNumber={selectedRevisionNumber}
+          revision={revisionQuery.data}
+          loading={revisionQuery.isLoading}
+          error={revisionQuery.isError}
+          restoring={saveState === 'saving'}
+          onClose={() => setSelectedRevisionNumber(null)}
+          onContinue={continueFromRevision}
+        />
+      ) : null}
     </main>
+  )
+}
+
+function RevisionViewer({ article, revisionNumber, revision, loading, error, restoring, onClose, onContinue }: { article: Article; revisionNumber: number; revision?: ArticleRevision; loading: boolean; error: boolean; restoring: boolean; onClose: () => void; onContinue: (revision: ArticleRevision) => Promise<void> }) {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !restoring) onClose()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [onClose, restoring])
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-mat">
+      <header className="sticky top-0 z-10 border-b border-line bg-mat/95 px-4 backdrop-blur sm:px-6">
+        <div className="mx-auto flex min-h-16 max-w-[1500px] items-center justify-between gap-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <button type="button" onClick={onClose} disabled={restoring} className="grid size-9 place-items-center border border-line text-ink-muted hover:border-electric hover:text-electric disabled:opacity-40" aria-label="Close revision"><X className="size-4" /></button>
+            <div className="min-w-0"><p className="font-mono text-[8px] uppercase tracking-[0.18em] text-electric">Revision {revisionNumber}</p><p className="mt-1 truncate text-xs text-ink-dim">Read-only historical snapshot</p></div>
+          </div>
+          {revision ? <button type="button" onClick={() => void onContinue(revision)} disabled={restoring} className="inline-flex h-10 items-center gap-2 bg-electric px-4 text-[8px] font-black uppercase tracking-[0.14em] text-mat hover:bg-ink disabled:opacity-60"><RotateCcw className="size-3.5" /> {restoring ? 'Restoring…' : 'Continue from this revision'}</button> : null}
+        </div>
+      </header>
+      {loading ? <EditorMessage>Loading revision {revisionNumber}…</EditorMessage> : null}
+      {error ? <EditorMessage error>This revision could not be loaded.</EditorMessage> : null}
+      {revision ? <ArticleCanvas title={revision.title} subtitle={revision.subtitle} document={revision.document} author={article.author} updatedAt={revision.created_at} /> : null}
+    </div>
   )
 }
 
@@ -441,7 +515,7 @@ function InspectorSection({ title, children }: { title: string; children: ReactN
   return <section className="border-b border-line py-6 first:pt-0 last:border-0"><h2 className="mb-4 font-mono text-[8px] uppercase tracking-[0.2em] text-ink-muted">{title}</h2>{children}</section>
 }
 
-function articleToDraft(article: Article): ArticleDraft {
+function articleToDraft(article: Pick<Article, 'title' | 'subtitle' | 'document'>): ArticleDraft {
   return { title: article.title, subtitle: article.subtitle, document: article.document }
 }
 

@@ -144,6 +144,61 @@ class EditorialApiTests(TestCase):
         self.assertEqual(stale.json()["code"], "revision_conflict")
         self.assertEqual(stale.json()["article"]["title"], "First tab")
 
+    def test_writer_can_open_and_restore_an_owned_revision_without_losing_newer_history(self):
+        created = self.create_article()
+        first_document = created["document"]
+        first_revision = self.client.get(
+            reverse(
+                "editorial-article-revision-detail",
+                kwargs={"article_id": created["id"], "revision_number": 1},
+            )
+        )
+
+        self.assertEqual(first_revision.status_code, 200)
+        snapshot = first_revision.json()["revision"]
+        self.assertEqual(snapshot["title"], "The spare midfielder")
+        self.assertEqual(snapshot["document"], first_document)
+
+        changed = self.patch_article(
+            created["id"],
+            {
+                "revision": 1,
+                "title": "A newer direction",
+                "subtitle": "Keep this version in the trail.",
+                "document": first_document,
+                "create_revision": True,
+            },
+        ).json()["article"]
+        restored = self.patch_article(
+            created["id"],
+            {
+                "revision": changed["revision"],
+                "title": snapshot["title"],
+                "subtitle": snapshot["subtitle"],
+                "document": snapshot["document"],
+                "create_revision": True,
+            },
+        )
+
+        self.assertEqual(restored.status_code, 200)
+        self.assertEqual(restored.json()["article"]["title"], "The spare midfielder")
+        self.assertEqual(
+            list(ArticleRevision.objects.filter(article_id=created["id"]).values_list("number", flat=True)),
+            [3, 2, 1],
+        )
+
+        other_client = Client()
+        other_client.force_login(self.other_writer)
+        self.assertEqual(
+            other_client.get(
+                reverse(
+                    "editorial-article-revision-detail",
+                    kwargs={"article_id": created["id"], "revision_number": 1},
+                )
+            ).status_code,
+            404,
+        )
+
     def test_other_writer_cannot_read_change_or_delete_draft(self):
         created = self.create_article()
         other_client = Client()

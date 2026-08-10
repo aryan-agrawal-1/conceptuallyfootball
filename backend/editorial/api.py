@@ -71,6 +71,16 @@ def article_payload(article: Article, *, include_preview_token: bool = True) -> 
     return payload
 
 
+def article_revision_payload(revision: ArticleRevision) -> dict:
+    return {
+        "number": revision.number,
+        "title": revision.title,
+        "subtitle": revision.subtitle,
+        "document": normalize_document(revision.document),
+        "created_at": revision.created_at.isoformat(),
+    }
+
+
 def editorial_error(request: HttpRequest) -> JsonResponse | None:
     error = access_error(request, "accounts.access_editorial_workspace")
     if error is not None:
@@ -208,6 +218,21 @@ def article_detail(request: HttpRequest, article_id) -> JsonResponse:
             )
     article = owned_article(request, article.id)
     return private_json({"article": article_payload(article)})
+
+
+@require_GET
+@never_cache
+def article_revision_detail(request: HttpRequest, article_id, revision_number: int) -> JsonResponse:
+    error = editorial_error(request)
+    if error is not None:
+        return error
+    article = owned_article(request, article_id)
+    revision = get_object_or_404(
+        ArticleRevision,
+        article=article,
+        number=revision_number,
+    )
+    return private_json({"revision": article_revision_payload(revision)})
 
 
 @require_http_methods(["POST"])

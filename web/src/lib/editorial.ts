@@ -46,6 +46,14 @@ export interface Article extends ArticleSummary {
   revisions: { number: number; created_at: string }[]
 }
 
+export interface ArticleRevision {
+  number: number
+  title: string
+  subtitle: string
+  document: ArticleDocument
+  created_at: string
+}
+
 export interface ArticleDraft {
   title: string
   subtitle: string
@@ -126,6 +134,11 @@ export async function createArticle(): Promise<Article> {
 export async function getArticle(id: string): Promise<Article> {
   const body = await privateRequest<{ article: Article }>(`/articles/${id}`)
   return body.article
+}
+
+export async function getArticleRevision(id: string, revision: number): Promise<ArticleRevision> {
+  const body = await privateRequest<{ revision: ArticleRevision }>(`/articles/${id}/revisions/${revision}`)
+  return body.revision
 }
 
 export async function saveArticle(id: string, draft: ArticleDraft, revision: number, createRevision = false): Promise<Article> {
