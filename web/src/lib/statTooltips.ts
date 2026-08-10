@@ -172,11 +172,11 @@ const STAT_HEADER_TOOLTIPS: Record<string, StatHeaderTooltip> = {
   },
   xg: {
     fullName: 'Expected goals',
-    description: 'Expected goals accumulated. Uses Understat where available, otherwise Sofascore expected goals.',
+    description: 'Expected goals accumulated. Uses Understat where available, otherwise Opta sourced.',
   },
   xg_per_90: {
     fullName: 'Expected goals (xG)',
-    description: 'Shot threat per 90. Uses Understat where available, otherwise Sofascore expected goals.',
+    description: 'Shot threat per 90. Uses Understat where available, otherwise Opta sourced.',
   },
   npxg: {
     fullName: 'Non-penalty expected goals',
@@ -220,12 +220,12 @@ const STAT_HEADER_TOOLTIPS: Record<string, StatHeaderTooltip> = {
   // ── Goalkeepers ────────────────────────────────────────────────────────────
   appearances: {
     fullName: 'Appearances',
-    description: 'Matches the goalkeeper appeared in, as recorded by SofaScore.',
+    description: 'Matches the goalkeeper appeared in, as recorded by Opta.',
   },
   rating: {
     fullName: 'Rating',
     description:
-      'SofaScore season rating. Percentiles are ranked within goalkeepers only, not across outfielders.',
+      'Opta Sourced season rating. Percentiles are ranked within goalkeepers only, not across outfielders.',
   },
   saves_per_90: {
     fullName: 'Saves',

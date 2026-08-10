@@ -103,7 +103,7 @@ function WorkspaceDashboard() {
   }
 
   return (
-    <StaffFrame eyebrow="Editorial desk">
+    <StaffFrame eyebrow="The writer's desk">
       <div className="flex flex-1 flex-col py-8 sm:py-12">
         <div className="flex flex-col gap-7 border-b border-line pb-8 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -154,7 +154,7 @@ function DraftCard({ article, deleting, onDelete }: { article: ArticleSummary; d
   return (
     <article className="group relative flex min-h-56 flex-col border border-line bg-panel/70 p-5 transition-colors hover:border-electric/50 hover:bg-raised/80">
       <div className="flex items-center justify-between">
-        <span className="border border-electric/35 bg-electric-dim/45 px-2 py-1 font-mono text-[7px] uppercase tracking-[0.18em] text-electric">Draft · r{article.revision}</span>
+        <span className="border border-electric/35 bg-electric-dim/45 px-2 py-1 font-mono text-[7px] uppercase tracking-[0.18em] text-electric">Draft</span>
         <button type="button" onClick={onDelete} disabled={deleting} className="p-2 text-ink-muted opacity-70 hover:text-ember group-hover:opacity-100" aria-label={`Delete ${article.title}`}><Trash2 className="size-4" /></button>
       </div>
       <Link to={`/analysis/${article.id}`} className="mt-8 flex flex-1 flex-col">
@@ -399,7 +399,7 @@ function ArticleEditor() {
 
         {mode === 'write' ? <aside className="border-t border-line p-5 lg:sticky lg:top-16 lg:h-[calc(100svh-4rem)] lg:overflow-y-auto lg:border-l lg:border-t-0">
           <InspectorSection title="Private preview">
-            <p className="text-xs leading-5 text-ink-dim">Anyone with the active link can review this saved draft. It is excluded from search indexing.</p>
+            <p className="text-xs leading-5 text-ink-dim">Anyone with the active link can review this saved draft.</p>
             {article.preview_enabled ? (
               <div className="mt-4 space-y-2">
                 <button type="button" onClick={() => void copyPreview()} className="flex h-10 w-full items-center justify-center gap-2 bg-electric text-[8px] font-black uppercase tracking-[0.15em] text-mat"><Copy className="size-3.5" /> {copied ? 'Copied' : 'Copy preview link'}</button>
@@ -413,10 +413,6 @@ function ArticleEditor() {
             <div className="space-y-3">
               {article.revisions.slice(0, 8).map(revision => <div key={revision.number} className="flex items-center justify-between border-b border-line pb-3 font-mono text-[8px] uppercase tracking-[0.12em]"><span className="text-ink-dim">Revision {revision.number}</span><span className="text-ink-muted">{shortDate(revision.created_at)}</span></div>)}
             </div>
-          </InspectorSection>
-
-          <InspectorSection title="Safety">
-            <div className="flex gap-3"><ShieldCheck className="size-4 shrink-0 text-mint" /><p className="text-[11px] leading-5 text-ink-dim">Blocks are stored as validated content. Scripts, raw HTML and unsafe URL schemes are never rendered.</p></div>
           </InspectorSection>
         </aside> : null}
       </div>
