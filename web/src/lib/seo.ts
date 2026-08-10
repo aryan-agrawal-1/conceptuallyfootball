@@ -11,6 +11,7 @@ export interface SeoMeta {
   description?: string
   canonicalPath?: string
   image?: string
+  robots?: string
 }
 
 export function absoluteUrl(path = '/'): string {
@@ -49,7 +50,10 @@ export function applySeoMeta(meta: SeoMeta) {
 
   document.title = title
   upsertMeta('meta[name="description"]', { name: 'description', content: description })
-  upsertMeta('meta[name="robots"]', { name: 'robots', content: 'index,follow' })
+  upsertMeta('meta[name="robots"]', {
+    name: 'robots',
+    content: meta.robots ?? 'index,follow',
+  })
   upsertLink('link[rel="canonical"]', { rel: 'canonical', href: canonicalUrl })
 
   upsertMeta('meta[property="og:site_name"]', { property: 'og:site_name', content: SITE_NAME })
@@ -71,10 +75,10 @@ export function applySeoMeta(meta: SeoMeta) {
   upsertMeta('meta[name="twitter:image"]', { name: 'twitter:image', content: imageUrl })
 }
 
-export function useSeoMeta({ title, description, canonicalPath, image }: SeoMeta) {
+export function useSeoMeta({ title, description, canonicalPath, image, robots }: SeoMeta) {
   useEffect(() => {
-    applySeoMeta({ title, description, canonicalPath, image })
-  }, [title, description, canonicalPath, image])
+    applySeoMeta({ title, description, canonicalPath, image, robots })
+  }, [title, description, canonicalPath, image, robots])
 }
 
 export const seoDefaults = {

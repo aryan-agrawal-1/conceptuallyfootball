@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect } from 'react'
-import { Routes, Route, useLocation } from 'react-router-dom'
+import { Routes, Route, Outlet, useLocation } from 'react-router-dom'
 import { Layout } from './components/layout/Layout'
+import { ScopeProvider } from './context/ScopeContext'
+import { StaffAuthProvider } from './context/StaffAuthContext'
 import { initializeAnalytics, trackPageView } from './lib/analytics'
 import { CREATE_CHARTS_PATH, LEGACY_DATA_VISUALISER_PATH } from './lib/createChartsUrl'
 import { useSeoMeta, type SeoMeta } from './lib/seo'
@@ -26,6 +28,15 @@ const RegressionLab = lazy(() =>
 const DataVisualiser = lazy(() =>
   import('./pages/DataVisualiser').then(m => ({ default: m.DataVisualiser })),
 )
+const StaffLogin = lazy(() =>
+  import('./pages/StaffLogin').then(m => ({ default: m.StaffLogin })),
+)
+const StaffChangePassword = lazy(() =>
+  import('./pages/StaffChangePassword').then(m => ({ default: m.StaffChangePassword })),
+)
+const EditorialWorkspace = lazy(() =>
+  import('./pages/EditorialWorkspace').then(m => ({ default: m.EditorialWorkspace })),
+)
 
 function RouteFallback() {
   return (
@@ -43,10 +54,10 @@ function AnalyticsPageViews() {
   const location = useLocation()
 
   useEffect(() => {
+    if (location.pathname.startsWith('/staff/') || location.pathname.startsWith('/analysis')) {
+      return
+    }
     initializeAnalytics()
-  }, [])
-
-  useEffect(() => {
     trackPageView(`${location.pathname}${location.search}`)
   }, [location.pathname, location.search])
 
@@ -97,7 +108,14 @@ function RouteSeo() {
   const pathname = location.pathname
 
   const meta =
-    pathname.startsWith('/player/')
+    pathname.startsWith('/staff/') || pathname.startsWith('/analysis')
+      ? {
+          title: 'Editorial Workspace | Conceptually Football',
+          description: 'Private editorial workspace for invited Conceptually Football writers.',
+          canonicalPath: pathname,
+          robots: 'noindex,nofollow',
+        }
+      : pathname.startsWith('/player/')
       ? {
           title: 'Football Player Stats | Conceptually Football',
           description:
@@ -119,21 +137,46 @@ function RouteSeo() {
 
 export default function App() {
   return (
-    <Layout>
+    <>
       <RouteSeo />
       <AnalyticsPageViews />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
-          <Route path="/" element={<StatMatrix />} />
-          <Route path="/player/:id" element={<PlayerProfile />} />
-          <Route path="/team/:id" element={<TeamProfile />} />
-          <Route path="/galaxy" element={<Galaxy />} />
-          <Route path="/comparisons" element={<Comparisons />} />
-          <Route path="/regression-lab" element={<RegressionLab />} />
-          <Route path={CREATE_CHARTS_PATH} element={<DataVisualiser />} />
-          <Route path={LEGACY_DATA_VISUALISER_PATH} element={<DataVisualiser />} />
+          <Route element={<StaffAuthLayout />}>
+            <Route path="/staff/login" element={<StaffLogin />} />
+            <Route path="/staff/change-password" element={<StaffChangePassword />} />
+            <Route path="/analysis" element={<EditorialWorkspace />} />
+          </Route>
+          <Route element={<PublicLayout />}>
+            <Route path="/" element={<StatMatrix />} />
+            <Route path="/player/:id" element={<PlayerProfile />} />
+            <Route path="/team/:id" element={<TeamProfile />} />
+            <Route path="/galaxy" element={<Galaxy />} />
+            <Route path="/comparisons" element={<Comparisons />} />
+            <Route path="/regression-lab" element={<RegressionLab />} />
+            <Route path={CREATE_CHARTS_PATH} element={<DataVisualiser />} />
+            <Route path={LEGACY_DATA_VISUALISER_PATH} element={<DataVisualiser />} />
+          </Route>
         </Routes>
       </Suspense>
-    </Layout>
+    </>
+  )
+}
+
+function StaffAuthLayout() {
+  return (
+    <StaffAuthProvider>
+      <Outlet />
+    </StaffAuthProvider>
+  )
+}
+
+function PublicLayout() {
+  return (
+    <ScopeProvider>
+      <Layout>
+        <Outlet />
+      </Layout>
+    </ScopeProvider>
   )
 }
