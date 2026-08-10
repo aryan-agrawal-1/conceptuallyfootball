@@ -19,7 +19,7 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useBlocker, useNavigate, useParams } from 'react-router-dom'
 import { ArticleCanvas } from '../components/editorial/ArticleCanvas'
 import { BlockEditor } from '../components/editorial/BlockEditor'
 import { StaffFrame } from '../components/staff/StaffFrame'
@@ -204,6 +204,8 @@ function ArticleEditor() {
   const pendingCheckpointRef = useRef(false)
   const lastCheckpointAtRef = useRef(Date.now())
   const performSaveRef = useRef<(createRevision?: boolean) => Promise<boolean>>(async () => false)
+  const checkpointingNavigationRef = useRef(false)
+  const navigationBlocker = useBlocker(Boolean(article))
 
   useEffect(() => {
     const serverArticle = articleQuery.data
@@ -300,6 +302,16 @@ function ArticleEditor() {
     return () => window.removeEventListener('online', saveAfterReconnect)
   }, [])
 
+  useEffect(() => {
+    if (navigationBlocker.state !== 'blocked' || checkpointingNavigationRef.current) return
+    checkpointingNavigationRef.current = true
+    void performSaveRef.current(true).then(saved => {
+      checkpointingNavigationRef.current = false
+      if (saved) navigationBlocker.proceed()
+      else navigationBlocker.reset()
+    })
+  }, [navigationBlocker])
+
   if (articleQuery.isLoading || !draft || !article) return <EditorMessage>Loading the draft…</EditorMessage>
   if (articleQuery.isError) return <EditorMessage error>This draft is unavailable or belongs to another writer.</EditorMessage>
 
@@ -385,18 +397,27 @@ function ArticleEditor() {
     }
   }
 
+  async function selectMode(nextMode: 'write' | 'reader') {
+    if (nextMode === mode) return
+    if (nextMode === 'reader') {
+      const checkpointSaved = await performSaveRef.current(true)
+      if (!checkpointSaved) return
+    }
+    setMode(nextMode)
+  }
+
   return (
     <main className="min-h-svh bg-mat">
       <header className="sticky top-0 z-30 border-b border-line bg-mat/95 px-4 backdrop-blur sm:px-6">
         <div className="mx-auto flex h-16 max-w-[1500px] items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-4">
-            <button type="button" onClick={() => navigate('/analysis')} className="p-2 text-ink-muted hover:text-electric" aria-label="Back to analysis desk"><ArrowLeft className="size-4" /></button>
+            <button type="button" onClick={() => navigate('/analysis')} disabled={saveState === 'saving'} className="p-2 text-ink-muted hover:text-electric disabled:opacity-50" aria-label="Back to analysis desk"><ArrowLeft className="size-4" /></button>
             <div className="min-w-0"><p className="truncate text-xs font-bold text-ink">{draft.title || 'Untitled analysis'}</p><SaveStatus state={saveState} /></div>
           </div>
           <div className="flex items-center gap-2">
             <div className="hidden border border-line p-1 sm:flex">
-              <button type="button" onClick={() => setMode('write')} className={`px-3 py-1.5 text-[8px] font-bold uppercase tracking-[0.15em] ${mode === 'write' ? 'bg-electric-dim text-electric' : 'text-ink-muted'}`}>Write</button>
-              <button type="button" onClick={() => setMode('reader')} className={`px-3 py-1.5 text-[8px] font-bold uppercase tracking-[0.15em] ${mode === 'reader' ? 'bg-electric-dim text-electric' : 'text-ink-muted'}`}>Reader view</button>
+              <button type="button" onClick={() => void selectMode('write')} className={`px-3 py-1.5 text-[8px] font-bold uppercase tracking-[0.15em] ${mode === 'write' ? 'bg-electric-dim text-electric' : 'text-ink-muted'}`}>Write</button>
+              <button type="button" onClick={() => void selectMode('reader')} disabled={saveState === 'saving'} className={`px-3 py-1.5 text-[8px] font-bold uppercase tracking-[0.15em] disabled:opacity-50 ${mode === 'reader' ? 'bg-electric-dim text-electric' : 'text-ink-muted'}`}>Reader view</button>
             </div>
             <button type="button" onClick={() => void performSaveRef.current(true)} disabled={saveState === 'saving'} className="inline-flex h-9 items-center gap-2 border border-line-bright px-3 text-[8px] font-bold uppercase tracking-[0.14em] text-ink-dim hover:border-electric hover:text-ink"><Save className="size-3.5" /> Save</button>
             {article.preview_enabled && previewUrl ? <a href={previewUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 bg-electric px-3 text-[8px] font-black uppercase tracking-[0.14em] text-mat"><ExternalLink className="size-3.5" /> Preview</a> : null}
