@@ -1,5 +1,5 @@
-import { AtSign, Camera, ExternalLink, Globe2, ImageIcon, Lightbulb, MessageCircleMore, Play, Sparkles, TriangleAlert } from 'lucide-react'
-import type { Article, ArticleBlock, ArticleDocument } from '../../lib/editorial'
+import { AtSign, Camera, Globe2, ImageIcon, Lightbulb, MessageCircleMore, Play, Sparkles, TriangleAlert } from 'lucide-react'
+import type { Article, ArticleBlock, ArticleDocument, InlineContent } from '../../lib/editorial'
 import type { SocialPlatform } from '../../lib/staffAuth'
 
 export function ArticleCanvas({
@@ -78,19 +78,19 @@ function RenderedBlock({ block }: { block: ArticleBlock }) {
     case 'heading':
       return block.level === 2 ? (
         <h2 className="pt-5 text-2xl font-black leading-tight tracking-[-0.035em] text-ink sm:text-3xl">
-          {block.text || 'Section heading'}
+          <InlineText content={block.content} fallback="Section heading" />
         </h2>
       ) : (
         <h3 className="pt-3 text-xl font-bold tracking-[-0.025em] text-ink">
-          {block.text || 'Subheading'}
+          <InlineText content={block.content} fallback="Subheading" />
         </h3>
       )
     case 'paragraph':
-      return <p className="whitespace-pre-wrap text-[15px] leading-8 text-ink-dim">{block.text}</p>
+      return <p className="whitespace-pre-wrap text-[15px] leading-8 text-ink-dim"><InlineText content={block.content} /></p>
     case 'quote':
       return (
         <blockquote className="border-l-2 border-electric py-2 pl-6 text-xl font-semibold leading-8 tracking-[-0.02em] text-ink">
-          {block.text}
+          <InlineText content={block.content} />
         </blockquote>
       )
     case 'callout': {
@@ -99,7 +99,7 @@ function RenderedBlock({ block }: { block: ArticleBlock }) {
         <aside className={`border p-5 ${warning ? 'border-gold/40 bg-gold-dim/35' : 'border-electric/35 bg-electric-dim/35'}`}>
           <div className="flex items-start gap-3">
             {warning ? <TriangleAlert className="mt-0.5 size-4 shrink-0 text-gold" /> : <Lightbulb className="mt-0.5 size-4 shrink-0 text-electric" />}
-            <p className="whitespace-pre-wrap text-sm leading-6 text-ink">{block.text}</p>
+            <p className="whitespace-pre-wrap text-sm leading-6 text-ink"><InlineText content={block.content} /></p>
           </div>
         </aside>
       )
@@ -109,16 +109,10 @@ function RenderedBlock({ block }: { block: ArticleBlock }) {
       const List = block.type === 'numbered_list' ? 'ol' : 'ul'
       return (
         <List className={`space-y-3 pl-6 text-[15px] leading-7 text-ink-dim ${block.type === 'numbered_list' ? 'list-decimal' : 'list-disc marker:text-electric'}`}>
-          {block.items.map((item, index) => <li key={`${block.id}-${index}`}>{item}</li>)}
+          {block.items.map((item, index) => <li key={`${block.id}-${index}`}><InlineText content={item} /></li>)}
         </List>
       )
     }
-    case 'link':
-      return safeExternalUrl(block.url) ? (
-        <a href={safeExternalUrl(block.url)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 border-b border-electric/60 pb-1 text-sm font-bold text-electric hover:text-ink">
-          {block.text || block.url} <ExternalLink className="size-3.5" />
-        </a>
-      ) : <p className="text-sm text-ink-muted">Link URL not set</p>
     case 'image':
       return (
         <figure>
@@ -135,6 +129,14 @@ function RenderedBlock({ block }: { block: ArticleBlock }) {
     case 'divider':
       return <hr className="my-12 border-0 border-t border-line" />
   }
+}
+
+function InlineText({ content, fallback = '' }: { content: InlineContent; fallback?: string }) {
+  if (!content.some(run => run.text)) return fallback
+  return content.map((run, index) => {
+    const url = run.link ? safeExternalUrl(run.link) : ''
+    return url ? <a key={index} href={url} target="_blank" rel="noreferrer" className="border-b border-electric/60 text-electric hover:text-ink">{run.text}</a> : <span key={index}>{run.text}</span>
+  })
 }
 
 function formatPreviewDate(value: string): string {

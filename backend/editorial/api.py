@@ -60,7 +60,7 @@ def article_payload(article: Article, *, include_preview_token: bool = True) -> 
             "display_name": display_name_for(article.author),
             "social_links": social_links_for(article.author),
         },
-        "document": article.document,
+        "document": normalize_document(article.document),
         "revisions": [
             {"number": revision.number, "created_at": revision.created_at.isoformat()}
             for revision in article.revisions.all()[:20]

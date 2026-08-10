@@ -13,7 +13,7 @@ def empty_document() -> dict:
             {
                 "id": str(uuid.uuid4()),
                 "type": "paragraph",
-                "text": "",
+                "content": [{"text": ""}],
             }
         ],
     }

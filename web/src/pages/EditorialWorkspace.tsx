@@ -8,7 +8,6 @@ import {
   Heading2,
   Image,
   Lightbulb,
-  Link2,
   List,
   ListOrdered,
   LogOut,
@@ -354,7 +353,6 @@ function ArticleEditor() {
             <BlockTool icon={<ListOrdered />} label="Numbered list" onClick={() => addBlock('numbered_list')} />
             <BlockTool icon={<Quote />} label="Quote" onClick={() => addBlock('quote')} />
             <BlockTool icon={<Lightbulb />} label="Callout" onClick={() => addBlock('callout')} />
-            <BlockTool icon={<Link2 />} label="Link" onClick={() => addBlock('link')} />
             <BlockTool icon={<Image />} label="Image" onClick={() => addBlock('image')} />
             <BlockTool icon={<Minus />} label="Divider" onClick={() => addBlock('divider')} />
           </div>

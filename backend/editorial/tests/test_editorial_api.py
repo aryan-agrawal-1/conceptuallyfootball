@@ -67,6 +67,7 @@ class EditorialApiTests(TestCase):
         saved = response.json()["article"]
         self.assertEqual(saved["revision"], 2)
         self.assertEqual(saved["document"]["blocks"][0]["type"], "heading")
+        self.assertEqual(saved["document"]["blocks"][0]["content"], [{"text": "The rotation"}])
         self.assertEqual(ArticleRevision.objects.filter(article_id=created["id"]).count(), 2)
 
         reopened = self.client.get(
@@ -161,7 +162,39 @@ class EditorialApiTests(TestCase):
         self.assertNotEqual(reenabled.json()["article"]["preview_token"], active_token)
         self.assertEqual(anonymous.get(preview_url).status_code, 404)
 
-    def test_structured_content_rejects_unsafe_urls_and_unknown_blocks(self):
+    def test_inline_links_are_normalized_and_legacy_link_blocks_are_upgraded(self):
+        created = self.create_article()
+        response = self.patch_article(
+            created["id"],
+            {
+                "revision": 1,
+                "title": "Linked",
+                "subtitle": "",
+                "document": {
+                    "version": 1,
+                    "blocks": [
+                        {
+                            "id": "one",
+                            "type": "paragraph",
+                            "content": [
+                                {"text": "Read "},
+                                {"text": "the report", "link": "https://example.com/report"},
+                                {"text": " next."},
+                            ],
+                        },
+                        {"id": "two", "type": "link", "text": "Legacy source", "url": "https://example.com"},
+                    ],
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        blocks = response.json()["article"]["document"]["blocks"]
+        self.assertEqual(blocks[0]["content"][1]["link"], "https://example.com/report")
+        self.assertEqual(blocks[1]["type"], "paragraph")
+        self.assertEqual(blocks[1]["content"], [{"text": "Legacy source", "link": "https://example.com"}])
+
+    def test_structured_content_rejects_unsafe_inline_urls_and_unknown_blocks(self):
         created = self.create_article()
         unsafe = self.patch_article(
             created["id"],
@@ -171,7 +204,13 @@ class EditorialApiTests(TestCase):
                 "subtitle": "",
                 "document": {
                     "version": 1,
-                    "blocks": [{"id": "x", "type": "link", "text": "Run", "url": "javascript:alert(1)"}],
+                    "blocks": [
+                        {
+                            "id": "x",
+                            "type": "paragraph",
+                            "content": [{"text": "Run", "link": "javascript:alert(1)"}],
+                        }
+                    ],
                 },
             },
         )

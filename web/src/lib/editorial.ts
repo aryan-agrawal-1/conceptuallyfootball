@@ -7,13 +7,19 @@ interface BlockBase {
   id: string
 }
 
+export interface InlineRun {
+  text: string
+  link?: string
+}
+
+export type InlineContent = InlineRun[]
+
 export type ArticleBlock =
-  | (BlockBase & { type: 'paragraph'; text: string })
-  | (BlockBase & { type: 'heading'; level: 2 | 3; text: string })
-  | (BlockBase & { type: 'quote'; text: string })
-  | (BlockBase & { type: 'callout'; tone: CalloutTone; text: string })
-  | (BlockBase & { type: 'bulleted_list' | 'numbered_list'; items: string[] })
-  | (BlockBase & { type: 'link'; text: string; url: string })
+  | (BlockBase & { type: 'paragraph'; content: InlineContent })
+  | (BlockBase & { type: 'heading'; level: 2 | 3; content: InlineContent })
+  | (BlockBase & { type: 'quote'; content: InlineContent })
+  | (BlockBase & { type: 'callout'; tone: CalloutTone; content: InlineContent })
+  | (BlockBase & { type: 'bulleted_list' | 'numbered_list'; items: InlineContent[] })
   | (BlockBase & { type: 'image'; url: string; caption: string; alt: string })
   | (BlockBase & { type: 'divider' })
 
@@ -159,22 +165,28 @@ export function newBlock(type: ArticleBlock['type']): ArticleBlock {
   const id = crypto.randomUUID()
   switch (type) {
     case 'heading':
-      return { id, type, level: 2, text: '' }
+      return { id, type, level: 2, content: inlineText('') }
     case 'quote':
     case 'paragraph':
-      return { id, type, text: '' }
+      return { id, type, content: inlineText('') }
     case 'callout':
-      return { id, type, tone: 'insight', text: '' }
+      return { id, type, tone: 'insight', content: inlineText('') }
     case 'bulleted_list':
     case 'numbered_list':
-      return { id, type, items: ['', ''] }
-    case 'link':
-      return { id, type, text: '', url: '' }
+      return { id, type, items: [inlineText('')] }
     case 'image':
       return { id, type, url: '', caption: '', alt: '' }
     case 'divider':
       return { id, type }
   }
+}
+
+export function inlineText(text: string): InlineContent {
+  return [{ text }]
+}
+
+export function plainText(content: InlineContent): string {
+  return content.map(run => run.text).join('')
 }
 
 interface RecoveredDraft {
@@ -196,9 +208,29 @@ export function loadDraftRecovery(articleId: string): RecoveredDraft | null {
   try {
     const recovery = JSON.parse(localStorage.getItem(recoveryKey(articleId)) ?? '') as RecoveredDraft
     if (recovery.schema !== 1 || !recovery.draft || recovery.draft.document.version !== 1) return null
-    return recovery
+    return { ...recovery, draft: { ...recovery.draft, document: upgradeDocument(recovery.draft.document) } }
   } catch {
     return null
+  }
+}
+
+function upgradeDocument(document: ArticleDocument): ArticleDocument {
+  const legacyBlocks = document.blocks as Array<ArticleBlock & { text?: string; url?: string; items?: Array<string | InlineContent> }>
+  return {
+    version: 1,
+    blocks: legacyBlocks.map(block => {
+      if (block.type === 'heading' || block.type === 'paragraph' || block.type === 'quote' || block.type === 'callout') {
+        return { ...block, content: block.content ?? inlineText(block.text ?? '') }
+      }
+      if (block.type === 'bulleted_list' || block.type === 'numbered_list') {
+        return { ...block, items: (block.items ?? []).map(item => typeof item === 'string' ? inlineText(item) : item) }
+      }
+      if ((block as { type: string }).type === 'link') {
+        const legacy = block as unknown as { id: string; text?: string; url?: string }
+        return { id: legacy.id, type: 'paragraph', content: [{ text: legacy.text || legacy.url || '', ...(legacy.url ? { link: legacy.url } : {}) }] }
+      }
+      return block
+    }),
   }
 }
 

@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2 } from 'lucide-react'
 import type { ReactElement } from 'react'
-import type { ArticleBlock } from '../../lib/editorial'
+import { inlineText, plainText, type ArticleBlock } from '../../lib/editorial'
 
 const fieldClass = 'w-full resize-none bg-transparent text-ink placeholder:text-ink-muted focus:outline-none'
 const metaInputClass = 'h-9 w-full border border-line bg-mat px-3 text-xs text-ink placeholder:text-ink-muted focus:border-electric focus:outline-none'
@@ -51,8 +51,8 @@ function BlockFields({ block, onChange }: { block: ArticleBlock; onChange: (bloc
             </select>
           </div>
           <textarea
-            value={block.text}
-            onChange={event => onChange({ ...block, text: event.target.value })}
+            value={plainText(block.content)}
+            onChange={event => onChange({ ...block, content: inlineText(event.target.value) })}
             rows={block.level === 2 ? 2 : 1}
             placeholder={block.level === 2 ? 'Section heading' : 'Subheading'}
             className={`${fieldClass} ${block.level === 2 ? 'text-2xl font-black leading-tight tracking-[-0.035em] sm:text-3xl' : 'text-xl font-bold tracking-[-0.025em]'}`}
@@ -60,11 +60,11 @@ function BlockFields({ block, onChange }: { block: ArticleBlock; onChange: (bloc
         </div>
       )
     case 'paragraph':
-      return <textarea value={block.text} onChange={event => onChange({ ...block, text: event.target.value })} rows={4} placeholder="Write the next thought…" className={`${fieldClass} text-[15px] leading-8 text-ink-dim`} />
+      return <textarea value={plainText(block.content)} onChange={event => onChange({ ...block, content: inlineText(event.target.value) })} rows={4} placeholder="Write the next thought…" className={`${fieldClass} text-[15px] leading-8 text-ink-dim`} />
     case 'quote':
       return (
         <div className="border-l-2 border-electric py-2 pl-6">
-          <textarea value={block.text} onChange={event => onChange({ ...block, text: event.target.value })} rows={3} placeholder="A telling line or key conclusion…" className={`${fieldClass} text-xl font-semibold leading-8 tracking-[-0.02em]`} />
+          <textarea value={plainText(block.content)} onChange={event => onChange({ ...block, content: inlineText(event.target.value) })} rows={3} placeholder="A telling line or key conclusion…" className={`${fieldClass} text-xl font-semibold leading-8 tracking-[-0.02em]`} />
         </div>
       )
     case 'callout':
@@ -75,7 +75,7 @@ function BlockFields({ block, onChange }: { block: ArticleBlock; onChange: (bloc
             <option value="note">Note</option>
             <option value="warning">Caveat</option>
           </select>
-          <textarea value={block.text} onChange={event => onChange({ ...block, text: event.target.value })} rows={3} placeholder="Give this observation extra weight…" className={`${fieldClass} text-sm leading-6`} />
+          <textarea value={plainText(block.content)} onChange={event => onChange({ ...block, content: inlineText(event.target.value) })} rows={3} placeholder="Give this observation extra weight…" className={`${fieldClass} text-sm leading-6`} />
         </div>
       )
     case 'bulleted_list':
@@ -86,10 +86,10 @@ function BlockFields({ block, onChange }: { block: ArticleBlock; onChange: (bloc
             <div key={`${block.id}-${itemIndex}`} className="flex items-start gap-3">
               <span className="mt-2.5 w-4 shrink-0 text-right font-mono text-[9px] text-electric">{block.type === 'numbered_list' ? `${itemIndex + 1}.` : '•'}</span>
               <textarea
-                value={item}
+                value={plainText(item)}
                 onChange={event => {
                   const items = [...block.items]
-                  items[itemIndex] = event.target.value
+                  items[itemIndex] = inlineText(event.target.value)
                   onChange({ ...block, items })
                 }}
                 rows={2}
@@ -101,14 +101,7 @@ function BlockFields({ block, onChange }: { block: ArticleBlock; onChange: (bloc
               ) : null}
             </div>
           ))}
-          <button type="button" onClick={() => onChange({ ...block, items: [...block.items, ''] })} className="ml-7 inline-flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.15em] text-ink-muted hover:text-electric"><Plus className="size-3.5" /> Add item</button>
-        </div>
-      )
-    case 'link':
-      return (
-        <div className="grid gap-3 sm:grid-cols-[1fr_1.3fr]">
-          <label className="space-y-1.5"><FieldLabel>Link label</FieldLabel><input value={block.text} onChange={event => onChange({ ...block, text: event.target.value })} placeholder="Further reading" className={metaInputClass} /></label>
-          <label className="space-y-1.5"><FieldLabel>HTTPS URL</FieldLabel><input type="url" value={block.url} onChange={event => onChange({ ...block, url: event.target.value })} placeholder="https://…" className={metaInputClass} /></label>
+          <button type="button" onClick={() => onChange({ ...block, items: [...block.items, inlineText('')] })} className="ml-7 inline-flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.15em] text-ink-muted hover:text-electric"><Plus className="size-3.5" /> Add item</button>
         </div>
       )
     case 'image':

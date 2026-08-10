@@ -10,6 +10,7 @@ from django.core.exceptions import ValidationError
 MAX_BLOCKS = 300
 MAX_TEXT_LENGTH = 20_000
 MAX_LIST_ITEMS = 100
+MAX_INLINE_RUNS = 500
 CONTROL_CHARACTERS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
@@ -39,6 +40,38 @@ def block_id(value) -> str:
         return str(uuid.uuid4())
 
 
+def normalize_inline_content(value, *, field: str, maximum: int = MAX_TEXT_LENGTH) -> list[dict]:
+    if not isinstance(value, list) or len(value) > MAX_INLINE_RUNS:
+        raise ValidationError(f"{field} content is invalid.")
+
+    normalized = []
+    total_length = 0
+    for run in value:
+        if not isinstance(run, dict):
+            raise ValidationError(f"{field} content is invalid.")
+        text = clean_text(run.get("text", ""), field=field, maximum=maximum)
+        total_length += len(text)
+        if total_length > maximum:
+            raise ValidationError(f"{field} is too long.")
+        link = run.get("link")
+        normalized_run = {"text": text}
+        if link is not None:
+            normalized_run["link"] = safe_url(link, field=f"{field} link")
+
+        if normalized and normalized[-1].get("link") == normalized_run.get("link"):
+            normalized[-1]["text"] += text
+        else:
+            normalized.append(normalized_run)
+
+    return normalized or [{"text": ""}]
+
+
+def block_inline_content(block: dict, *, field: str, maximum: int = MAX_TEXT_LENGTH) -> list[dict]:
+    if "content" in block:
+        return normalize_inline_content(block["content"], field=field, maximum=maximum)
+    return [{"text": clean_text(block.get("text", ""), field=field, maximum=maximum)}]
+
+
 def normalize_document(value) -> dict:
     if not isinstance(value, dict) or value.get("version") != 1:
         raise ValidationError("The article document version is not supported.")
@@ -60,11 +93,11 @@ def normalize_document(value) -> dict:
             if level not in {2, 3}:
                 raise ValidationError("Heading levels must be 2 or 3.")
             normalized.append(
-                {**common, "level": level, "text": clean_text(block.get("text", ""), field="Heading")}
+                {**common, "level": level, "content": block_inline_content(block, field="Heading")}
             )
         elif block_type in {"paragraph", "quote"}:
             normalized.append(
-                {**common, "text": clean_text(block.get("text", ""), field=block_type.title())}
+                {**common, "content": block_inline_content(block, field=block_type.title())}
             )
         elif block_type == "callout":
             tone = block.get("tone", "note")
@@ -74,7 +107,7 @@ def normalize_document(value) -> dict:
                 {
                     **common,
                     "tone": tone,
-                    "text": clean_text(block.get("text", ""), field="Callout"),
+                    "content": block_inline_content(block, field="Callout"),
                 }
             )
         elif block_type in {"bulleted_list", "numbered_list"}:
@@ -84,15 +117,22 @@ def normalize_document(value) -> dict:
             normalized.append(
                 {
                     **common,
-                    "items": [clean_text(item, field="List item", maximum=2_000) for item in items],
+                    "items": [
+                        normalize_inline_content(item, field="List item", maximum=2_000)
+                        if isinstance(item, list)
+                        else [{"text": clean_text(item, field="List item", maximum=2_000)}]
+                        for item in items
+                    ],
                 }
             )
         elif block_type == "link":
+            url = safe_url(block.get("url", ""), field="Link URL", allow_empty=True)
+            label = clean_text(block.get("text", ""), field="Link label", maximum=2_000)
             normalized.append(
                 {
                     **common,
-                    "text": clean_text(block.get("text", ""), field="Link label", maximum=2_000),
-                    "url": safe_url(block.get("url", ""), field="Link URL", allow_empty=True),
+                    "type": "paragraph",
+                    "content": [{"text": label or url, **({"link": url} if url else {})}],
                 }
             )
         elif block_type == "image":
