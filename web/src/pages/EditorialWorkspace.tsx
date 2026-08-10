@@ -351,7 +351,7 @@ function ArticleEditor() {
 
       {saveError ? <div className="border-b border-ember/35 bg-ember-dim/55 px-6 py-2 text-center text-xs text-ink">{saveError}</div> : null}
 
-      <div className="mx-auto grid max-w-[1500px] lg:grid-cols-[minmax(0,1fr)_260px]">
+      <div className={`mx-auto ${mode === 'write' ? 'grid max-w-[1500px] lg:grid-cols-[minmax(0,1fr)_260px]' : 'w-full'}`}>
         <section className="min-h-[calc(100svh-4rem)] bg-panel/30">
           {mode === 'reader' ? (
             <ArticleCanvas title={draft.title} subtitle={draft.subtitle} document={draft.document} author={article.author} updatedAt={article.updated_at} />
@@ -372,7 +372,7 @@ function ArticleEditor() {
           )}
         </section>
 
-        <aside className="border-t border-line p-5 lg:sticky lg:top-16 lg:h-[calc(100svh-4rem)] lg:overflow-y-auto lg:border-l lg:border-t-0">
+        {mode === 'write' ? <aside className="border-t border-line p-5 lg:sticky lg:top-16 lg:h-[calc(100svh-4rem)] lg:overflow-y-auto lg:border-l lg:border-t-0">
           <InspectorSection title="Private preview">
             <p className="text-xs leading-5 text-ink-dim">Anyone with the active link can review this saved draft. It is excluded from search indexing.</p>
             {article.preview_enabled ? (
@@ -393,7 +393,7 @@ function ArticleEditor() {
           <InspectorSection title="Safety">
             <div className="flex gap-3"><ShieldCheck className="size-4 shrink-0 text-mint" /><p className="text-[11px] leading-5 text-ink-dim">Blocks are stored as validated content. Scripts, raw HTML and unsafe URL schemes are never rendered.</p></div>
           </InspectorSection>
-        </aside>
+        </aside> : null}
       </div>
     </main>
   )

@@ -18,7 +18,7 @@ export function ArticleCanvas({
   preview?: boolean
 }) {
   return (
-    <article className="mx-auto w-full max-w-[720px] px-6 py-14 sm:px-10 sm:py-20">
+    <article className="mx-auto w-full max-w-[1180px] px-6 py-14 sm:px-10 sm:py-20 lg:px-16">
       <header className="border-b border-line pb-10">
         <p className="font-mono text-[9px] uppercase tracking-[0.25em] text-electric">
           {preview ? 'Private editorial preview' : 'Analysis draft'}

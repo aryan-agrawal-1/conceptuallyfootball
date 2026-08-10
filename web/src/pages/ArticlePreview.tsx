@@ -27,7 +27,7 @@ export function ArticlePreview() {
     <main className="min-h-svh bg-mat">
       <div className="border-b border-gold/30 bg-gold-dim/35 px-5 py-2 text-center font-mono text-[8px] uppercase tracking-[0.18em] text-gold">Private draft · Not published · Do not index</div>
       <header className="border-b border-line px-6 py-5">
-        <div className="mx-auto flex max-w-5xl items-center justify-between">
+        <div className="mx-auto flex w-full max-w-[1440px] items-center justify-between">
           <div className="flex items-center gap-3"><img src={BRAND_LOGO_URL} alt="" className="size-7 object-contain" /><span className="text-[10px] font-black uppercase tracking-[0.16em] text-ink">{BRAND_NAME}</span></div>
           <span className="flex items-center gap-2 font-mono text-[8px] uppercase tracking-[0.17em] text-ink-muted"><LockKeyhole className="size-3.5" /> Review copy</span>
         </div>
