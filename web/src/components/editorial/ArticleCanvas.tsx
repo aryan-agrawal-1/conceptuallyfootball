@@ -165,7 +165,7 @@ function RenderedBlock({ block }: { block: ArticleBlock }) {
 function InlineText({ content, fallback = '' }: { content: InlineContent; fallback?: string }) {
   if (!content.some(run => run.text)) return fallback
   return content.map((run, index) => {
-    if (run.reference) return <a key={index} href={editorialEntityPath(run.reference)} className="rounded-sm border border-electric/35 bg-electric-dim/35 px-1 text-electric hover:border-electric hover:bg-electric hover:text-mat">{run.text}</a>
+    if (run.reference) return <a key={index} href={editorialEntityPath(run.reference)} className="inline-flex rounded-sm border border-electric/35 bg-electric-dim/35 px-1 py-0.5 text-electric hover:border-electric hover:bg-electric hover:text-mat">{run.text}</a>
     const url = run.link ? safeExternalUrl(run.link) : ''
     return url ? <a key={index} href={url} target="_blank" rel="noreferrer" className="border-b border-electric/60 text-electric hover:text-ink">{run.text}</a> : <span key={index}>{run.text}</span>
   })

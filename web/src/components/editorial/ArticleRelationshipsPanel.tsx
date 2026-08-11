@@ -1,18 +1,15 @@
-import { AtSign, Search, Shield, UserRound, X } from 'lucide-react'
+import { AtSign, Search, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import {
   editorialEntityPath,
   type ArticleRelationships,
-  type EditorialEntityContext,
   type EditorialEntityKind,
   type EditorialEntityReference,
 } from '../../lib/editorial'
 import type {
   SearchEntitiesResponse,
   SearchPlayerEntity,
-  SearchPlayerMembership,
   SearchTeamEntity,
-  SearchTeamMembership,
 } from '../../types/api'
 
 const MAX_SUBJECTS = 2
@@ -33,7 +30,7 @@ export function ArticleRelationshipsPanel({
   return (
     <div className="space-y-5">
       <div className="border-l-2 border-electric bg-electric-dim/25 px-3 py-2.5">
-        <p className="text-[11px] leading-5 text-ink-dim"><strong className="text-ink">Subjects drive discovery.</strong> Add only the players and teams this piece is principally about.</p>
+        <p className="text-[11px] leading-5 text-ink-dim"><strong className="text-ink">Subjects drive discovery.</strong> Add the players and teams this piece is principally about.</p>
       </div>
       <SubjectGroup kind="player" selected={subjects.players} entities={entities} loading={loading} onChange={players => onChange({ ...subjects, players })} />
       <SubjectGroup kind="team" selected={subjects.teams} entities={entities} loading={loading} onChange={teams => onChange({ ...subjects, teams })} />
@@ -79,14 +76,6 @@ function SubjectGroup({
     setQuery('')
   }
 
-  function updateContext(index: number, value: string) {
-    const next = [...selected]
-    const entity = next[index]
-    next[index] = { ...entity, ...(value ? { context: contextForMembership(entity, value, entities) } : {}) }
-    if (!value) delete next[index].context
-    onChange(next)
-  }
-
   return (
     <section>
       <div className="flex items-center justify-between">
@@ -97,14 +86,9 @@ function SubjectGroup({
         {selected.map((entity, index) => (
           <div key={`${entity.kind}-${entity.id}`} className="border border-line bg-panel/60 p-2.5">
             <div className="flex items-center gap-2">
-              <span className="grid size-7 shrink-0 place-items-center border border-electric/25 text-electric">{kind === 'player' ? <UserRound className="size-3.5" /> : <Shield className="size-3.5" />}</span>
               <a href={editorialEntityPath(entity)} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate text-xs font-bold text-ink hover:text-electric">{entity.name}</a>
               <button type="button" onClick={() => onChange(selected.filter((_, selectedIndex) => selectedIndex !== index))} className="grid size-7 place-items-center text-ink-muted hover:text-ember" aria-label={`Remove ${entity.name} as a subject`}><X className="size-3.5" /></button>
             </div>
-            <select value={contextValue(entity.context)} onChange={event => updateContext(index, event.target.value)} className="mt-2 h-8 w-full border border-line bg-mat px-2 font-mono text-[7px] uppercase tracking-[0.08em] text-ink-muted focus:border-electric focus:outline-none" aria-label={`${entity.name} historical context`}>
-              <option value="">All clubs and seasons</option>
-              {membershipsFor(entity, entities).map(membership => <option key={String(membership.competition_season_id)} value={String(membership.competition_season_id)}>{membershipLabel(membership)}</option>)}
-            </select>
           </div>
         ))}
       </div>
@@ -141,39 +125,4 @@ function canonicalName(entity: SearchPlayerEntity | SearchTeamEntity): string {
 
 function referenceFromSearch(entity: SearchPlayerEntity | SearchTeamEntity): EditorialEntityReference {
   return { kind: entity.kind, id: canonicalId(entity), name: canonicalName(entity) }
-}
-
-function membershipsFor(
-  entity: EditorialEntityReference,
-  entities?: SearchEntitiesResponse,
-): Array<SearchPlayerMembership | SearchTeamMembership> {
-  if (!entities) return []
-  if (entity.kind === 'player') return entities.players.find(item => item.canonical_player_id === entity.id)?.memberships ?? []
-  return entities.teams.find(item => item.canonical_team_id === entity.id)?.memberships ?? []
-}
-
-function contextForMembership(
-  entity: EditorialEntityReference,
-  competitionSeasonId: string,
-  entities?: SearchEntitiesResponse,
-): EditorialEntityContext | undefined {
-  const membership = membershipsFor(entity, entities).find(item => String(item.competition_season_id) === competitionSeasonId)
-  if (!membership) return undefined
-  return {
-    competition_code: membership.competition,
-    season_label: membership.season,
-    competition_season_id: membership.competition_season_id,
-    ...(entity.kind === 'player' && 'canonical_team_id' in membership && membership.canonical_team_id && membership.canonical_team_name
-      ? { team: { id: membership.canonical_team_id, name: membership.canonical_team_name } }
-      : {}),
-  }
-}
-
-function contextValue(context?: EditorialEntityContext): string {
-  return context?.competition_season_id ? String(context.competition_season_id) : ''
-}
-
-function membershipLabel(membership: SearchPlayerMembership | SearchTeamMembership): string {
-  const team = 'canonical_team_name' in membership ? membership.canonical_team_name : null
-  return [team, membership.competition, membership.season].filter(Boolean).join(' · ')
 }

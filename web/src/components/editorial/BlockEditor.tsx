@@ -294,7 +294,22 @@ function BlockFields({
                 blockId={`${block.id}-${itemIndex}`}
                 content={item}
                 onChange={content => { const items = [...block.items]; items[itemIndex] = content; onChange({ ...block, items }) }}
-                onEnter={(before, after) => { const items = [...block.items]; items.splice(itemIndex, 1, before, after); onChange({ ...block, items }); requestAnimationFrame(() => focusEditor(`${block.id}-${itemIndex + 1}`)) }}
+                onEnter={(before, after) => {
+                  if (!plainText(item).trim() && itemIndex === block.items.length - 1) {
+                    if (block.items.length === 1) {
+                      onChange({ id: block.id, type: 'paragraph', content: inlineText('') })
+                      requestAnimationFrame(() => focusEditor(block.id))
+                    } else {
+                      onChange({ ...block, items: block.items.slice(0, -1) })
+                      onInsertAfter({ id: crypto.randomUUID(), type: 'paragraph', content: inlineText('') })
+                    }
+                    return
+                  }
+                  const items = [...block.items]
+                  items.splice(itemIndex, 1, before, after)
+                  onChange({ ...block, items })
+                  requestAnimationFrame(() => focusEditor(`${block.id}-${itemIndex + 1}`))
+                }}
                 onCommandKeyDown={onCommandKeyDown}
                 onBackspaceEmpty={() => {
                   if (block.items.length === 1) return onBackspaceEmpty()

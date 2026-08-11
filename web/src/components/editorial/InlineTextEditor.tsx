@@ -223,7 +223,7 @@ function renderContent(root: HTMLElement, content: InlineContent) {
       const mention = document.createElement('span')
       mention.dataset.editorReference = JSON.stringify(run.reference)
       mention.contentEditable = 'false'
-      mention.className = 'inline-flex rounded-sm border border-electric/35 bg-electric-dim/55 px-1 text-electric'
+      mention.className = 'inline-flex rounded-sm border border-electric/35 bg-electric-dim/55 px-1 py-0.5 text-electric'
       mention.title = `${run.reference.kind === 'player' ? 'Player' : 'Team'} reference · ${run.reference.name}`
       mention.append(document.createTextNode(run.text))
       root.append(mention)
@@ -361,7 +361,7 @@ function mentionTrigger(
     const runEnd = runStart + run.text.length
     if (cursor >= runStart && cursor <= runEnd && !run.link && !run.reference) {
       const textBeforeCursor = run.text.slice(0, cursor - runStart)
-      const match = textBeforeCursor.match(/(?:^|\s)@([^\s@]{0,60})$/)
+      const match = textBeforeCursor.match(/(?:^|\s)@([^@\n]{0,60})$/)
       if (!match) return null
       return { query: match[1], start: cursor - match[1].length - 1, end: cursor }
     }

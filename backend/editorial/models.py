@@ -70,7 +70,6 @@ class ArticlePlayerSubject(models.Model):
         related_name="article_subject_links",
     )
     position = models.PositiveSmallIntegerField()
-    context = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ("position", "id")
@@ -101,7 +100,6 @@ class ArticleTeamSubject(models.Model):
         related_name="article_subject_links",
     )
     position = models.PositiveSmallIntegerField()
-    context = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ("position", "id")

@@ -22,7 +22,6 @@ class Migration(migrations.Migration):
             fields=[
                 ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
                 ("position", models.PositiveSmallIntegerField()),
-                ("context", models.JSONField(blank=True, default=dict)),
                 ("article", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="player_subject_links", to="editorial.article")),
                 ("player", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="article_subject_links", to="ingestion.canonicalplayer")),
             ],
@@ -33,7 +32,6 @@ class Migration(migrations.Migration):
             fields=[
                 ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
                 ("position", models.PositiveSmallIntegerField()),
-                ("context", models.JSONField(blank=True, default=dict)),
                 ("article", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="team_subject_links", to="editorial.article")),
                 ("team", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="article_subject_links", to="ingestion.canonicalteam")),
             ],

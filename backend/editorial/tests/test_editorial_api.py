@@ -321,7 +321,15 @@ class EditorialApiTests(TestCase):
                 "subtitle": "Subjects are not inferred from mentions.",
                 "subjects": {
                     "players": [
-                        {"kind": "player", "id": subject_player.id, "name": "Ignored client name"}
+                        {
+                            "kind": "player",
+                            "id": subject_player.id,
+                            "name": "Ignored client name",
+                            "context": {
+                                "competition_code": "ENG1",
+                                "season_label": "2025-26",
+                            },
+                        }
                     ],
                     "teams": [{"kind": "team", "id": subject_team.id, "name": "Subject FC"}],
                 },
@@ -361,6 +369,7 @@ class EditorialApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         article = response.json()["article"]
         self.assertEqual(article["subjects"]["players"][0]["name"], "Subject Player")
+        self.assertNotIn("context", article["subjects"]["players"][0])
         self.assertEqual(article["subjects"]["teams"][0]["id"], subject_team.id)
         self.assertEqual(article["references"]["players"][0]["id"], referenced_player.id)
         self.assertEqual(article["references"]["teams"][0]["id"], referenced_team.id)

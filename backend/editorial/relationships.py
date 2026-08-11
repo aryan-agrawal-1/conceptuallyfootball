@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from django.core.exceptions import ValidationError
 
-from editorial.content import normalize_entity_context
 from editorial.models import (
     Article,
     ArticlePlayerReference,
@@ -10,7 +9,7 @@ from editorial.models import (
     ArticleTeamReference,
     ArticleTeamSubject,
 )
-from ingestion.models import CanonicalPlayer, CanonicalTeam, CompetitionSeason
+from ingestion.models import CanonicalPlayer, CanonicalTeam
 
 
 MAX_SUBJECTS_PER_KIND = 2
@@ -23,7 +22,6 @@ def normalize_subjects(value) -> dict:
         raise ValidationError("Article subjects are invalid.")
     players = normalize_subject_list(value.get("players", []), kind="player")
     teams = normalize_subject_list(value.get("teams", []), kind="team")
-    validate_context_ids([*players, *teams])
     return {"players": players, "teams": teams}
 
 
@@ -32,7 +30,6 @@ def normalize_subject_list(value, *, kind: str) -> list[dict]:
     if not isinstance(value, list) or len(value) > MAX_SUBJECTS_PER_KIND:
         raise ValidationError(f"An article can have at most 2 {label} subjects.")
     ids = []
-    contexts = {}
     for item in value:
         if not isinstance(item, dict) or item.get("kind") != kind:
             raise ValidationError(f"Article {label} subjects are invalid.")
@@ -43,7 +40,6 @@ def normalize_subject_list(value, *, kind: str) -> list[dict]:
         if entity_id < 1 or entity_id in ids:
             raise ValidationError(f"Article {label} subjects must be unique canonical entities.")
         ids.append(entity_id)
-        contexts[entity_id] = normalize_entity_context(item.get("context"))
 
     model = CanonicalPlayer if kind == "player" else CanonicalTeam
     name_field = "display_name" if kind == "player" else "name"
@@ -55,29 +51,9 @@ def normalize_subject_list(value, *, kind: str) -> list[dict]:
             "kind": kind,
             "id": entity_id,
             "name": getattr(entities[entity_id], name_field),
-            **({"context": contexts[entity_id]} if contexts[entity_id] else {}),
         }
         for entity_id in ids
     ]
-
-
-def validate_context_ids(entities: list[dict]) -> None:
-    competition_season_ids = {
-        entity.get("context", {}).get("competition_season_id")
-        for entity in entities
-        if entity.get("context", {}).get("competition_season_id")
-    }
-    team_ids = {
-        entity.get("context", {}).get("team", {}).get("id")
-        for entity in entities
-        if entity.get("context", {}).get("team", {}).get("id")
-    }
-    if competition_season_ids and CompetitionSeason.objects.filter(
-        id__in=competition_season_ids
-    ).count() != len(competition_season_ids):
-        raise ValidationError("One or more article subject competition contexts do not exist.")
-    if team_ids and CanonicalTeam.objects.filter(id__in=team_ids).count() != len(team_ids):
-        raise ValidationError("One or more article subject club contexts do not exist.")
 
 
 def save_subjects(article: Article, subjects: dict) -> None:
@@ -89,7 +65,6 @@ def save_subjects(article: Article, subjects: dict) -> None:
                 article=article,
                 player_id=subject["id"],
                 position=position,
-                context=subject.get("context", {}),
             )
             for position, subject in enumerate(subjects["players"])
         ]
@@ -100,7 +75,6 @@ def save_subjects(article: Article, subjects: dict) -> None:
                 article=article,
                 team_id=subject["id"],
                 position=position,
-                context=subject.get("context", {}),
             )
             for position, subject in enumerate(subjects["teams"])
         ]
@@ -110,11 +84,11 @@ def save_subjects(article: Article, subjects: dict) -> None:
 def subjects_payload(article: Article) -> dict:
     return {
         "players": [
-            entity_payload("player", link.player_id, link.player.display_name, link.context)
+            entity_payload("player", link.player_id, link.player.display_name)
             for link in article.player_subject_links.select_related("player").all()
         ],
         "teams": [
-            entity_payload("team", link.team_id, link.team.name, link.context)
+            entity_payload("team", link.team_id, link.team.name)
             for link in article.team_subject_links.select_related("team").all()
         ],
     }
