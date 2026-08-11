@@ -1,7 +1,9 @@
-import { ArrowDown, ArrowUp, BarChart3, GripVertical, Link2, Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, AtSign, BarChart3, GripVertical, Link2, Plus, Shield, Trash2, UserRound } from 'lucide-react'
 import { useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactElement } from 'react'
-import { inlineText, plainText, type ArticleBlock, type InlineContent, type VisualArticleBlock, type VisualBlockType } from '../../lib/editorial'
-import { InlineTextEditor, type InlineTextEditorHandle } from './InlineTextEditor'
+import { inlineText, plainText, type ArticleBlock, type EditorialEntityReference, type InlineContent, type VisualArticleBlock, type VisualBlockType } from '../../lib/editorial'
+import { foldForSearch } from '../../lib/foldAccents'
+import type { SearchEntitiesResponse, SearchPlayerEntity, SearchTeamEntity } from '../../types/api'
+import { InlineTextEditor, type InlineTextEditorHandle, type MentionRequest } from './InlineTextEditor'
 import { VisualAnalysisBlock } from './VisualAnalysisBlock'
 
 const metaInputClass = 'h-9 w-full border border-line bg-mat px-3 text-xs text-ink placeholder:text-ink-muted focus:border-electric focus:outline-none'
@@ -40,6 +42,7 @@ export function BlockEditor({
   onBackspaceEmpty,
   onRequestVisual,
   onNavigateBlock,
+  entities,
 }: {
   block: ArticleBlock
   index: number
@@ -51,17 +54,24 @@ export function BlockEditor({
   onBackspaceEmpty: () => boolean
   onRequestVisual: (visualType: VisualBlockType, existing?: VisualArticleBlock) => void
   onNavigateBlock: (direction: -1 | 1) => boolean
+  entities?: SearchEntitiesResponse
 }) {
   const activeEditorRef = useRef<InlineTextEditorHandle | null>(null)
   const [linkEditor, setLinkEditor] = useState<InlineTextEditorHandle | null>(null)
   const [linkUrl, setLinkUrl] = useState('')
   const [linkError, setLinkError] = useState('')
   const [selectedCommand, setSelectedCommand] = useState<SlashCommandChoice | null>(null)
+  const [mentionRequest, setMentionRequest] = useState<MentionRequest | null>(null)
+  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0)
   const slashQuery = block.type === 'paragraph' && plainText(block.content).startsWith('/')
     ? plainText(block.content).slice(1).trim().toLowerCase()
     : null
   const matchingCommands = useMemo(() => slashQuery === null ? [] : [...BLOCK_TYPES, ...VISUAL_COMMANDS].filter(command => `${command.label} ${command.keywords}`.toLowerCase().includes(slashQuery)), [slashQuery])
   const selectedCommandIndex = Math.max(0, matchingCommands.findIndex(command => command.value === selectedCommand))
+  const mentionOptions = useMemo(
+    () => mentionRequest ? matchingEntityOptions(entities, mentionRequest.query) : [],
+    [entities, mentionRequest],
+  )
 
   function changeType(value: BlockTypeChoice) {
     onChange(convertBlock(block, value))
@@ -115,9 +125,24 @@ export function BlockEditor({
     setLinkError('')
   }
 
+  function chooseMention(entity: SearchPlayerEntity | SearchTeamEntity) {
+    if (!mentionRequest) return
+    mentionRequest.editor.insertReference(
+      mentionRequest.start,
+      mentionRequest.end,
+      referenceFromSearchEntity(entity),
+    )
+    setMentionRequest(null)
+    setSelectedMentionIndex(0)
+  }
+
   const inlineProps = {
     onActivate: (editor: InlineTextEditorHandle) => { activeEditorRef.current = editor },
     onRequestLink: openLink,
+    onMentionQuery: (request: MentionRequest | null) => {
+      setMentionRequest(request)
+      setSelectedMentionIndex(0)
+    },
   }
 
   return (
@@ -154,6 +179,17 @@ export function BlockEditor({
         onBackspaceEmpty={onBackspaceEmpty}
         inlineProps={inlineProps}
         onCommandKeyDown={key => {
+          if (mentionRequest && mentionOptions.length) {
+            if (key === 'Enter') {
+              chooseMention(mentionOptions[selectedMentionIndex] ?? mentionOptions[0])
+              return true
+            }
+            const direction = key === 'ArrowDown' ? 1 : -1
+            setSelectedMentionIndex(current => (
+              current + direction + mentionOptions.length
+            ) % mentionOptions.length)
+            return true
+          }
           if (matchingCommands.length && key === 'Enter') {
             chooseCommand(matchingCommands[selectedCommandIndex].value)
             return true
@@ -179,6 +215,34 @@ export function BlockEditor({
           ))}
         </div>
       ) : null}
+
+      {mentionRequest ? (
+        <div className="absolute left-4 top-full z-30 mt-1 w-[min(24rem,calc(100vw-3rem))] border border-line-bright bg-panel p-1 shadow-2xl">
+          <div className="flex items-center justify-between px-3 py-2">
+            <p className="flex items-center gap-2 font-mono text-[7px] uppercase tracking-[0.18em] text-electric"><AtSign className="size-3" /> Add canonical reference</p>
+            <span className="font-mono text-[7px] uppercase tracking-[0.12em] text-ink-muted">References, not subjects</span>
+          </div>
+          {mentionOptions.length ? mentionOptions.map((entity, optionIndex) => {
+            const kind = entity.kind
+            const name = kind === 'player' ? entity.canonical_player_name : entity.canonical_team_name
+            const membership = entity.memberships[0]
+            return (
+              <button
+                key={`${kind}-${kind === 'player' ? entity.canonical_player_id : entity.canonical_team_id}`}
+                type="button"
+                onMouseDown={event => event.preventDefault()}
+                onMouseEnter={() => setSelectedMentionIndex(optionIndex)}
+                onClick={() => chooseMention(entity)}
+                className={`flex w-full items-center gap-3 px-3 py-2.5 text-left ${optionIndex === selectedMentionIndex ? 'bg-electric-dim text-electric' : 'text-ink-dim hover:bg-mat hover:text-ink'}`}
+              >
+                <span className="grid size-7 shrink-0 place-items-center border border-current/25">{kind === 'player' ? <UserRound className="size-3.5" /> : <Shield className="size-3.5" />}</span>
+                <span className="min-w-0 flex-1"><span className="block truncate text-xs font-bold">{name}</span><span className="mt-1 block truncate font-mono text-[7px] uppercase tracking-[0.1em] opacity-60">{kind}{membership ? ` · ${membership.competition} · ${membership.season}` : ''}</span></span>
+                {optionIndex === selectedMentionIndex ? <span className="font-mono text-[7px] uppercase">Enter</span> : null}
+              </button>
+            )
+          }) : <p className="px-3 py-5 text-center text-xs text-ink-muted">No canonical player or team matches “{mentionRequest.query}”.</p>}
+        </div>
+      ) : null}
     </section>
   )
 }
@@ -195,7 +259,7 @@ function BlockFields({
   onChange: (block: ArticleBlock) => void
   onInsertAfter: (block: ArticleBlock) => void
   onBackspaceEmpty: () => boolean
-  inlineProps: { onActivate: (editor: InlineTextEditorHandle) => void; onRequestLink: (editor: InlineTextEditorHandle) => void }
+  inlineProps: { onActivate: (editor: InlineTextEditorHandle) => void; onRequestLink: (editor: InlineTextEditorHandle) => void; onMentionQuery: (request: MentionRequest | null) => void }
   onCommandKeyDown: (key: 'ArrowDown' | 'ArrowUp' | 'Enter') => boolean
 }) {
   const splitIntoParagraph = (before: InlineContent, after: InlineContent) => {
@@ -231,7 +295,22 @@ function BlockFields({
                 blockId={`${block.id}-${itemIndex}`}
                 content={item}
                 onChange={content => { const items = [...block.items]; items[itemIndex] = content; onChange({ ...block, items }) }}
-                onEnter={(before, after) => { const items = [...block.items]; items.splice(itemIndex, 1, before, after); onChange({ ...block, items }); requestAnimationFrame(() => focusEditor(`${block.id}-${itemIndex + 1}`)) }}
+                onEnter={(before, after) => {
+                  if (!plainText(item).trim() && itemIndex === block.items.length - 1) {
+                    if (block.items.length === 1) {
+                      onChange({ id: block.id, type: 'paragraph', content: inlineText('') })
+                      requestAnimationFrame(() => focusEditor(block.id))
+                    } else {
+                      onChange({ ...block, items: block.items.slice(0, -1) })
+                      onInsertAfter({ id: crypto.randomUUID(), type: 'paragraph', content: inlineText('') })
+                    }
+                    return
+                  }
+                  const items = [...block.items]
+                  items.splice(itemIndex, 1, before, after)
+                  onChange({ ...block, items })
+                  requestAnimationFrame(() => focusEditor(`${block.id}-${itemIndex + 1}`))
+                }}
                 onCommandKeyDown={onCommandKeyDown}
                 onBackspaceEmpty={() => {
                   if (block.items.length === 1) return onBackspaceEmpty()
@@ -263,6 +342,47 @@ function BlockFields({
     case 'divider':
       return <div className="py-7"><hr className="border-0 border-t border-line" /></div>
   }
+}
+
+function matchingEntityOptions(
+  entities: SearchEntitiesResponse | undefined,
+  query: string,
+): Array<SearchPlayerEntity | SearchTeamEntity> {
+  if (!entities) return []
+  const needle = foldForSearch(query.trim())
+  const players = entities.players.filter(entity => !needle || foldForSearch(entity.canonical_player_name).includes(needle)).slice(0, 5)
+  const teams = entities.teams.filter(entity => !needle || foldForSearch(entity.canonical_team_name).includes(needle)).slice(0, 5)
+  return [...players, ...teams]
+    .sort((left, right) => {
+      const leftName = left.kind === 'player' ? left.canonical_player_name : left.canonical_team_name
+      const rightName = right.kind === 'player' ? right.canonical_player_name : right.canonical_team_name
+      const leftStarts = needle && foldForSearch(leftName).startsWith(needle) ? 0 : 1
+      const rightStarts = needle && foldForSearch(rightName).startsWith(needle) ? 0 : 1
+      return leftStarts - rightStarts || leftName.localeCompare(rightName)
+    })
+    .slice(0, 8)
+}
+
+function referenceFromSearchEntity(entity: SearchPlayerEntity | SearchTeamEntity): EditorialEntityReference {
+  if (entity.kind === 'player') {
+    const membership = entity.memberships[0]
+    const context = membership ? {
+      competition_code: membership.competition,
+      season_label: membership.season,
+      competition_season_id: membership.competition_season_id,
+      ...(membership.canonical_team_id && membership.canonical_team_name
+        ? { team: { id: membership.canonical_team_id, name: membership.canonical_team_name } }
+        : {}),
+    } : undefined
+    return { kind: 'player', id: entity.canonical_player_id, name: entity.canonical_player_name, ...(context ? { context } : {}) }
+  }
+  const membership = entity.memberships[0]
+  const context = membership ? {
+    competition_code: membership.competition,
+    season_label: membership.season,
+    competition_season_id: membership.competition_season_id,
+  } : undefined
+  return { kind: 'team', id: entity.canonical_team_id, name: entity.canonical_team_name, ...(context ? { context } : {}) }
 }
 
 function convertBlock(block: ArticleBlock, choice: BlockTypeChoice): ArticleBlock {

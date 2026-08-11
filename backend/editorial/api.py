@@ -14,7 +14,23 @@ from django.views.decorators.http import require_GET, require_http_methods
 from accounts.access import access_error
 from accounts.profiles import display_name_for, needs_writer_onboarding, social_links_for
 from editorial.content import clean_text, normalize_document
-from editorial.models import Article, ArticleRevision, ArticleStatus
+from editorial.models import (
+    Article,
+    ArticlePlayerReference,
+    ArticlePlayerSubject,
+    ArticleRevision,
+    ArticleStatus,
+    ArticleTeamReference,
+    ArticleTeamSubject,
+)
+from editorial.relationships import (
+    normalize_subjects,
+    references_payload,
+    save_subjects,
+    subjects_payload,
+    sync_references,
+)
+from ingestion.models import CanonicalPlayer, CanonicalTeam
 
 
 def json_body(request: HttpRequest) -> dict:
@@ -61,6 +77,8 @@ def article_payload(article: Article, *, include_preview_token: bool = True) -> 
             "social_links": social_links_for(article.author),
         },
         "document": normalize_document(article.document),
+        "subjects": subjects_payload(article),
+        "references": references_payload(article),
         "revisions": [
             {"number": revision.number, "created_at": revision.created_at.isoformat()}
             for revision in article.revisions.all()[:20]
@@ -77,6 +95,7 @@ def article_revision_payload(revision: ArticleRevision) -> dict:
         "title": revision.title,
         "subtitle": revision.subtitle,
         "document": normalize_document(revision.document),
+        "subjects": normalize_subjects(revision.subjects),
         "created_at": revision.created_at.isoformat(),
     }
 
@@ -138,6 +157,7 @@ def articles(request: HttpRequest) -> JsonResponse:
             title=article.title,
             subtitle=article.subtitle,
             document=article.document,
+            subjects={"players": [], "teams": []},
             created_by=request.user,
         )
     except ValidationError as validation:
@@ -186,6 +206,7 @@ def article_detail(request: HttpRequest, article_id) -> JsonResponse:
                 status=409,
             )
         try:
+            existing_subjects = subjects_payload(article)
             title = clean_text(payload.get("title", article.title), field="Title", maximum=180).strip()
             subtitle = clean_text(
                 payload.get("subtitle", article.subtitle),
@@ -193,17 +214,30 @@ def article_detail(request: HttpRequest, article_id) -> JsonResponse:
                 maximum=280,
             ).strip()
             document = normalize_document(payload.get("document", article.document))
+            subjects = normalize_subjects(payload.get("subjects", existing_subjects))
         except ValidationError as validation:
             return validation_error(validation)
 
         title = title or "Untitled analysis"
-        changed = (title, subtitle, document) != (article.title, article.subtitle, article.document)
+        content_changed = (title, subtitle, document) != (
+            article.title,
+            article.subtitle,
+            article.document,
+        )
+        subjects_changed = subjects != existing_subjects
+        changed = content_changed or subjects_changed
         if changed:
-            article.title = title
-            article.subtitle = subtitle
-            article.document = document
-            article.revision += 1
-            article.save(update_fields=("title", "subtitle", "document", "revision", "updated_at"))
+            try:
+                sync_references(article, document)
+                if subjects_changed:
+                    save_subjects(article, subjects)
+                article.title = title
+                article.subtitle = subtitle
+                article.document = document
+                article.revision += 1
+                article.save(update_fields=("title", "subtitle", "document", "revision", "updated_at"))
+            except ValidationError as validation:
+                return validation_error(validation)
         if create_revision and not ArticleRevision.objects.filter(
             article=article,
             number=article.revision,
@@ -214,6 +248,7 @@ def article_detail(request: HttpRequest, article_id) -> JsonResponse:
                 title=article.title,
                 subtitle=article.subtitle,
                 document=article.document,
+                subjects=subjects_payload(article),
                 created_by=request.user,
             )
     article = owned_article(request, article.id)
@@ -265,3 +300,59 @@ def shared_preview(request: HttpRequest, token) -> JsonResponse:
         preview_enabled=True,
     )
     return public_preview_json({"article": article_payload(article, include_preview_token=False)})
+
+
+@require_GET
+def player_related_analysis(request: HttpRequest, entity_id: int) -> JsonResponse:
+    player = get_object_or_404(CanonicalPlayer, id=entity_id)
+    return related_analysis_payload(
+        kind="player",
+        entity_id=player.id,
+        name=player.display_name,
+    )
+
+
+@require_GET
+def team_related_analysis(request: HttpRequest, entity_id: int) -> JsonResponse:
+    team = get_object_or_404(CanonicalTeam, id=entity_id)
+    return related_analysis_payload(
+        kind="team",
+        entity_id=team.id,
+        name=team.name,
+    )
+
+
+def related_analysis_payload(*, kind: str, entity_id: int, name: str) -> JsonResponse:
+    subject_model = ArticlePlayerSubject if kind == "player" else ArticleTeamSubject
+    reference_model = ArticlePlayerReference if kind == "player" else ArticleTeamReference
+    entity_field = "player_id" if kind == "player" else "team_id"
+    subject_links = subject_model.objects.filter(
+        **{entity_field: entity_id},
+        article__status="published",
+    ).select_related("article", "article__author").order_by("-article__updated_at")
+    subject_article_ids = subject_links.values_list("article_id", flat=True)
+    reference_links = reference_model.objects.filter(
+        **{entity_field: entity_id},
+        article__status="published",
+    ).exclude(article_id__in=subject_article_ids).select_related(
+        "article", "article__author"
+    ).order_by("-article__updated_at")
+    response = JsonResponse(
+        {
+            "entity": {"kind": kind, "id": entity_id, "name": name},
+            "subjects_of": [public_related_article(link.article) for link in subject_links[:50]],
+            "referenced_by": [public_related_article(link.article) for link in reference_links[:50]],
+        }
+    )
+    response["Cache-Control"] = "public, max-age=60, stale-while-revalidate=300"
+    return response
+
+
+def public_related_article(article: Article) -> dict:
+    return {
+        "id": str(article.id),
+        "title": article.title,
+        "subtitle": article.subtitle,
+        "author": display_name_for(article.author),
+        "updated_at": article.updated_at.isoformat(),
+    }

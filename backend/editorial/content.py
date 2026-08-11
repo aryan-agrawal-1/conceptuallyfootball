@@ -57,6 +57,75 @@ def block_id(value) -> str:
         return str(uuid.uuid4())
 
 
+def entity_integer(value, *, field: str) -> int:
+    if isinstance(value, bool):
+        raise ValidationError(f"{field} must be a number.")
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        raise ValidationError(f"{field} must be a number.") from None
+    if normalized < 1:
+        raise ValidationError(f"{field} is invalid.")
+    return normalized
+
+
+def normalize_entity_context(value) -> dict:
+    if value in (None, {}):
+        return {}
+    if not isinstance(value, dict):
+        raise ValidationError("Entity context is invalid.")
+    context = {}
+    competition_code = clean_text(
+        value.get("competition_code", ""), field="Entity competition", maximum=32
+    ).strip().upper()
+    season_label = clean_text(
+        value.get("season_label", ""), field="Entity season", maximum=32
+    ).strip()
+    competition_season_id = value.get("competition_season_id")
+    if competition_code:
+        context["competition_code"] = competition_code
+    if season_label:
+        context["season_label"] = season_label
+    if competition_season_id not in (None, ""):
+        context["competition_season_id"] = entity_integer(
+            competition_season_id, field="Entity competition season ID"
+        )
+    team = value.get("team")
+    if team not in (None, {}):
+        if not isinstance(team, dict):
+            raise ValidationError("Entity club context is invalid.")
+        team_name = clean_text(
+            team.get("name", ""), field="Entity club name", maximum=240
+        ).strip()
+        if not team_name:
+            raise ValidationError("Entity club context is incomplete.")
+        context["team"] = {
+            "id": entity_integer(team.get("id"), field="Entity club ID"),
+            "name": team_name,
+        }
+    return context
+
+
+def normalize_entity_reference(value) -> dict:
+    if not isinstance(value, dict):
+        raise ValidationError("Entity reference is invalid.")
+    kind = value.get("kind")
+    if kind not in {"player", "team"}:
+        raise ValidationError("Entity reference type is invalid.")
+    name = clean_text(value.get("name", ""), field="Entity name", maximum=240).strip()
+    if not name:
+        raise ValidationError("Entity reference name is required.")
+    reference = {
+        "kind": kind,
+        "id": entity_integer(value.get("id"), field="Entity ID"),
+        "name": name,
+    }
+    context = normalize_entity_context(value.get("context"))
+    if context:
+        reference["context"] = context
+    return reference
+
+
 def normalize_inline_content(value, *, field: str, maximum: int = MAX_TEXT_LENGTH) -> list[dict]:
     if not isinstance(value, list) or len(value) > MAX_INLINE_RUNS:
         raise ValidationError(f"{field} content is invalid.")
@@ -71,11 +140,24 @@ def normalize_inline_content(value, *, field: str, maximum: int = MAX_TEXT_LENGT
         if total_length > maximum:
             raise ValidationError(f"{field} is too long.")
         link = run.get("link")
+        reference = run.get("reference")
         normalized_run = {"text": text}
+        if link is not None and reference is not None:
+            raise ValidationError(f"{field} content cannot be both a link and an entity reference.")
         if link is not None:
             normalized_run["link"] = safe_url(link, field=f"{field} link")
+        if reference is not None:
+            normalized_reference = normalize_entity_reference(reference)
+            if text != f"@{normalized_reference['name']}":
+                raise ValidationError(f"{field} entity reference label is invalid.")
+            normalized_run["reference"] = normalized_reference
 
-        if normalized and normalized[-1].get("link") == normalized_run.get("link"):
+        if (
+            normalized
+            and "reference" not in normalized[-1]
+            and "reference" not in normalized_run
+            and normalized[-1].get("link") == normalized_run.get("link")
+        ):
             normalized[-1]["text"] += text
         else:
             normalized.append(normalized_run)

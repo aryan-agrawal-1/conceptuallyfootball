@@ -9,7 +9,15 @@ from django.utils import timezone
 
 from accounts.models import StaffAccess, StaffRole, WriterProfile
 from accounts.roles import configure_user_role
-from editorial.models import Article, ArticleRevision
+from editorial.models import (
+    Article,
+    ArticlePlayerReference,
+    ArticlePlayerSubject,
+    ArticleRevision,
+    ArticleTeamReference,
+    ArticleTeamSubject,
+)
+from ingestion.models import CanonicalPlayer, CanonicalTeam
 
 
 class EditorialApiTests(TestCase):
@@ -297,6 +305,220 @@ class EditorialApiTests(TestCase):
         self.assertEqual(blocks[0]["content"][1]["link"], "https://example.com/report")
         self.assertEqual(blocks[1]["type"], "paragraph")
         self.assertEqual(blocks[1]["content"], [{"text": "Legacy source", "link": "https://example.com"}])
+
+    def test_writer_assigns_separate_canonical_subjects_and_inline_references(self):
+        subject_player = CanonicalPlayer.objects.create(display_name="Subject Player")
+        referenced_player = CanonicalPlayer.objects.create(display_name="Referenced Player")
+        subject_team = CanonicalTeam.objects.create(name="Subject FC")
+        referenced_team = CanonicalTeam.objects.create(name="Referenced FC")
+        created = self.create_article()
+
+        response = self.patch_article(
+            created["id"],
+            {
+                "revision": 1,
+                "title": "Canonical relationships",
+                "subtitle": "Subjects are not inferred from mentions.",
+                "subjects": {
+                    "players": [
+                        {
+                            "kind": "player",
+                            "id": subject_player.id,
+                            "name": "Ignored client name",
+                            "context": {
+                                "competition_code": "ENG1",
+                                "season_label": "2025-26",
+                            },
+                        }
+                    ],
+                    "teams": [{"kind": "team", "id": subject_team.id, "name": "Subject FC"}],
+                },
+                "document": {
+                    "version": 1,
+                    "blocks": [
+                        {
+                            "id": "mentions",
+                            "type": "paragraph",
+                            "content": [
+                                {"text": "Compare "},
+                                {
+                                    "text": "@Referenced Player",
+                                    "reference": {
+                                        "kind": "player",
+                                        "id": referenced_player.id,
+                                        "name": "Referenced Player",
+                                    },
+                                },
+                                {"text": " with "},
+                                {
+                                    "text": "@Referenced FC",
+                                    "reference": {
+                                        "kind": "team",
+                                        "id": referenced_team.id,
+                                        "name": "Referenced FC",
+                                    },
+                                },
+                                {"text": "."},
+                            ],
+                        }
+                    ],
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        article = response.json()["article"]
+        self.assertEqual(article["subjects"]["players"][0]["name"], "Subject Player")
+        self.assertNotIn("context", article["subjects"]["players"][0])
+        self.assertEqual(article["subjects"]["teams"][0]["id"], subject_team.id)
+        self.assertEqual(article["references"]["players"][0]["id"], referenced_player.id)
+        self.assertEqual(article["references"]["teams"][0]["id"], referenced_team.id)
+        self.assertTrue(
+            ArticlePlayerSubject.objects.filter(article_id=created["id"], player=subject_player).exists()
+        )
+        self.assertTrue(
+            ArticleTeamSubject.objects.filter(article_id=created["id"], team=subject_team).exists()
+        )
+        self.assertTrue(
+            ArticlePlayerReference.objects.filter(
+                article_id=created["id"], player=referenced_player
+            ).exists()
+        )
+        self.assertTrue(
+            ArticleTeamReference.objects.filter(
+                article_id=created["id"], team=referenced_team
+            ).exists()
+        )
+
+    def test_subject_limits_and_reference_identity_are_enforced_server_side(self):
+        players = [CanonicalPlayer.objects.create(display_name=f"Player {index}") for index in range(3)]
+        created = self.create_article()
+        too_many = self.patch_article(
+            created["id"],
+            {
+                "revision": 1,
+                "title": created["title"],
+                "subtitle": "",
+                "subjects": {
+                    "players": [
+                        {"kind": "player", "id": player.id, "name": player.display_name}
+                        for player in players
+                    ],
+                    "teams": [],
+                },
+                "document": created["document"],
+            },
+        )
+        self.assertEqual(too_many.status_code, 400)
+
+        mismatched_reference = self.patch_article(
+            created["id"],
+            {
+                "revision": 1,
+                "title": created["title"],
+                "subtitle": "",
+                "document": {
+                    "version": 1,
+                    "blocks": [
+                        {
+                            "id": "mention",
+                            "type": "paragraph",
+                            "content": [
+                                {
+                                    "text": "@Wrong Name",
+                                    "reference": {
+                                        "kind": "player",
+                                        "id": players[0].id,
+                                        "name": "Wrong Name",
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                },
+            },
+        )
+        self.assertEqual(mismatched_reference.status_code, 400)
+        self.assertEqual(Article.objects.get(id=created["id"]).revision, 1)
+
+    def test_related_analysis_separates_subject_articles_from_reference_only_articles(self):
+        player = CanonicalPlayer.objects.create(display_name="The Playmaker")
+        subject_article = self.create_article()
+        subject_response = self.patch_article(
+            subject_article["id"],
+            {
+                "revision": 1,
+                "title": "Built around the playmaker",
+                "subtitle": "",
+                "subjects": {
+                    "players": [{"kind": "player", "id": player.id, "name": player.display_name}],
+                    "teams": [],
+                },
+                "document": {
+                    "version": 1,
+                    "blocks": [
+                        {
+                            "id": "subject-mention",
+                            "type": "paragraph",
+                            "content": [
+                                {
+                                    "text": "@The Playmaker",
+                                    "reference": {"kind": "player", "id": player.id, "name": player.display_name},
+                                }
+                            ],
+                        }
+                    ],
+                },
+            },
+        )
+        reference_article = self.create_article()
+        reference_response = self.patch_article(
+            reference_article["id"],
+            {
+                "revision": 1,
+                "title": "A passing comparison",
+                "subtitle": "",
+                "document": {
+                    "version": 1,
+                    "blocks": [
+                        {
+                            "id": "reference-only",
+                            "type": "paragraph",
+                            "content": [
+                                {
+                                    "text": "@The Playmaker",
+                                    "reference": {"kind": "player", "id": player.id, "name": player.display_name},
+                                }
+                            ],
+                        }
+                    ],
+                },
+            },
+        )
+        self.assertEqual(subject_response.status_code, 200)
+        self.assertEqual(reference_response.status_code, 200)
+        private_response = Client().get(
+            reverse("editorial-player-related-analysis", kwargs={"entity_id": player.id})
+        )
+        self.assertEqual(private_response.json()["subjects_of"], [])
+        self.assertEqual(private_response.json()["referenced_by"], [])
+        Article.objects.filter(id__in=[subject_article["id"], reference_article["id"]]).update(
+            status="published"
+        )
+
+        response = Client().get(
+            reverse("editorial-player-related-analysis", kwargs={"entity_id": player.id})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [article["title"] for article in response.json()["subjects_of"]],
+            ["Built around the playmaker"],
+        )
+        self.assertEqual(
+            [article["title"] for article in response.json()["referenced_by"]],
+            ["A passing comparison"],
+        )
 
     def test_structured_content_rejects_unsafe_inline_urls_and_unknown_blocks(self):
         created = self.create_article()

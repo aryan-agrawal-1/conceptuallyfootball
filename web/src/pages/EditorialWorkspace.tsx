@@ -22,11 +22,13 @@ import {
 } from 'lucide-react'
 import { Link, useBlocker, useNavigate, useParams } from 'react-router-dom'
 import { ArticleCanvas } from '../components/editorial/ArticleCanvas'
+import { ArticleRelationshipsPanel } from '../components/editorial/ArticleRelationshipsPanel'
 import { BlockEditor } from '../components/editorial/BlockEditor'
 import { VisualBlockPicker } from '../components/editorial/VisualBlockPicker'
 import { StaffFrame } from '../components/staff/StaffFrame'
 import { StaffRoute } from '../components/staff/StaffRoute'
 import { useStaffAuth } from '../context/StaffAuthContext'
+import { fetchSearchEntities } from '../lib/api'
 import {
   clearDraftRecovery,
   createArticle,
@@ -37,6 +39,7 @@ import {
   listArticles,
   loadDraftRecovery,
   newBlock,
+  referencesFromDocument,
   saveArticle,
   setArticlePreview,
   storeDraftRecovery,
@@ -185,6 +188,7 @@ function ArticleEditor() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const articleQuery = useQuery({ queryKey: ['editorial-article', articleId], queryFn: () => getArticle(articleId), enabled: Boolean(articleId), retry: false })
+  const entitiesQuery = useQuery({ queryKey: ['search-entities'], queryFn: fetchSearchEntities, staleTime: 10 * 60 * 1_000 })
   const [selectedRevisionNumber, setSelectedRevisionNumber] = useState<number | null>(null)
   const revisionQuery = useQuery({
     queryKey: ['editorial-article-revision', articleId, selectedRevisionNumber],
@@ -216,6 +220,10 @@ function ArticleEditor() {
   const performSaveRef = useRef<(createRevision?: boolean) => Promise<boolean>>(async () => false)
   const checkpointingNavigationRef = useRef(false)
   const navigationBlocker = useBlocker(Boolean(article))
+  const draftReferences = useMemo(
+    () => draft ? referencesFromDocument(draft.document) : { players: [], teams: [] },
+    [draft],
+  )
 
   useEffect(() => {
     const serverArticle = articleQuery.data
@@ -469,7 +477,7 @@ function ArticleEditor() {
       <div className={`mx-auto ${mode === 'write' ? 'grid max-w-[1500px] lg:grid-cols-[minmax(0,1fr)_260px]' : 'w-full'}`}>
         <section className="min-h-[calc(100svh-4rem)] bg-panel/30">
           {mode === 'reader' ? (
-            <ArticleCanvas title={draft.title} subtitle={draft.subtitle} document={draft.document} author={article.author} updatedAt={article.updated_at} />
+            <ArticleCanvas title={draft.title} subtitle={draft.subtitle} document={draft.document} author={article.author} updatedAt={article.updated_at} subjects={draft.subjects} references={draftReferences} />
           ) : (
             <div className="mx-auto max-w-[760px] px-7 py-12 sm:px-12 sm:py-16">
               <div className="flex flex-wrap items-center justify-between gap-3"><p className="font-mono text-[8px] uppercase tracking-[0.22em] text-electric">Draft · Revision {article.revision}</p><button type="button" onClick={() => setVisualPicker({ insertAfterIndex: draft.document.blocks.length - 1 })} className="inline-flex h-9 items-center gap-2 border border-electric/35 bg-electric-dim/25 px-3 text-[8px] font-black uppercase tracking-[0.14em] text-electric hover:border-electric hover:bg-electric hover:text-mat"><BarChart3 className="size-3.5" /> Add visual <span className="hidden font-mono font-normal opacity-60 sm:inline">/chart</span></button></div>
@@ -478,7 +486,7 @@ function ArticleEditor() {
               <div className="mt-8 border-t border-line pt-10">
                 <div className="space-y-4">
                   {draft.document.blocks.map((block, index) => (
-                    <BlockEditor key={block.id} block={block} index={index} total={draft.document.blocks.length} onChange={next => updateBlock(block.id, next)} onMove={direction => moveBlock(index, direction)} onRemove={() => removeBlock(index)} onInsertAfter={next => insertBlockAfter(index, next)} onBackspaceEmpty={() => removeEmptyBlock(index)} onRequestVisual={(initialType, initialBlock) => setVisualPicker({ replaceBlockId: block.id, initialType, initialBlock })} onNavigateBlock={direction => navigateFromBlock(index, direction)} />
+                    <BlockEditor key={block.id} block={block} index={index} total={draft.document.blocks.length} entities={entitiesQuery.data} onChange={next => updateBlock(block.id, next)} onMove={direction => moveBlock(index, direction)} onRemove={() => removeBlock(index)} onInsertAfter={next => insertBlockAfter(index, next)} onBackspaceEmpty={() => removeEmptyBlock(index)} onRequestVisual={(initialType, initialBlock) => setVisualPicker({ replaceBlockId: block.id, initialType, initialBlock })} onNavigateBlock={direction => navigateFromBlock(index, direction)} />
                   ))}
                 </div>
               </div>
@@ -486,7 +494,11 @@ function ArticleEditor() {
           )}
         </section>
 
-        {mode === 'write' ? <aside className="border-t border-line p-5 lg:sticky lg:top-16 lg:h-[calc(100svh-4rem)] lg:overflow-y-auto lg:border-l lg:border-t-0">
+        {mode === 'write' ? <aside className="border-t border-line p-5 lg:sticky lg:top-16 lg:self-start lg:border-l lg:border-t-0">
+          <InspectorSection title="Discovery relationships">
+            <ArticleRelationshipsPanel subjects={draft.subjects} references={draftReferences} entities={entitiesQuery.data} loading={entitiesQuery.isLoading} onChange={subjects => editDraft(current => ({ ...current, subjects }))} />
+          </InspectorSection>
+
           <InspectorSection title="Private preview">
             <p className="text-xs leading-5 text-ink-dim">Anyone with the active link can review this saved draft.</p>
             {article.preview_enabled ? (
@@ -550,7 +562,7 @@ function RevisionViewer({ article, revisionNumber, revision, loading, error, res
       </header>
       {loading ? <EditorMessage>Loading revision {revisionNumber}…</EditorMessage> : null}
       {error ? <EditorMessage error>This revision could not be loaded.</EditorMessage> : null}
-      {revision ? <ArticleCanvas title={revision.title} subtitle={revision.subtitle} document={revision.document} author={article.author} updatedAt={revision.created_at} /> : null}
+      {revision ? <ArticleCanvas title={revision.title} subtitle={revision.subtitle} document={revision.document} author={article.author} updatedAt={revision.created_at} subjects={revision.subjects} references={referencesFromDocument(revision.document)} /> : null}
     </div>
   )
 }
@@ -576,8 +588,8 @@ function InspectorSection({ title, children }: { title: string; children: ReactN
   return <section className="border-b border-line py-6 first:pt-0 last:border-0"><h2 className="mb-4 font-mono text-[8px] uppercase tracking-[0.2em] text-ink-muted">{title}</h2>{children}</section>
 }
 
-function articleToDraft(article: Pick<Article, 'title' | 'subtitle' | 'document'>): ArticleDraft {
-  return { title: article.title, subtitle: article.subtitle, document: article.document }
+function articleToDraft(article: Pick<Article, 'title' | 'subtitle' | 'document' | 'subjects'> | ArticleRevision): ArticleDraft {
+  return { title: article.title, subtitle: article.subtitle, document: article.document, subjects: article.subjects }
 }
 
 function relativeDate(value: string): string {

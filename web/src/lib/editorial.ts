@@ -2,6 +2,26 @@ import type { SocialLinks } from './staffAuth'
 
 export type ArticleStatus = 'draft'
 export type CalloutTone = 'note' | 'insight' | 'warning'
+export type EditorialEntityKind = 'player' | 'team'
+
+export interface EditorialEntityContext {
+  competition_code?: string
+  season_label?: string
+  competition_season_id?: number
+  team?: { id: number; name: string }
+}
+
+export interface EditorialEntityReference {
+  kind: EditorialEntityKind
+  id: number
+  name: string
+  context?: EditorialEntityContext
+}
+
+export interface ArticleRelationships {
+  players: EditorialEntityReference[]
+  teams: EditorialEntityReference[]
+}
 
 interface BlockBase {
   id: string
@@ -10,6 +30,7 @@ interface BlockBase {
 export interface InlineRun {
   text: string
   link?: string
+  reference?: EditorialEntityReference
 }
 
 export type InlineContent = InlineRun[]
@@ -100,6 +121,8 @@ export interface ArticleSummary {
 export interface Article extends ArticleSummary {
   author: { id: number; display_name: string; social_links: SocialLinks }
   document: ArticleDocument
+  subjects: ArticleRelationships
+  references: ArticleRelationships
   preview_token: string | null
   revisions: { number: number; created_at: string }[]
 }
@@ -109,6 +132,7 @@ export interface ArticleRevision {
   title: string
   subtitle: string
   document: ArticleDocument
+  subjects: ArticleRelationships
   created_at: string
 }
 
@@ -116,6 +140,7 @@ export interface ArticleDraft {
   title: string
   subtitle: string
   document: ArticleDocument
+  subjects: ArticleRelationships
 }
 
 export class EditorialApiError extends Error {
@@ -232,6 +257,28 @@ export async function getSharedPreview(token: string): Promise<Article> {
   return body.article
 }
 
+export interface RelatedAnalysisArticle {
+  id: string
+  title: string
+  subtitle: string
+  author: string
+  updated_at: string
+}
+
+export interface RelatedAnalysisResponse {
+  entity: EditorialEntityReference
+  subjects_of: RelatedAnalysisArticle[]
+  referenced_by: RelatedAnalysisArticle[]
+}
+
+export async function getRelatedAnalysis(
+  kind: EditorialEntityKind,
+  id: number,
+): Promise<RelatedAnalysisResponse> {
+  const response = await fetch(`${PUBLIC_BASE}/entities/${kind}/${id}/related`)
+  return responseJson<RelatedAnalysisResponse>(response)
+}
+
 export function newBlock(type: ArticleBlock['type']): ArticleBlock {
   const id = crypto.randomUUID()
   switch (type) {
@@ -285,6 +332,27 @@ export function plainText(content: InlineContent): string {
   return content.map(run => run.text).join('')
 }
 
+export function editorialEntityPath(entity: EditorialEntityReference): string {
+  return `/${entity.kind}/${entity.id}`
+}
+
+export function referencesFromDocument(document: ArticleDocument): ArticleRelationships {
+  const players = new Map<number, EditorialEntityReference>()
+  const teams = new Map<number, EditorialEntityReference>()
+  const collect = (content: InlineContent) => {
+    for (const run of content) {
+      if (!run.reference) continue
+      const target = run.reference.kind === 'player' ? players : teams
+      if (!target.has(run.reference.id)) target.set(run.reference.id, run.reference)
+    }
+  }
+  for (const block of document.blocks) {
+    if ('content' in block) collect(block.content)
+    if ('items' in block) block.items.forEach(collect)
+  }
+  return { players: [...players.values()], teams: [...teams.values()] }
+}
+
 interface RecoveredDraft {
   schema: 1
   savedAt: string
@@ -304,7 +372,14 @@ export function loadDraftRecovery(articleId: string): RecoveredDraft | null {
   try {
     const recovery = JSON.parse(localStorage.getItem(recoveryKey(articleId)) ?? '') as RecoveredDraft
     if (recovery.schema !== 1 || !recovery.draft || recovery.draft.document.version !== 1) return null
-    return { ...recovery, draft: { ...recovery.draft, document: upgradeDocument(recovery.draft.document) } }
+    return {
+      ...recovery,
+      draft: {
+        ...recovery.draft,
+        subjects: recovery.draft.subjects ?? { players: [], teams: [] },
+        document: upgradeDocument(recovery.draft.document),
+      },
+    }
   } catch {
     return null
   }
