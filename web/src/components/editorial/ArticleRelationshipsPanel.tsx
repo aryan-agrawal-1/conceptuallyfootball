@@ -6,6 +6,7 @@ import {
   type EditorialEntityKind,
   type EditorialEntityReference,
 } from '../../lib/editorial'
+import { foldForSearch } from '../../lib/foldAccents'
 import type {
   SearchEntitiesResponse,
   SearchPlayerEntity,
@@ -58,14 +59,14 @@ function SubjectGroup({
 }) {
   const [query, setQuery] = useState('')
   const options = useMemo(() => {
-    const needle = query.trim().toLocaleLowerCase()
+    const needle = foldForSearch(query.trim())
     if (!needle || !entities) return []
     const selectedIds = new Set(selected.map(entity => entity.id))
     const source = kind === 'player' ? entities.players : entities.teams
     return source.filter(entity => {
       const id = canonicalId(entity)
       const name = canonicalName(entity)
-      return !selectedIds.has(id) && name.toLocaleLowerCase().includes(needle)
+      return !selectedIds.has(id) && foldForSearch(name).includes(needle)
     }).slice(0, 6)
   }, [entities, kind, query, selected])
   const label = kind === 'player' ? 'Player subjects' : 'Team subjects'

@@ -494,7 +494,7 @@ function ArticleEditor() {
           )}
         </section>
 
-        {mode === 'write' ? <aside className="border-t border-line p-5 lg:sticky lg:top-16 lg:h-[calc(100svh-4rem)] lg:overflow-y-auto lg:border-l lg:border-t-0">
+        {mode === 'write' ? <aside className="border-t border-line p-5 lg:sticky lg:top-16 lg:self-start lg:border-l lg:border-t-0">
           <InspectorSection title="Discovery relationships">
             <ArticleRelationshipsPanel subjects={draft.subjects} references={draftReferences} entities={entitiesQuery.data} loading={entitiesQuery.isLoading} onChange={subjects => editDraft(current => ({ ...current, subjects }))} />
           </InspectorSection>

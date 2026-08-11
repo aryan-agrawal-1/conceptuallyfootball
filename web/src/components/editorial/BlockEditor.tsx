@@ -1,6 +1,7 @@
 import { ArrowDown, ArrowUp, AtSign, BarChart3, GripVertical, Link2, Plus, Shield, Trash2, UserRound } from 'lucide-react'
 import { useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactElement } from 'react'
 import { inlineText, plainText, type ArticleBlock, type EditorialEntityReference, type InlineContent, type VisualArticleBlock, type VisualBlockType } from '../../lib/editorial'
+import { foldForSearch } from '../../lib/foldAccents'
 import type { SearchEntitiesResponse, SearchPlayerEntity, SearchTeamEntity } from '../../types/api'
 import { InlineTextEditor, type InlineTextEditorHandle, type MentionRequest } from './InlineTextEditor'
 import { VisualAnalysisBlock } from './VisualAnalysisBlock'
@@ -348,15 +349,15 @@ function matchingEntityOptions(
   query: string,
 ): Array<SearchPlayerEntity | SearchTeamEntity> {
   if (!entities) return []
-  const needle = query.trim().toLocaleLowerCase()
-  const players = entities.players.filter(entity => !needle || entity.canonical_player_name.toLocaleLowerCase().includes(needle)).slice(0, 5)
-  const teams = entities.teams.filter(entity => !needle || entity.canonical_team_name.toLocaleLowerCase().includes(needle)).slice(0, 5)
+  const needle = foldForSearch(query.trim())
+  const players = entities.players.filter(entity => !needle || foldForSearch(entity.canonical_player_name).includes(needle)).slice(0, 5)
+  const teams = entities.teams.filter(entity => !needle || foldForSearch(entity.canonical_team_name).includes(needle)).slice(0, 5)
   return [...players, ...teams]
     .sort((left, right) => {
       const leftName = left.kind === 'player' ? left.canonical_player_name : left.canonical_team_name
       const rightName = right.kind === 'player' ? right.canonical_player_name : right.canonical_team_name
-      const leftStarts = needle && leftName.toLocaleLowerCase().startsWith(needle) ? 0 : 1
-      const rightStarts = needle && rightName.toLocaleLowerCase().startsWith(needle) ? 0 : 1
+      const leftStarts = needle && foldForSearch(leftName).startsWith(needle) ? 0 : 1
+      const rightStarts = needle && foldForSearch(rightName).startsWith(needle) ? 0 : 1
       return leftStarts - rightStarts || leftName.localeCompare(rightName)
     })
     .slice(0, 8)
