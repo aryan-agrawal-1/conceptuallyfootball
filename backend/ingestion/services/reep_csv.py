@@ -53,6 +53,13 @@ PLAYER_CSV_PROVIDER_OVERRIDES: dict[str, dict[str, str | None]] = {
         "key_sofascore": "914213",
     },
     "reep_p96d752b4": {"key_understat": "11249"},  # Ousmane Camara, Auxerre.
+
+    "reep_p1d4075a0": {
+    "full_name": "Karim Adeyemi", # Adeyemi was listed as benzema
+    "name": "Karim Adeyemi",
+    "key_understat": "10772",
+    "key_sofascore": "940054",
+},
 }
 
 
