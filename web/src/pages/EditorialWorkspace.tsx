@@ -390,6 +390,14 @@ function ArticleEditor() {
     return true
   }
 
+  function navigateFromBlock(index: number, direction: -1 | 1): boolean {
+    if (!draft) return false
+    const blockIds = direction === 1
+      ? draft.document.blocks.slice(index + 1).map(block => block.id)
+      : draft.document.blocks.slice(0, index).map(block => block.id).reverse()
+    return focusAdjacentEditableBlock(blockIds, direction)
+  }
+
   async function togglePreview(enabled: boolean, rotate = false) {
     const saved = await performSaveRef.current(true)
     if (!saved && editSerialRef.current !== savedSerialRef.current) return
@@ -469,7 +477,7 @@ function ArticleEditor() {
               <div className="mt-8 border-t border-line pt-10">
                 <div className="space-y-4">
                   {draft.document.blocks.map((block, index) => (
-                    <BlockEditor key={block.id} block={block} index={index} total={draft.document.blocks.length} onChange={next => updateBlock(block.id, next)} onMove={direction => moveBlock(index, direction)} onRemove={() => removeBlock(index)} onInsertAfter={next => insertBlockAfter(index, next)} onBackspaceEmpty={() => removeEmptyBlock(index)} onRequestVisual={(initialType, initialBlock) => setVisualPicker({ replaceBlockId: block.id, initialType, initialBlock })} />
+                    <BlockEditor key={block.id} block={block} index={index} total={draft.document.blocks.length} onChange={next => updateBlock(block.id, next)} onMove={direction => moveBlock(index, direction)} onRemove={() => removeBlock(index)} onInsertAfter={next => insertBlockAfter(index, next)} onBackspaceEmpty={() => removeEmptyBlock(index)} onRequestVisual={(initialType, initialBlock) => setVisualPicker({ replaceBlockId: block.id, initialType, initialBlock })} onNavigateBlock={direction => navigateFromBlock(index, direction)} />
                   ))}
                 </div>
               </div>
@@ -596,4 +604,21 @@ function focusLastEditableBlock(blockIds: string[]) {
     selection?.addRange(range)
     return
   }
+}
+
+function focusAdjacentEditableBlock(blockIds: string[], direction: -1 | 1): boolean {
+  for (const blockId of blockIds) {
+    const editors = document.querySelectorAll<HTMLElement>(`[data-editor-block-id="${blockId}"], [data-editor-block-id^="${blockId}-"]`)
+    const editor = direction === 1 ? editors.item(0) : editors.item(editors.length - 1)
+    if (!editor) continue
+    editor.focus()
+    const range = document.createRange()
+    range.selectNodeContents(editor)
+    range.collapse(direction === 1)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    return true
+  }
+  return false
 }

@@ -39,6 +39,7 @@ export function BlockEditor({
   onInsertAfter,
   onBackspaceEmpty,
   onRequestVisual,
+  onNavigateBlock,
 }: {
   block: ArticleBlock
   index: number
@@ -49,6 +50,7 @@ export function BlockEditor({
   onInsertAfter: (block: ArticleBlock) => void
   onBackspaceEmpty: () => boolean
   onRequestVisual: (visualType: VisualBlockType, existing?: VisualArticleBlock) => void
+  onNavigateBlock: (direction: -1 | 1) => boolean
 }) {
   const activeEditorRef = useRef<InlineTextEditorHandle | null>(null)
   const [linkEditor, setLinkEditor] = useState<InlineTextEditorHandle | null>(null)
@@ -63,6 +65,10 @@ export function BlockEditor({
 
   function changeType(value: BlockTypeChoice) {
     onChange(convertBlock(block, value))
+    if (value === 'image') {
+      onInsertAfter({ id: crypto.randomUUID(), type: 'paragraph', content: inlineText('') })
+      return
+    }
     requestAnimationFrame(() => focusEditor(block.id))
   }
 
@@ -76,6 +82,10 @@ export function BlockEditor({
     const commandBlock = block.type === 'paragraph' ? { ...block, content: inlineText('') } : block
     onChange(convertBlock(commandBlock, value as BlockTypeChoice))
     setSelectedCommand(null)
+    if (value === 'image') {
+      onInsertAfter({ id: crypto.randomUUID(), type: 'paragraph', content: inlineText('') })
+      return
+    }
     requestAnimationFrame(() => focusEditor(block.id))
   }
 
@@ -144,15 +154,18 @@ export function BlockEditor({
         onBackspaceEmpty={onBackspaceEmpty}
         inlineProps={inlineProps}
         onCommandKeyDown={key => {
-          if (!matchingCommands.length) return false
-          if (key === 'Enter') {
+          if (matchingCommands.length && key === 'Enter') {
             chooseCommand(matchingCommands[selectedCommandIndex].value)
             return true
           }
+          if (key === 'Enter') return false
           const direction = key === 'ArrowDown' ? 1 : -1
-          const nextIndex = (selectedCommandIndex + direction + matchingCommands.length) % matchingCommands.length
-          setSelectedCommand(matchingCommands[nextIndex].value)
-          return true
+          if (matchingCommands.length) {
+            const nextIndex = (selectedCommandIndex + direction + matchingCommands.length) % matchingCommands.length
+            setSelectedCommand(matchingCommands[nextIndex].value)
+            return true
+          }
+          return onNavigateBlock(direction)
         }}
       />
 
@@ -194,16 +207,16 @@ function BlockFields({
 
   switch (block.type) {
     case 'heading':
-      return <InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} onBackspaceEmpty={onBackspaceEmpty} placeholder={block.level === 2 ? 'Section heading' : 'Subheading'} className={block.level === 2 ? 'py-1 text-2xl font-black leading-tight tracking-[-0.035em] text-ink sm:text-3xl' : 'py-1 text-xl font-bold tracking-[-0.025em] text-ink'} />
+      return <InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} onCommandKeyDown={onCommandKeyDown} onBackspaceEmpty={onBackspaceEmpty} placeholder={block.level === 2 ? 'Section heading' : 'Subheading'} className={block.level === 2 ? 'py-1 text-2xl font-black leading-tight tracking-[-0.035em] text-ink sm:text-3xl' : 'py-1 text-xl font-bold tracking-[-0.025em] text-ink'} />
     case 'paragraph':
       return <InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} onCommandKeyDown={onCommandKeyDown} onBackspaceEmpty={onBackspaceEmpty} placeholder="Write the next thought… Type / for blocks" className="text-[15px] leading-8 text-ink-dim" />
     case 'quote':
-      return <div className="border-l-2 border-electric py-2 pl-6"><InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} onBackspaceEmpty={onBackspaceEmpty} placeholder="A telling line or key conclusion…" className="text-xl font-semibold leading-8 tracking-[-0.02em] text-ink" /></div>
+      return <div className="border-l-2 border-electric py-2 pl-6"><InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} onCommandKeyDown={onCommandKeyDown} onBackspaceEmpty={onBackspaceEmpty} placeholder="A telling line or key conclusion…" className="text-xl font-semibold leading-8 tracking-[-0.02em] text-ink" /></div>
     case 'callout':
       return (
         <div className={`border p-5 ${block.tone === 'warning' ? 'border-gold/40 bg-gold-dim/35' : 'border-electric/35 bg-electric-dim/35'}`}>
           <select value={block.tone} onChange={event => onChange({ ...block, tone: event.target.value as typeof block.tone })} className="mb-3 bg-transparent font-mono text-[8px] uppercase tracking-[0.18em] text-electric focus:outline-none" aria-label="Callout tone"><option value="insight">Key insight</option><option value="note">Note</option><option value="warning">Caveat</option></select>
-          <InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} onBackspaceEmpty={onBackspaceEmpty} placeholder="Give this observation extra weight…" className="text-sm leading-6 text-ink" />
+          <InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} onCommandKeyDown={onCommandKeyDown} onBackspaceEmpty={onBackspaceEmpty} placeholder="Give this observation extra weight…" className="text-sm leading-6 text-ink" />
         </div>
       )
     case 'bulleted_list':
@@ -219,6 +232,7 @@ function BlockFields({
                 content={item}
                 onChange={content => { const items = [...block.items]; items[itemIndex] = content; onChange({ ...block, items }) }}
                 onEnter={(before, after) => { const items = [...block.items]; items.splice(itemIndex, 1, before, after); onChange({ ...block, items }); requestAnimationFrame(() => focusEditor(`${block.id}-${itemIndex + 1}`)) }}
+                onCommandKeyDown={onCommandKeyDown}
                 onBackspaceEmpty={() => {
                   if (block.items.length === 1) return onBackspaceEmpty()
                   const items = block.items.filter((_, index) => index !== itemIndex)
