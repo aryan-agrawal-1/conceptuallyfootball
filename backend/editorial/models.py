@@ -19,6 +19,10 @@ def empty_document() -> dict:
     }
 
 
+def empty_subjects() -> dict:
+    return {"players": [], "teams": []}
+
+
 class ArticleStatus(models.TextChoices):
     DRAFT = "draft", "Draft"
 
@@ -54,6 +58,116 @@ class Article(models.Model):
         return self.title
 
 
+class ArticlePlayerSubject(models.Model):
+    article = models.ForeignKey(
+        Article,
+        on_delete=models.CASCADE,
+        related_name="player_subject_links",
+    )
+    player = models.ForeignKey(
+        "ingestion.CanonicalPlayer",
+        on_delete=models.PROTECT,
+        related_name="article_subject_links",
+    )
+    position = models.PositiveSmallIntegerField()
+    context = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ("position", "id")
+        constraints = (
+            models.UniqueConstraint(
+                fields=("article", "player"),
+                name="unique_article_player_subject",
+            ),
+            models.UniqueConstraint(
+                fields=("article", "position"),
+                name="unique_article_player_subject_position",
+            ),
+        )
+        indexes = (
+            models.Index(fields=("player", "article"), name="editorial_player_subject_idx"),
+        )
+
+
+class ArticleTeamSubject(models.Model):
+    article = models.ForeignKey(
+        Article,
+        on_delete=models.CASCADE,
+        related_name="team_subject_links",
+    )
+    team = models.ForeignKey(
+        "ingestion.CanonicalTeam",
+        on_delete=models.PROTECT,
+        related_name="article_subject_links",
+    )
+    position = models.PositiveSmallIntegerField()
+    context = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ("position", "id")
+        constraints = (
+            models.UniqueConstraint(
+                fields=("article", "team"),
+                name="unique_article_team_subject",
+            ),
+            models.UniqueConstraint(
+                fields=("article", "position"),
+                name="unique_article_team_subject_position",
+            ),
+        )
+        indexes = (
+            models.Index(fields=("team", "article"), name="editorial_team_subject_idx"),
+        )
+
+
+class ArticlePlayerReference(models.Model):
+    article = models.ForeignKey(
+        Article,
+        on_delete=models.CASCADE,
+        related_name="player_reference_links",
+    )
+    player = models.ForeignKey(
+        "ingestion.CanonicalPlayer",
+        on_delete=models.PROTECT,
+        related_name="article_reference_links",
+    )
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=("article", "player"),
+                name="unique_article_player_reference",
+            ),
+        )
+        indexes = (
+            models.Index(fields=("player", "article"), name="editorial_player_reference_idx"),
+        )
+
+
+class ArticleTeamReference(models.Model):
+    article = models.ForeignKey(
+        Article,
+        on_delete=models.CASCADE,
+        related_name="team_reference_links",
+    )
+    team = models.ForeignKey(
+        "ingestion.CanonicalTeam",
+        on_delete=models.PROTECT,
+        related_name="article_reference_links",
+    )
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=("article", "team"),
+                name="unique_article_team_reference",
+            ),
+        )
+        indexes = (
+            models.Index(fields=("team", "article"), name="editorial_team_reference_idx"),
+        )
+
+
 class ArticleRevision(models.Model):
     article = models.ForeignKey(
         Article,
@@ -64,6 +178,7 @@ class ArticleRevision(models.Model):
     title = models.CharField(max_length=180)
     subtitle = models.CharField(max_length=280, blank=True)
     document = models.JSONField()
+    subjects = models.JSONField(default=empty_subjects)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,

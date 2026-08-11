@@ -1,10 +1,18 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, type KeyboardEvent } from 'react'
-import { plainText, type InlineContent } from '../../lib/editorial'
+import { plainText, type EditorialEntityReference, type InlineContent } from '../../lib/editorial'
 
 export interface InlineTextEditorHandle {
   applyLink: (url?: string) => boolean
+  insertReference: (start: number, end: number, reference: EditorialEntityReference) => boolean
   focus: (position?: 'start' | 'end') => void
   hasSelection: () => boolean
+}
+
+export interface MentionRequest {
+  editor: InlineTextEditorHandle
+  query: string
+  start: number
+  end: number
 }
 
 interface InlineTextEditorProps {
@@ -14,6 +22,7 @@ interface InlineTextEditorProps {
   onEnter: (before: InlineContent, after: InlineContent) => void
   onRequestLink?: (editor: InlineTextEditorHandle) => void
   onActivate?: (editor: InlineTextEditorHandle) => void
+  onMentionQuery?: (request: MentionRequest | null) => void
   onCommandKeyDown?: (key: 'ArrowDown' | 'ArrowUp' | 'Enter') => boolean
   onBackspaceEmpty?: () => boolean
   placeholder: string
@@ -27,6 +36,7 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
   onEnter,
   onRequestLink,
   onActivate,
+  onMentionQuery,
   onCommandKeyDown,
   onBackspaceEmpty,
   placeholder,
@@ -38,6 +48,7 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
   const onEnterRef = useRef(onEnter)
   const onRequestLinkRef = useRef(onRequestLink)
   const onActivateRef = useRef(onActivate)
+  const onMentionQueryRef = useRef(onMentionQuery)
   const onCommandKeyDownRef = useRef(onCommandKeyDown)
   const onBackspaceEmptyRef = useRef(onBackspaceEmpty)
   useEffect(() => {
@@ -45,9 +56,10 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
     onEnterRef.current = onEnter
     onRequestLinkRef.current = onRequestLink
     onActivateRef.current = onActivate
+    onMentionQueryRef.current = onMentionQuery
     onCommandKeyDownRef.current = onCommandKeyDown
     onBackspaceEmptyRef.current = onBackspaceEmpty
-  }, [onActivate, onBackspaceEmpty, onChange, onCommandKeyDown, onEnter, onRequestLink])
+  }, [onActivate, onBackspaceEmpty, onChange, onCommandKeyDown, onEnter, onMentionQuery, onRequestLink])
 
   const rememberSelection = useCallback(() => {
     const root = rootRef.current
@@ -66,6 +78,19 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
       onChangeRef.current(next)
       root.focus()
       restoreSelection(root, selection.start, selection.end)
+      return true
+    },
+    insertReference(start, end, reference) {
+      const root = rootRef.current
+      if (!root || start < 0 || end < start) return false
+      const next = replaceRangeWithReference(readContent(root), start, end, reference)
+      renderContent(root, next)
+      onChangeRef.current(next)
+      root.focus()
+      const cursor = start + reference.name.length + 1
+      restoreSelection(root, cursor, cursor)
+      savedSelectionRef.current = { start: cursor, end: cursor }
+      onMentionQueryRef.current?.(null)
       return true
     },
     focus(position = 'end') {
@@ -96,6 +121,15 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
     const next = readContent(root)
     onChangeRef.current(next)
     rememberSelection()
+    emitMentionQuery(next)
+  }
+
+  function emitMentionQuery(current = rootRef.current ? readContent(rootRef.current) : content) {
+    const selection = savedSelectionRef.current
+    const trigger = selection && selection.start === selection.end
+      ? mentionTrigger(current, selection.start)
+      : null
+    onMentionQueryRef.current?.(trigger ? { editor: api, ...trigger } : null)
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -143,9 +177,9 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
       onInput={emitContent}
       onKeyDown={handleKeyDown}
       onFocus={() => onActivateRef.current?.(api)}
-      onMouseUp={() => { rememberSelection(); onActivateRef.current?.(api) }}
-      onKeyUp={() => { rememberSelection(); onActivateRef.current?.(api) }}
-      onBlur={rememberSelection}
+      onMouseUp={() => { rememberSelection(); emitMentionQuery(); onActivateRef.current?.(api) }}
+      onKeyUp={() => { rememberSelection(); emitMentionQuery(); onActivateRef.current?.(api) }}
+      onBlur={() => { rememberSelection(); onMentionQueryRef.current?.(null) }}
       onClick={event => {
         if ((event.target as HTMLElement).closest('a')) event.preventDefault()
       }}
@@ -155,18 +189,19 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
 
 function readContent(root: HTMLElement): InlineContent {
   const runs: InlineContent = []
-  const visit = (node: Node, inheritedLink?: string) => {
+  const visit = (node: Node, inheritedLink?: string, inheritedReference?: EditorialEntityReference) => {
     if (node.nodeType === Node.TEXT_NODE) {
-      appendRun(runs, node.textContent ?? '', inheritedLink)
+      appendRun(runs, node.textContent ?? '', inheritedLink, inheritedReference)
       return
     }
     if (!(node instanceof HTMLElement)) return
     if (node.tagName === 'BR') {
-      appendRun(runs, '\n', inheritedLink)
+      appendRun(runs, '\n', inheritedLink, inheritedReference)
       return
     }
     const link = node instanceof HTMLAnchorElement ? safeUrl(node.href) : inheritedLink
-    node.childNodes.forEach(child => visit(child, link || inheritedLink))
+    const reference = referenceFromElement(node) ?? inheritedReference
+    node.childNodes.forEach(child => visit(child, link || inheritedLink, reference))
   }
   root.childNodes.forEach(node => visit(node))
   return runs.length ? runs : [{ text: '' }]
@@ -184,17 +219,34 @@ function renderContent(root: HTMLElement, content: InlineContent) {
       anchor.className = 'border-b border-electric/60 text-electric'
       anchor.append(document.createTextNode(run.text))
       root.append(anchor)
+    } else if (run.reference) {
+      const mention = document.createElement('span')
+      mention.dataset.editorReference = JSON.stringify(run.reference)
+      mention.contentEditable = 'false'
+      mention.className = 'inline-flex rounded-sm border border-electric/35 bg-electric-dim/55 px-1 text-electric'
+      mention.title = `${run.reference.kind === 'player' ? 'Player' : 'Team'} reference · ${run.reference.name}`
+      mention.append(document.createTextNode(run.text))
+      root.append(mention)
     } else if (run.text) {
       root.append(document.createTextNode(run.text))
     }
   }
 }
 
-function appendRun(runs: InlineContent, text: string, link?: string) {
+function appendRun(
+  runs: InlineContent,
+  text: string,
+  link?: string,
+  reference?: EditorialEntityReference,
+) {
   if (!text) return
   const previous = runs.at(-1)
-  if (previous && previous.link === link) previous.text += text
-  else runs.push({ text, ...(link ? { link } : {}) })
+  if (
+    previous
+    && previous.link === link
+    && JSON.stringify(previous.reference) === JSON.stringify(reference)
+  ) previous.text += text
+  else runs.push({ text, ...(link ? { link } : {}), ...(reference ? { reference } : {}) })
 }
 
 function selectionOffsets(root: HTMLElement): { start: number; end: number } | null {
@@ -233,6 +285,14 @@ function restoreSelection(root: HTMLElement, start: number, end: number) {
     range.selectNodeContents(root)
     range.collapse(false)
   } else {
+    const referenceElement = start === end && startPoint.node.parentElement?.closest<HTMLElement>('[data-editor-reference]')
+    if (referenceElement && startPoint.offset === (startPoint.node.textContent?.length ?? 0)) {
+      range.setStartAfter(referenceElement)
+      range.collapse(true)
+      selection?.removeAllRanges()
+      selection?.addRange(range)
+      return
+    }
     range.setStart(startPoint.node, startPoint.offset)
     range.setEnd(endPoint.node, endPoint.offset)
   }
@@ -246,11 +306,11 @@ function splitContent(content: InlineContent, offset: number): [InlineContent, I
   let cursor = 0
   for (const run of content) {
     const boundary = offset - cursor
-    if (boundary <= 0) appendRun(after, run.text, run.link)
-    else if (boundary >= run.text.length) appendRun(before, run.text, run.link)
+    if (boundary <= 0) appendRun(after, run.text, run.link, run.reference)
+    else if (boundary >= run.text.length) appendRun(before, run.text, run.link, run.reference)
     else {
-      appendRun(before, run.text.slice(0, boundary), run.link)
-      appendRun(after, run.text.slice(boundary), run.link)
+      appendRun(before, run.text.slice(0, boundary), run.link, run.reference)
+      appendRun(after, run.text.slice(boundary), run.link, run.reference)
     }
     cursor += run.text.length
   }
@@ -266,15 +326,59 @@ function applyLinkToContent(content: InlineContent, start: number, end: number, 
     const overlapStart = Math.max(start, runStart)
     const overlapEnd = Math.min(end, runEnd)
     if (overlapStart >= overlapEnd) {
-      appendRun(result, run.text, run.link)
+      appendRun(result, run.text, run.link, run.reference)
     } else {
-      appendRun(result, run.text.slice(0, overlapStart - runStart), run.link)
+      appendRun(result, run.text.slice(0, overlapStart - runStart), run.link, run.reference)
       appendRun(result, run.text.slice(overlapStart - runStart, overlapEnd - runStart), url)
-      appendRun(result, run.text.slice(overlapEnd - runStart), run.link)
+      appendRun(result, run.text.slice(overlapEnd - runStart), run.link, run.reference)
     }
     cursor = runEnd
   }
   return result.length ? result : [{ text: '' }]
+}
+
+function replaceRangeWithReference(
+  content: InlineContent,
+  start: number,
+  end: number,
+  reference: EditorialEntityReference,
+): InlineContent {
+  const [before, remainder] = splitContent(content, start)
+  const [, after] = splitContent(remainder, end - start)
+  const result: InlineContent = []
+  for (const run of before) appendRun(result, run.text, run.link, run.reference)
+  appendRun(result, `@${reference.name}`, undefined, reference)
+  for (const run of after) appendRun(result, run.text, run.link, run.reference)
+  return result.length ? result : [{ text: '' }]
+}
+
+function mentionTrigger(
+  content: InlineContent,
+  cursor: number,
+): { query: string; start: number; end: number } | null {
+  let runStart = 0
+  for (const run of content) {
+    const runEnd = runStart + run.text.length
+    if (cursor >= runStart && cursor <= runEnd && !run.link && !run.reference) {
+      const textBeforeCursor = run.text.slice(0, cursor - runStart)
+      const match = textBeforeCursor.match(/(?:^|\s)@([^\s@]{0,60})$/)
+      if (!match) return null
+      return { query: match[1], start: cursor - match[1].length - 1, end: cursor }
+    }
+    runStart = runEnd
+  }
+  return null
+}
+
+function referenceFromElement(element: HTMLElement): EditorialEntityReference | undefined {
+  const value = element.dataset.editorReference
+  if (!value) return undefined
+  try {
+    const reference = JSON.parse(value) as EditorialEntityReference
+    return reference.kind === 'player' || reference.kind === 'team' ? reference : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function sameContent(left: InlineContent, right: InlineContent): boolean {

@@ -1,5 +1,5 @@
 import { ImageIcon, Lightbulb, TriangleAlert } from 'lucide-react'
-import type { Article, ArticleBlock, ArticleDocument, InlineContent } from '../../lib/editorial'
+import { editorialEntityPath, type Article, type ArticleBlock, type ArticleDocument, type ArticleRelationships, type EditorialEntityReference, type InlineContent } from '../../lib/editorial'
 import type { SocialPlatform } from '../../lib/staffAuth'
 import { SocialBrandIcon } from '../social/SocialBrandIcon'
 import { VisualAnalysisBlock } from './VisualAnalysisBlock'
@@ -11,6 +11,8 @@ export function ArticleCanvas({
   author,
   updatedAt,
   preview = false,
+  subjects,
+  references,
 }: {
   title: string
   subtitle: string
@@ -18,6 +20,8 @@ export function ArticleCanvas({
   author?: Article['author']
   updatedAt?: string
   preview?: boolean
+  subjects?: ArticleRelationships
+  references?: ArticleRelationships
 }) {
   return (
     <article className="mx-auto w-full max-w-[1180px] px-6 py-14 sm:px-10 sm:py-20 lg:px-16">
@@ -32,6 +36,7 @@ export function ArticleCanvas({
           <p className="mt-6 text-base leading-7 text-ink-dim sm:text-lg">{subtitle}</p>
         ) : null}
         {author ? <AuthorByline author={author} updatedAt={updatedAt} /> : null}
+        <RelationshipMetadata subjects={subjects} references={references} />
       </header>
       <div className="space-y-7 pt-10">
         {document.blocks.map(block => (
@@ -39,6 +44,41 @@ export function ArticleCanvas({
         ))}
       </div>
     </article>
+  )
+}
+
+function RelationshipMetadata({
+  subjects,
+  references,
+}: {
+  subjects?: ArticleRelationships
+  references?: ArticleRelationships
+}) {
+  const subjectEntities = [...(subjects?.players ?? []), ...(subjects?.teams ?? [])]
+  const referencedEntities = [...(references?.players ?? []), ...(references?.teams ?? [])]
+  if (!subjectEntities.length && !referencedEntities.length) return null
+  return (
+    <div className="mt-7 grid gap-3 border-t border-line pt-5 sm:grid-cols-2">
+      <RelationshipGroup label="Subjects" entities={subjectEntities} strong />
+      <RelationshipGroup label="Referenced" entities={referencedEntities} />
+    </div>
+  )
+}
+
+function RelationshipGroup({
+  label,
+  entities,
+  strong = false,
+}: {
+  label: string
+  entities: EditorialEntityReference[]
+  strong?: boolean
+}) {
+  return (
+    <div>
+      <p className="font-mono text-[8px] uppercase tracking-[0.18em] text-ink-muted">{label}</p>
+      {entities.length ? <div className="mt-2 flex flex-wrap gap-1.5">{entities.map(entity => <a key={`${entity.kind}-${entity.id}`} href={editorialEntityPath(entity)} className={`border px-2 py-1 text-[9px] transition-colors hover:border-electric hover:text-electric ${strong ? 'border-electric/35 bg-electric-dim/35 text-ink' : 'border-line text-ink-dim'}`}>{entity.name}</a>)}</div> : <p className="mt-2 text-[10px] text-ink-muted">None selected</p>}
+    </div>
   )
 }
 
@@ -125,6 +165,7 @@ function RenderedBlock({ block }: { block: ArticleBlock }) {
 function InlineText({ content, fallback = '' }: { content: InlineContent; fallback?: string }) {
   if (!content.some(run => run.text)) return fallback
   return content.map((run, index) => {
+    if (run.reference) return <a key={index} href={editorialEntityPath(run.reference)} className="rounded-sm border border-electric/35 bg-electric-dim/35 px-1 text-electric hover:border-electric hover:bg-electric hover:text-mat">{run.text}</a>
     const url = run.link ? safeExternalUrl(run.link) : ''
     return url ? <a key={index} href={url} target="_blank" rel="noreferrer" className="border-b border-electric/60 text-electric hover:text-ink">{run.text}</a> : <span key={index}>{run.text}</span>
   })
