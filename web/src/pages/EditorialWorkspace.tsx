@@ -391,11 +391,12 @@ function ArticleEditor() {
   }
 
   function navigateFromBlock(index: number, direction: -1 | 1): boolean {
-    if (!draft) return false
+    if (!draft) return true
     const blockIds = direction === 1
       ? draft.document.blocks.slice(index + 1).map(block => block.id)
       : draft.document.blocks.slice(0, index).map(block => block.id).reverse()
-    return focusAdjacentEditableBlock(blockIds, direction)
+    focusAdjacentEditableBlock(blockIds, direction)
+    return true
   }
 
   async function togglePreview(enabled: boolean, rotate = false) {
