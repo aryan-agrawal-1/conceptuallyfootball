@@ -56,7 +56,7 @@ const VISUAL_TYPES: Array<{
   { type: 'player_radar', label: 'Player radar', description: 'A focused percentile shape with your chosen axes.', icon: Radar, hint: '1 player · 3–12 metrics' },
   { type: 'stat_card', label: 'Key-stat cards', description: 'A fast row of player or team numbers and ranks.', icon: Target, hint: 'Player or team · 1–4 metrics' },
   { type: 'player_comparison', label: 'Player comparison', description: 'Compare two or three players on the same axes.', icon: GitCompareArrows, hint: '2–3 players · shared scope' },
-  { type: 'custom_chart', label: 'Custom chart', description: 'Build a scatter, bar, or radar for players or teams.', icon: BarChart3, hint: 'Cohort · x/y or metrics' },
+  { type: 'custom_chart', label: 'Custom chart', description: 'Build a scatter or ranked bar chart for players or teams.', icon: BarChart3, hint: 'Cohort · x/y or metric' },
 ]
 
 const inputClass = 'h-10 w-full border border-line-bright bg-mat px-3 text-xs text-ink placeholder:text-ink-muted focus:border-electric focus:outline-none'
@@ -225,7 +225,13 @@ export function VisualBlockPicker({
         ...current.config,
         entities: current.config.entities.flatMap(reference => {
           const source = findSourceEntity(reference, searchQuery.data)
-          const membership = source?.memberships.find(item => seasonForScope(item, current.config.context.scope_kind) === seasonLabel && (!reference.position_group || !('position_group' in item) || item.position_group === reference.position_group))
+          const membership = membershipForSeasonAndScope(
+            source?.memberships ?? [],
+            seasonLabel,
+            current.config.context.scope_kind,
+            current.config.context.scope_code,
+            reference.position_group,
+          )
           const next = source && membership ? referenceFromMembership(source, membership) : null
           return next ? [next] : []
         }),
@@ -306,7 +312,7 @@ export function VisualBlockPicker({
                   </Section>
 
                   {block.visual_type !== 'similar_players' ? <Section title="3 · Display" description={metricDescription(block)}>
-                    {block.visual_type === 'custom_chart' ? <Segmented value={block.config.chart_type} options={[['scatter', 'Scatter'], ['bar', 'Bar'], ['radar', 'Radar']]} onChange={value => setBlock(current => ({ ...current, config: { ...current.config, chart_type: value as 'scatter' | 'bar' | 'radar', metric_keys: [] } }))} /> : null}
+                    {block.visual_type === 'custom_chart' ? <Segmented value={block.config.chart_type} options={[['scatter', 'Scatter'], ['bar', 'Bar']]} onChange={value => setBlock(current => ({ ...current, config: { ...current.config, chart_type: value as 'scatter' | 'bar', metric_keys: [] } }))} /> : null}
                     {block.visual_type === 'player_comparison' ? <Segmented value={block.config.chart_type} options={[['dumbbell', 'Dumbbell'], ['radar', 'Radar'], ['table', 'Stat table']]} onChange={value => setBlock(current => ({ ...current, config: { ...current.config, chart_type: value as 'dumbbell' | 'radar' | 'table' } }))} /> : null}
                     {block.visual_type === 'custom_chart' && block.config.chart_type === 'scatter' ? <div className="mt-3 grid gap-2 sm:grid-cols-2"><Toggle checked={block.config.filters.labels} label="Plot labels" onChange={checked => setBlock(current => ({ ...current, config: { ...current.config, filters: { ...current.config.filters, labels: checked } } }))} /><Toggle checked={block.config.filters.trendline} label="Trend line" onChange={checked => setBlock(current => ({ ...current, config: { ...current.config, filters: { ...current.config.filters, trendline: checked } } }))} /></div> : null}
                     {block.visual_type === 'custom_chart' && block.config.chart_type === 'bar' ? <div className="mt-3 grid gap-3 sm:grid-cols-2"><label><FieldLabel>Ranking</FieldLabel><select value={block.config.filters.bar_window} onChange={event => setBlock(current => ({ ...current, config: { ...current.config, filters: { ...current.config.filters, bar_window: event.target.value as 'top' | 'bottom' | 'all' } } }))} className={inputClass}><option value="top">Top</option><option value="bottom">Bottom</option><option value="all">All</option></select></label><label><FieldLabel>Number of bars</FieldLabel><input type="number" min="5" max="20" value={block.config.filters.bar_count} onChange={event => setBlock(current => ({ ...current, config: { ...current.config, filters: { ...current.config.filters, bar_count: Number(event.target.value) } } }))} className={inputClass} /></label></div> : null}
@@ -438,6 +444,25 @@ function defaultCustomScope(catalog: CompetitionCatalogEntry[]): CompetitionCata
 
 function seasonForScope(membership: SearchPlayerMembership | SearchTeamMembership, scopeKind: VisualScopeKind): string {
   return scopeKind === 'league' || scopeKind === 'competition' ? membership.season : membership.aggregate_season ?? membership.season
+}
+
+function membershipForSeasonAndScope(
+  memberships: Array<SearchPlayerMembership | SearchTeamMembership>,
+  seasonLabel: string,
+  scopeKind: VisualScopeKind,
+  scopeCode: string,
+  positionGroup?: string,
+) {
+  const candidates = memberships.filter(membership =>
+    seasonForScope(membership, scopeKind) === seasonLabel
+    && (!positionGroup || !('position_group' in membership) || membership.position_group === positionGroup),
+  )
+  if (scopeKind === 'league' || scopeKind === 'competition') {
+    return candidates.find(membership => membership.competition === scopeCode)
+  }
+  return candidates.find(membership => membership.competition_type === 'domestic_league' && membership.include_in_domestic_aggregates)
+    ?? candidates.find(membership => membership.competition_type === 'domestic_league')
+    ?? candidates[0]
 }
 
 function seasonsForSelectedEntity(block: VisualArticleBlock, data?: { players: SearchPlayerEntity[]; teams: SearchTeamEntity[] }): string[] {

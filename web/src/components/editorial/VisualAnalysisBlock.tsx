@@ -73,6 +73,7 @@ export function VisualAnalysisBlock({ block, editor = false }: { block: VisualAr
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2 font-mono text-[7px] uppercase tracking-[0.12em] text-ink-muted">
           <span className="border border-line px-2 py-1">vs {block.config.context.scope_label || 'scope not set'}</span>
+          <span className="border border-line px-2 py-1">{block.config.context.season_label || 'season not set'}</span>
           <span className="border border-line px-2 py-1">{block.config.rate_mode === 'per90' ? 'Per 90' : 'Totals'}</span>
         </div>
       </header>
