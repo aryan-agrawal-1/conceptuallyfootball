@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
+  BarChart3,
   ChevronRight,
   Copy,
   ExternalLink,
@@ -22,6 +23,7 @@ import {
 import { Link, useBlocker, useNavigate, useParams } from 'react-router-dom'
 import { ArticleCanvas } from '../components/editorial/ArticleCanvas'
 import { BlockEditor } from '../components/editorial/BlockEditor'
+import { VisualBlockPicker } from '../components/editorial/VisualBlockPicker'
 import { StaffFrame } from '../components/staff/StaffFrame'
 import { StaffRoute } from '../components/staff/StaffRoute'
 import { useStaffAuth } from '../context/StaffAuthContext'
@@ -43,6 +45,8 @@ import {
   type ArticleDraft,
   type ArticleRevision,
   type ArticleSummary,
+  type VisualArticleBlock,
+  type VisualBlockType,
 } from '../lib/editorial'
 
 const ARTICLE_LIST_KEY = ['editorial-articles'] as const
@@ -194,6 +198,12 @@ function ArticleEditor() {
   const [saveError, setSaveError] = useState('')
   const [mode, setMode] = useState<'write' | 'reader'>('write')
   const [copied, setCopied] = useState(false)
+  const [visualPicker, setVisualPicker] = useState<{
+    replaceBlockId?: string
+    insertAfterIndex?: number
+    initialType?: VisualBlockType
+    initialBlock?: VisualArticleBlock
+  } | null>(null)
   const initializedIdRef = useRef('')
   const draftRef = useRef<ArticleDraft | null>(null)
   const revisionRef = useRef(1)
@@ -339,6 +349,26 @@ function ArticleEditor() {
     requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-editor-block-id="${block.id}"]`)?.focus())
   }
 
+  function insertVisual(block: VisualArticleBlock) {
+    const target = visualPicker
+    if (!target) return
+    const continuation = target.initialBlock ? null : newBlock('paragraph')
+    editDraft(current => {
+      const blocks = [...current.document.blocks]
+      if (target.replaceBlockId) {
+        const index = blocks.findIndex(item => item.id === target.replaceBlockId)
+        if (index < 0) return current
+        blocks.splice(index, 1, block, ...(continuation ? [continuation] : []))
+      } else {
+        const index = target.insertAfterIndex ?? blocks.length - 1
+        blocks.splice(index + 1, 0, block, ...(continuation ? [continuation] : []))
+      }
+      return { ...current, document: { ...current.document, blocks } }
+    })
+    setVisualPicker(null)
+    if (continuation) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-editor-block-id="${continuation.id}"]`)?.focus())
+  }
+
   function removeBlock(index: number) {
     editDraft(current => {
       const blocks = current.document.blocks.filter((_, blockIndex) => blockIndex !== index)
@@ -433,13 +463,13 @@ function ArticleEditor() {
             <ArticleCanvas title={draft.title} subtitle={draft.subtitle} document={draft.document} author={article.author} updatedAt={article.updated_at} />
           ) : (
             <div className="mx-auto max-w-[760px] px-7 py-12 sm:px-12 sm:py-16">
-              <p className="font-mono text-[8px] uppercase tracking-[0.22em] text-electric">Draft · Revision {article.revision}</p>
+              <div className="flex flex-wrap items-center justify-between gap-3"><p className="font-mono text-[8px] uppercase tracking-[0.22em] text-electric">Draft · Revision {article.revision}</p><button type="button" onClick={() => setVisualPicker({ insertAfterIndex: draft.document.blocks.length - 1 })} className="inline-flex h-9 items-center gap-2 border border-electric/35 bg-electric-dim/25 px-3 text-[8px] font-black uppercase tracking-[0.14em] text-electric hover:border-electric hover:bg-electric hover:text-mat"><BarChart3 className="size-3.5" /> Add visual <span className="hidden font-mono font-normal opacity-60 sm:inline">/chart</span></button></div>
               <textarea value={draft.title} onChange={event => editDraft(current => ({ ...current, title: event.target.value }))} rows={2} maxLength={180} placeholder="Untitled analysis" className="mt-5 w-full resize-none bg-transparent text-4xl font-black leading-[1.05] tracking-[-0.05em] text-ink placeholder:text-ink-muted focus:outline-none sm:text-5xl" />
               <textarea value={draft.subtitle} onChange={event => editDraft(current => ({ ...current, subtitle: event.target.value }))} rows={3} maxLength={280} placeholder="A clear standfirst that tells readers why this matters…" className="mt-4 w-full resize-none bg-transparent text-base leading-7 text-ink-dim placeholder:text-ink-muted focus:outline-none" />
               <div className="mt-8 border-t border-line pt-10">
                 <div className="space-y-4">
                   {draft.document.blocks.map((block, index) => (
-                    <BlockEditor key={block.id} block={block} index={index} total={draft.document.blocks.length} onChange={next => updateBlock(block.id, next)} onMove={direction => moveBlock(index, direction)} onRemove={() => removeBlock(index)} onInsertAfter={next => insertBlockAfter(index, next)} onBackspaceEmpty={() => removeEmptyBlock(index)} />
+                    <BlockEditor key={block.id} block={block} index={index} total={draft.document.blocks.length} onChange={next => updateBlock(block.id, next)} onMove={direction => moveBlock(index, direction)} onRemove={() => removeBlock(index)} onInsertAfter={next => insertBlockAfter(index, next)} onBackspaceEmpty={() => removeEmptyBlock(index)} onRequestVisual={(initialType, initialBlock) => setVisualPicker({ replaceBlockId: block.id, initialType, initialBlock })} />
                   ))}
                 </div>
               </div>
@@ -484,6 +514,7 @@ function ArticleEditor() {
           onContinue={continueFromRevision}
         />
       ) : null}
+      {visualPicker ? <VisualBlockPicker initialType={visualPicker.initialType} initialBlock={visualPicker.initialBlock} onClose={() => setVisualPicker(null)} onInsert={insertVisual} /> : null}
     </main>
   )
 }

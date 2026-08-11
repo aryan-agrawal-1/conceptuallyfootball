@@ -1,7 +1,8 @@
-import { ArrowDown, ArrowUp, GripVertical, Link2, Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, BarChart3, GripVertical, Link2, Plus, Trash2 } from 'lucide-react'
 import { useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactElement } from 'react'
-import { inlineText, plainText, type ArticleBlock, type InlineContent } from '../../lib/editorial'
+import { inlineText, plainText, type ArticleBlock, type InlineContent, type VisualArticleBlock, type VisualBlockType } from '../../lib/editorial'
 import { InlineTextEditor, type InlineTextEditorHandle } from './InlineTextEditor'
+import { VisualAnalysisBlock } from './VisualAnalysisBlock'
 
 const metaInputClass = 'h-9 w-full border border-line bg-mat px-3 text-xs text-ink placeholder:text-ink-muted focus:border-electric focus:outline-none'
 
@@ -17,7 +18,16 @@ const BLOCK_TYPES = [
   { value: 'divider', label: 'Divider', keywords: 'divider rule separator' },
 ] as const
 
+const VISUAL_COMMANDS = [
+  { value: 'visual:similar_players', label: 'Similar players', keywords: 'visual chart similarity player' },
+  { value: 'visual:player_radar', label: 'Player radar', keywords: 'visual chart pizza radar player percentile' },
+  { value: 'visual:stat_card', label: 'Key-stat cards', keywords: 'visual player team stats percentile cards' },
+  { value: 'visual:player_comparison', label: 'Player comparison', keywords: 'visual compare versus radar' },
+  { value: 'visual:custom_chart', label: 'Custom chart', keywords: 'visual graph scatter bar x y player team' },
+] as const
+
 type BlockTypeChoice = typeof BLOCK_TYPES[number]['value']
+type SlashCommandChoice = BlockTypeChoice | typeof VISUAL_COMMANDS[number]['value']
 
 export function BlockEditor({
   block,
@@ -28,6 +38,7 @@ export function BlockEditor({
   onRemove,
   onInsertAfter,
   onBackspaceEmpty,
+  onRequestVisual,
 }: {
   block: ArticleBlock
   index: number
@@ -37,16 +48,17 @@ export function BlockEditor({
   onRemove: () => void
   onInsertAfter: (block: ArticleBlock) => void
   onBackspaceEmpty: () => boolean
+  onRequestVisual: (visualType: VisualBlockType, existing?: VisualArticleBlock) => void
 }) {
   const activeEditorRef = useRef<InlineTextEditorHandle | null>(null)
   const [linkEditor, setLinkEditor] = useState<InlineTextEditorHandle | null>(null)
   const [linkUrl, setLinkUrl] = useState('')
   const [linkError, setLinkError] = useState('')
-  const [selectedCommand, setSelectedCommand] = useState<BlockTypeChoice | null>(null)
+  const [selectedCommand, setSelectedCommand] = useState<SlashCommandChoice | null>(null)
   const slashQuery = block.type === 'paragraph' && plainText(block.content).startsWith('/')
     ? plainText(block.content).slice(1).trim().toLowerCase()
     : null
-  const matchingCommands = useMemo(() => slashQuery === null ? [] : BLOCK_TYPES.filter(command => `${command.label} ${command.keywords}`.toLowerCase().includes(slashQuery)), [slashQuery])
+  const matchingCommands = useMemo(() => slashQuery === null ? [] : [...BLOCK_TYPES, ...VISUAL_COMMANDS].filter(command => `${command.label} ${command.keywords}`.toLowerCase().includes(slashQuery)), [slashQuery])
   const selectedCommandIndex = Math.max(0, matchingCommands.findIndex(command => command.value === selectedCommand))
 
   function changeType(value: BlockTypeChoice) {
@@ -54,9 +66,15 @@ export function BlockEditor({
     requestAnimationFrame(() => focusEditor(block.id))
   }
 
-  function chooseCommand(value: BlockTypeChoice) {
+  function chooseCommand(value: SlashCommandChoice) {
+    if (value.startsWith('visual:')) {
+      onChange({ id: block.id, type: 'paragraph', content: inlineText('') })
+      onRequestVisual(value.slice('visual:'.length) as VisualBlockType)
+      setSelectedCommand(null)
+      return
+    }
     const commandBlock = block.type === 'paragraph' ? { ...block, content: inlineText('') } : block
-    onChange(convertBlock(commandBlock, value))
+    onChange(convertBlock(commandBlock, value as BlockTypeChoice))
     setSelectedCommand(null)
     requestAnimationFrame(() => focusEditor(block.id))
   }
@@ -94,18 +112,20 @@ export function BlockEditor({
 
   return (
     <section className="group relative -mx-4 px-4 py-1.5" data-block-type={block.type}>
-      <div className="pointer-events-none absolute -left-9 top-0 z-10 hidden w-8 flex-col items-center gap-0.5 border border-line bg-panel p-0.5 opacity-0 shadow-lg group-hover:pointer-events-auto group-hover:flex group-hover:opacity-100 lg:flex lg:transition-opacity">
+      <div className={`pointer-events-none absolute z-10 hidden w-12 opacity-0 group-hover:pointer-events-auto group-hover:flex group-hover:opacity-100 lg:flex lg:transition-opacity ${block.type === 'visual' ? '-left-12 inset-y-0 items-start pt-5' : '-left-9 top-0 items-start'}`}>
+        <div className={`relative flex w-8 flex-col items-center gap-0.5 border border-line bg-panel p-0.5 shadow-lg ${block.type === 'visual' ? 'sticky top-20 after:absolute after:left-full after:top-0 after:h-20 after:w-5 after:[clip-path:polygon(0_0,100%_50%,0_100%)]' : ''}`}>
         <BlockAction label="Add block below" onClick={() => onInsertAfter({ id: crypto.randomUUID(), type: 'paragraph', content: inlineText('') })}><Plus /></BlockAction>
-        <label className="relative flex size-7 cursor-pointer items-center justify-center border border-transparent text-ink-muted transition-[color,background-color,border-color,transform] duration-150 hover:-translate-y-px hover:border-electric hover:bg-electric hover:text-mat focus-within:border-electric focus-within:bg-electric focus-within:text-mat" title="Change block type">
+        {block.type === 'visual' ? <BlockAction label="Edit visual" onClick={() => onRequestVisual(block.visual_type, block)}><BarChart3 /></BlockAction> : <label className="relative flex size-7 cursor-pointer items-center justify-center border border-transparent text-ink-muted transition-[color,background-color,border-color,transform] duration-150 hover:-translate-y-px hover:border-electric hover:bg-electric hover:text-mat focus-within:border-electric focus-within:bg-electric focus-within:text-mat" title="Change block type">
           <GripVertical className="size-3.5" />
           <select value={blockChoice(block)} onChange={event => changeType(event.target.value as BlockTypeChoice)} className="absolute inset-0 cursor-pointer opacity-0" aria-label="Change block type">
             {BLOCK_TYPES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
-        </label>
+        </label>}
         {isTextBlock(block) ? <BlockAction label="Link selected text" onMouseDown={event => event.preventDefault()} onClick={() => openLink()}><Link2 /></BlockAction> : null}
         <BlockAction label="Move up" disabled={index === 0} onClick={() => onMove(-1)}><ArrowUp /></BlockAction>
         <BlockAction label="Move down" disabled={index === total - 1} onClick={() => onMove(1)}><ArrowDown /></BlockAction>
         <BlockAction label="Delete block" onClick={onRemove} destructive><Trash2 /></BlockAction>
+        </div>
       </div>
 
       {linkEditor ? (
@@ -224,6 +244,8 @@ function BlockFields({
           </div>
         </div>
       )
+    case 'visual':
+      return <VisualAnalysisBlock block={block} editor />
     case 'divider':
       return <div className="py-7"><hr className="border-0 border-t border-line" /></div>
   }
@@ -248,16 +270,17 @@ function convertBlock(block: ArticleBlock, choice: BlockTypeChoice): ArticleBloc
 function contentFromBlock(block: ArticleBlock): InlineContent {
   if (block.type === 'heading' || block.type === 'paragraph' || block.type === 'quote' || block.type === 'callout') return block.content
   if (block.type === 'bulleted_list' || block.type === 'numbered_list') return block.items[0] ?? inlineText('')
-  if (block.type === 'image') return inlineText(block.caption || block.alt)
+  if (block.type === 'image' || block.type === 'visual') return inlineText(block.caption || block.alt)
   return inlineText('')
 }
 
 function blockChoice(block: ArticleBlock): BlockTypeChoice {
+  if (block.type === 'visual') return 'paragraph'
   return block.type === 'heading' ? `heading:${block.level}` : block.type
 }
 
 function isTextBlock(block: ArticleBlock): boolean {
-  return block.type !== 'image' && block.type !== 'divider'
+  return block.type !== 'image' && block.type !== 'visual' && block.type !== 'divider'
 }
 
 function normalizeLink(value: string): string {
