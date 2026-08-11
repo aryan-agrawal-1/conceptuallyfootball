@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 
 from django.contrib.auth.models import User
 from django.test import Client, TestCase
@@ -13,9 +14,12 @@ from editorial.models import (
     Article,
     ArticlePlayerReference,
     ArticlePlayerSubject,
+    ArticlePublication,
     ArticleRevision,
+    ArticleStatus,
     ArticleTeamReference,
     ArticleTeamSubject,
+    ArticleWorkflowEvent,
 )
 from ingestion.models import CanonicalPlayer, CanonicalTeam
 
@@ -45,6 +49,24 @@ class EditorialApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 201)
         return response.json()["article"]
+
+    def create_approver(self, email: str = "approver@example.com"):
+        user = User.objects.create_user(username=email, email=email, password="Touchline-Notebook-2026!")
+        StaffAccess.objects.create(user=user, role=StaffRole.APPROVER, must_change_password=False)
+        configure_user_role(user, StaffRole.APPROVER)
+        WriterProfile.objects.create(
+            user=user,
+            display_name="Approving Editor",
+            completed_at=timezone.now(),
+        )
+        return User.objects.get(pk=user.pk)
+
+    def workflow(self, client: Client, article_id: str, action: str, **payload):
+        return client.post(
+            reverse("editorial-article-workflow", kwargs={"article_id": article_id}),
+            data=json.dumps({"action": action, **payload}),
+            content_type="application/json",
+        )
 
     def patch_article(self, article_id: str, payload: dict):
         return self.client.patch(
@@ -256,6 +278,7 @@ class EditorialApiTests(TestCase):
         self.assertIn("no-store", shared["Cache-Control"])
         self.assertEqual(shared["X-Robots-Tag"], "noindex, nofollow, noarchive")
         self.assertNotIn("preview_token", shared.json()["article"])
+        self.assertNotIn("workflow_events", shared.json()["article"])
 
         disabled = self.client.post(
             reverse("editorial-article-preview", kwargs={"article_id": created["id"]}),
@@ -273,6 +296,190 @@ class EditorialApiTests(TestCase):
         self.assertEqual(reenabled.status_code, 200)
         self.assertNotEqual(reenabled.json()["article"]["preview_token"], active_token)
         self.assertEqual(anonymous.get(preview_url).status_code, 404)
+
+    def test_preview_link_expires_and_reports_its_expiry(self):
+        created = self.create_article()
+        enabled = self.client.post(
+            reverse("editorial-article-preview", kwargs={"article_id": created["id"]}),
+            data=json.dumps({"enabled": True, "expires_in_hours": 24}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(enabled.status_code, 200)
+        article_payload = enabled.json()["article"]
+        self.assertIsNotNone(article_payload["preview_expires_at"])
+        article = Article.objects.get(id=created["id"])
+        article.preview_expires_at = timezone.now() - timedelta(seconds=1)
+        article.save(update_fields=("preview_expires_at",))
+
+        response = Client().get(
+            reverse("editorial-shared-preview", kwargs={"token": article.preview_token})
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_writer_submits_and_cannot_edit_or_publish_directly(self):
+        created = self.create_article()
+
+        submitted = self.workflow(self.client, created["id"], "submit")
+
+        self.assertEqual(submitted.status_code, 200)
+        self.assertEqual(submitted.json()["article"]["status"], ArticleStatus.SUBMITTED)
+        locked = self.patch_article(
+            created["id"],
+            {
+                "revision": created["revision"],
+                "title": "Changed after submission",
+                "document": created["document"],
+            },
+        )
+        self.assertEqual(locked.status_code, 409)
+        direct_publish = self.workflow(self.client, created["id"], "publish")
+        self.assertEqual(direct_publish.status_code, 409)
+        self.assertEqual(Article.objects.get(id=created["id"]).status, ArticleStatus.SUBMITTED)
+
+    def test_approver_reviews_relationships_requests_changes_and_writer_resubmits(self):
+        player = CanonicalPlayer.objects.create(display_name="Review Subject")
+        created = self.create_article()
+        saved = self.patch_article(
+            created["id"],
+            {
+                "revision": 1,
+                "title": "Relationship review",
+                "subtitle": "",
+                "subjects": {
+                    "players": [{"kind": "player", "id": player.id, "name": player.display_name}],
+                    "teams": [],
+                },
+                "document": created["document"],
+            },
+        ).json()["article"]
+        self.workflow(self.client, created["id"], "submit")
+        approver_client = Client()
+        approver_client.force_login(self.create_approver())
+
+        review = approver_client.get(
+            reverse("editorial-article-detail", kwargs={"article_id": created["id"]})
+        )
+        self.assertEqual(review.status_code, 200)
+        self.assertEqual(review.json()["article"]["subjects"]["players"][0]["id"], player.id)
+        requested = self.workflow(
+            approver_client,
+            created["id"],
+            "request_changes",
+            note="Verify the opening claim.",
+        )
+        self.assertEqual(requested.status_code, 200)
+        self.assertEqual(requested.json()["article"]["status"], ArticleStatus.CHANGES_REQUESTED)
+
+        revised = self.patch_article(
+            created["id"],
+            {
+                "revision": saved["revision"],
+                "title": "Relationship review revised",
+                "subtitle": "",
+                "subjects": saved["subjects"],
+                "document": saved["document"],
+            },
+        )
+        self.assertEqual(revised.status_code, 200)
+        resubmitted = self.workflow(self.client, created["id"], "submit")
+        self.assertEqual(resubmitted.json()["article"]["status"], ArticleStatus.SUBMITTED)
+        self.assertEqual(
+            [event.action for event in ArticleWorkflowEvent.objects.filter(article_id=created["id"]).order_by("created_at", "id")],
+            ["submitted", "changes_requested", "submitted"],
+        )
+
+    def test_approver_publishes_and_unpublishes_auditable_snapshot(self):
+        player = CanonicalPlayer.objects.create(display_name="Public Subject")
+        created = self.create_article()
+        saved = self.patch_article(
+            created["id"],
+            {
+                "revision": 1,
+                "title": "Published relationship",
+                "subtitle": "",
+                "subjects": {
+                    "players": [{"kind": "player", "id": player.id, "name": player.display_name}],
+                    "teams": [],
+                },
+                "document": created["document"],
+            },
+        ).json()["article"]
+        self.workflow(self.client, created["id"], "submit")
+        approver_client = Client()
+        approver_client.force_login(self.create_approver())
+
+        published = self.workflow(approver_client, created["id"], "publish")
+
+        self.assertEqual(published.status_code, 200)
+        self.assertEqual(published.json()["article"]["status"], ArticleStatus.PUBLISHED)
+        publication = ArticlePublication.objects.get(article_id=created["id"])
+        self.assertEqual(publication.revision, saved["revision"])
+        self.assertEqual(publication.subjects["players"][0]["id"], player.id)
+        public_related = Client().get(
+            reverse("editorial-player-related-analysis", kwargs={"entity_id": player.id})
+        )
+        self.assertEqual(len(public_related.json()["subjects_of"]), 1)
+
+        locked = self.patch_article(
+            created["id"],
+            {"revision": saved["revision"], "title": "Unsafe edit", "document": saved["document"]},
+        )
+        self.assertEqual(locked.status_code, 409)
+        unpublished = self.workflow(approver_client, created["id"], "unpublish")
+        self.assertEqual(unpublished.json()["article"]["status"], ArticleStatus.APPROVED)
+        self.assertIsNotNone(ArticlePublication.objects.get(pk=publication.pk).unpublished_at)
+        private_related = Client().get(
+            reverse("editorial-player-related-analysis", kwargs={"entity_id": player.id})
+        )
+        self.assertEqual(private_related.json()["subjects_of"], [])
+
+    def test_scheduled_article_is_private_until_due_then_publishes_automatically(self):
+        player = CanonicalPlayer.objects.create(display_name="Scheduled Subject")
+        created = self.create_article()
+        self.patch_article(
+            created["id"],
+            {
+                "revision": 1,
+                "title": "Scheduled analysis",
+                "subtitle": "",
+                "subjects": {
+                    "players": [{"kind": "player", "id": player.id, "name": player.display_name}],
+                    "teams": [],
+                },
+                "document": created["document"],
+            },
+        )
+        self.workflow(self.client, created["id"], "submit")
+        approver_client = Client()
+        approver_client.force_login(self.create_approver())
+        future = timezone.now() + timedelta(days=1)
+        scheduled = self.workflow(
+            approver_client,
+            created["id"],
+            "publish",
+            publish_at=future.isoformat(),
+        )
+        self.assertEqual(scheduled.json()["article"]["status"], ArticleStatus.SCHEDULED)
+        before = Client().get(
+            reverse("editorial-player-related-analysis", kwargs={"entity_id": player.id})
+        )
+        self.assertEqual(before.json()["subjects_of"], [])
+
+        Article.objects.filter(id=created["id"]).update(scheduled_for=timezone.now() - timedelta(seconds=1))
+        after = Client().get(
+            reverse("editorial-player-related-analysis", kwargs={"entity_id": player.id})
+        )
+        self.assertEqual(len(after.json()["subjects_of"]), 1)
+        article = Article.objects.get(id=created["id"])
+        self.assertEqual(article.status, ArticleStatus.PUBLISHED)
+        self.assertTrue(
+            ArticleWorkflowEvent.objects.filter(
+                article=article,
+                action="published",
+                metadata__automatic=True,
+            ).exists()
+        )
 
     def test_inline_links_are_normalized_and_legacy_link_blocks_are_upgraded(self):
         created = self.create_article()

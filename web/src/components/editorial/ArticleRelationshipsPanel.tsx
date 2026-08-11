@@ -21,20 +21,22 @@ export function ArticleRelationshipsPanel({
   entities,
   loading,
   onChange,
+  readOnly = false,
 }: {
   subjects: ArticleRelationships
   references: ArticleRelationships
   entities?: SearchEntitiesResponse
   loading: boolean
   onChange: (subjects: ArticleRelationships) => void
+  readOnly?: boolean
 }) {
   return (
     <div className="space-y-5">
       <div className="border-l-2 border-electric bg-electric-dim/25 px-3 py-2.5">
-        <p className="text-[11px] leading-5 text-ink-dim"><strong className="text-ink">Subjects drive discovery.</strong> Add the players and teams this piece is principally about.</p>
+        <p className="text-[11px] leading-5 text-ink-dim"><strong className="text-ink">Subjects drive discovery.</strong> {readOnly ? 'Verify these separately from inline references before approval.' : 'Add the players and teams this piece is principally about.'}</p>
       </div>
-      <SubjectGroup kind="player" selected={subjects.players} entities={entities} loading={loading} onChange={players => onChange({ ...subjects, players })} />
-      <SubjectGroup kind="team" selected={subjects.teams} entities={entities} loading={loading} onChange={teams => onChange({ ...subjects, teams })} />
+      <SubjectGroup kind="player" selected={subjects.players} entities={entities} loading={loading} readOnly={readOnly} onChange={players => onChange({ ...subjects, players })} />
+      <SubjectGroup kind="team" selected={subjects.teams} entities={entities} loading={loading} readOnly={readOnly} onChange={teams => onChange({ ...subjects, teams })} />
       <div className="border-t border-line pt-5">
         <p className="flex items-center gap-2 font-mono text-[8px] uppercase tracking-[0.18em] text-ink-muted"><AtSign className="size-3 text-electric" /> References in draft</p>
         <p className="mt-2 text-[10px] leading-4 text-ink-muted">Type @ while writing. Mentions stay separate from subjects.</p>
@@ -50,12 +52,14 @@ function SubjectGroup({
   entities,
   loading,
   onChange,
+  readOnly,
 }: {
   kind: EditorialEntityKind
   selected: EditorialEntityReference[]
   entities?: SearchEntitiesResponse
   loading: boolean
   onChange: (next: EditorialEntityReference[]) => void
+  readOnly: boolean
 }) {
   const [query, setQuery] = useState('')
   const options = useMemo(() => {
@@ -88,12 +92,12 @@ function SubjectGroup({
           <div key={`${entity.kind}-${entity.id}`} className="border border-line bg-panel/60 p-2.5">
             <div className="flex items-center gap-2">
               <a href={editorialEntityPath(entity)} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate text-xs font-bold text-ink hover:text-electric">{entity.name}</a>
-              <button type="button" onClick={() => onChange(selected.filter((_, selectedIndex) => selectedIndex !== index))} className="grid size-7 place-items-center text-ink-muted hover:text-ember" aria-label={`Remove ${entity.name} as a subject`}><X className="size-3.5" /></button>
+              {!readOnly ? <button type="button" onClick={() => onChange(selected.filter((_, selectedIndex) => selectedIndex !== index))} className="grid size-7 place-items-center text-ink-muted hover:text-ember" aria-label={`Remove ${entity.name} as a subject`}><X className="size-3.5" /></button> : null}
             </div>
           </div>
         ))}
       </div>
-      {selected.length < MAX_SUBJECTS ? (
+      {!readOnly && selected.length < MAX_SUBJECTS ? (
         <div className="relative mt-2">
           <label className="flex h-9 items-center gap-2 border border-line bg-mat px-3 focus-within:border-electric">
             <Search className="size-3.5 text-ink-muted" />

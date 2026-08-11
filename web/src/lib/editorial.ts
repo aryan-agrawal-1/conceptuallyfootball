@@ -1,6 +1,21 @@
 import type { SocialLinks } from './staffAuth'
 
-export type ArticleStatus = 'draft'
+export type ArticleStatus =
+  | 'draft'
+  | 'submitted'
+  | 'changes_requested'
+  | 'approved'
+  | 'scheduled'
+  | 'published'
+  | 'archived'
+export type ArticleWorkflowAction =
+  | 'submit'
+  | 'request_changes'
+  | 'approve'
+  | 'publish'
+  | 'unpublish'
+  | 'archive'
+  | 'restore'
 export type CalloutTone = 'note' | 'insight' | 'warning'
 export type EditorialEntityKind = 'player' | 'team'
 
@@ -114,6 +129,12 @@ export interface ArticleSummary {
   status: ArticleStatus
   revision: number
   preview_enabled: boolean
+  preview_expires_at: string | null
+  submitted_at: string | null
+  approved_at: string | null
+  scheduled_for: string | null
+  published_at: string | null
+  author: { id: number; display_name: string }
   created_at: string
   updated_at: string
 }
@@ -125,6 +146,19 @@ export interface Article extends ArticleSummary {
   references: ArticleRelationships
   preview_token: string | null
   revisions: { number: number; created_at: string }[]
+  workflow_events: ArticleWorkflowEvent[]
+}
+
+export interface ArticleWorkflowEvent {
+  id: number
+  action: string
+  from_status: ArticleStatus
+  to_status: ArticleStatus
+  revision: number
+  note: string
+  metadata: Record<string, unknown>
+  actor: { id: number; display_name: string } | null
+  created_at: string
 }
 
 export interface ArticleRevision {
@@ -244,6 +278,22 @@ export async function setArticlePreview(
   const body = await privateRequest<{ article: Article }>(`/articles/${id}/preview`, {
     method: 'POST',
     body: JSON.stringify({ enabled, rotate }),
+  })
+  return body.article
+}
+
+export async function transitionArticle(
+  id: string,
+  action: ArticleWorkflowAction,
+  options: { note?: string; publishAt?: string } = {},
+): Promise<Article> {
+  const body = await privateRequest<{ article: Article }>(`/articles/${id}/workflow`, {
+    method: 'POST',
+    body: JSON.stringify({
+      action,
+      note: options.note ?? '',
+      publish_at: options.publishAt ?? null,
+    }),
   })
   return body.article
 }
