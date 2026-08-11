@@ -20,7 +20,7 @@ const BLOCK_TYPES = [
 
 const VISUAL_COMMANDS = [
   { value: 'visual:similar_players', label: 'Similar players', keywords: 'visual chart similarity player' },
-  { value: 'visual:player_radar', label: 'Player radar', keywords: 'visual chart pizza radar player percentile' },
+  { value: 'visual:player_radar', label: 'Player profile', keywords: 'visual chart pizza radar player profile percentile' },
   { value: 'visual:stat_card', label: 'Key-stat cards', keywords: 'visual player team stats percentile cards' },
   { value: 'visual:player_comparison', label: 'Player comparison', keywords: 'visual compare versus radar' },
   { value: 'visual:custom_chart', label: 'Custom chart', keywords: 'visual graph scatter bar x y player team' },

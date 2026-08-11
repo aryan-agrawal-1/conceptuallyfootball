@@ -308,7 +308,7 @@ function defaultVisualTitle(block: VisualArticleBlock): string {
 }
 
 function visualTypeLabel(type: VisualArticleBlock['visual_type']): string {
-  return ({ similar_players: 'Similar player view', player_radar: 'Player pizza', stat_card: 'Stat cards', player_comparison: 'Player comparison', custom_chart: 'Custom chart' })[type]
+  return ({ similar_players: 'Similar player view', player_radar: 'Player profile', stat_card: 'Stat cards', player_comparison: 'Player comparison', custom_chart: 'Custom chart' })[type]
 }
 
 function metricLabel(meta: StatMeta, key: string): string {

@@ -53,7 +53,7 @@ const VISUAL_TYPES: Array<{
   hint: string
 }> = [
   { type: 'similar_players', label: 'Similar players', description: 'A ranked set of stylistic matches for one player.', icon: Sparkles, hint: '1 player · scope' },
-  { type: 'player_radar', label: 'Player radar', description: 'A focused percentile shape with your chosen axes.', icon: Radar, hint: '1 player · 3–12 metrics' },
+  { type: 'player_radar', label: 'Player profile', description: 'A focused percentile pizza with your chosen metrics.', icon: Radar, hint: '1 player · 3–12 metrics' },
   { type: 'stat_card', label: 'Key-stat cards', description: 'A fast row of player or team numbers and ranks.', icon: Target, hint: 'Player or team · 1–4 metrics' },
   { type: 'player_comparison', label: 'Player comparison', description: 'Compare two or three players on the same axes.', icon: GitCompareArrows, hint: '2–3 players · shared scope' },
   { type: 'custom_chart', label: 'Custom chart', description: 'Build a scatter or ranked bar chart for players or teams.', icon: BarChart3, hint: 'Cohort · x/y or metric' },
