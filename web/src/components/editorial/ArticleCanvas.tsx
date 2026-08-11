@@ -2,6 +2,7 @@ import { ImageIcon, Lightbulb, TriangleAlert } from 'lucide-react'
 import type { Article, ArticleBlock, ArticleDocument, InlineContent } from '../../lib/editorial'
 import type { SocialPlatform } from '../../lib/staffAuth'
 import { SocialBrandIcon } from '../social/SocialBrandIcon'
+import { VisualAnalysisBlock } from './VisualAnalysisBlock'
 
 export function ArticleCanvas({
   title,
@@ -114,6 +115,8 @@ function RenderedBlock({ block }: { block: ArticleBlock }) {
           {block.caption ? <figcaption className="mt-3 text-center font-mono text-[9px] leading-5 text-ink-muted">{block.caption}</figcaption> : null}
         </figure>
       )
+    case 'visual':
+      return <VisualAnalysisBlock block={block} />
     case 'divider':
       return <hr className="my-12 border-0 border-t border-line" />
   }

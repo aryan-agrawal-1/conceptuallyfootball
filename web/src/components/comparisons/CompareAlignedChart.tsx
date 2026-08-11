@@ -40,9 +40,16 @@ function playerRowKey(row: PlayerRow): string {
   return `${row.competition_code}:${row.season_label}:${row.canonical_player_id}`
 }
 
-function readoutTransform(percentile: number, placement: 'left' | 'center' | 'right'): string {
+type ReadoutPlacement = {
+  alignment: 'left' | 'center' | 'right' | 'inside-left' | 'inside-right'
+  lane: number
+}
+
+function readoutTransform(percentile: number, placement: ReadoutPlacement['alignment']): string {
   if (placement === 'left') return 'translateX(calc(-100% - 8px))'
   if (placement === 'right') return 'translateX(8px)'
+  if (placement === 'inside-left') return 'translateX(0)'
+  if (placement === 'inside-right') return 'translateX(-100%)'
   if (percentile <= 8) return 'translateX(0)'
   if (percentile >= 92) return 'translateX(-100%)'
   return 'translateX(-50%)'
@@ -50,21 +57,32 @@ function readoutTransform(percentile: number, placement: 'left' | 'center' | 'ri
 
 function readoutPlacements(
   values: Array<{ plotPercentile: number | null; row: PlayerRow }>,
-): Map<string, 'left' | 'center' | 'right'> {
-  const placementByPlayer = new Map<string, 'left' | 'center' | 'right'>()
+): Map<string, ReadoutPlacement> {
+  const placementByPlayer = new Map<string, ReadoutPlacement>()
   const plotted = values
     .filter((value): value is { plotPercentile: number; row: PlayerRow } => value.plotPercentile != null)
     .sort((left, right) => left.plotPercentile - right.plotPercentile)
 
-  plotted.forEach(value => placementByPlayer.set(playerRowKey(value.row), 'center'))
+  plotted.forEach(value => placementByPlayer.set(playerRowKey(value.row), { alignment: 'center', lane: 0 }))
 
-  for (let index = 0; index < plotted.length - 1; index += 1) {
-    const left = plotted[index]
-    const right = plotted[index + 1]
-    if (right.plotPercentile - left.plotPercentile > 12) continue
-
-    placementByPlayer.set(playerRowKey(left.row), 'left')
-    placementByPlayer.set(playerRowKey(right.row), 'right')
+  for (let start = 0; start < plotted.length;) {
+    let end = start
+    while (end < plotted.length - 1 && plotted[end + 1].plotPercentile - plotted[end].plotPercentile <= 12) end += 1
+    const cluster = plotted.slice(start, end + 1)
+    if (cluster.length > 1) {
+      const alignment = cluster[0].plotPercentile <= 12
+        ? 'inside-left'
+        : cluster.at(-1)!.plotPercentile >= 88
+          ? 'inside-right'
+          : 'center'
+      if (cluster.length === 2 && alignment === 'center') {
+        placementByPlayer.set(playerRowKey(cluster[0].row), { alignment: 'left', lane: 0 })
+        placementByPlayer.set(playerRowKey(cluster[1].row), { alignment: 'right', lane: 0 })
+      } else {
+        cluster.forEach((value, lane) => placementByPlayer.set(playerRowKey(value.row), { alignment, lane }))
+      }
+    }
+    start = end + 1
   }
 
   return placementByPlayer
@@ -185,6 +203,7 @@ export function CompareAlignedChart({
               ? { left: Math.min(...plotted), width: Math.abs(plotted[1] - plotted[0]) }
               : null
           const readoutPlacementByPlayer = readoutPlacements(row.values)
+          const maximumReadoutLane = Math.max(0, ...Array.from(readoutPlacementByPlayer.values(), placement => placement.lane))
           return (
             <div
               key={row.key}
@@ -219,7 +238,7 @@ export function CompareAlignedChart({
                 </div>
                 <div
                   className="relative"
-                  style={{ height: exportMode ? 58 : 55 }}
+                  style={{ height: (exportMode ? 58 : 55) + maximumReadoutLane * 14 }}
                 >
                   <div className="absolute inset-x-0 top-[18px] h-px -translate-y-1/2 bg-line-bright/70" />
                   {[25, 50, 75].map(tick => (
@@ -253,9 +272,9 @@ export function CompareAlignedChart({
                         tabIndex={exportMode ? undefined : 0}
                         aria-label={exportMode ? undefined : accessibleLabel}
                         title={exportMode ? undefined : accessibleLabel}
-                        className="group absolute top-[18px] z-10 -translate-x-1/2 -translate-y-1/2 outline-none"
+                        className="group/point absolute top-[18px] z-10 -translate-x-1/2 -translate-y-1/2 outline-none"
                         style={{
-                          left: `${value.plotPercentile}%`,
+                          left: `clamp(7px, ${value.plotPercentile}%, calc(100% - 7px))`,
                         }}
                       >
                         <CompareMarkerIcon
@@ -266,7 +285,7 @@ export function CompareAlignedChart({
                           )}
                         />
                         {!exportMode && (
-                          <span className="pointer-events-none absolute bottom-[calc(100%+8px)] left-1/2 z-30 hidden min-w-[190px] -translate-x-1/2 border border-electric/35 bg-panel/95 px-2.5 py-2 text-[10px] leading-relaxed text-ink shadow-xl group-hover:block group-focus:block">
+                          <span className="pointer-events-none absolute bottom-[calc(100%+8px)] z-30 hidden min-w-[190px] border border-electric/35 bg-panel/95 px-2.5 py-2 text-[10px] leading-relaxed text-ink shadow-xl group-hover/point:block group-focus/point:block" style={tooltipPosition(value.plotPercentile)}>
                             <span className="block text-ink-muted">{value.row.canonical_player_name}</span>
                             <span className="mt-0.5 block font-mono tabular-nums">
                               {rawLabel} · Pctl {value.percentile == null ? '—' : Math.round(value.percentile)}
@@ -282,7 +301,7 @@ export function CompareAlignedChart({
                   {row.values.map(value => {
                     if (value.plotPercentile == null) return null
                     const color = COMPARISON_SLOT_STROKES[value.slot % COMPARISON_SLOT_STROKES.length]
-                    const placement = readoutPlacementByPlayer.get(playerRowKey(value.row)) ?? 'center'
+                    const placement = readoutPlacementByPlayer.get(playerRowKey(value.row)) ?? { alignment: 'center', lane: 0 }
                     return (
                       <span
                         key={`readout-${playerRowKey(value.row)}-${row.key}`}
@@ -294,8 +313,8 @@ export function CompareAlignedChart({
                         style={{
                           color,
                           left: `${value.plotPercentile}%`,
-                          top: 34,
-                          transform: readoutTransform(value.plotPercentile, placement),
+                          top: 34 + placement.lane * 14,
+                          transform: readoutTransform(value.plotPercentile, placement.alignment),
                         }}
                       >
                         {formatValue(value.raw, value.unit)} ·{' '}
@@ -313,4 +332,10 @@ export function CompareAlignedChart({
       </div>
     </div>
   )
+}
+
+function tooltipPosition(percentile: number) {
+  if (percentile <= 8) return { left: 0 }
+  if (percentile >= 92) return { right: 0 }
+  return { left: '50%', transform: 'translateX(-50%)' }
 }

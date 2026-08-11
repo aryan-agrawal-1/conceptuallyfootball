@@ -113,7 +113,7 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
       const root = rootRef.current
       const current = root ? readContent(root) : content
       const selection = root ? selectionOffsets(root) : null
-      if (plainText(current).length === 0 && selection?.start === 0 && selection.end === 0 && onBackspaceEmptyRef.current?.()) {
+      if (contentIsVisuallyEmpty(current) && selection?.start === 0 && selection.end === 0 && onBackspaceEmptyRef.current?.()) {
         event.preventDefault()
       }
       return
@@ -279,6 +279,10 @@ function applyLinkToContent(content: InlineContent, start: number, end: number, 
 
 function sameContent(left: InlineContent, right: InlineContent): boolean {
   return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function contentIsVisuallyEmpty(content: InlineContent): boolean {
+  return plainText(content).replace(/[\n\r\u200b]/g, '').length === 0
 }
 
 function safeUrl(value: string): string {
