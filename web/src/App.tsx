@@ -46,6 +46,9 @@ const EditorialArticleEditor = lazy(() =>
 const ArticlePreview = lazy(() =>
   import('./pages/ArticlePreview').then(m => ({ default: m.ArticlePreview })),
 )
+const PublishedArticle = lazy(() =>
+  import('./pages/PublishedArticle').then(m => ({ default: m.PublishedArticle })),
+)
 
 function RouteFallback() {
   return (
@@ -163,6 +166,7 @@ export default function App() {
             <Route path="/" element={<StatMatrix />} />
             <Route path="/player/:id" element={<PlayerProfile />} />
             <Route path="/team/:id" element={<TeamProfile />} />
+            <Route path="/articles/:articleId" element={<PublishedArticle />} />
             <Route path="/galaxy" element={<Galaxy />} />
             <Route path="/comparisons" element={<Comparisons />} />
             <Route path="/regression-lab" element={<RegressionLab />} />

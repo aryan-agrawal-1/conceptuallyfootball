@@ -21,6 +21,7 @@ from editorial.models import (
     Article,
     ArticlePlayerReference,
     ArticlePlayerSubject,
+    ArticlePublication,
     ArticleRevision,
     ArticleStatus,
     ArticleTeamReference,
@@ -421,6 +422,38 @@ def shared_preview(request: HttpRequest, token) -> JsonResponse:
 
 
 @require_GET
+def public_article_detail(request: HttpRequest, article_id) -> JsonResponse:
+    publish_due_articles()
+    publication = get_object_or_404(
+        ArticlePublication.objects.select_related("article", "article__author").filter(
+            article_id=article_id,
+            article__status=ArticleStatus.PUBLISHED,
+            unpublished_at__isnull=True,
+        ).order_by("-version")
+    )
+    response = JsonResponse(
+        {
+            "article": {
+                "id": str(publication.article_id),
+                "title": publication.title,
+                "subtitle": publication.subtitle,
+                "document": normalize_document(publication.document),
+                "subjects": normalize_subjects(publication.subjects),
+                "references": normalize_subjects(publication.references),
+                "author": {
+                    "id": publication.article.author_id,
+                    "display_name": display_name_for(publication.article.author),
+                    "social_links": social_links_for(publication.article.author),
+                },
+                "published_at": publication.published_at.isoformat(),
+            }
+        }
+    )
+    response["Cache-Control"] = "public, max-age=60, stale-while-revalidate=300"
+    return response
+
+
+@require_GET
 def player_related_analysis(request: HttpRequest, entity_id: int) -> JsonResponse:
     player = get_object_or_404(CanonicalPlayer, id=entity_id)
     return related_analysis_payload(
@@ -473,5 +506,6 @@ def public_related_article(article: Article) -> dict:
         "title": article.title,
         "subtitle": article.subtitle,
         "author": display_name_for(article.author),
+        "published_at": article.published_at.isoformat() if article.published_at else None,
         "updated_at": article.updated_at.isoformat(),
     }

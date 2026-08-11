@@ -62,6 +62,7 @@ import {
 const ARTICLE_LIST_KEY = ['editorial-articles'] as const
 const PAGE_LOADED_AT = Date.now()
 const REVISION_CHECKPOINT_INTERVAL_MS = 5 * 60 * 1_000
+const USER_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
 
 export function EditorialWorkspace() {
   return (
@@ -160,7 +161,7 @@ function WorkspaceDashboard() {
 
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {visibleArticles.map(article => (
-            <DraftCard key={article.id} article={article} canDelete={article.author.id === user.id && article.status === 'draft'} deleting={deleteMutation.isPending && deleteMutation.variables === article.id} onDelete={() => {
+            <DraftCard key={article.id} article={article} isOwner={article.author.id === user.id} canDelete={article.author.id === user.id && article.status === 'draft'} deleting={deleteMutation.isPending && deleteMutation.variables === article.id} onDelete={() => {
               if (window.confirm(`Delete “${article.title}”? This removes its saved revision history.`)) deleteMutation.mutate(article.id)
             }} />
           ))}
@@ -170,11 +171,11 @@ function WorkspaceDashboard() {
   )
 }
 
-function DraftCard({ article, canDelete, deleting, onDelete }: { article: ArticleSummary; canDelete: boolean; deleting: boolean; onDelete: () => void }) {
+function DraftCard({ article, isOwner, canDelete, deleting, onDelete }: { article: ArticleSummary; isOwner: boolean; canDelete: boolean; deleting: boolean; onDelete: () => void }) {
   return (
     <article className="group relative flex min-h-56 flex-col border border-line bg-panel/70 p-5 transition-colors hover:border-electric/50 hover:bg-raised/80">
       <div className="flex items-center justify-between">
-        <span className={`border px-2 py-1 font-mono text-[7px] uppercase tracking-[0.18em] ${statusTone(article.status)}`}>{statusLabel(article.status)}</span>
+        <span className={`border px-2 py-1 font-mono text-[7px] uppercase tracking-[0.18em] ${cardStatusTone(article.status)}`}>{cardStatusLabel(article, isOwner)}</span>
         {canDelete ? <button type="button" onClick={onDelete} disabled={deleting} className="p-2 text-ink-muted opacity-70 hover:text-ember group-hover:opacity-100" aria-label={`Delete ${article.title}`}><Trash2 className="size-4" /></button> : null}
       </div>
       <Link to={`/analysis/${article.id}`} className="mt-8 flex flex-1 flex-col">
@@ -592,7 +593,7 @@ function ArticleEditor() {
 
 function WorkflowPanel({ article, canApprove, canEdit, pending, onTransition }: { article: Article; canApprove: boolean; canEdit: boolean; pending: boolean; onTransition: (action: ArticleWorkflowAction, options?: { note?: string; publishAt?: string }) => Promise<void> }) {
   const [note, setNote] = useState('')
-  const [scheduleAt, setScheduleAt] = useState('')
+  const [scheduleAt, setScheduleAt] = useState(() => localDateTimeValue(new Date()))
   const status = article.status
   const canReview = canApprove && ['submitted', 'approved', 'scheduled'].includes(status)
 
@@ -628,6 +629,7 @@ function WorkflowPanel({ article, canApprove, canEdit, pending, onTransition }: 
               <div className="border border-line p-3">
                 <label className="font-mono text-[7px] uppercase tracking-[0.15em] text-ink-muted">Scheduled publication</label>
                 <input type="datetime-local" value={scheduleAt} min={localDateTimeMinimum()} onChange={event => setScheduleAt(event.target.value)} className="mt-2 h-9 w-full border border-line bg-mat px-2 text-xs text-ink focus:border-electric focus:outline-none" />
+                <p className="mt-2 text-[9px] leading-4 text-ink-muted">Shown in {USER_TIME_ZONE}. The saved publication time is timezone-safe.</p>
                 <button type="button" onClick={() => void schedulePublication()} disabled={pending || !scheduleAt} className="mt-2 flex h-9 w-full items-center justify-center gap-2 border border-electric/50 text-[8px] font-bold uppercase tracking-[0.14em] text-electric disabled:opacity-40"><CalendarClock className="size-3.5" /> Schedule</button>
               </div>
             </>
@@ -733,10 +735,22 @@ function statusLabel(status: ArticleStatus): string {
 }
 
 function statusTone(status: ArticleStatus): string {
-  if (status === 'published') return 'border-mint/45 bg-mint/10 text-mint'
-  if (status === 'scheduled' || status === 'changes_requested') return 'border-gold/45 bg-gold/10 text-gold'
-  if (status === 'archived') return 'border-ember/35 bg-ember-dim/35 text-ember'
+  if (status === 'published' || status === 'approved') return 'border-mint/45 bg-mint/10 text-mint'
+  if (status === 'submitted' || status === 'scheduled') return 'border-gold/45 bg-gold/10 text-gold'
+  if (status === 'changes_requested') return 'border-ember/45 bg-ember-dim/45 text-ember'
+  if (status === 'archived') return 'border-line-bright bg-raised/50 text-ink-muted'
   return 'border-electric/35 bg-electric-dim/45 text-electric'
+}
+
+function cardStatusTone(status: ArticleStatus): string {
+  return statusTone(status)
+}
+
+function cardStatusLabel(article: ArticleSummary, isOwner: boolean): string {
+  if (article.status === 'submitted') return isOwner ? 'Submitted' : 'For review'
+  if (article.status === 'published') return 'Live'
+  if (article.status === 'approved' && article.published_at) return 'Approved · Unpublished'
+  return statusLabel(article.status)
 }
 
 function workflowDescription(article: Article): string {
@@ -750,7 +764,10 @@ function workflowDescription(article: Article): string {
 }
 
 function localDateTimeMinimum(): string {
-  const date = new Date(Date.now() + 60_000)
+  return localDateTimeValue(new Date())
+}
+
+function localDateTimeValue(date: Date): string {
   const offset = date.getTimezoneOffset() * 60_000
   return new Date(date.getTime() - offset).toISOString().slice(0, 16)
 }

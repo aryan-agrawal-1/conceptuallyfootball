@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import timedelta
+from zoneinfo import ZoneInfo
 
 from django.contrib.auth.models import User
 from django.test import Client, TestCase
@@ -420,6 +421,13 @@ class EditorialApiTests(TestCase):
             reverse("editorial-player-related-analysis", kwargs={"entity_id": player.id})
         )
         self.assertEqual(len(public_related.json()["subjects_of"]), 1)
+        public_article = Client().get(
+            reverse("editorial-public-article-detail", kwargs={"article_id": created["id"]})
+        )
+        self.assertEqual(public_article.status_code, 200)
+        self.assertEqual(public_article.json()["article"]["title"], "Published relationship")
+        self.assertNotIn("workflow_events", public_article.json()["article"])
+        self.assertNotIn("preview_token", public_article.json()["article"])
 
         locked = self.patch_article(
             created["id"],
@@ -433,6 +441,12 @@ class EditorialApiTests(TestCase):
             reverse("editorial-player-related-analysis", kwargs={"entity_id": player.id})
         )
         self.assertEqual(private_related.json()["subjects_of"], [])
+        self.assertEqual(
+            Client().get(
+                reverse("editorial-public-article-detail", kwargs={"article_id": created["id"]})
+            ).status_code,
+            404,
+        )
 
     def test_scheduled_article_is_private_until_due_then_publishes_automatically(self):
         player = CanonicalPlayer.objects.create(display_name="Scheduled Subject")
@@ -453,7 +467,7 @@ class EditorialApiTests(TestCase):
         self.workflow(self.client, created["id"], "submit")
         approver_client = Client()
         approver_client.force_login(self.create_approver())
-        future = timezone.now() + timedelta(days=1)
+        future = (timezone.now() + timedelta(days=1)).astimezone(ZoneInfo("Asia/Kolkata"))
         scheduled = self.workflow(
             approver_client,
             created["id"],
@@ -461,6 +475,10 @@ class EditorialApiTests(TestCase):
             publish_at=future.isoformat(),
         )
         self.assertEqual(scheduled.json()["article"]["status"], ArticleStatus.SCHEDULED)
+        self.assertEqual(
+            Article.objects.get(id=created["id"]).scheduled_for,
+            future,
+        )
         before = Client().get(
             reverse("editorial-player-related-analysis", kwargs={"entity_id": player.id})
         )

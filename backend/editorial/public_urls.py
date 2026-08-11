@@ -1,10 +1,16 @@
 from django.urls import path
 
-from editorial.api import player_related_analysis, shared_preview, team_related_analysis
+from editorial.api import (
+    player_related_analysis,
+    public_article_detail,
+    shared_preview,
+    team_related_analysis,
+)
 
 
 urlpatterns = [
     path("previews/<uuid:token>", shared_preview, name="editorial-shared-preview"),
+    path("articles/<uuid:article_id>", public_article_detail, name="editorial-public-article-detail"),
     path(
         "entities/player/<int:entity_id>/related",
         player_related_analysis,

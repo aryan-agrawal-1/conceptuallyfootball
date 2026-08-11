@@ -19,7 +19,7 @@ import type { PositionGroup, SearchPlayerMembership } from '../types/api'
 import { profileSliceMatchesParams, resolveProfileSlice, withProfileSliceParams, type ProfileSlice } from '../lib/profileSlice'
 import { cn } from '../lib/utils'
 import { useSeoMeta } from '../lib/seo'
-import { RelatedAnalysisSections } from '../components/editorial/RelatedAnalysisSections'
+import { RelatedAnalysisButton } from '../components/editorial/RelatedAnalysisSections'
 
 const PlayerProfileExportModal = lazy(() =>
   import('../components/profile/PlayerProfileExportModal').then(module => ({
@@ -344,6 +344,7 @@ function ProfileLayout({
               Unavailable
             </span>
           )}
+          <RelatedAnalysisButton kind="player" entityId={player.canonical_player_id} />
         </div>
       </div>
 
@@ -394,8 +395,6 @@ function ProfileLayout({
           />
         </section>
       </div>
-
-      <RelatedAnalysisSections kind="player" entityId={player.canonical_player_id} />
 
       {exportOpen && (
         <Suspense fallback={null}>

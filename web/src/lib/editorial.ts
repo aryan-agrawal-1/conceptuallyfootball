@@ -312,7 +312,19 @@ export interface RelatedAnalysisArticle {
   title: string
   subtitle: string
   author: string
+  published_at: string | null
   updated_at: string
+}
+
+export interface PublishedArticle {
+  id: string
+  title: string
+  subtitle: string
+  document: ArticleDocument
+  subjects: ArticleRelationships
+  references: ArticleRelationships
+  author: { id: number; display_name: string; social_links: SocialLinks }
+  published_at: string
 }
 
 export interface RelatedAnalysisResponse {
@@ -327,6 +339,12 @@ export async function getRelatedAnalysis(
 ): Promise<RelatedAnalysisResponse> {
   const response = await fetch(`${PUBLIC_BASE}/entities/${kind}/${id}/related`)
   return responseJson<RelatedAnalysisResponse>(response)
+}
+
+export async function getPublishedArticle(id: string): Promise<PublishedArticle> {
+  const response = await fetch(`${PUBLIC_BASE}/articles/${id}`)
+  const body = await responseJson<{ article: PublishedArticle }>(response)
+  return body.article
 }
 
 export function newBlock(type: ArticleBlock['type']): ArticleBlock {
