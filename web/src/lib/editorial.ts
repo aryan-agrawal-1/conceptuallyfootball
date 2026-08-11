@@ -14,6 +14,63 @@ export interface InlineRun {
 
 export type InlineContent = InlineRun[]
 
+export type VisualBlockType =
+  | 'similar_players'
+  | 'player_radar'
+  | 'stat_card'
+  | 'player_comparison'
+  | 'custom_chart'
+
+export type VisualEntityKind = 'player' | 'team'
+export type VisualChartType = 'scatter' | 'bar' | 'radar' | 'dumbbell' | 'table'
+export type VisualScopeKind = 'competition' | 'league' | 'big5' | 'all'
+
+export interface VisualEntityReference {
+  kind: VisualEntityKind
+  id: number
+  name: string
+  source_competition: string
+  season_label: string
+  competition_season_id: number
+  position_group?: 'FWD' | 'MID' | 'DEF' | 'GK' | 'UNK'
+  team_name?: string
+}
+
+export interface VisualBlockConfig {
+  entity_kind: VisualEntityKind
+  entities: VisualEntityReference[]
+  context: {
+    scope_kind: VisualScopeKind
+    scope_code: string
+    scope_label: string
+    season_label: string
+  }
+  chart_type: VisualChartType
+  metric_keys: string[]
+  rate_mode: 'per90' | 'full'
+  filters: {
+    position_group: 'ALL' | 'FWD' | 'MID' | 'DEF' | 'GK'
+    team_names: string[]
+    minimum_minutes: number
+    labels: boolean
+    trendline: boolean
+    bar_window: 'top' | 'bottom' | 'all'
+    bar_count: number
+  }
+}
+
+export interface VisualArticleBlock extends BlockBase {
+  type: 'visual'
+  visual_type: VisualBlockType
+  title: string
+  caption: string
+  alt: string
+  source_note: string
+  data_as_of: string
+  update_policy: 'live_draft_freeze_on_publish' | 'frozen'
+  config: VisualBlockConfig
+}
+
 export type ArticleBlock =
   | (BlockBase & { type: 'paragraph'; content: InlineContent })
   | (BlockBase & { type: 'heading'; level: 2 | 3; content: InlineContent })
@@ -21,6 +78,7 @@ export type ArticleBlock =
   | (BlockBase & { type: 'callout'; tone: CalloutTone; content: InlineContent })
   | (BlockBase & { type: 'bulleted_list' | 'numbered_list'; items: InlineContent[] })
   | (BlockBase & { type: 'image'; url: string; caption: string; alt: string })
+  | VisualArticleBlock
   | (BlockBase & { type: 'divider' })
 
 export interface ArticleDocument {
@@ -189,8 +247,33 @@ export function newBlock(type: ArticleBlock['type']): ArticleBlock {
       return { id, type, items: [inlineText('')] }
     case 'image':
       return { id, type, url: '', caption: '', alt: '' }
+    case 'visual':
+      return { ...newVisualBlock('custom_chart'), id }
     case 'divider':
       return { id, type }
+  }
+}
+
+export function newVisualBlock(visualType: VisualBlockType): VisualArticleBlock {
+  return {
+    id: crypto.randomUUID(),
+    type: 'visual',
+    visual_type: visualType,
+    title: '',
+    caption: '',
+    alt: '',
+    source_note: 'Conceptually Football',
+    data_as_of: new Date().toISOString().slice(0, 10),
+    update_policy: 'live_draft_freeze_on_publish',
+    config: {
+      entity_kind: 'player',
+      entities: [],
+      context: { scope_kind: 'league', scope_code: '', scope_label: '', season_label: '' },
+      chart_type: visualType === 'custom_chart' ? 'scatter' : 'radar',
+      metric_keys: [],
+      rate_mode: 'per90',
+      filters: { position_group: 'ALL', team_names: [], minimum_minutes: 450, labels: true, trendline: false, bar_window: 'top', bar_count: 12 },
+    },
   }
 }
 

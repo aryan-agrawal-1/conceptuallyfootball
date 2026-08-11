@@ -333,6 +333,104 @@ class EditorialApiTests(TestCase):
         article = Article.objects.get(id=created["id"])
         self.assertEqual(article.revision, 1)
 
+    def test_visual_blocks_preserve_canonical_context_accessibility_and_export_metadata(self):
+        created = self.create_article()
+        visual = {
+            "id": "visual",
+            "type": "visual",
+            "visual_type": "custom_chart",
+            "title": "Chance creation leaders",
+            "caption": "The highlighted players combine volume and quality.",
+            "alt": "Scatter chart comparing expected assists and key passes per 90.",
+            "source_note": "Conceptually Football · Understat and Sofascore",
+            "data_as_of": "2026-08-10",
+            "update_policy": "live_draft_freeze_on_publish",
+            "config": {
+                "entity_kind": "player",
+                "entities": [
+                    {
+                        "kind": "player",
+                        "id": 42,
+                        "name": "Example Player",
+                        "source_competition": "eng1",
+                        "season_label": "2025/26",
+                        "competition_season_id": 12,
+                        "position_group": "MID",
+                        "team_name": "Example FC",
+                    }
+                ],
+                "context": {
+                    "scope_kind": "big5",
+                    "scope_code": "big5",
+                    "scope_label": "Big 5 leagues",
+                    "season_label": "2025/26",
+                },
+                "chart_type": "scatter",
+                "metric_keys": ["xA_per90", "key_passes_per90"],
+                "rate_mode": "per90",
+                "filters": {
+                    "position_group": "MID",
+                    "team_names": [],
+                    "minimum_minutes": 900,
+                },
+            },
+        }
+
+        response = self.patch_article(
+            created["id"],
+            {
+                "revision": 1,
+                "title": "Visual analysis",
+                "subtitle": "",
+                "document": {"version": 1, "blocks": [visual]},
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        saved = response.json()["article"]["document"]["blocks"][0]
+        self.assertEqual(saved["visual_type"], "custom_chart")
+        self.assertEqual(saved["config"]["entities"][0]["id"], 42)
+        self.assertEqual(saved["config"]["entities"][0]["source_competition"], "ENG1")
+        self.assertEqual(saved["config"]["context"]["scope_code"], "BIG5")
+        self.assertEqual(saved["config"]["metric_keys"], ["xA_per90", "key_passes_per90"])
+        self.assertEqual(saved["alt"], visual["alt"])
+        self.assertEqual(saved["update_policy"], "live_draft_freeze_on_publish")
+
+    def test_visual_blocks_reject_missing_accessibility_and_invalid_chart_configuration(self):
+        created = self.create_article()
+        invalid = {
+            "id": "visual",
+            "type": "visual",
+            "visual_type": "player_comparison",
+            "title": "Comparison",
+            "caption": "",
+            "alt": "",
+            "source_note": "Conceptually Football",
+            "data_as_of": "not-a-date",
+            "config": {
+                "entity_kind": "team",
+                "entities": [],
+                "context": {"scope_kind": "league", "scope_code": "ENG1", "scope_label": "Premier League", "season_label": "2025/26"},
+                "chart_type": "scatter",
+                "metric_keys": ["xG"],
+                "rate_mode": "per90",
+                "filters": {"position_group": "ALL", "team_names": [], "minimum_minutes": 450},
+            },
+        }
+
+        response = self.patch_article(
+            created["id"],
+            {
+                "revision": 1,
+                "title": "Invalid visual",
+                "subtitle": "",
+                "document": {"version": 1, "blocks": [invalid]},
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Article.objects.get(id=created["id"]).revision, 1)
+
     def test_unauthenticated_requests_cannot_access_drafts(self):
         anonymous = Client()
         response = anonymous.get(reverse("editorial-articles"))
