@@ -1,6 +1,12 @@
 from django.urls import path
 
-from editorial.api import article_detail, article_preview, article_revision_detail, articles
+from editorial.api import (
+    article_detail,
+    article_preview,
+    article_revision_detail,
+    article_workflow,
+    articles,
+)
 
 
 urlpatterns = [
@@ -12,4 +18,5 @@ urlpatterns = [
         name="editorial-article-revision-detail",
     ),
     path("articles/<uuid:article_id>/preview", article_preview, name="editorial-article-preview"),
+    path("articles/<uuid:article_id>/workflow", article_workflow, name="editorial-article-workflow"),
 ]

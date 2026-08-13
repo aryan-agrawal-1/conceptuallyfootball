@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import timedelta
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q
 from django.http import HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods
 
@@ -18,6 +21,7 @@ from editorial.models import (
     Article,
     ArticlePlayerReference,
     ArticlePlayerSubject,
+    ArticlePublication,
     ArticleRevision,
     ArticleStatus,
     ArticleTeamReference,
@@ -29,6 +33,13 @@ from editorial.relationships import (
     save_subjects,
     subjects_payload,
     sync_references,
+)
+from editorial.workflow import (
+    EDITABLE_STATUSES,
+    WorkflowConflict,
+    can_approve,
+    publish_due_articles,
+    transition_article,
 )
 from ingestion.models import CanonicalPlayer, CanonicalTeam
 
@@ -63,12 +74,28 @@ def article_summary(article: Article) -> dict:
         "status": article.status,
         "revision": article.revision,
         "preview_enabled": article.preview_enabled,
+        "preview_expires_at": (
+            article.preview_expires_at.isoformat() if article.preview_expires_at else None
+        ),
+        "submitted_at": article.submitted_at.isoformat() if article.submitted_at else None,
+        "approved_at": article.approved_at.isoformat() if article.approved_at else None,
+        "scheduled_for": article.scheduled_for.isoformat() if article.scheduled_for else None,
+        "published_at": article.published_at.isoformat() if article.published_at else None,
+        "author": {
+            "id": article.author_id,
+            "display_name": display_name_for(article.author),
+        },
         "created_at": article.created_at.isoformat(),
         "updated_at": article.updated_at.isoformat(),
     }
 
 
-def article_payload(article: Article, *, include_preview_token: bool = True) -> dict:
+def article_payload(
+    article: Article,
+    *,
+    include_preview_token: bool = True,
+    include_workflow: bool = True,
+) -> dict:
     payload = {
         **article_summary(article),
         "author": {
@@ -84,6 +111,28 @@ def article_payload(article: Article, *, include_preview_token: bool = True) -> 
             for revision in article.revisions.all()[:20]
         ],
     }
+    if include_workflow:
+        payload["workflow_events"] = [
+            {
+                "id": event.id,
+                "action": event.action,
+                "from_status": event.from_status,
+                "to_status": event.to_status,
+                "revision": event.revision,
+                "note": event.note,
+                "metadata": event.metadata,
+                "actor": (
+                    {
+                        "id": event.actor_id,
+                        "display_name": display_name_for(event.actor),
+                    }
+                    if event.actor
+                    else None
+                ),
+                "created_at": event.created_at.isoformat(),
+            }
+            for event in article.workflow_events.select_related("actor").all()[:50]
+        ]
     if include_preview_token:
         payload["preview_token"] = str(article.preview_token) if article.preview_enabled else None
     return payload
@@ -112,11 +161,13 @@ def editorial_error(request: HttpRequest) -> JsonResponse | None:
     return None
 
 
-def owned_article(request: HttpRequest, article_id) -> Article:
+def visible_article(request: HttpRequest, article_id) -> Article:
+    queryset = Article.objects.select_related("author")
+    if not can_approve(request.user):
+        queryset = queryset.filter(author=request.user)
     return get_object_or_404(
-        Article.objects.select_related("author"),
+        queryset,
         id=article_id,
-        author=request.user,
     )
 
 
@@ -135,7 +186,10 @@ def articles(request: HttpRequest) -> JsonResponse:
         return error
 
     if request.method == "GET":
-        queryset = Article.objects.filter(author=request.user)
+        publish_due_articles()
+        queryset = Article.objects.select_related("author")
+        if not can_approve(request.user):
+            queryset = queryset.filter(author=request.user)
         query = request.GET.get("q", "").strip()
         if query:
             queryset = queryset.filter(Q(title__icontains=query) | Q(subtitle__icontains=query))
@@ -162,7 +216,7 @@ def articles(request: HttpRequest) -> JsonResponse:
         )
     except ValidationError as validation:
         return validation_error(validation)
-    article = owned_article(request, article.id)
+    article = visible_article(request, article.id)
     return private_json({"article": article_payload(article)}, status=201)
 
 
@@ -174,9 +228,12 @@ def article_detail(request: HttpRequest, article_id) -> JsonResponse:
         return error
 
     if request.method == "GET":
-        return private_json({"article": article_payload(owned_article(request, article_id))})
+        publish_due_articles()
+        return private_json({"article": article_payload(visible_article(request, article_id))})
     if request.method == "DELETE":
-        article = owned_article(request, article_id)
+        article = visible_article(request, article_id)
+        if article.author_id != request.user.id:
+            return private_json({"detail": "Only the writer can delete this article."}, status=403)
         if article.status != ArticleStatus.DRAFT:
             return private_json({"detail": "Only drafts can be deleted."}, status=409)
         article.delete()
@@ -195,8 +252,13 @@ def article_detail(request: HttpRequest, article_id) -> JsonResponse:
             id=article_id,
             author=request.user,
         )
+        if article.status not in EDITABLE_STATUSES:
+            return private_json(
+                {"detail": "This article is locked while it is in the publishing workflow."},
+                status=409,
+            )
         if expected_revision != article.revision:
-            article = owned_article(request, article.id)
+            article = visible_article(request, article.id)
             return private_json(
                 {
                     "detail": "This draft changed in another tab. Reload before saving again.",
@@ -251,7 +313,7 @@ def article_detail(request: HttpRequest, article_id) -> JsonResponse:
                 subjects=subjects_payload(article),
                 created_by=request.user,
             )
-    article = owned_article(request, article.id)
+    article = visible_article(request, article.id)
     return private_json({"article": article_payload(article)})
 
 
@@ -261,7 +323,7 @@ def article_revision_detail(request: HttpRequest, article_id, revision_number: i
     error = editorial_error(request)
     if error is not None:
         return error
-    article = owned_article(request, article_id)
+    article = visible_article(request, article_id)
     revision = get_object_or_404(
         ArticleRevision,
         article=article,
@@ -276,7 +338,9 @@ def article_preview(request: HttpRequest, article_id) -> JsonResponse:
     error = editorial_error(request)
     if error is not None:
         return error
-    article = owned_article(request, article_id)
+    article = visible_article(request, article_id)
+    if article.author_id != request.user.id and not can_approve(request.user):
+        return private_json({"detail": "You cannot manage this preview link."}, status=403)
     payload = json_body(request)
     enabled = payload.get("enabled")
     rotate = payload.get("rotate") is True
@@ -284,10 +348,56 @@ def article_preview(request: HttpRequest, article_id) -> JsonResponse:
         return private_json({"detail": "Preview enabled must be true or false."}, status=400)
     was_enabled = article.preview_enabled
     article.preview_enabled = enabled
+    if enabled:
+        try:
+            expires_in_hours = int(payload.get("expires_in_hours", 168))
+        except (TypeError, ValueError):
+            return private_json({"detail": "Preview expiry must be a number of hours."}, status=400)
+        if expires_in_hours < 1 or expires_in_hours > 720:
+            return private_json({"detail": "Preview links can last between 1 and 720 hours."}, status=400)
+        article.preview_expires_at = timezone.now() + timedelta(hours=expires_in_hours)
+    else:
+        article.preview_expires_at = None
     if rotate or (enabled and not was_enabled):
         article.preview_token = uuid.uuid4()
-    article.save(update_fields=("preview_enabled", "preview_token", "updated_at"))
-    article = owned_article(request, article.id)
+    article.save(
+        update_fields=("preview_enabled", "preview_token", "preview_expires_at", "updated_at")
+    )
+    article = visible_article(request, article.id)
+    return private_json({"article": article_payload(article)})
+
+
+@require_http_methods(["POST"])
+@never_cache
+def article_workflow(request: HttpRequest, article_id) -> JsonResponse:
+    error = editorial_error(request)
+    if error is not None:
+        return error
+    article = visible_article(request, article_id)
+    payload = json_body(request)
+    action = str(payload.get("action", "")).strip()
+    try:
+        note = clean_text(payload.get("note", ""), field="Workflow note", maximum=2000).strip()
+    except ValidationError as validation:
+        return validation_error(validation)
+    publish_at = None
+    if payload.get("publish_at"):
+        publish_at = parse_datetime(str(payload["publish_at"]))
+        if publish_at is None:
+            return private_json({"detail": "Publication time must be a valid ISO date and time."}, status=400)
+        if timezone.is_naive(publish_at):
+            publish_at = timezone.make_aware(publish_at)
+    try:
+        article = transition_article(
+            article.id,
+            actor=request.user,
+            action=action,
+            note=note,
+            publish_at=publish_at,
+        )
+    except WorkflowConflict as conflict:
+        return private_json({"detail": str(conflict), "code": "workflow_conflict"}, status=409)
+    article = visible_article(request, article.id)
     return private_json({"article": article_payload(article)})
 
 
@@ -298,8 +408,49 @@ def shared_preview(request: HttpRequest, token) -> JsonResponse:
         Article.objects.select_related("author"),
         preview_token=token,
         preview_enabled=True,
+        preview_expires_at__gt=timezone.now(),
     )
-    return public_preview_json({"article": article_payload(article, include_preview_token=False)})
+    return public_preview_json(
+        {
+            "article": article_payload(
+                article,
+                include_preview_token=False,
+                include_workflow=False,
+            )
+        }
+    )
+
+
+@require_GET
+def public_article_detail(request: HttpRequest, article_id) -> JsonResponse:
+    publish_due_articles()
+    publication = get_object_or_404(
+        ArticlePublication.objects.select_related("article", "article__author").filter(
+            article_id=article_id,
+            article__status=ArticleStatus.PUBLISHED,
+            unpublished_at__isnull=True,
+        ).order_by("-version")
+    )
+    response = JsonResponse(
+        {
+            "article": {
+                "id": str(publication.article_id),
+                "title": publication.title,
+                "subtitle": publication.subtitle,
+                "document": normalize_document(publication.document),
+                "subjects": normalize_subjects(publication.subjects),
+                "references": normalize_subjects(publication.references),
+                "author": {
+                    "id": publication.article.author_id,
+                    "display_name": display_name_for(publication.article.author),
+                    "social_links": social_links_for(publication.article.author),
+                },
+                "published_at": publication.published_at.isoformat(),
+            }
+        }
+    )
+    response["Cache-Control"] = "public, max-age=60, stale-while-revalidate=300"
+    return response
 
 
 @require_GET
@@ -323,6 +474,7 @@ def team_related_analysis(request: HttpRequest, entity_id: int) -> JsonResponse:
 
 
 def related_analysis_payload(*, kind: str, entity_id: int, name: str) -> JsonResponse:
+    publish_due_articles()
     subject_model = ArticlePlayerSubject if kind == "player" else ArticleTeamSubject
     reference_model = ArticlePlayerReference if kind == "player" else ArticleTeamReference
     entity_field = "player_id" if kind == "player" else "team_id"
@@ -354,5 +506,6 @@ def public_related_article(article: Article) -> dict:
         "title": article.title,
         "subtitle": article.subtitle,
         "author": display_name_for(article.author),
+        "published_at": article.published_at.isoformat() if article.published_at else None,
         "updated_at": article.updated_at.isoformat(),
     }

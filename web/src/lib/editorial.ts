@@ -1,6 +1,21 @@
 import type { SocialLinks } from './staffAuth'
 
-export type ArticleStatus = 'draft'
+export type ArticleStatus =
+  | 'draft'
+  | 'submitted'
+  | 'changes_requested'
+  | 'approved'
+  | 'scheduled'
+  | 'published'
+  | 'archived'
+export type ArticleWorkflowAction =
+  | 'submit'
+  | 'request_changes'
+  | 'approve'
+  | 'publish'
+  | 'unpublish'
+  | 'archive'
+  | 'restore'
 export type CalloutTone = 'note' | 'insight' | 'warning'
 export type EditorialEntityKind = 'player' | 'team'
 
@@ -114,6 +129,12 @@ export interface ArticleSummary {
   status: ArticleStatus
   revision: number
   preview_enabled: boolean
+  preview_expires_at: string | null
+  submitted_at: string | null
+  approved_at: string | null
+  scheduled_for: string | null
+  published_at: string | null
+  author: { id: number; display_name: string }
   created_at: string
   updated_at: string
 }
@@ -125,6 +146,19 @@ export interface Article extends ArticleSummary {
   references: ArticleRelationships
   preview_token: string | null
   revisions: { number: number; created_at: string }[]
+  workflow_events: ArticleWorkflowEvent[]
+}
+
+export interface ArticleWorkflowEvent {
+  id: number
+  action: string
+  from_status: ArticleStatus
+  to_status: ArticleStatus
+  revision: number
+  note: string
+  metadata: Record<string, unknown>
+  actor: { id: number; display_name: string } | null
+  created_at: string
 }
 
 export interface ArticleRevision {
@@ -248,6 +282,22 @@ export async function setArticlePreview(
   return body.article
 }
 
+export async function transitionArticle(
+  id: string,
+  action: ArticleWorkflowAction,
+  options: { note?: string; publishAt?: string } = {},
+): Promise<Article> {
+  const body = await privateRequest<{ article: Article }>(`/articles/${id}/workflow`, {
+    method: 'POST',
+    body: JSON.stringify({
+      action,
+      note: options.note ?? '',
+      publish_at: options.publishAt ?? null,
+    }),
+  })
+  return body.article
+}
+
 export async function getSharedPreview(token: string): Promise<Article> {
   const response = await fetch(`${PUBLIC_BASE}/previews/${token}`, {
     cache: 'no-store',
@@ -262,7 +312,19 @@ export interface RelatedAnalysisArticle {
   title: string
   subtitle: string
   author: string
+  published_at: string | null
   updated_at: string
+}
+
+export interface PublishedArticle {
+  id: string
+  title: string
+  subtitle: string
+  document: ArticleDocument
+  subjects: ArticleRelationships
+  references: ArticleRelationships
+  author: { id: number; display_name: string; social_links: SocialLinks }
+  published_at: string
 }
 
 export interface RelatedAnalysisResponse {
@@ -277,6 +339,12 @@ export async function getRelatedAnalysis(
 ): Promise<RelatedAnalysisResponse> {
   const response = await fetch(`${PUBLIC_BASE}/entities/${kind}/${id}/related`)
   return responseJson<RelatedAnalysisResponse>(response)
+}
+
+export async function getPublishedArticle(id: string): Promise<PublishedArticle> {
+  const response = await fetch(`${PUBLIC_BASE}/articles/${id}`)
+  const body = await responseJson<{ article: PublishedArticle }>(response)
+  return body.article
 }
 
 export function newBlock(type: ArticleBlock['type']): ArticleBlock {

@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
+  Archive,
   BarChart3,
+  CalendarClock,
+  CheckCircle2,
   ChevronRight,
   Copy,
   ExternalLink,
@@ -15,6 +18,7 @@ import {
   Search,
   Share2,
   ShieldCheck,
+  Send,
   Trash2,
   Unlink,
   UserRound,
@@ -43,11 +47,14 @@ import {
   saveArticle,
   setArticlePreview,
   storeDraftRecovery,
+  transitionArticle,
   type Article,
   type ArticleBlock,
   type ArticleDraft,
   type ArticleRevision,
   type ArticleSummary,
+  type ArticleStatus,
+  type ArticleWorkflowAction,
   type VisualArticleBlock,
   type VisualBlockType,
 } from '../lib/editorial'
@@ -55,6 +62,7 @@ import {
 const ARTICLE_LIST_KEY = ['editorial-articles'] as const
 const PAGE_LOADED_AT = Date.now()
 const REVISION_CHECKPOINT_INTERVAL_MS = 5 * 60 * 1_000
+const USER_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
 
 export function EditorialWorkspace() {
   return (
@@ -77,7 +85,7 @@ function WorkspaceDashboard() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<'all' | 'shared' | 'recent'>('all')
+  const [filter, setFilter] = useState<'all' | 'shared' | 'recent' | 'review'>('all')
   const articlesQuery = useQuery({ queryKey: ARTICLE_LIST_KEY, queryFn: listArticles })
   const createMutation = useMutation({
     mutationFn: createArticle,
@@ -102,6 +110,7 @@ function WorkspaceDashboard() {
       const matchesFilter = filter === 'all'
         || (filter === 'shared' && article.preview_enabled)
         || (filter === 'recent' && new Date(article.updated_at).getTime() >= recentBoundary)
+        || (filter === 'review' && ['submitted', 'approved', 'scheduled'].includes(article.status))
       return matchesQuery && matchesFilter
     })
   }, [articlesQuery.data, filter, query])
@@ -136,7 +145,7 @@ function WorkspaceDashboard() {
             <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search your drafts" className="w-full bg-transparent text-sm text-ink placeholder:text-ink-muted focus:outline-none" />
           </label>
           <div className="flex border border-line bg-panel p-1" aria-label="Draft filters">
-            {(['all', 'recent', 'shared'] as const).map(value => (
+            {(['all', 'recent', 'shared', ...(user.can_approve_editorial ? ['review' as const] : [])] as const).map(value => (
               <button key={value} type="button" onClick={() => setFilter(value)} className={`px-4 py-2 text-[8px] font-bold uppercase tracking-[0.16em] ${filter === value ? 'bg-electric-dim text-electric' : 'text-ink-muted hover:text-ink'}`}>{value}</button>
             ))}
           </div>
@@ -152,7 +161,7 @@ function WorkspaceDashboard() {
 
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {visibleArticles.map(article => (
-            <DraftCard key={article.id} article={article} deleting={deleteMutation.isPending && deleteMutation.variables === article.id} onDelete={() => {
+            <DraftCard key={article.id} article={article} isOwner={article.author.id === user.id} canDelete={article.author.id === user.id && article.status === 'draft'} deleting={deleteMutation.isPending && deleteMutation.variables === article.id} onDelete={() => {
               if (window.confirm(`Delete “${article.title}”? This removes its saved revision history.`)) deleteMutation.mutate(article.id)
             }} />
           ))}
@@ -162,19 +171,20 @@ function WorkspaceDashboard() {
   )
 }
 
-function DraftCard({ article, deleting, onDelete }: { article: ArticleSummary; deleting: boolean; onDelete: () => void }) {
+function DraftCard({ article, isOwner, canDelete, deleting, onDelete }: { article: ArticleSummary; isOwner: boolean; canDelete: boolean; deleting: boolean; onDelete: () => void }) {
   return (
     <article className="group relative flex min-h-56 flex-col border border-line bg-panel/70 p-5 transition-colors hover:border-electric/50 hover:bg-raised/80">
       <div className="flex items-center justify-between">
-        <span className="border border-electric/35 bg-electric-dim/45 px-2 py-1 font-mono text-[7px] uppercase tracking-[0.18em] text-electric">Draft</span>
-        <button type="button" onClick={onDelete} disabled={deleting} className="p-2 text-ink-muted opacity-70 hover:text-ember group-hover:opacity-100" aria-label={`Delete ${article.title}`}><Trash2 className="size-4" /></button>
+        <span className={`border px-2 py-1 font-mono text-[7px] uppercase tracking-[0.18em] ${cardStatusTone(article.status)}`}>{cardStatusLabel(article, isOwner)}</span>
+        {canDelete ? <button type="button" onClick={onDelete} disabled={deleting} className="p-2 text-ink-muted opacity-70 hover:text-ember group-hover:opacity-100" aria-label={`Delete ${article.title}`}><Trash2 className="size-4" /></button> : null}
       </div>
       <Link to={`/analysis/${article.id}`} className="mt-8 flex flex-1 flex-col">
         <h2 className="text-xl font-black leading-tight tracking-[-0.035em] text-ink">{article.title}</h2>
-        <p className="mt-3 line-clamp-2 text-xs leading-5 text-ink-dim">{article.subtitle || 'No standfirst yet — open the draft to keep writing.'}</p>
+        <p className="mt-2 font-mono text-[8px] uppercase tracking-[0.13em] text-ink-muted">By {article.author.display_name}</p>
+        <p className="mt-3 line-clamp-2 text-xs leading-5 text-ink-dim">{article.subtitle || 'No standfirst yet — open the article to continue.'}</p>
         <div className="mt-auto flex items-center justify-between pt-8 font-mono text-[8px] uppercase tracking-[0.14em] text-ink-muted">
           <span>{relativeDate(article.updated_at)}</span>
-          <span className={article.preview_enabled ? 'text-mint' : ''}>{article.preview_enabled ? 'Preview shared' : 'Private'}</span>
+          <span className={article.status === 'scheduled' ? 'text-gold' : article.preview_enabled ? 'text-mint' : ''}>{article.status === 'scheduled' && article.scheduled_for ? `Due ${shortDate(article.scheduled_for)}` : article.preview_enabled ? 'Preview shared' : 'Private'}</span>
         </div>
       </Link>
     </article>
@@ -185,6 +195,7 @@ type SaveState = 'saved' | 'unsaved' | 'saving' | 'recovered' | 'error'
 
 function ArticleEditor() {
   const { articleId = '' } = useParams()
+  const { user } = useStaffAuth()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const articleQuery = useQuery({ queryKey: ['editorial-article', articleId], queryFn: () => getArticle(articleId), enabled: Boolean(articleId), retry: false })
@@ -219,7 +230,13 @@ function ArticleEditor() {
   const lastCheckpointAtRef = useRef(Date.now())
   const performSaveRef = useRef<(createRevision?: boolean) => Promise<boolean>>(async () => false)
   const checkpointingNavigationRef = useRef(false)
-  const navigationBlocker = useBlocker(Boolean(article))
+  const canEdit = Boolean(
+    article
+      && user
+      && article.author.id === user.id
+      && ['draft', 'changes_requested'].includes(article.status),
+  )
+  const navigationBlocker = useBlocker(canEdit)
   const draftReferences = useMemo(
     () => draft ? referencesFromDocument(draft.document) : { players: [], teams: [] },
     [draft],
@@ -229,7 +246,9 @@ function ArticleEditor() {
     const serverArticle = articleQuery.data
     if (!serverArticle || initializedIdRef.current === serverArticle.id) return
     const recovery = loadDraftRecovery(serverArticle.id)
-    const hasNewerRecovery = recovery && new Date(recovery.savedAt) > new Date(serverArticle.updated_at)
+    const hasNewerRecovery = ['draft', 'changes_requested'].includes(serverArticle.status)
+      && recovery
+      && new Date(recovery.savedAt) > new Date(serverArticle.updated_at)
     const initialDraft = hasNewerRecovery ? recovery.draft : articleToDraft(serverArticle)
     initializedIdRef.current = serverArticle.id
     revisionRef.current = serverArticle.revision
@@ -241,6 +260,7 @@ function ArticleEditor() {
     draftRef.current = initialDraft
     setArticle(serverArticle)
     setDraft(initialDraft)
+    if (!['draft', 'changes_requested'].includes(serverArticle.status)) setMode('reader')
     setSaveState(hasNewerRecovery ? 'recovered' : 'saved')
   }, [articleQuery.data])
 
@@ -258,6 +278,7 @@ function ArticleEditor() {
   }
 
   async function performSave(createRevision = false): Promise<boolean> {
+    if (!canEdit) return true
     const currentDraft = draftRef.current
     const serial = editSerialRef.current
     const checkpointRequested = createRevision
@@ -419,6 +440,28 @@ function ArticleEditor() {
     }
   }
 
+  async function runWorkflow(action: ArticleWorkflowAction, options: { note?: string; publishAt?: string } = {}) {
+    if (canEdit) {
+      const saved = await performSaveRef.current(true)
+      if (!saved) return
+    }
+    setSaveError('')
+    try {
+      const updated = await transitionArticle(articleId, action, options)
+      setArticle(updated)
+      setDraft(articleToDraft(updated))
+      draftRef.current = articleToDraft(updated)
+      revisionRef.current = updated.revision
+      clearDraftRecovery(articleId)
+      setSaveState('saved')
+      if (!['draft', 'changes_requested'].includes(updated.status)) setMode('reader')
+      queryClient.setQueryData(['editorial-article', articleId], updated)
+      queryClient.invalidateQueries({ queryKey: ARTICLE_LIST_KEY })
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'The workflow action could not be completed.')
+    }
+  }
+
   const previewUrl = article.preview_token ? `${window.location.origin}/analysis/preview/${article.preview_token}` : ''
 
   async function copyPreview() {
@@ -463,10 +506,11 @@ function ArticleEditor() {
           </div>
           <div className="flex items-center gap-2">
             <div className="hidden border border-line p-1 sm:flex">
-              <button type="button" onClick={() => void selectMode('write')} className={`px-3 py-1.5 text-[8px] font-bold uppercase tracking-[0.15em] ${mode === 'write' ? 'bg-electric-dim text-electric' : 'text-ink-muted'}`}>Write</button>
+              {canEdit ? <button type="button" onClick={() => void selectMode('write')} className={`px-3 py-1.5 text-[8px] font-bold uppercase tracking-[0.15em] ${mode === 'write' ? 'bg-electric-dim text-electric' : 'text-ink-muted'}`}>Write</button> : null}
               <button type="button" onClick={() => void selectMode('reader')} disabled={saveState === 'saving'} className={`px-3 py-1.5 text-[8px] font-bold uppercase tracking-[0.15em] disabled:opacity-50 ${mode === 'reader' ? 'bg-electric-dim text-electric' : 'text-ink-muted'}`}>Reader view</button>
             </div>
-            <button type="button" onClick={() => void performSaveRef.current(true)} disabled={saveState === 'saving'} className="inline-flex h-9 items-center gap-2 border border-line-bright px-3 text-[8px] font-bold uppercase tracking-[0.14em] text-ink-dim hover:border-electric hover:text-ink"><Save className="size-3.5" /> Save</button>
+            <span className={`hidden border px-2 py-1 font-mono text-[7px] uppercase tracking-[0.16em] sm:inline ${statusTone(article.status)}`}>{statusLabel(article.status)}</span>
+            {canEdit ? <button type="button" onClick={() => void performSaveRef.current(true)} disabled={saveState === 'saving'} className="inline-flex h-9 items-center gap-2 border border-line-bright px-3 text-[8px] font-bold uppercase tracking-[0.14em] text-ink-dim hover:border-electric hover:text-ink"><Save className="size-3.5" /> Save</button> : null}
             {article.preview_enabled && previewUrl ? <a href={previewUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 bg-electric px-3 text-[8px] font-black uppercase tracking-[0.14em] text-mat"><ExternalLink className="size-3.5" /> Preview</a> : null}
           </div>
         </div>
@@ -474,13 +518,13 @@ function ArticleEditor() {
 
       {saveError ? <div className="border-b border-ember/35 bg-ember-dim/55 px-6 py-2 text-center text-xs text-ink">{saveError}</div> : null}
 
-      <div className={`mx-auto ${mode === 'write' ? 'grid max-w-[1500px] lg:grid-cols-[minmax(0,1fr)_260px]' : 'w-full'}`}>
+      <div className={`mx-auto ${mode === 'write' || !canEdit ? 'grid max-w-[1500px] lg:grid-cols-[minmax(0,1fr)_300px]' : 'w-full'}`}>
         <section className="min-h-[calc(100svh-4rem)] bg-panel/30">
           {mode === 'reader' ? (
             <ArticleCanvas title={draft.title} subtitle={draft.subtitle} document={draft.document} author={article.author} updatedAt={article.updated_at} subjects={draft.subjects} references={draftReferences} />
           ) : (
             <div className="mx-auto max-w-[760px] px-7 py-12 sm:px-12 sm:py-16">
-              <div className="flex flex-wrap items-center justify-between gap-3"><p className="font-mono text-[8px] uppercase tracking-[0.22em] text-electric">Draft · Revision {article.revision}</p><button type="button" onClick={() => setVisualPicker({ insertAfterIndex: draft.document.blocks.length - 1 })} className="inline-flex h-9 items-center gap-2 border border-electric/35 bg-electric-dim/25 px-3 text-[8px] font-black uppercase tracking-[0.14em] text-electric hover:border-electric hover:bg-electric hover:text-mat"><BarChart3 className="size-3.5" /> Add visual <span className="hidden font-mono font-normal opacity-60 sm:inline">/chart</span></button></div>
+              <div className="flex flex-wrap items-center justify-between gap-3"><p className="font-mono text-[8px] uppercase tracking-[0.22em] text-electric">{statusLabel(article.status)} · Revision {article.revision}</p><button type="button" onClick={() => setVisualPicker({ insertAfterIndex: draft.document.blocks.length - 1 })} className="inline-flex h-9 items-center gap-2 border border-electric/35 bg-electric-dim/25 px-3 text-[8px] font-black uppercase tracking-[0.14em] text-electric hover:border-electric hover:bg-electric hover:text-mat"><BarChart3 className="size-3.5" /> Add visual <span className="hidden font-mono font-normal opacity-60 sm:inline">/chart</span></button></div>
               <textarea value={draft.title} onChange={event => editDraft(current => ({ ...current, title: event.target.value }))} rows={2} maxLength={180} placeholder="Untitled analysis" className="mt-5 w-full resize-none bg-transparent text-4xl font-black leading-[1.05] tracking-[-0.05em] text-ink placeholder:text-ink-muted focus:outline-none sm:text-5xl" />
               <textarea value={draft.subtitle} onChange={event => editDraft(current => ({ ...current, subtitle: event.target.value }))} rows={3} maxLength={280} placeholder="A clear standfirst that tells readers why this matters…" className="mt-4 w-full resize-none bg-transparent text-base leading-7 text-ink-dim placeholder:text-ink-muted focus:outline-none" />
               <div className="mt-8 border-t border-line pt-10">
@@ -494,12 +538,15 @@ function ArticleEditor() {
           )}
         </section>
 
-        {mode === 'write' ? <aside className="border-t border-line p-5 lg:sticky lg:top-16 lg:self-start lg:border-l lg:border-t-0">
+        {mode === 'write' || !canEdit ? <aside className="border-t border-line p-5 lg:sticky lg:top-16 lg:max-h-[calc(100svh-4rem)] lg:self-start lg:overflow-y-auto lg:border-l lg:border-t-0">
+          <InspectorSection title="Publishing workflow">
+            <WorkflowPanel article={article} canApprove={Boolean(user?.can_approve_editorial)} canEdit={canEdit} pending={saveState === 'saving'} onTransition={runWorkflow} />
+          </InspectorSection>
           <InspectorSection title="Discovery relationships">
-            <ArticleRelationshipsPanel subjects={draft.subjects} references={draftReferences} entities={entitiesQuery.data} loading={entitiesQuery.isLoading} onChange={subjects => editDraft(current => ({ ...current, subjects }))} />
+            <ArticleRelationshipsPanel subjects={draft.subjects} references={draftReferences} entities={entitiesQuery.data} loading={entitiesQuery.isLoading} readOnly={!canEdit} onChange={subjects => editDraft(current => ({ ...current, subjects }))} />
           </InspectorSection>
 
-          <InspectorSection title="Private preview">
+          {canEdit || user?.can_approve_editorial ? <InspectorSection title="Private preview">
             <p className="text-xs leading-5 text-ink-dim">Anyone with the active link can review this saved draft.</p>
             {article.preview_enabled ? (
               <div className="mt-4 space-y-2">
@@ -507,8 +554,9 @@ function ArticleEditor() {
                 <button type="button" onClick={() => void togglePreview(true, true)} className="flex h-9 w-full items-center justify-center gap-2 border border-line text-[8px] font-bold uppercase tracking-[0.14em] text-ink-muted hover:text-ink"><RefreshCw className="size-3.5" /> Rotate link</button>
                 <button type="button" onClick={() => void togglePreview(false)} className="flex h-9 w-full items-center justify-center gap-2 text-[8px] font-bold uppercase tracking-[0.14em] text-ink-muted hover:text-ember"><Unlink className="size-3.5" /> Revoke access</button>
               </div>
-            ) : <button type="button" onClick={() => void togglePreview(true)} className="mt-4 flex h-10 w-full items-center justify-center gap-2 border border-electric/50 bg-electric-dim/45 text-[8px] font-black uppercase tracking-[0.15em] text-electric"><Share2 className="size-3.5" /> Create preview link</button>}
-          </InspectorSection>
+            ) : <button type="button" onClick={() => void togglePreview(true)} className="mt-4 flex h-10 w-full items-center justify-center gap-2 border border-electric/50 bg-electric-dim/45 text-[8px] font-black uppercase tracking-[0.15em] text-electric"><Share2 className="size-3.5" /> Create 7-day preview</button>}
+            {article.preview_expires_at ? <p className="mt-3 font-mono text-[7px] uppercase tracking-[0.12em] text-ink-muted">Expires {shortDate(article.preview_expires_at)}</p> : null}
+          </InspectorSection> : null}
 
           <InspectorSection title="Revision trail">
             <div className="space-y-3">
@@ -519,6 +567,9 @@ function ArticleEditor() {
                 </button>
               ))}
             </div>
+          </InspectorSection>
+          <InspectorSection title="Audit trail">
+            <WorkflowTimeline article={article} />
           </InspectorSection>
         </aside> : null}
       </div>
@@ -532,7 +583,7 @@ function ArticleEditor() {
           error={revisionQuery.isError}
           restoring={saveState === 'saving'}
           onClose={() => setSelectedRevisionNumber(null)}
-          onContinue={continueFromRevision}
+          onContinue={canEdit ? continueFromRevision : undefined}
         />
       ) : null}
       {visualPicker ? <VisualBlockPicker initialType={visualPicker.initialType} initialBlock={visualPicker.initialBlock} onClose={() => setVisualPicker(null)} onInsert={insertVisual} /> : null}
@@ -540,7 +591,75 @@ function ArticleEditor() {
   )
 }
 
-function RevisionViewer({ article, revisionNumber, revision, loading, error, restoring, onClose, onContinue }: { article: Article; revisionNumber: number; revision?: ArticleRevision; loading: boolean; error: boolean; restoring: boolean; onClose: () => void; onContinue: (revision: ArticleRevision) => Promise<void> }) {
+function WorkflowPanel({ article, canApprove, canEdit, pending, onTransition }: { article: Article; canApprove: boolean; canEdit: boolean; pending: boolean; onTransition: (action: ArticleWorkflowAction, options?: { note?: string; publishAt?: string }) => Promise<void> }) {
+  const [note, setNote] = useState('')
+  const [scheduleAt, setScheduleAt] = useState(() => localDateTimeValue(new Date()))
+  const status = article.status
+  const canReview = canApprove && ['submitted', 'approved', 'scheduled'].includes(status)
+
+  async function requestChanges() {
+    if (!note.trim()) return
+    await onTransition('request_changes', { note: note.trim() })
+    setNote('')
+  }
+
+  async function schedulePublication() {
+    if (!scheduleAt) return
+    await onTransition('publish', { publishAt: new Date(scheduleAt).toISOString() })
+  }
+
+  return (
+    <div>
+      <div className={`border p-3 ${statusTone(status)}`}>
+        <p className="font-mono text-[8px] uppercase tracking-[0.18em]">{statusLabel(status)}</p>
+        <p className="mt-2 text-[11px] leading-5 opacity-80">{workflowDescription(article)}</p>
+      </div>
+      {status === 'changes_requested' && article.workflow_events.find(event => event.action === 'changes_requested')?.note ? (
+        <div className="mt-3 border-l-2 border-gold bg-gold/5 px-3 py-2 text-[11px] leading-5 text-ink-dim">{article.workflow_events.find(event => event.action === 'changes_requested')?.note}</div>
+      ) : null}
+      {canEdit ? <button type="button" onClick={() => void onTransition('submit')} disabled={pending} className="mt-4 flex h-10 w-full items-center justify-center gap-2 bg-electric text-[8px] font-black uppercase tracking-[0.15em] text-mat disabled:opacity-50"><Send className="size-3.5" /> Submit for review</button> : null}
+      {canReview ? (
+        <div className="mt-4 space-y-3">
+          <textarea value={note} onChange={event => setNote(event.target.value)} rows={3} maxLength={2000} placeholder="Explain the requested changes…" className="w-full resize-none border border-line bg-mat p-3 text-xs leading-5 text-ink placeholder:text-ink-muted focus:border-gold focus:outline-none" />
+          <button type="button" onClick={() => void requestChanges()} disabled={pending || !note.trim()} className="flex h-9 w-full items-center justify-center border border-gold/50 text-[8px] font-bold uppercase tracking-[0.14em] text-gold disabled:opacity-40">Request changes</button>
+          {status === 'submitted' ? <button type="button" onClick={() => void onTransition('approve')} disabled={pending} className="flex h-9 w-full items-center justify-center gap-2 border border-mint/50 text-[8px] font-bold uppercase tracking-[0.14em] text-mint disabled:opacity-40"><CheckCircle2 className="size-3.5" /> Approve only</button> : null}
+          {status !== 'scheduled' ? (
+            <>
+              <button type="button" onClick={() => void onTransition('publish')} disabled={pending} className="flex h-10 w-full items-center justify-center gap-2 bg-mint text-[8px] font-black uppercase tracking-[0.14em] text-mat disabled:opacity-40"><CheckCircle2 className="size-3.5" /> Publish now</button>
+              <div className="border border-line p-3">
+                <label className="font-mono text-[7px] uppercase tracking-[0.15em] text-ink-muted">Scheduled publication</label>
+                <input type="datetime-local" value={scheduleAt} min={localDateTimeMinimum()} onChange={event => setScheduleAt(event.target.value)} className="mt-2 h-9 w-full border border-line bg-mat px-2 text-xs text-ink focus:border-electric focus:outline-none" />
+                <p className="mt-2 text-[9px] leading-4 text-ink-muted">Shown in {USER_TIME_ZONE}. The saved publication time is timezone-safe.</p>
+                <button type="button" onClick={() => void schedulePublication()} disabled={pending || !scheduleAt} className="mt-2 flex h-9 w-full items-center justify-center gap-2 border border-electric/50 text-[8px] font-bold uppercase tracking-[0.14em] text-electric disabled:opacity-40"><CalendarClock className="size-3.5" /> Schedule</button>
+              </div>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+      {canApprove && ['published', 'scheduled'].includes(status) ? <button type="button" onClick={() => void onTransition('unpublish')} disabled={pending} className="mt-4 flex h-9 w-full items-center justify-center border border-ember/50 text-[8px] font-bold uppercase tracking-[0.14em] text-ember disabled:opacity-40">{status === 'scheduled' ? 'Cancel schedule' : 'Unpublish'}</button> : null}
+      {canApprove && status !== 'archived' ? <button type="button" onClick={() => void onTransition('archive')} disabled={pending} className="mt-2 flex h-9 w-full items-center justify-center gap-2 text-[8px] font-bold uppercase tracking-[0.14em] text-ink-muted hover:text-ember disabled:opacity-40"><Archive className="size-3.5" /> Archive</button> : null}
+      {canApprove && status === 'archived' ? <button type="button" onClick={() => void onTransition('restore')} disabled={pending} className="mt-4 flex h-9 w-full items-center justify-center border border-electric/50 text-[8px] font-bold uppercase tracking-[0.14em] text-electric disabled:opacity-40">Restore as draft</button> : null}
+    </div>
+  )
+}
+
+function WorkflowTimeline({ article }: { article: Article }) {
+  if (!article.workflow_events.length) return <p className="text-[10px] leading-5 text-ink-muted">No workflow actions yet.</p>
+  return (
+    <ol className="space-y-4">
+      {article.workflow_events.map(event => (
+        <li key={event.id} className="relative border-l border-line pl-3">
+          <span className="absolute -left-1 top-0.5 size-2 rounded-full bg-electric" />
+          <p className="font-mono text-[8px] uppercase tracking-[0.13em] text-ink-dim">{statusLabel(event.to_status)}</p>
+          <p className="mt-1 text-[10px] leading-4 text-ink-muted">{event.actor?.display_name ?? 'Publishing service'} · {shortDate(event.created_at)} · revision {event.revision}</p>
+          {event.note ? <p className="mt-2 text-[10px] leading-4 text-ink-dim">{event.note}</p> : null}
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+function RevisionViewer({ article, revisionNumber, revision, loading, error, restoring, onClose, onContinue }: { article: Article; revisionNumber: number; revision?: ArticleRevision; loading: boolean; error: boolean; restoring: boolean; onClose: () => void; onContinue?: (revision: ArticleRevision) => Promise<void> }) {
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !restoring) onClose()
@@ -557,7 +676,7 @@ function RevisionViewer({ article, revisionNumber, revision, loading, error, res
             <button type="button" onClick={onClose} disabled={restoring} className="grid size-9 place-items-center border border-line text-ink-muted hover:border-electric hover:text-electric disabled:opacity-40" aria-label="Close revision"><X className="size-4" /></button>
             <div className="min-w-0"><p className="font-mono text-[8px] uppercase tracking-[0.18em] text-electric">Revision {revisionNumber}</p><p className="mt-1 truncate text-xs text-ink-dim">Read-only historical snapshot</p></div>
           </div>
-          {revision ? <button type="button" onClick={() => void onContinue(revision)} disabled={restoring} className="inline-flex h-10 items-center gap-2 bg-electric px-4 text-[8px] font-black uppercase tracking-[0.14em] text-mat hover:bg-ink disabled:opacity-60"><RotateCcw className="size-3.5" /> {restoring ? 'Restoring…' : 'Continue from this revision'}</button> : null}
+          {revision && onContinue ? <button type="button" onClick={() => void onContinue(revision)} disabled={restoring} className="inline-flex h-10 items-center gap-2 bg-electric px-4 text-[8px] font-black uppercase tracking-[0.14em] text-mat hover:bg-ink disabled:opacity-60"><RotateCcw className="size-3.5" /> {restoring ? 'Restoring…' : 'Continue from this revision'}</button> : null}
         </div>
       </header>
       {loading ? <EditorMessage>Loading revision {revisionNumber}…</EditorMessage> : null}
@@ -601,6 +720,56 @@ function relativeDate(value: string): string {
 
 function shortDate(value: string): string {
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
+}
+
+function statusLabel(status: ArticleStatus): string {
+  return {
+    draft: 'Draft',
+    submitted: 'Submitted',
+    changes_requested: 'Changes requested',
+    approved: 'Approved',
+    scheduled: 'Scheduled',
+    published: 'Published',
+    archived: 'Archived',
+  }[status]
+}
+
+function statusTone(status: ArticleStatus): string {
+  if (status === 'published' || status === 'approved') return 'border-mint/45 bg-mint/10 text-mint'
+  if (status === 'submitted' || status === 'scheduled') return 'border-gold/45 bg-gold/10 text-gold'
+  if (status === 'changes_requested') return 'border-ember/45 bg-ember-dim/45 text-ember'
+  if (status === 'archived') return 'border-line-bright bg-raised/50 text-ink-muted'
+  return 'border-electric/35 bg-electric-dim/45 text-electric'
+}
+
+function cardStatusTone(status: ArticleStatus): string {
+  return statusTone(status)
+}
+
+function cardStatusLabel(article: ArticleSummary, isOwner: boolean): string {
+  if (article.status === 'submitted') return isOwner ? 'Submitted' : 'For review'
+  if (article.status === 'published') return 'Live'
+  if (article.status === 'approved' && article.published_at) return 'Approved · Unpublished'
+  return statusLabel(article.status)
+}
+
+function workflowDescription(article: Article): string {
+  if (article.status === 'draft') return 'Editable and private. Submit when this draft is ready for editorial review.'
+  if (article.status === 'submitted') return 'Locked while an editor verifies the article, subjects and inline references.'
+  if (article.status === 'changes_requested') return 'Editable again. Address the editor note, then resubmit the article.'
+  if (article.status === 'approved') return 'Editorially approved and private until an editor publishes or schedules it.'
+  if (article.status === 'scheduled') return article.scheduled_for ? `Private until ${shortDate(article.scheduled_for)}, then published automatically.` : 'Queued for publication.'
+  if (article.status === 'published') return 'Public discovery relationships are active. Content remains locked until unpublished.'
+  return 'Removed from the active workflow and all public discovery surfaces.'
+}
+
+function localDateTimeMinimum(): string {
+  return localDateTimeValue(new Date())
+}
+
+function localDateTimeValue(date: Date): string {
+  const offset = date.getTimezoneOffset() * 60_000
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
 }
 
 function focusLastEditableBlock(blockIds: string[]) {
