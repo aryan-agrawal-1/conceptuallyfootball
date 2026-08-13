@@ -521,7 +521,7 @@ function ArticleEditor() {
       <div className={`mx-auto ${mode === 'write' || !canEdit ? 'grid max-w-[1500px] lg:grid-cols-[minmax(0,1fr)_300px]' : 'w-full'}`}>
         <section className="min-h-[calc(100svh-4rem)] bg-panel/30">
           {mode === 'reader' ? (
-            <ArticleCanvas title={draft.title} subtitle={draft.subtitle} document={draft.document} author={article.author} updatedAt={article.updated_at} subjects={draft.subjects} references={draftReferences} />
+            <ArticleCanvas title={draft.title} subtitle={draft.subtitle} document={draft.document} author={article.author} updatedAt={article.updated_at} subjects={draft.subjects} references={draftReferences} topics={draft.topics} sourceNotes={draft.source_notes} />
           ) : (
             <div className="mx-auto max-w-[760px] px-7 py-12 sm:px-12 sm:py-16">
               <div className="flex flex-wrap items-center justify-between gap-3"><p className="font-mono text-[8px] uppercase tracking-[0.22em] text-electric">{statusLabel(article.status)} · Revision {article.revision}</p><button type="button" onClick={() => setVisualPicker({ insertAfterIndex: draft.document.blocks.length - 1 })} className="inline-flex h-9 items-center gap-2 border border-electric/35 bg-electric-dim/25 px-3 text-[8px] font-black uppercase tracking-[0.14em] text-electric hover:border-electric hover:bg-electric hover:text-mat"><BarChart3 className="size-3.5" /> Add visual <span className="hidden font-mono font-normal opacity-60 sm:inline">/chart</span></button></div>
@@ -544,6 +544,13 @@ function ArticleEditor() {
           </InspectorSection>
           <InspectorSection title="Discovery relationships">
             <ArticleRelationshipsPanel subjects={draft.subjects} references={draftReferences} entities={entitiesQuery.data} loading={entitiesQuery.isLoading} readOnly={!canEdit} onChange={subjects => editDraft(current => ({ ...current, subjects }))} />
+          </InspectorSection>
+          <InspectorSection title="Public discovery">
+            <label className="block font-mono text-[7px] uppercase tracking-[0.15em] text-ink-muted" htmlFor="article-topics">Topics</label>
+            <input id="article-topics" value={draft.topics.join(', ')} onChange={event => editDraft(current => ({ ...current, topics: event.target.value.split(',').map(topic => topic.trim()).filter(Boolean).slice(0, 8) }))} disabled={!canEdit} maxLength={320} placeholder="Tactics, recruitment, data" className="mt-2 h-10 w-full border border-line bg-mat px-3 text-xs text-ink placeholder:text-ink-muted focus:border-electric focus:outline-none disabled:opacity-60" />
+            <p className="mt-2 text-[9px] leading-4 text-ink-muted">Up to eight comma-separated topics used on the public analysis index.</p>
+            <label className="mt-5 block font-mono text-[7px] uppercase tracking-[0.15em] text-ink-muted" htmlFor="article-source-notes">Source notes</label>
+            <textarea id="article-source-notes" value={draft.source_notes} onChange={event => editDraft(current => ({ ...current, source_notes: event.target.value }))} disabled={!canEdit} rows={4} maxLength={2000} placeholder="Data sources, methodology and caveats readers should know…" className="mt-2 w-full resize-none border border-line bg-mat p-3 text-xs leading-5 text-ink placeholder:text-ink-muted focus:border-electric focus:outline-none disabled:opacity-60" />
           </InspectorSection>
 
           {canEdit || user?.can_approve_editorial ? <InspectorSection title="Private preview">
@@ -681,7 +688,7 @@ function RevisionViewer({ article, revisionNumber, revision, loading, error, res
       </header>
       {loading ? <EditorMessage>Loading revision {revisionNumber}…</EditorMessage> : null}
       {error ? <EditorMessage error>This revision could not be loaded.</EditorMessage> : null}
-      {revision ? <ArticleCanvas title={revision.title} subtitle={revision.subtitle} document={revision.document} author={article.author} updatedAt={revision.created_at} subjects={revision.subjects} references={referencesFromDocument(revision.document)} /> : null}
+      {revision ? <ArticleCanvas title={revision.title} subtitle={revision.subtitle} document={revision.document} author={article.author} updatedAt={revision.created_at} subjects={revision.subjects} references={referencesFromDocument(revision.document)} topics={revision.topics} sourceNotes={revision.source_notes} /> : null}
     </div>
   )
 }
@@ -707,8 +714,8 @@ function InspectorSection({ title, children }: { title: string; children: ReactN
   return <section className="border-b border-line py-6 first:pt-0 last:border-0"><h2 className="mb-4 font-mono text-[8px] uppercase tracking-[0.2em] text-ink-muted">{title}</h2>{children}</section>
 }
 
-function articleToDraft(article: Pick<Article, 'title' | 'subtitle' | 'document' | 'subjects'> | ArticleRevision): ArticleDraft {
-  return { title: article.title, subtitle: article.subtitle, document: article.document, subjects: article.subjects }
+function articleToDraft(article: Pick<Article, 'title' | 'subtitle' | 'document' | 'subjects' | 'topics' | 'source_notes'> | ArticleRevision): ArticleDraft {
+  return { title: article.title, subtitle: article.subtitle, document: article.document, subjects: article.subjects, topics: article.topics, source_notes: article.source_notes }
 }
 
 function relativeDate(value: string): string {

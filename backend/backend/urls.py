@@ -18,7 +18,10 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 
+from editorial.api import public_sitemap
+
 urlpatterns = [
+    path("sitemap.xml", public_sitemap, name="public-sitemap"),
     path("admin/", admin.site.urls),
     path("api/v1/auth/", include("accounts.auth_urls")),
     path("api/v1/private/", include("accounts.private_urls")),

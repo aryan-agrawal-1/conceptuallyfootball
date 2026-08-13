@@ -499,6 +499,149 @@ class EditorialApiTests(TestCase):
             ).exists()
         )
 
+    def test_public_index_filters_snapshot_metadata_and_excludes_drafts(self):
+        player = CanonicalPlayer.objects.create(display_name="Index Subject")
+        created = self.create_article()
+        saved = self.patch_article(
+            created["id"],
+            {
+                "revision": 1,
+                "title": "Pressing after the turnover",
+                "subtitle": "Why the first five seconds matter.",
+                "topics": ["Pressing", "Tactics", "pressing"],
+                "source_notes": "Event data supplied by the public match feed.",
+                "subjects": {
+                    "players": [{"kind": "player", "id": player.id, "name": player.display_name}],
+                    "teams": [],
+                },
+                "document": {
+                    "version": 1,
+                    "blocks": [
+                        {
+                            "id": "opening",
+                            "type": "paragraph",
+                            "content": [{"text": "The counterpress narrows every passing lane."}],
+                        },
+                        {
+                            "id": "context-chart",
+                            "type": "visual",
+                            "visual_type": "custom_chart",
+                            "title": "Pressure sequences",
+                            "caption": "High regains in the Premier League.",
+                            "alt": "Bar chart of high regains.",
+                            "source_note": "Conceptually Football",
+                            "data_as_of": "2026-08-01",
+                            "update_policy": "frozen",
+                            "config": {
+                                "entity_kind": "player",
+                                "entities": [],
+                                "context": {
+                                    "scope_kind": "league",
+                                    "scope_code": "ENG1",
+                                    "scope_label": "Premier League",
+                                    "season_label": "2025/26",
+                                },
+                                "chart_type": "bar",
+                                "metric_keys": ["high_regains"],
+                                "rate_mode": "per90",
+                                "filters": {
+                                    "position_group": "ALL",
+                                    "team_names": [],
+                                    "minimum_minutes": 450,
+                                    "labels": True,
+                                    "trendline": False,
+                                    "bar_window": "top",
+                                    "bar_count": 10,
+                                },
+                            },
+                        },
+                    ],
+                },
+            },
+        ).json()["article"]
+        self.create_article()
+        self.workflow(self.client, created["id"], "submit")
+        approver_client = Client()
+        approver_client.force_login(self.create_approver())
+        self.workflow(approver_client, created["id"], "publish")
+
+        response = Client().get(
+            reverse("editorial-public-articles"),
+            {
+                "q": "turnover",
+                "topic": "pressing",
+                "competition": "ENG1",
+                "season": "2025/26",
+                "author": self.writer.id,
+                "entity_kind": "player",
+                "entity_id": player.id,
+                "relationship": "subject",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["pagination"]["total"], 1)
+        self.assertEqual(payload["articles"][0]["topics"], ["Pressing", "Tactics"])
+        self.assertEqual(payload["articles"][0]["context"]["competitions"], ["ENG1"])
+        slug = Article.objects.get(id=created["id"]).slug
+        detail = Client().get(
+            reverse("editorial-public-article-detail-by-slug", kwargs={"slug": slug})
+        ).json()["article"]
+        self.assertEqual(detail["source_notes"], saved["source_notes"])
+        self.assertEqual(detail["canonical_path"], f"/articles/{slug}")
+        self.assertGreaterEqual(detail["reading_minutes"], 1)
+        self.assertNotIn("workflow_events", detail)
+        self.assertNotIn("preview_token", detail)
+
+    def test_public_slug_is_stable_across_republication_and_sitemap_only_lists_published_articles(self):
+        created = self.create_article()
+        saved = self.patch_article(
+            created["id"],
+            {
+                "revision": 1,
+                "title": "Original public title",
+                "subtitle": "",
+                "document": created["document"],
+            },
+        ).json()["article"]
+        draft = self.create_article()
+        self.workflow(self.client, created["id"], "submit")
+        approver_client = Client()
+        approver_client.force_login(self.create_approver())
+        self.workflow(approver_client, created["id"], "publish")
+        original_slug = Article.objects.get(id=created["id"]).slug
+
+        sitemap = Client().get(reverse("public-sitemap")).content.decode()
+        self.assertIn(f"/articles/{original_slug}", sitemap)
+        self.assertNotIn(draft["id"], sitemap)
+
+        self.workflow(approver_client, created["id"], "unpublish")
+        self.workflow(
+            approver_client,
+            created["id"],
+            "request_changes",
+            note="Update the public headline.",
+        )
+        updated = self.patch_article(
+            created["id"],
+            {
+                "revision": saved["revision"],
+                "title": "A completely different title",
+                "subtitle": "",
+                "document": saved["document"],
+            },
+        ).json()["article"]
+        self.workflow(self.client, created["id"], "submit")
+        self.workflow(approver_client, created["id"], "publish")
+
+        article = Article.objects.get(id=created["id"])
+        self.assertEqual(article.slug, original_slug)
+        detail = Client().get(
+            reverse("editorial-public-article-detail-by-slug", kwargs={"slug": original_slug})
+        )
+        self.assertEqual(detail.json()["article"]["title"], updated["title"])
+
     def test_inline_links_are_normalized_and_legacy_link_blocks_are_upgraded(self):
         created = self.create_article()
         response = self.patch_article(
@@ -727,9 +870,12 @@ class EditorialApiTests(TestCase):
         )
         self.assertEqual(private_response.json()["subjects_of"], [])
         self.assertEqual(private_response.json()["referenced_by"], [])
-        Article.objects.filter(id__in=[subject_article["id"], reference_article["id"]]).update(
-            status="published"
-        )
+        self.workflow(self.client, subject_article["id"], "submit")
+        self.workflow(self.client, reference_article["id"], "submit")
+        approver_client = Client()
+        approver_client.force_login(self.create_approver())
+        self.workflow(approver_client, subject_article["id"], "publish")
+        self.workflow(approver_client, reference_article["id"], "publish")
 
         response = Client().get(
             reverse("editorial-player-related-analysis", kwargs={"entity_id": player.id})

@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import json
+import math
+import re
 import uuid
 from datetime import timedelta
+from xml.sax.saxutils import escape
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q
-from django.http import HttpRequest, JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
+from django.utils.dateparse import parse_date, parse_datetime
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods
 
@@ -44,6 +47,12 @@ from editorial.workflow import (
 from ingestion.models import CanonicalPlayer, CanonicalTeam
 
 
+PUBLIC_SITE_URL = "https://www.conceptuallyfootball.com"
+TOPIC_LIMIT = 8
+TOPIC_LENGTH = 40
+WORD_PATTERN = re.compile(r"\b[\w’'-]+\b", re.UNICODE)
+
+
 def json_body(request: HttpRequest) -> dict:
     try:
         payload = json.loads(request.body or b"{}")
@@ -66,11 +75,31 @@ def public_preview_json(payload: dict, *, status: int = 200) -> JsonResponse:
     return response
 
 
+def normalize_topics(value) -> list[str]:
+    if not isinstance(value, list):
+        raise ValidationError("Topics must be a list.")
+    topics = []
+    seen = set()
+    for raw_topic in value:
+        topic = clean_text(raw_topic, field="Topic", maximum=TOPIC_LENGTH).strip()
+        key = topic.casefold()
+        if not topic or key in seen:
+            continue
+        seen.add(key)
+        topics.append(topic)
+    if len(topics) > TOPIC_LIMIT:
+        raise ValidationError(f"Articles can have at most {TOPIC_LIMIT} topics.")
+    return topics
+
+
 def article_summary(article: Article) -> dict:
     return {
         "id": str(article.id),
         "title": article.title,
         "subtitle": article.subtitle,
+        "slug": article.slug,
+        "topics": normalize_topics(article.topics),
+        "source_notes": article.source_notes,
         "status": article.status,
         "revision": article.revision,
         "preview_enabled": article.preview_enabled,
@@ -145,6 +174,8 @@ def article_revision_payload(revision: ArticleRevision) -> dict:
         "subtitle": revision.subtitle,
         "document": normalize_document(revision.document),
         "subjects": normalize_subjects(revision.subjects),
+        "topics": normalize_topics(revision.topics),
+        "source_notes": revision.source_notes,
         "created_at": revision.created_at.isoformat(),
     }
 
@@ -212,6 +243,8 @@ def articles(request: HttpRequest) -> JsonResponse:
             subtitle=article.subtitle,
             document=article.document,
             subjects={"players": [], "teams": []},
+            topics=[],
+            source_notes="",
             created_by=request.user,
         )
     except ValidationError as validation:
@@ -277,14 +310,22 @@ def article_detail(request: HttpRequest, article_id) -> JsonResponse:
             ).strip()
             document = normalize_document(payload.get("document", article.document))
             subjects = normalize_subjects(payload.get("subjects", existing_subjects))
+            topics = normalize_topics(payload.get("topics", article.topics))
+            source_notes = clean_text(
+                payload.get("source_notes", article.source_notes),
+                field="Source notes",
+                maximum=2000,
+            ).strip()
         except ValidationError as validation:
             return validation_error(validation)
 
         title = title or "Untitled analysis"
-        content_changed = (title, subtitle, document) != (
+        content_changed = (title, subtitle, document, topics, source_notes) != (
             article.title,
             article.subtitle,
             article.document,
+            article.topics,
+            article.source_notes,
         )
         subjects_changed = subjects != existing_subjects
         changed = content_changed or subjects_changed
@@ -296,8 +337,18 @@ def article_detail(request: HttpRequest, article_id) -> JsonResponse:
                 article.title = title
                 article.subtitle = subtitle
                 article.document = document
+                article.topics = topics
+                article.source_notes = source_notes
                 article.revision += 1
-                article.save(update_fields=("title", "subtitle", "document", "revision", "updated_at"))
+                article.save(update_fields=(
+                    "title",
+                    "subtitle",
+                    "document",
+                    "topics",
+                    "source_notes",
+                    "revision",
+                    "updated_at",
+                ))
             except ValidationError as validation:
                 return validation_error(validation)
         if create_revision and not ArticleRevision.objects.filter(
@@ -311,6 +362,8 @@ def article_detail(request: HttpRequest, article_id) -> JsonResponse:
                 subtitle=article.subtitle,
                 document=article.document,
                 subjects=subjects_payload(article),
+                topics=article.topics,
+                source_notes=article.source_notes,
                 created_by=request.user,
             )
     article = visible_article(request, article.id)
@@ -421,35 +474,269 @@ def shared_preview(request: HttpRequest, token) -> JsonResponse:
     )
 
 
+def active_publications():
+    return ArticlePublication.objects.select_related("article", "article__author").filter(
+        article__status=ArticleStatus.PUBLISHED,
+        article__slug__isnull=False,
+        unpublished_at__isnull=True,
+    ).order_by("-published_at", "-id")
+
+
+def public_response(payload: dict) -> JsonResponse:
+    response = JsonResponse(payload)
+    response["Cache-Control"] = "public, max-age=60, stale-while-revalidate=300"
+    return response
+
+
+def reading_minutes(document: dict) -> int:
+    words = 0
+    for block in normalize_document(document)["blocks"]:
+        if block["type"] in {"paragraph", "heading", "quote", "callout"}:
+            words += sum(len(WORD_PATTERN.findall(run.get("text", ""))) for run in block["content"])
+        elif block["type"] in {"bulleted_list", "numbered_list"}:
+            words += sum(
+                len(WORD_PATTERN.findall(run.get("text", "")))
+                for item in block["items"]
+                for run in item
+            )
+        elif block["type"] in {"image", "visual"}:
+            words += len(WORD_PATTERN.findall(block.get("caption", "")))
+    return max(1, math.ceil(words / 220))
+
+
+def document_search_text(document: dict) -> str:
+    values = []
+    for block in normalize_document(document)["blocks"]:
+        if block["type"] in {"paragraph", "heading", "quote", "callout"}:
+            values.extend(run.get("text", "") for run in block["content"])
+        elif block["type"] in {"bulleted_list", "numbered_list"}:
+            values.extend(run.get("text", "") for item in block["items"] for run in item)
+        elif block["type"] in {"image", "visual"}:
+            values.extend((block.get("title", ""), block.get("caption", ""), block.get("source_note", "")))
+    return " ".join(values)
+
+
+def publication_context(publication: ArticlePublication) -> dict:
+    competitions = set()
+    seasons = set()
+    relationships = (normalize_subjects(publication.subjects), normalize_subjects(publication.references))
+    for relationship in relationships:
+        for entity in [*relationship["players"], *relationship["teams"]]:
+            context = entity.get("context") or {}
+            if context.get("competition_code"):
+                competitions.add(context["competition_code"])
+            if context.get("season_label"):
+                seasons.add(context["season_label"])
+    for block in normalize_document(publication.document)["blocks"]:
+        if block["type"] != "visual":
+            continue
+        context = block.get("config", {}).get("context", {})
+        if context.get("scope_code"):
+            competitions.add(context["scope_code"])
+        if context.get("season_label"):
+            seasons.add(context["season_label"])
+    return {"competitions": sorted(competitions), "seasons": sorted(seasons, reverse=True)}
+
+
+def publication_summary(publication: ArticlePublication) -> dict:
+    article = publication.article
+    return {
+        "id": str(publication.article_id),
+        "slug": article.slug,
+        "canonical_path": f"/articles/{article.slug}",
+        "title": publication.title,
+        "subtitle": publication.subtitle,
+        "topics": normalize_topics(publication.topics),
+        "author": {
+            "id": article.author_id,
+            "display_name": display_name_for(article.author),
+        },
+        "published_at": publication.published_at.isoformat(),
+        "reading_minutes": reading_minutes(publication.document),
+        "context": publication_context(publication),
+    }
+
+
+def publication_matches_entity(
+    publication: ArticlePublication,
+    *,
+    kind: str,
+    entity_id: int,
+    relationship: str,
+) -> bool:
+    key = "players" if kind == "player" else "teams"
+    subject_ids = {entity["id"] for entity in normalize_subjects(publication.subjects)[key]}
+    reference_ids = {entity["id"] for entity in normalize_subjects(publication.references)[key]}
+    if relationship == "subject":
+        return entity_id in subject_ids
+    if relationship == "reference":
+        return entity_id in reference_ids and entity_id not in subject_ids
+    return entity_id in subject_ids or entity_id in reference_ids
+
+
+def public_facets(publications: list[ArticlePublication]) -> dict:
+    authors = {}
+    topics = set()
+    competitions = set()
+    seasons = set()
+    players = {}
+    teams = {}
+    for publication in publications:
+        author = publication.article.author
+        authors[author.id] = display_name_for(author)
+        topics.update(normalize_topics(publication.topics))
+        context = publication_context(publication)
+        competitions.update(context["competitions"])
+        seasons.update(context["seasons"])
+        for relationship in (publication.subjects, publication.references):
+            normalized = normalize_subjects(relationship)
+            players.update({entity["id"]: entity["name"] for entity in normalized["players"]})
+            teams.update({entity["id"]: entity["name"] for entity in normalized["teams"]})
+    return {
+        "authors": [{"id": key, "name": value} for key, value in sorted(authors.items(), key=lambda item: item[1])],
+        "topics": sorted(topics),
+        "competitions": sorted(competitions),
+        "seasons": sorted(seasons, reverse=True),
+        "players": [{"id": key, "name": value} for key, value in sorted(players.items(), key=lambda item: item[1])],
+        "teams": [{"id": key, "name": value} for key, value in sorted(teams.items(), key=lambda item: item[1])],
+    }
+
+
 @require_GET
-def public_article_detail(request: HttpRequest, article_id) -> JsonResponse:
+def public_articles(request: HttpRequest) -> JsonResponse:
     publish_due_articles()
-    publication = get_object_or_404(
-        ArticlePublication.objects.select_related("article", "article__author").filter(
-            article_id=article_id,
-            article__status=ArticleStatus.PUBLISHED,
-            unpublished_at__isnull=True,
-        ).order_by("-version")
-    )
-    response = JsonResponse(
+    publications = list(active_publications()[:500])
+    facets = public_facets(publications)
+    query = request.GET.get("q", "").strip().casefold()
+    topic = request.GET.get("topic", "").strip().casefold()
+    competition = request.GET.get("competition", "").strip().casefold()
+    season = request.GET.get("season", "").strip().casefold()
+    relationship = request.GET.get("relationship", "").strip()
+    kind = request.GET.get("entity_kind", "").strip()
+    author_id = request.GET.get("author", "").strip()
+    published_from = parse_date(request.GET.get("from", ""))
+    published_to = parse_date(request.GET.get("to", ""))
+    try:
+        entity_id = int(request.GET.get("entity_id", ""))
+    except (TypeError, ValueError):
+        entity_id = None
+
+    filtered = []
+    for publication in publications:
+        summary = publication_summary(publication)
+        searchable = " ".join(
+            [
+                summary["title"],
+                summary["subtitle"],
+                summary["author"]["display_name"],
+                publication.source_notes,
+                document_search_text(publication.document),
+                *summary["topics"],
+            ]
+        ).casefold()
+        if query and query not in searchable:
+            continue
+        if topic and topic not in {value.casefold() for value in summary["topics"]}:
+            continue
+        if competition and competition not in {value.casefold() for value in summary["context"]["competitions"]}:
+            continue
+        if season and season not in {value.casefold() for value in summary["context"]["seasons"]}:
+            continue
+        if author_id and author_id != str(summary["author"]["id"]):
+            continue
+        if published_from and publication.published_at.date() < published_from:
+            continue
+        if published_to and publication.published_at.date() > published_to:
+            continue
+        if entity_id and kind in {"player", "team"} and not publication_matches_entity(
+            publication,
+            kind=kind,
+            entity_id=entity_id,
+            relationship=relationship,
+        ):
+            continue
+        filtered.append(summary)
+
+    try:
+        page = max(1, int(request.GET.get("page", "1")))
+        page_size = min(48, max(1, int(request.GET.get("page_size", "18"))))
+    except ValueError:
+        page, page_size = 1, 18
+    start = (page - 1) * page_size
+    total = len(filtered)
+    return public_response(
         {
-            "article": {
-                "id": str(publication.article_id),
-                "title": publication.title,
-                "subtitle": publication.subtitle,
-                "document": normalize_document(publication.document),
-                "subjects": normalize_subjects(publication.subjects),
-                "references": normalize_subjects(publication.references),
-                "author": {
-                    "id": publication.article.author_id,
-                    "display_name": display_name_for(publication.article.author),
-                    "social_links": social_links_for(publication.article.author),
-                },
-                "published_at": publication.published_at.isoformat(),
-            }
+            "articles": filtered[start:start + page_size],
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "pages": math.ceil(total / page_size) if total else 0,
+            },
+            "facets": facets,
         }
     )
-    response["Cache-Control"] = "public, max-age=60, stale-while-revalidate=300"
+
+
+def public_article_payload(publication: ArticlePublication) -> dict:
+    summary = publication_summary(publication)
+    document = normalize_document(publication.document)
+    first_image = next(
+        (
+            block.get("url")
+            for block in document["blocks"]
+            if block["type"] == "image" and block.get("url", "").startswith(("https://", "http://"))
+        ),
+        None,
+    )
+    return {
+        **summary,
+        "document": document,
+        "subjects": normalize_subjects(publication.subjects),
+        "references": normalize_subjects(publication.references),
+        "source_notes": publication.source_notes,
+        "social_image": first_image,
+        "author": {
+            **summary["author"],
+            "social_links": social_links_for(publication.article.author),
+        },
+    }
+
+
+def public_article_response(publication: ArticlePublication) -> JsonResponse:
+    return public_response({"article": public_article_payload(publication)})
+
+
+@require_GET
+def public_article_detail(request: HttpRequest, slug: str) -> JsonResponse:
+    publish_due_articles()
+    return public_article_response(get_object_or_404(active_publications(), article__slug=slug))
+
+
+@require_GET
+def public_article_detail_by_id(request: HttpRequest, article_id) -> JsonResponse:
+    publish_due_articles()
+    return public_article_response(get_object_or_404(active_publications(), article_id=article_id))
+
+
+@require_GET
+def public_sitemap(request: HttpRequest) -> HttpResponse:
+    publish_due_articles()
+    static_paths = ("/", "/articles", "/galaxy", "/create-charts", "/comparisons", "/regression-lab")
+    urls = [
+        f"  <url><loc>{escape(PUBLIC_SITE_URL + path)}</loc></url>"
+        for path in static_paths
+    ]
+    urls.extend(
+        "  <url>"
+        f"<loc>{escape(PUBLIC_SITE_URL + '/articles/' + publication.article.slug)}</loc>"
+        f"<lastmod>{publication.published_at.date().isoformat()}</lastmod>"
+        "</url>"
+        for publication in active_publications()
+    )
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + "\n".join(urls) + "\n</urlset>\n"
+    response = HttpResponse(xml, content_type="application/xml; charset=utf-8")
+    response["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"
     return response
 
 
@@ -480,15 +767,19 @@ def related_analysis_payload(*, kind: str, entity_id: int, name: str) -> JsonRes
     entity_field = "player_id" if kind == "player" else "team_id"
     subject_links = subject_model.objects.filter(
         **{entity_field: entity_id},
-        article__status="published",
-    ).select_related("article", "article__author").order_by("-article__updated_at")
+        article__status=ArticleStatus.PUBLISHED,
+        article__publications__isnull=False,
+        article__publications__unpublished_at__isnull=True,
+    ).select_related("article", "article__author").distinct().order_by("-article__published_at")
     subject_article_ids = subject_links.values_list("article_id", flat=True)
     reference_links = reference_model.objects.filter(
         **{entity_field: entity_id},
-        article__status="published",
+        article__status=ArticleStatus.PUBLISHED,
+        article__publications__isnull=False,
+        article__publications__unpublished_at__isnull=True,
     ).exclude(article_id__in=subject_article_ids).select_related(
         "article", "article__author"
-    ).order_by("-article__updated_at")
+    ).distinct().order_by("-article__published_at")
     response = JsonResponse(
         {
             "entity": {"kind": kind, "id": entity_id, "name": name},
@@ -501,11 +792,8 @@ def related_analysis_payload(*, kind: str, entity_id: int, name: str) -> JsonRes
 
 
 def public_related_article(article: Article) -> dict:
-    return {
-        "id": str(article.id),
-        "title": article.title,
-        "subtitle": article.subtitle,
-        "author": display_name_for(article.author),
-        "published_at": article.published_at.isoformat() if article.published_at else None,
-        "updated_at": article.updated_at.isoformat(),
-    }
+    publication = article.publications.filter(unpublished_at__isnull=True).order_by("-version").first()
+    if publication is None:
+        return {}
+    summary = publication_summary(publication)
+    return {**summary, "author": summary["author"]["display_name"]}

@@ -1,97 +1,64 @@
 import { useQuery } from '@tanstack/react-query'
-import { AtSign, Focus, Newspaper, X } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { ArrowUpRight, AtSign, Focus } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { getRelatedAnalysis, type EditorialEntityKind, type RelatedAnalysisArticle } from '../../lib/editorial'
 
 
-export function RelatedAnalysisButton({
+export function RelatedAnalysisSections({
   kind,
   entityId,
 }: {
   kind: EditorialEntityKind
   entityId: number
 }) {
-  const [open, setOpen] = useState(false)
   const query = useQuery({
     queryKey: ['related-analysis', kind, entityId],
     queryFn: () => getRelatedAnalysis(kind, entityId),
     enabled: Number.isFinite(entityId) && entityId > 0,
     staleTime: 60_000,
   })
-  const articleCount = (query.data?.subjects_of.length ?? 0) + (query.data?.referenced_by.length ?? 0)
-  if (!articleCount || !query.data) return null
+  const data = query.data
+  const articleCount = (data?.subjects_of.length ?? 0) + (data?.referenced_by.length ?? 0)
+  if (!data || !articleCount) return null
 
   return (
-    <>
-      <button type="button" onClick={() => setOpen(true)} className="ml-auto inline-flex h-8 items-center gap-2 whitespace-nowrap border border-electric/45 bg-electric/10 px-3 text-[10px] font-bold uppercase tracking-[0.14em] text-electric transition-colors hover:bg-electric/20 hover:text-ink">
-        <Newspaper className="size-3.5" /> Analytical Articles <span className="font-mono text-[8px] opacity-70">{articleCount}</span>
-      </button>
-      {open ? <RelatedAnalysisModal entityName={query.data.entity.name} subjects={query.data.subjects_of} references={query.data.referenced_by} onClose={() => setOpen(false)} /> : null}
-    </>
+    <section aria-labelledby={`${kind}-analysis-heading`} className="border-t border-line pt-8">
+      <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_minmax(180px,320px)] sm:items-end">
+        <div>
+          <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-electric">Editorial coverage</p>
+          <h2 id={`${kind}-analysis-heading`} className="mt-2 text-2xl font-black tracking-[-0.04em] text-ink">Analysis involving {data.entity.name}</h2>
+        </div>
+        <p className="text-[11px] leading-5 text-ink-muted">Primary subject coverage is kept separate from incidental references, so prominence reflects the article’s actual focus.</p>
+      </div>
+      <div className="mt-6 grid gap-px bg-line lg:grid-cols-2">
+        <RelationshipColumn icon={<Focus className="size-3.5" />} label="Subjects of" description="Articles primarily about this profile" articles={data.subjects_of} />
+        <RelationshipColumn icon={<AtSign className="size-3.5" />} label="Referenced by" description="Articles where this profile adds context" articles={data.referenced_by} />
+      </div>
+    </section>
   )
 }
 
-function RelatedAnalysisModal({
-  entityName,
-  subjects,
-  references,
-  onClose,
-}: {
-  entityName: string
-  subjects: RelatedAnalysisArticle[]
-  references: RelatedAnalysisArticle[]
-  onClose: () => void
-}) {
-  const [tab, setTab] = useState<'subjects' | 'references'>(subjects.length ? 'subjects' : 'references')
-  const articles = tab === 'subjects' ? subjects : references
-
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', closeOnEscape)
-    return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [onClose])
-
+function RelationshipColumn({ icon, label, description, articles }: { icon: ReactNode; label: string; description: string; articles: RelatedAnalysisArticle[] }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-mat/90 p-4 backdrop-blur-sm" role="presentation" onMouseDown={event => {
-      if (event.target === event.currentTarget) onClose()
-    }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="analysis-modal-title" className="flex max-h-[min(760px,90svh)] w-full max-w-3xl flex-col border border-line-bright bg-panel shadow-2xl">
-        <header className="flex items-start justify-between gap-6 border-b border-line px-5 py-5 sm:px-7">
-          <div>
-            <p className="font-mono text-[8px] uppercase tracking-[0.22em] text-electric">Analytical articles</p>
-            <h2 id="analysis-modal-title" className="mt-2 text-2xl font-black tracking-[-0.035em] text-ink">{entityName}</h2>
-          </div>
-          <button type="button" onClick={onClose} className="grid size-9 shrink-0 place-items-center border border-line text-ink-muted hover:border-electric hover:text-electric" aria-label="Close analytical articles"><X className="size-4" /></button>
-        </header>
-        <div className="grid grid-cols-2 border-b border-line" role="tablist" aria-label="Article relationship">
-          <TabButton active={tab === 'subjects'} icon={<Focus className="size-3.5" />} label="Subject of" count={subjects.length} onClick={() => setTab('subjects')} />
-          <TabButton active={tab === 'references'} icon={<AtSign className="size-3.5" />} label="Referenced by" count={references.length} onClick={() => setTab('references')} />
+    <div className="bg-mat p-5 sm:p-6">
+      <div className="flex items-center gap-2 font-mono text-[8px] uppercase tracking-[0.17em] text-electric">{icon}{label}<span className="text-ink-muted">{articles.length}</span></div>
+      <p className="mt-2 text-[10px] text-ink-muted">{description}</p>
+      {articles.length ? (
+        <div className="mt-5 divide-y divide-line border-y border-line">
+          {articles.map(article => (
+            <Link key={article.id} to={article.canonical_path} className="group flex items-start justify-between gap-4 py-4">
+              <div className="min-w-0">
+                <h3 className="text-sm font-black leading-5 tracking-[-0.02em] text-ink group-hover:text-electric">{article.title}</h3>
+                <p className="mt-2 font-mono text-[7px] uppercase tracking-[0.12em] text-ink-muted">By {article.author} · {formatArticleDate(article.published_at)} · {article.reading_minutes} min</p>
+              </div>
+              <ArrowUpRight className="mt-0.5 size-4 shrink-0 text-electric transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+            </Link>
+          ))}
         </div>
-        <div className="overflow-y-auto p-5 sm:p-7">
-          {articles.length ? (
-            <div className="divide-y divide-line border-y border-line">
-              {articles.map(article => (
-                <Link key={article.id} to={`/articles/${article.id}`} onClick={onClose} className="group grid gap-3 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                  <div>
-                    <h3 className="text-lg font-black leading-tight tracking-[-0.025em] text-ink group-hover:text-electric">{article.title}</h3>
-                    {article.subtitle ? <p className="mt-2 max-w-2xl text-xs leading-5 text-ink-dim">{article.subtitle}</p> : null}
-                  </div>
-                  <p className="font-mono text-[8px] uppercase tracking-[0.13em] text-ink-muted">By {article.author}{article.published_at ? ` · ${formatArticleDate(article.published_at)}` : ''}</p>
-                </Link>
-              ))}
-            </div>
-          ) : <p className="border border-dashed border-line px-5 py-12 text-center text-xs text-ink-muted">No published articles in this relationship.</p>}
-        </div>
-      </section>
+      ) : <p className="mt-5 border border-dashed border-line px-4 py-7 text-center text-[10px] text-ink-muted">No published articles in this relationship.</p>}
     </div>
   )
-}
-
-function TabButton({ active, icon, label, count, onClick }: { active: boolean; icon: ReactNode; label: string; count: number; onClick: () => void }) {
-  return <button type="button" role="tab" aria-selected={active} onClick={onClick} className={`flex h-12 items-center justify-center gap-2 border-b-2 font-mono text-[9px] font-bold uppercase tracking-[0.15em] ${active ? 'border-electric bg-electric/10 text-electric' : 'border-transparent text-ink-muted hover:text-ink'}`}>{icon}{label}<span className="opacity-60">{count}</span></button>
 }
 
 function formatArticleDate(value: string): string {
