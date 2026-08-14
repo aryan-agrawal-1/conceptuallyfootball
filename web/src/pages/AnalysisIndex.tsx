@@ -27,7 +27,7 @@ export function AnalysisIndex() {
 
   useSeoMeta({
     title: 'Football Analysis & Ideas | Conceptually Football',
-    description: 'Read original football analysis on tactics, players, teams and data — connected directly to Conceptually Football profiles and visual tools.',
+    description: 'Read original football analysis on tactics, players, teams and data - connected directly to Conceptually Football profiles and visual tools.',
     canonicalPath: '/articles',
   })
 
@@ -106,7 +106,7 @@ export function AnalysisIndex() {
               })}
             </div>
           </fieldset>
-          <p className="mt-3 max-w-3xl text-[10px] leading-5 text-ink-muted"><span className="font-mono uppercase tracking-[0.12em] text-electric">Competition and season</span> describe the frozen data context used by an article’s published visual blocks. Articles without that visual context remain available under the unfiltered view.</p>
+          <p className="mt-3 max-w-3xl text-[10px] leading-5 text-ink-muted"><span className=" uppercase text-electric">Competition and season</span> describe any data context used by an article’s published visual blocks. Articles without any visual context remain available under the unfiltered view.</p>
           <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:max-w-xl">
             <DateFilter label="Published after" value={filters.from ?? ''} onChange={value => updateFilter('from', value)} />
             <DateFilter label="Published before" value={filters.to ?? ''} onChange={value => updateFilter('to', value)} />

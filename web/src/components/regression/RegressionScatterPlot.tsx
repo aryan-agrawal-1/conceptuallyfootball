@@ -100,7 +100,7 @@ function metricPrecision(domain: [number, number]) {
 }
 
 function formatMetric(value: number, precision: number) {
-  if (!Number.isFinite(value)) return '—'
+  if (!Number.isFinite(value)) return '-'
   return new Intl.NumberFormat(undefined, {
     maximumFractionDigits: precision,
     minimumFractionDigits: 0,

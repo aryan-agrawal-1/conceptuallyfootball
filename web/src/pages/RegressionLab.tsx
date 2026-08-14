@@ -637,7 +637,7 @@ export function RegressionLab() {
               )}
               {usablePreview >= 30 && usablePreview < 50 && (
                 <span className="text-[11px] text-amber-200/90">
-                  Only {usablePreview} usable rows — metrics may be noisy.
+                  Only {usablePreview} usable rows - metrics may be noisy.
                 </span>
               )}
               <button
@@ -658,7 +658,7 @@ export function RegressionLab() {
 
             {resultsStale && lastFit && (
               <div className="border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-100">
-                Results are out of date — cohort, target, or predictors changed. Run again to refresh.
+                Results are out of date - cohort, target, or predictors changed. Run again to refresh.
               </div>
             )}
 
@@ -886,7 +886,7 @@ export function RegressionLab() {
                         <td className="px-2 py-1.5 text-ink" title={playerNameTitle(r.canonical_player_name)}>
                           {shortPlayerName(r.canonical_player_name)}
                         </td>
-                        <td className="px-2 py-1.5 text-ink-dim">{r.canonical_team_name ?? '—'}</td>
+                        <td className="px-2 py-1.5 text-ink-dim">{r.canonical_team_name ?? '-'}</td>
                         <td className="px-2 py-1.5 text-right tabular-nums">{r.actual.toFixed(3)}</td>
                         <td className="px-2 py-1.5 text-right tabular-nums text-electric/90">
                           {r.predicted_oof.toFixed(3)}

@@ -121,7 +121,7 @@ export function ProfileKeyStats({ player, rateMode, meta, percentileMap = player
                       : undefined
                   }
                 >
-                  {rawOnly ? 'Raw' : pct != null ? Math.round(pct) : '—'}
+                  {rawOnly ? 'Raw' : pct != null ? Math.round(pct) : '-'}
                 </span>
               </div>
             </div>

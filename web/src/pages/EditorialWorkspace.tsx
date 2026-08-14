@@ -182,7 +182,7 @@ function DraftCard({ article, isOwner, canDelete, deleting, onDelete }: { articl
       <Link to={`/analysis/${article.id}`} className="mt-8 flex flex-1 flex-col">
         <h2 className="text-xl font-black leading-tight tracking-[-0.035em] text-ink">{article.title}</h2>
         <p className="mt-2 font-mono text-[8px] uppercase tracking-[0.13em] text-ink-muted">By {article.author.display_name}</p>
-        <p className="mt-3 line-clamp-2 text-xs leading-5 text-ink-dim">{article.subtitle || 'No standfirst yet — open the article to continue.'}</p>
+        <p className="mt-3 line-clamp-2 text-xs leading-5 text-ink-dim">{article.subtitle || 'No standfirst yet - open the article to continue.'}</p>
         <div className="mt-auto flex items-center justify-between pt-8 font-mono text-[8px] uppercase tracking-[0.14em] text-ink-muted">
           <span>{relativeDate(article.updated_at)}</span>
           <span className={article.status === 'scheduled' ? 'text-gold' : article.preview_enabled ? 'text-mint' : ''}>{article.status === 'scheduled' && article.scheduled_for ? `Due ${shortDate(article.scheduled_for)}` : article.preview_enabled ? 'Preview shared' : 'Private'}</span>
@@ -656,9 +656,9 @@ function SubmissionPreflight({ step, stepNumber, stepCount, draft, entities, loa
 }) {
   const isLast = stepNumber === stepCount
   const copy = {
-    subjects: { eyebrow: 'Connect the article', title: 'Who or what is this analysis about?', description: 'Add primary player or team subjects so the article appears on the right profiles.' },
-    topics: { eyebrow: 'Describe the argument', title: 'Which themes fit this piece?', description: 'Choose any editorial topics that will help readers discover it.' },
-    sources: { eyebrow: 'Make the evidence clear', title: 'Any source notes to share?', description: 'Add data sources, methodology or caveats that readers should know.' },
+    subjects: {title: 'Who or what is this analysis about?', description: 'Add primary player or team subjects so the article appears on the right profiles.' },
+    topics: {title: 'Which themes fit this piece?', description: 'Choose any editorial topics that will help readers discover it.' },
+    sources: {title: 'Any source notes to share?', description: 'Add data sources, methodology or caveats that readers should know.' },
   }[step]
 
   useEffect(() => {
@@ -677,9 +677,8 @@ function SubmissionPreflight({ step, stepNumber, stepCount, draft, entities, loa
         <header className="flex items-start justify-between gap-6 border-b border-line px-5 py-5 sm:px-7">
           <div>
             <p className="font-mono text-[8px] uppercase tracking-[0.22em] text-electric">Submit for review · {stepNumber}/{stepCount}</p>
-            <p className="mt-3 font-mono text-[8px] uppercase tracking-[0.18em] text-ink-muted">{copy.eyebrow}</p>
             <h2 id="submission-preflight-title" className="mt-2 text-2xl font-black tracking-[-0.035em] text-ink">{copy.title}</h2>
-            <p className="mt-2 max-w-xl text-xs leading-5 text-ink-dim">{copy.description} This is optional—you can continue without adding anything.</p>
+            <p className="mt-2 max-w-xl text-xs leading-5 text-ink-dim">{copy.description} This is optional, you can continue without adding anything.</p>
           </div>
           <button type="button" onClick={onClose} disabled={pending} className="grid size-9 shrink-0 place-items-center border border-line text-ink-muted hover:border-electric hover:text-electric disabled:opacity-50" aria-label="Close submission checklist"><X className="size-4" /></button>
         </header>

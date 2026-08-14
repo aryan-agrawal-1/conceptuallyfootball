@@ -42,7 +42,7 @@ export function TeamKeyStats({ team, meta, rateMode }: TeamKeyStatsProps) {
                       rk != null && 'text-electric border-electric/40 bg-electric/10',
                     )}
                   >
-                    {rk != null ? rk : '—'}
+                    {rk != null ? rk : '-'}
                   </span>
                 </div>
               )}

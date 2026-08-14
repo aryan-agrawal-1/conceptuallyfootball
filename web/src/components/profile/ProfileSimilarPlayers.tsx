@@ -64,7 +64,7 @@ export function ProfileSimilarPlayers({
                     {shortPlayerName(edge.to_player_name)}
                   </span>
                   <span className="mt-0.5 block truncate text-[10px] text-ink-muted">
-                    {edge.to_team_name ?? edge.to_competition_code ?? '—'}
+                    {edge.to_team_name ?? edge.to_competition_code ?? '-'}
                   </span>
                 </span>
                 <span className="flex items-center gap-1">

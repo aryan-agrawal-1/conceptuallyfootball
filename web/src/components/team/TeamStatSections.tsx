@@ -76,7 +76,7 @@ function TeamSectionCard({
                         rk != null ? 'font-bold text-electric' : 'text-ink-muted',
                       )}
                     >
-                      {rk != null ? `#${rk}` : '—'}
+                      {rk != null ? `#${rk}` : '-'}
                     </span>
                   </div>
                 )]
