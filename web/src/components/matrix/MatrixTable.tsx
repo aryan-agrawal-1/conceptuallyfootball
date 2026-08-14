@@ -78,8 +78,8 @@ const teamAcronym = (name: string | null | undefined): string =>
 
 /**
  * The row-hover "target lock" decoration: two L-brackets at one side of a
- * row. We mount the `left` variant in the first (sticky) cell — which is
- * always on screen — and the `right` variant in the last cell. Opacity is
+ * row. We mount the `left` variant in the first (sticky) cell - which is
+ * always on screen - and the `right` variant in the last cell. Opacity is
  * driven by `.group-hover` on the parent `<tr>`, so both sides light up in
  * sync as the pointer enters any cell in the row.
  */
@@ -603,7 +603,7 @@ interface MatrixTableProps {
   rateMode: MatrixRateMode
   sorting: SortingState
   onSortingChange: (sorting: SortingState) => void
-  /** Vertical scroll container (StatMatrix main pane) — hides header tooltip on scroll. */
+  /** Vertical scroll container (StatMatrix main pane) - hides header tooltip on scroll. */
   scrollParentRef?: RefObject<HTMLDivElement | null>
   /** Outfield stat matrix vs goalkeeper-only columns and metrics. */
   variant?: MatrixVariant
@@ -888,7 +888,7 @@ export function MatrixTable({
                         style={{
                           height: `${virtualRow.size}px`,
                           // `paddingStart` aligns virtual scroll math with thead height; tbody rows already start below thead,
-                          // so subtract that offset (TanStack table virtual example uses 0 padding — we reuse the same transform).
+                          // so subtract that offset (TanStack table virtual example uses 0 padding - we reuse the same transform).
                           transform: `translateY(${
                             virtualRow.start -
                             TABLE_HEADER_TOTAL_PX -

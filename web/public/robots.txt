@@ -14,4 +14,4 @@ Allow: /
 User-agent: Claude-User
 Allow: /
 
-Sitemap: https://www.conceptuallyfootball.com/sitemap.xml
+Sitemap: https://www.conceptuallyfootball.com/api/v1/analysis/sitemap.xml

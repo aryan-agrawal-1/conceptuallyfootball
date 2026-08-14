@@ -203,7 +203,7 @@ function ProfileBarRow({ spec, player, rateMode, meta, pctOk, percentileMap }: P
         )}
         style={pct != null ? { color: fill } : undefined}
       >
-        {rawOnly ? 'Raw' : pct != null ? Math.round(pct) : '—'}
+        {rawOnly ? 'Raw' : pct != null ? Math.round(pct) : '-'}
       </span>
     </div>
   )

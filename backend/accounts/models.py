@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class StaffRole(models.TextChoices):
@@ -46,6 +47,32 @@ class StaffAccess(models.Model):
     @property
     def is_access_active(self) -> bool:
         return self.user.is_active and self.revoked_at is None
+
+
+class WriterProfile(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="writer_profile",
+    )
+    display_name = models.CharField(max_length=100)
+    social_links = models.JSONField(default=dict, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("display_name",)
+
+    def __str__(self) -> str:
+        return self.display_name
+
+    @property
+    def is_complete(self) -> bool:
+        return bool(self.display_name.strip() and self.completed_at)
+
+    def mark_complete(self) -> None:
+        if self.completed_at is None:
+            self.completed_at = timezone.now()
 
 
 class AccessAuditAction(models.TextChoices):

@@ -3,7 +3,7 @@ import type { MetricDefinition } from '../types/api'
 type Unit = MetricDefinition['unit'] | 'score' | 'integer' | undefined
 
 export function formatValue(value: number | null | undefined, unit: Unit): string {
-  if (value === null || value === undefined) return '—'
+  if (value === null || value === undefined) return '-'
 
   switch (unit) {
     case 'score':

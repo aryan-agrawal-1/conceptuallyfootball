@@ -9,10 +9,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   fetchStaffSession,
   replaceTemporaryPassword,
+  saveWriterProfile,
   signIn,
   signOut,
   type StaffSession,
   type StaffUser,
+  type SocialLinks,
 } from '../lib/staffAuth'
 
 interface StaffAuthContextValue {
@@ -21,6 +23,7 @@ interface StaffAuthContextValue {
   login: (email: string, password: string) => Promise<StaffUser>
   logout: () => Promise<void>
   changePassword: (currentPassword: string, newPassword: string) => Promise<StaffUser>
+  saveProfile: (displayName: string, socialLinks: SocialLinks) => Promise<StaffUser>
 }
 
 const SESSION_QUERY_KEY = ['staff-session'] as const
@@ -60,6 +63,12 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
     [storeSession],
   )
 
+  const saveProfile = useCallback(
+    async (displayName: string, socialLinks: SocialLinks) =>
+      storeSession(await saveWriterProfile(displayName, socialLinks)),
+    [storeSession],
+  )
+
   const value = useMemo(
     () => ({
       user: sessionQuery.data?.user ?? null,
@@ -67,8 +76,9 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       changePassword,
+      saveProfile,
     }),
-    [changePassword, login, logout, sessionQuery.data?.user, sessionQuery.isLoading],
+    [changePassword, login, logout, saveProfile, sessionQuery.data?.user, sessionQuery.isLoading],
   )
 
   return <StaffAuthContext.Provider value={value}>{children}</StaffAuthContext.Provider>

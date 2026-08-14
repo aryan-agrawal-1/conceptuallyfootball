@@ -147,7 +147,7 @@ function ProfilePizzaSectionInner({
           <span className="text-electric/75">Equal-length slices show selected raw metrics only</span>
         ) : warnMax ? (
           <span className="text-amber-400/90">
-            {keys.length} axes — above {PIZZA_SLICE_SOFT_MAX} slices can get crowded.
+            {keys.length} axes - above {PIZZA_SLICE_SOFT_MAX} slices can get crowded.
           </span>
         ) : undefined
       }
@@ -253,7 +253,7 @@ interface ProfilePizzaSvgProps {
   exportMode?: boolean
 }
 
-/** Polar helpers — d3-arc convention (angle 0 = 12 o'clock, clockwise). */
+/** Polar helpers - d3-arc convention (angle 0 = 12 o'clock, clockwise). */
 function polar(angle: number, radius: number): { x: number; y: number } {
   return { x: Math.sin(angle) * radius, y: -Math.cos(angle) * radius }
 }

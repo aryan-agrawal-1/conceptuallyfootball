@@ -449,7 +449,7 @@ export function DataVisualiser() {
       .map(row => ({
         id: row.canonical_team_id,
         label: row.canonical_team_name,
-        meta: `Rank ${row.ranks.rank ?? '—'}`,
+        meta: `Rank ${row.ranks.rank ?? '-'}`,
       }))
       .toSorted((left, right) =>
         (relevanceOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) -

@@ -19,6 +19,7 @@ import type { PositionGroup, SearchPlayerMembership } from '../types/api'
 import { profileSliceMatchesParams, resolveProfileSlice, withProfileSliceParams, type ProfileSlice } from '../lib/profileSlice'
 import { cn } from '../lib/utils'
 import { useSeoMeta } from '../lib/seo'
+import { RelatedAnalysisButton } from '../components/editorial/RelatedAnalysisSections'
 
 const PlayerProfileExportModal = lazy(() =>
   import('../components/profile/PlayerProfileExportModal').then(module => ({
@@ -268,11 +269,11 @@ function ProfileLayout({
                 {player.canonical_team_name}
               </Link>
             ) : (
-              <span>{player.canonical_team_name ?? '—'}</span>
+              <span>{player.canonical_team_name ?? '-'}</span>
             )}
             <FormerClubsNote teams={player.secondary_teams} profileScope={playerTeamScope} />
             {' '}
-            · {player.minutes != null ? player.minutes.toLocaleString() : '—'} min
+            · {player.minutes != null ? player.minutes.toLocaleString() : '-'} min
           </p>
           <p className="mt-2 text-[11px] text-ink-dim leading-relaxed">
             <span className="text-electric/80 font-mono uppercase tracking-[0.15em] mr-2">
@@ -343,6 +344,7 @@ function ProfileLayout({
               Unavailable
             </span>
           )}
+          <RelatedAnalysisButton kind="player" entityId={player.canonical_player_id} />
         </div>
       </div>
 

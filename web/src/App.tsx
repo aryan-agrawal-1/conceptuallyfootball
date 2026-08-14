@@ -34,8 +34,23 @@ const StaffLogin = lazy(() =>
 const StaffChangePassword = lazy(() =>
   import('./pages/StaffChangePassword').then(m => ({ default: m.StaffChangePassword })),
 )
+const StaffOnboarding = lazy(() =>
+  import('./pages/StaffOnboarding').then(m => ({ default: m.StaffOnboarding })),
+)
 const EditorialWorkspace = lazy(() =>
   import('./pages/EditorialWorkspace').then(m => ({ default: m.EditorialWorkspace })),
+)
+const EditorialArticleEditor = lazy(() =>
+  import('./pages/EditorialWorkspace').then(m => ({ default: m.EditorialArticleEditor })),
+)
+const ArticlePreview = lazy(() =>
+  import('./pages/ArticlePreview').then(m => ({ default: m.ArticlePreview })),
+)
+const PublishedArticle = lazy(() =>
+  import('./pages/PublishedArticle').then(m => ({ default: m.PublishedArticle })),
+)
+const AnalysisIndex = lazy(() =>
+  import('./pages/AnalysisIndex').then(m => ({ default: m.AnalysisIndex })),
 )
 
 function RouteFallback() {
@@ -142,15 +157,20 @@ export default function App() {
       <AnalyticsPageViews />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
+          <Route path="/analysis/preview/:token" element={<ArticlePreview />} />
           <Route element={<StaffAuthLayout />}>
             <Route path="/staff/login" element={<StaffLogin />} />
             <Route path="/staff/change-password" element={<StaffChangePassword />} />
+            <Route path="/staff/onboarding" element={<StaffOnboarding />} />
             <Route path="/analysis" element={<EditorialWorkspace />} />
+            <Route path="/analysis/:articleId" element={<EditorialArticleEditor />} />
           </Route>
           <Route element={<PublicLayout />}>
             <Route path="/" element={<StatMatrix />} />
             <Route path="/player/:id" element={<PlayerProfile />} />
             <Route path="/team/:id" element={<TeamProfile />} />
+            <Route path="/articles" element={<AnalysisIndex />} />
+            <Route path="/articles/:slug" element={<PublishedArticle />} />
             <Route path="/galaxy" element={<Galaxy />} />
             <Route path="/comparisons" element={<Comparisons />} />
             <Route path="/regression-lab" element={<RegressionLab />} />

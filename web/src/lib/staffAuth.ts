@@ -1,12 +1,17 @@
+export type SocialPlatform = 'x' | 'instagram' | 'discord' | 'bluesky' | 'youtube' | 'website'
+export type SocialLinks = Partial<Record<SocialPlatform, string>>
+
 export interface StaffUser {
   id: number
   email: string
   display_name: string
+  social_links: SocialLinks
   role: 'writer' | 'approver' | 'operations' | 'superuser' | null
   must_change_password: boolean
   can_access_editorial: boolean
   can_approve_editorial: boolean
   can_access_operations: boolean
+  onboarding_required: boolean
 }
 
 export interface StaffSession {
@@ -62,7 +67,7 @@ async function csrfHeaders(): Promise<HeadersInit> {
   }
 }
 
-async function postAuth<T>(path: string, payload: Record<string, string> = {}): Promise<T> {
+async function postAuth<T>(path: string, payload: Record<string, unknown> = {}): Promise<T> {
   const response = await fetch(`${AUTH_BASE}/${path}`, {
     method: 'POST',
     credentials: 'same-origin',
@@ -96,5 +101,15 @@ export function replaceTemporaryPassword(
   return postAuth('password', {
     current_password: currentPassword,
     new_password: newPassword,
+  })
+}
+
+export function saveWriterProfile(
+  displayName: string,
+  socialLinks: SocialLinks,
+): Promise<StaffSession> {
+  return postAuth('profile', {
+    display_name: displayName,
+    social_links: socialLinks,
   })
 }
