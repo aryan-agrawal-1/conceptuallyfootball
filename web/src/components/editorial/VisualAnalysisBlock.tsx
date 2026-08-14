@@ -64,6 +64,7 @@ export function VisualAnalysisBlock({ block, editor = false }: { block: VisualAr
       className={`overflow-hidden border bg-mat/55 ${editor ? 'border-electric/25' : 'border-line-bright'}`}
       aria-label={block.alt || title}
       data-visual-block={block.visual_type}
+      data-visual-block-id={block.id}
       data-export-format="svg-or-html"
     >
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3 sm:px-5">
@@ -95,6 +96,7 @@ export function VisualAnalysisBlock({ block, editor = false }: { block: VisualAr
           <span>Data as of {formatDate(block.data_as_of)}</span>
         </div>
         {block.alt ? <p className="sr-only">{block.alt}</p> : null}
+        <p className="mt-2 text-right font-mono text-[6px] uppercase tracking-[0.16em] text-electric/65">conceptuallyfootball.com</p>
       </figcaption>
     </figure>
   )

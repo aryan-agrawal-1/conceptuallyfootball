@@ -75,11 +75,11 @@ export function BlockEditor({
 
   function changeType(value: BlockTypeChoice) {
     onChange(convertBlock(block, value))
-    if (value === 'image') {
+    if (value === 'image' || value === 'divider') {
       onInsertAfter({ id: crypto.randomUUID(), type: 'paragraph', content: inlineText('') })
       return
     }
-    requestAnimationFrame(() => focusEditor(block.id))
+    requestAnimationFrame(() => focusEditor(editorIdForBlockType(block.id, value)))
   }
 
   function chooseCommand(value: SlashCommandChoice) {
@@ -92,11 +92,11 @@ export function BlockEditor({
     const commandBlock = block.type === 'paragraph' ? { ...block, content: inlineText('') } : block
     onChange(convertBlock(commandBlock, value as BlockTypeChoice))
     setSelectedCommand(null)
-    if (value === 'image') {
+    if (value === 'image' || value === 'divider') {
       onInsertAfter({ id: crypto.randomUUID(), type: 'paragraph', content: inlineText('') })
       return
     }
-    requestAnimationFrame(() => focusEditor(block.id))
+    requestAnimationFrame(() => focusEditor(editorIdForBlockType(block.id, value as BlockTypeChoice)))
   }
 
   function openLink(editor = activeEditorRef.current) {
@@ -289,7 +289,7 @@ function BlockFields({
         <div className="space-y-1">
           {block.items.map((item, itemIndex) => (
             <div key={`${block.id}-${itemIndex}`} className="flex items-start gap-3">
-              <span className="mt-2.5 w-4 shrink-0 text-right font-mono text-[9px] text-electric">{block.type === 'numbered_list' ? `${itemIndex + 1}.` : '•'}</span>
+              <span className={`w-6 shrink-0 text-right font-mono leading-7 text-electric ${block.type === 'numbered_list' ? 'text-sm' : 'text-xl'}`}>{block.type === 'numbered_list' ? `${itemIndex + 1}.` : '•'}</span>
               <InlineTextEditor
                 {...inlineProps}
                 blockId={`${block.id}-${itemIndex}`}
@@ -437,6 +437,10 @@ function focusEditor(blockId: string, position: 'start' | 'end' = 'start') {
   const selection = window.getSelection()
   selection?.removeAllRanges()
   selection?.addRange(range)
+}
+
+function editorIdForBlockType(blockId: string, type: BlockTypeChoice): string {
+  return type === 'bulleted_list' || type === 'numbered_list' ? `${blockId}-0` : blockId
 }
 
 function FieldLabel({ children }: { children: string }) {

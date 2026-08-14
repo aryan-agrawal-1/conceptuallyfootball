@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { Link, useBlocker, useNavigate, useParams } from 'react-router-dom'
 import { ArticleCanvas } from '../components/editorial/ArticleCanvas'
+import { ArticleExportPanel } from '../components/editorial/ArticleExportPanel'
 import { ArticleRelationshipsPanel } from '../components/editorial/ArticleRelationshipsPanel'
 import { BlockEditor } from '../components/editorial/BlockEditor'
 import { VisualBlockPicker } from '../components/editorial/VisualBlockPicker'
@@ -212,6 +213,7 @@ function ArticleEditor() {
   const [article, setArticle] = useState<Article | null>(null)
   const [draft, setDraft] = useState<ArticleDraft | null>(null)
   const [saveState, setSaveState] = useState<SaveState>('saved')
+  const [workflowPending, setWorkflowPending] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [mode, setMode] = useState<'write' | 'reader'>('write')
   const [copied, setCopied] = useState(false)
@@ -229,6 +231,7 @@ function ArticleEditor() {
   const editSerialRef = useRef(0)
   const savedSerialRef = useRef(0)
   const savingRef = useRef(false)
+  const workflowPendingRef = useRef(false)
   const pendingSaveRef = useRef(false)
   const pendingCheckpointRef = useRef(false)
   const lastCheckpointAtRef = useRef(Date.now())
@@ -445,12 +448,15 @@ function ArticleEditor() {
   }
 
   async function runWorkflow(action: ArticleWorkflowAction, options: { note?: string; publishAt?: string } = {}): Promise<boolean> {
-    if (canEdit) {
-      const saved = await performSaveRef.current(true)
-      if (!saved) return false
-    }
-    setSaveError('')
+    if (workflowPendingRef.current) return false
+    workflowPendingRef.current = true
+    setWorkflowPending(true)
     try {
+      if (canEdit) {
+        const saved = await performSaveRef.current(true)
+        if (!saved) return false
+      }
+      setSaveError('')
       const updated = await transitionArticle(articleId, action, options)
       setArticle(updated)
       setDraft(articleToDraft(updated))
@@ -465,6 +471,9 @@ function ArticleEditor() {
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'The workflow action could not be completed.')
       return false
+    } finally {
+      workflowPendingRef.current = false
+      setWorkflowPending(false)
     }
   }
 
@@ -565,7 +574,7 @@ function ArticleEditor() {
 
         {mode === 'write' || !canEdit ? <aside className="border-t border-line p-5 lg:sticky lg:top-16 lg:max-h-[calc(100svh-4rem)] lg:self-start lg:overflow-y-auto lg:border-l lg:border-t-0">
           <InspectorSection title="Publishing workflow">
-            <WorkflowPanel article={article} canApprove={Boolean(user?.can_approve_editorial)} canEdit={canEdit} pending={saveState === 'saving'} onSubmit={requestSubmission} onTransition={runWorkflow} />
+            <WorkflowPanel article={article} canApprove={Boolean(user?.can_approve_editorial)} canEdit={canEdit} pending={workflowPending} onSubmit={requestSubmission} onTransition={runWorkflow} />
           </InspectorSection>
           <InspectorSection title="Discovery relationships">
             <ArticleRelationshipsPanel subjects={draft.subjects} references={draftReferences} entities={entitiesQuery.data} loading={entitiesQuery.isLoading} readOnly={!canEdit} onChange={subjects => editDraft(current => ({ ...current, subjects }))} />
@@ -594,6 +603,10 @@ function ArticleEditor() {
             ) : <button type="button" onClick={() => void togglePreview(true)} className="mt-4 flex h-10 w-full items-center justify-center gap-2 border border-electric/50 bg-electric-dim/45 text-[8px] font-black uppercase tracking-[0.15em] text-electric"><Share2 className="size-3.5" /> Create 7-day preview</button>}
             {article.preview_expires_at ? <p className="mt-3 font-mono text-[7px] uppercase tracking-[0.12em] text-ink-muted">Expires {shortDate(article.preview_expires_at)}</p> : null}
           </InspectorSection> : null}
+
+          <InspectorSection title="Export & republish">
+            <ArticleExportPanel articleId={article.id} document={draft.document} />
+          </InspectorSection>
 
           <InspectorSection title="Revision trail">
             <div className="space-y-3">
@@ -631,7 +644,7 @@ function ArticleEditor() {
         draft={draft}
         entities={entitiesQuery.data}
         loadingEntities={entitiesQuery.isLoading}
-        pending={saveState === 'saving'}
+        pending={workflowPending}
         onChange={editDraft}
         onClose={() => setSubmissionSteps([])}
         onContinue={() => setSubmissionStepIndex(index => Math.min(index + 1, submissionSteps.length - 1))}
@@ -692,7 +705,7 @@ function SubmissionPreflight({ step, stepNumber, stepCount, draft, entities, loa
         </div>
         <footer className="flex flex-col-reverse gap-3 border-t border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-7">
           <button type="button" onClick={onClose} disabled={pending} className="h-10 px-3 font-mono text-[8px] uppercase tracking-[0.15em] text-ink-muted hover:text-ink disabled:opacity-50">Return to draft</button>
-          <button type="button" onClick={isLast ? onSubmit : onContinue} disabled={pending} className="inline-flex h-11 items-center justify-center gap-2 bg-electric px-5 font-mono text-[8px] font-black uppercase tracking-[0.15em] text-mat disabled:opacity-50">{pending ? 'Saving…' : isLast ? 'Submit for review' : 'Continue'} <ChevronRight className="size-3.5" /></button>
+          <button type="button" onKeyDown={preventEnterActivation} onClick={isLast ? onSubmit : onContinue} disabled={pending} className="inline-flex h-11 items-center justify-center gap-2 bg-electric px-5 font-mono text-[8px] font-black uppercase tracking-[0.15em] text-mat disabled:opacity-50">{pending ? 'Saving…' : isLast ? 'Submit for review' : 'Continue'} <ChevronRight className="size-3.5" /></button>
         </footer>
       </section>
     </div>
@@ -725,7 +738,7 @@ function WorkflowPanel({ article, canApprove, canEdit, pending, onSubmit, onTran
       {status === 'changes_requested' && article.workflow_events.find(event => event.action === 'changes_requested')?.note ? (
         <div className="mt-3 border-l-2 border-gold bg-gold/5 px-3 py-2 text-[11px] leading-5 text-ink-dim">{article.workflow_events.find(event => event.action === 'changes_requested')?.note}</div>
       ) : null}
-      {canEdit ? <button type="button" onClick={onSubmit} disabled={pending} className="mt-4 flex h-10 w-full items-center justify-center gap-2 bg-electric text-[8px] font-black uppercase tracking-[0.15em] text-mat disabled:opacity-50"><Send className="size-3.5" /> Submit for review</button> : null}
+      {canEdit ? <button type="button" onKeyDown={preventEnterActivation} onClick={onSubmit} disabled={pending} className="mt-4 flex h-10 w-full items-center justify-center gap-2 bg-electric text-[8px] font-black uppercase tracking-[0.15em] text-mat disabled:opacity-50"><Send className="size-3.5" /> Submit for review</button> : null}
       {canReview ? (
         <div className="mt-4 space-y-3">
           <textarea value={note} onChange={event => setNote(event.target.value)} rows={3} maxLength={2000} placeholder="Explain the requested changes…" className="w-full resize-none border border-line bg-mat p-3 text-xs leading-5 text-ink placeholder:text-ink-muted focus:border-gold focus:outline-none" />
@@ -878,6 +891,10 @@ function localDateTimeMinimum(): string {
 function localDateTimeValue(date: Date): string {
   const offset = date.getTimezoneOffset() * 60_000
   return new Date(date.getTime() - offset).toISOString().slice(0, 16)
+}
+
+function preventEnterActivation(event: ReactKeyboardEvent<HTMLButtonElement>) {
+  if (event.key === 'Enter') event.preventDefault()
 }
 
 function focusLastEditableBlock(blockIds: string[]) {

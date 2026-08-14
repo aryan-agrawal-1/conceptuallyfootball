@@ -32,7 +32,7 @@ export function ArticleCanvas({
   readingMinutes?: number
 }) {
   return (
-    <article className="mx-auto w-full max-w-[1180px] px-6 py-14 sm:px-10 sm:py-20 lg:px-16">
+    <article data-article-export-surface className="mx-auto w-full max-w-[1180px] px-6 py-14 sm:px-10 sm:py-20 lg:px-16">
       <header className="border-b border-line pb-10">
         <p className="font-mono text-[9px] uppercase tracking-[0.25em] text-electric">
           {preview ? 'Private editorial preview' : published ? 'Conceptually Football analysis' : 'Analysis draft'}
@@ -153,8 +153,8 @@ function RenderedBlock({ block }: { block: ArticleBlock }) {
     case 'numbered_list': {
       const List = block.type === 'numbered_list' ? 'ol' : 'ul'
       return (
-        <List className={`space-y-3 pl-6 text-[15px] leading-7 text-ink-dim ${block.type === 'numbered_list' ? 'list-decimal' : 'list-disc marker:text-electric'}`}>
-          {block.items.map((item, index) => <li key={`${block.id}-${index}`}><InlineText content={item} /></li>)}
+        <List className={`list-outside space-y-3 pl-7 text-[15px] leading-7 text-ink-dim ${block.type === 'numbered_list' ? 'list-decimal' : 'list-disc'}`}>
+          {block.items.map((item, index) => <li key={`${block.id}-${index}`} className={`pl-1 marker:font-mono marker:text-electric ${block.type === 'numbered_list' ? 'marker:text-sm' : 'marker:text-xl'}`}><InlineText content={item} /></li>)}
         </List>
       )
     }
