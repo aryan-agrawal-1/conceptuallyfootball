@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
@@ -697,7 +697,7 @@ function SubmissionPreflight({ step, stepNumber, stepCount, draft, entities, loa
         </div>
         <footer className="flex flex-col-reverse gap-3 border-t border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-7">
           <button type="button" onClick={onClose} disabled={pending} className="h-10 px-3 font-mono text-[8px] uppercase tracking-[0.15em] text-ink-muted hover:text-ink disabled:opacity-50">Return to draft</button>
-          <button type="button" onClick={isLast ? onSubmit : onContinue} disabled={pending} className="inline-flex h-11 items-center justify-center gap-2 bg-electric px-5 font-mono text-[8px] font-black uppercase tracking-[0.15em] text-mat disabled:opacity-50">{pending ? 'Saving…' : isLast ? 'Submit for review' : 'Continue'} <ChevronRight className="size-3.5" /></button>
+          <button type="button" onKeyDown={preventEnterActivation} onClick={isLast ? onSubmit : onContinue} disabled={pending} className="inline-flex h-11 items-center justify-center gap-2 bg-electric px-5 font-mono text-[8px] font-black uppercase tracking-[0.15em] text-mat disabled:opacity-50">{pending ? 'Saving…' : isLast ? 'Submit for review' : 'Continue'} <ChevronRight className="size-3.5" /></button>
         </footer>
       </section>
     </div>
@@ -730,7 +730,7 @@ function WorkflowPanel({ article, canApprove, canEdit, pending, onSubmit, onTran
       {status === 'changes_requested' && article.workflow_events.find(event => event.action === 'changes_requested')?.note ? (
         <div className="mt-3 border-l-2 border-gold bg-gold/5 px-3 py-2 text-[11px] leading-5 text-ink-dim">{article.workflow_events.find(event => event.action === 'changes_requested')?.note}</div>
       ) : null}
-      {canEdit ? <button type="button" onClick={onSubmit} disabled={pending} className="mt-4 flex h-10 w-full items-center justify-center gap-2 bg-electric text-[8px] font-black uppercase tracking-[0.15em] text-mat disabled:opacity-50"><Send className="size-3.5" /> Submit for review</button> : null}
+      {canEdit ? <button type="button" onKeyDown={preventEnterActivation} onClick={onSubmit} disabled={pending} className="mt-4 flex h-10 w-full items-center justify-center gap-2 bg-electric text-[8px] font-black uppercase tracking-[0.15em] text-mat disabled:opacity-50"><Send className="size-3.5" /> Submit for review</button> : null}
       {canReview ? (
         <div className="mt-4 space-y-3">
           <textarea value={note} onChange={event => setNote(event.target.value)} rows={3} maxLength={2000} placeholder="Explain the requested changes…" className="w-full resize-none border border-line bg-mat p-3 text-xs leading-5 text-ink placeholder:text-ink-muted focus:border-gold focus:outline-none" />
@@ -883,6 +883,10 @@ function localDateTimeMinimum(): string {
 function localDateTimeValue(date: Date): string {
   const offset = date.getTimezoneOffset() * 60_000
   return new Date(date.getTime() - offset).toISOString().slice(0, 16)
+}
+
+function preventEnterActivation(event: ReactKeyboardEvent<HTMLButtonElement>) {
+  if (event.key === 'Enter') event.preventDefault()
 }
 
 function focusLastEditableBlock(blockIds: string[]) {

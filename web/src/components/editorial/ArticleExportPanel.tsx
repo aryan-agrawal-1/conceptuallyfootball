@@ -39,12 +39,12 @@ export function ArticleExportPanel({ articleId, document }: { articleId: string;
     }
   }
 
-  async function exportVisual(block: VisualArticleBlock, format: 'png' | 'svg', index: number) {
-    const key = `${block.id}-${format}`
+  async function exportVisual(block: VisualArticleBlock, index: number) {
+    const key = `${block.id}-png`
     setBusy(key)
     setMessage('')
     try {
-      await downloadVisual(block, format, index)
+      await downloadVisual(block, index)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'The visual export failed.')
     } finally {
@@ -75,11 +75,8 @@ export function ArticleExportPanel({ articleId, document }: { articleId: string;
             {visuals.map((visual, index) => (
               <div key={visual.id} className="border border-line bg-mat/45 p-2.5">
                 <p className="truncate text-[10px] font-semibold text-ink">{String(index + 1).padStart(2, '0')} · {visual.title || visual.caption || `Visual ${index + 1}`}</p>
-                <div className="mt-2 grid grid-cols-2 gap-1.5">
-                  {(['png', 'svg'] as const).map(format => {
-                    const key = `${visual.id}-${format}`
-                    return <button key={format} type="button" onClick={() => void exportVisual(visual, format, index)} disabled={busy !== null} className="flex h-8 items-center justify-center gap-1.5 border border-line text-[7px] font-bold uppercase tracking-[0.12em] text-ink-muted hover:border-electric hover:text-electric disabled:opacity-40">{busy === key ? <Loader2 className="size-3 animate-spin" /> : <ImageDown className="size-3" />} {format}</button>
-                  })}
+                <div className="mt-2">
+                  <button type="button" onClick={() => void exportVisual(visual, index)} disabled={busy !== null} className="flex h-8 w-full items-center justify-center gap-1.5 border border-line text-[7px] font-bold uppercase tracking-[0.12em] text-ink-muted hover:border-electric hover:text-electric disabled:opacity-40">{busy === `${visual.id}-png` ? <Loader2 className="size-3 animate-spin" /> : <ImageDown className="size-3" />} PNG</button>
                 </div>
               </div>
             ))}

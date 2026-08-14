@@ -79,7 +79,7 @@ export function BlockEditor({
       onInsertAfter({ id: crypto.randomUUID(), type: 'paragraph', content: inlineText('') })
       return
     }
-    requestAnimationFrame(() => focusEditor(block.id))
+    requestAnimationFrame(() => focusEditor(editorIdForBlockType(block.id, value)))
   }
 
   function chooseCommand(value: SlashCommandChoice) {
@@ -96,7 +96,7 @@ export function BlockEditor({
       onInsertAfter({ id: crypto.randomUUID(), type: 'paragraph', content: inlineText('') })
       return
     }
-    requestAnimationFrame(() => focusEditor(block.id))
+    requestAnimationFrame(() => focusEditor(editorIdForBlockType(block.id, value as BlockTypeChoice)))
   }
 
   function openLink(editor = activeEditorRef.current) {
@@ -437,6 +437,10 @@ function focusEditor(blockId: string, position: 'start' | 'end' = 'start') {
   const selection = window.getSelection()
   selection?.removeAllRanges()
   selection?.addRange(range)
+}
+
+function editorIdForBlockType(blockId: string, type: BlockTypeChoice): string {
+  return type === 'bulleted_list' || type === 'numbered_list' ? `${blockId}-0` : blockId
 }
 
 function FieldLabel({ children }: { children: string }) {

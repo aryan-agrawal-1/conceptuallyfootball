@@ -145,24 +145,18 @@ function downloadBlob(blob: Blob, fileName: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
-function visualFileName(block: VisualArticleBlock, extension: 'png' | 'svg', index: number): string {
+function visualFileName(block: VisualArticleBlock, index: number): string {
   const value = block.title || block.caption || block.visual_type
   const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
-  return `conceptually-football-${String(index + 1).padStart(2, '0')}-${slug || 'visual'}.${extension}`
+  return `conceptually-football-${String(index + 1).padStart(2, '0')}-${slug || 'visual'}.png`
 }
 
-export async function downloadVisual(block: VisualArticleBlock, format: 'png' | 'svg', index: number): Promise<void> {
+export async function downloadVisual(block: VisualArticleBlock, index: number): Promise<void> {
   const element = visualElement(block.id)
   if (!element) throw new Error('Open the rendered article before exporting this visual.')
   await document.fonts?.ready
-  const { toBlob, toSvg } = await import('html-to-image')
-  if (format === 'png') {
-    const blob = await toBlob(element, { backgroundColor: '#070810', cacheBust: true, pixelRatio: 2 })
-    if (!blob) throw new Error('The browser could not encode this visual as PNG.')
-    downloadBlob(blob, visualFileName(block, 'png', index))
-    return
-  }
-  const dataUrl = await toSvg(element, { backgroundColor: '#070810', cacheBust: true })
-  const response = await fetch(dataUrl)
-  downloadBlob(await response.blob(), visualFileName(block, 'svg', index))
+  const { toBlob } = await import('html-to-image')
+  const blob = await toBlob(element, { backgroundColor: '#070810', cacheBust: true, pixelRatio: 2 })
+  if (!blob) throw new Error('The browser could not encode this visual as PNG.')
+  downloadBlob(blob, visualFileName(block, index))
 }
