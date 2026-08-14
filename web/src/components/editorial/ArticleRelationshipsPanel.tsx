@@ -22,6 +22,7 @@ export function ArticleRelationshipsPanel({
   loading,
   onChange,
   readOnly = false,
+  showReferences = true,
 }: {
   subjects: ArticleRelationships
   references: ArticleRelationships
@@ -29,6 +30,7 @@ export function ArticleRelationshipsPanel({
   loading: boolean
   onChange: (subjects: ArticleRelationships) => void
   readOnly?: boolean
+  showReferences?: boolean
 }) {
   return (
     <div className="space-y-5">
@@ -37,11 +39,11 @@ export function ArticleRelationshipsPanel({
       </div>
       <SubjectGroup kind="player" selected={subjects.players} entities={entities} loading={loading} readOnly={readOnly} onChange={players => onChange({ ...subjects, players })} />
       <SubjectGroup kind="team" selected={subjects.teams} entities={entities} loading={loading} readOnly={readOnly} onChange={teams => onChange({ ...subjects, teams })} />
-      <div className="border-t border-line pt-5">
+      {showReferences ? <div className="border-t border-line pt-5">
         <p className="flex items-center gap-2 font-mono text-[8px] uppercase tracking-[0.18em] text-ink-muted"><AtSign className="size-3 text-electric" /> References in draft</p>
         <p className="mt-2 text-[10px] leading-4 text-ink-muted">Type @ while writing. Mentions stay separate from subjects.</p>
         <ReferenceList references={references} />
-      </div>
+      </div> : null}
     </div>
   )
 }

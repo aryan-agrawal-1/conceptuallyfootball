@@ -16,7 +16,7 @@ import { buildTeamCreateChartsPath } from '../lib/createChartsUrl'
 import type { SearchTeamMembership } from '../types/api'
 import { profileSliceMatchesParams, resolveProfileSlice, withProfileSliceParams, type ProfileSlice } from '../lib/profileSlice'
 import { useSeoMeta } from '../lib/seo'
-import { RelatedAnalysisSections } from '../components/editorial/RelatedAnalysisSections'
+import { RelatedAnalysisButton } from '../components/editorial/RelatedAnalysisSections'
 
 export function TeamProfile() {
   const { id } = useParams<{ id: string }>()
@@ -200,6 +200,7 @@ function TeamLayout({
             Create Chart
           </Link>
           <ProfileRateToggle value={rateMode} onChange={setRateMode} />
+          <RelatedAnalysisButton kind="team" entityId={team.canonical_team_id} />
         </div>
       </div>
 
@@ -213,7 +214,6 @@ function TeamLayout({
           </div>
         )}
         {!squadLoading && squad && <TeamSquadList squad={squad} />}
-        <RelatedAnalysisSections kind="team" entityId={team.canonical_team_id} />
       </div>
     </div>
   )

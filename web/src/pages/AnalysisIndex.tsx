@@ -64,7 +64,7 @@ export function AnalysisIndex() {
     <div className="min-h-svh overflow-hidden bg-mat">
       <header className="relative border-b border-line px-5 py-10 sm:px-8 sm:py-12 lg:px-12 lg:py-14">
         <div className="pointer-events-none absolute inset-0 opacity-50 [background-image:linear-gradient(rgba(74,158,245,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(74,158,245,0.08)_1px,transparent_1px)] [background-size:44px_44px] [mask-image:linear-gradient(to_bottom,black,transparent)]" />
-        <div className="relative mx-auto max-w-[1380px]">
+        <div className="relative mx-auto grid max-w-[1380px] gap-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div className="max-w-5xl">
             <p className="font-mono text-[9px] uppercase tracking-[0.28em] text-electric">Analysis / ideas / evidence</p>
             <h1 className="mt-4 text-[clamp(2.5rem,5vw,4.5rem)] font-black leading-[0.92] tracking-[-0.06em] text-ink">
@@ -73,8 +73,8 @@ export function AnalysisIndex() {
             <p className="mt-5 max-w-2xl border-l border-electric/40 pl-5 text-sm leading-7 text-ink-dim">
               Original football writing connected to the players, teams and visual evidence behind every argument.
             </p>
-            {canOpenDesk ? <Link to="/analysis" className="mt-6 inline-flex items-center gap-2 border border-electric/45 px-3 py-2 font-mono text-[8px] uppercase tracking-[0.16em] text-electric transition-colors hover:bg-electric hover:text-mat"><UserRound className="size-3.5" /> Open analysis desk</Link> : null}
           </div>
+          {canOpenDesk ? <Link to="/analysis" className="inline-flex h-14 w-fit items-center justify-center gap-3 border border-electric bg-electric px-6 font-mono text-[10px] font-black uppercase tracking-[0.17em] text-mat shadow-[0_0_30px_rgba(74,158,245,0.18)] transition-colors hover:bg-ink hover:text-mat lg:min-w-56"><UserRound className="size-4" /> Open analysis desk <ArrowUpRight className="size-4" /></Link> : null}
         </div>
       </header>
 
