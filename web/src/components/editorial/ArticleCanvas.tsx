@@ -32,7 +32,7 @@ export function ArticleCanvas({
   readingMinutes?: number
 }) {
   return (
-    <article className="mx-auto w-full max-w-[1180px] px-6 py-14 sm:px-10 sm:py-20 lg:px-16">
+    <article data-article-export-surface className="mx-auto w-full max-w-[1180px] px-6 py-14 sm:px-10 sm:py-20 lg:px-16">
       <header className="border-b border-line pb-10">
         <p className="font-mono text-[9px] uppercase tracking-[0.25em] text-electric">
           {preview ? 'Private editorial preview' : published ? 'Conceptually Football analysis' : 'Analysis draft'}

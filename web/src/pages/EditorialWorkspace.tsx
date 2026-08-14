@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { Link, useBlocker, useNavigate, useParams } from 'react-router-dom'
 import { ArticleCanvas } from '../components/editorial/ArticleCanvas'
+import { ArticleExportPanel } from '../components/editorial/ArticleExportPanel'
 import { ArticleRelationshipsPanel } from '../components/editorial/ArticleRelationshipsPanel'
 import { BlockEditor } from '../components/editorial/BlockEditor'
 import { VisualBlockPicker } from '../components/editorial/VisualBlockPicker'
@@ -594,6 +595,10 @@ function ArticleEditor() {
             ) : <button type="button" onClick={() => void togglePreview(true)} className="mt-4 flex h-10 w-full items-center justify-center gap-2 border border-electric/50 bg-electric-dim/45 text-[8px] font-black uppercase tracking-[0.15em] text-electric"><Share2 className="size-3.5" /> Create 7-day preview</button>}
             {article.preview_expires_at ? <p className="mt-3 font-mono text-[7px] uppercase tracking-[0.12em] text-ink-muted">Expires {shortDate(article.preview_expires_at)}</p> : null}
           </InspectorSection> : null}
+
+          <InspectorSection title="Export & republish">
+            <ArticleExportPanel articleId={article.id} document={draft.document} />
+          </InspectorSection>
 
           <InspectorSection title="Revision trail">
             <div className="space-y-3">

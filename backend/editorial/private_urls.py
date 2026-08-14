@@ -7,6 +7,7 @@ from editorial.api import (
     article_workflow,
     articles,
 )
+from editorial.exports import article_export
 
 
 urlpatterns = [
@@ -19,4 +20,9 @@ urlpatterns = [
     ),
     path("articles/<uuid:article_id>/preview", article_preview, name="editorial-article-preview"),
     path("articles/<uuid:article_id>/workflow", article_workflow, name="editorial-article-workflow"),
+    path(
+        "articles/<uuid:article_id>/exports/<str:export_format>",
+        article_export,
+        name="editorial-article-export",
+    ),
 ]
