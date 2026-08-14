@@ -50,6 +50,17 @@ from ingestion.models import CanonicalPlayer, CanonicalTeam
 PUBLIC_SITE_URL = "https://www.conceptuallyfootball.com"
 TOPIC_LIMIT = 8
 TOPIC_LENGTH = 40
+ARTICLE_TOPICS = (
+    "Tactics",
+    "Match analysis",
+    "Player analysis",
+    "Team analysis",
+    "Recruitment",
+    "Coaching",
+    "Data analysis",
+    "Football culture",
+)
+ARTICLE_TOPIC_MAP = {topic.casefold(): topic for topic in ARTICLE_TOPICS}
 WORD_PATTERN = re.compile(r"\b[\w’'-]+\b", re.UNICODE)
 
 
@@ -75,7 +86,7 @@ def public_preview_json(payload: dict, *, status: int = 200) -> JsonResponse:
     return response
 
 
-def normalize_topics(value) -> list[str]:
+def normalize_topics(value, *, strict: bool = False) -> list[str]:
     if not isinstance(value, list):
         raise ValidationError("Topics must be a list.")
     topics = []
@@ -83,10 +94,16 @@ def normalize_topics(value) -> list[str]:
     for raw_topic in value:
         topic = clean_text(raw_topic, field="Topic", maximum=TOPIC_LENGTH).strip()
         key = topic.casefold()
-        if not topic or key in seen:
+        if not topic:
+            continue
+        if key not in ARTICLE_TOPIC_MAP:
+            if strict:
+                raise ValidationError(f"{topic} is not a supported article topic.")
+            continue
+        if key in seen:
             continue
         seen.add(key)
-        topics.append(topic)
+        topics.append(ARTICLE_TOPIC_MAP[key])
     if len(topics) > TOPIC_LIMIT:
         raise ValidationError(f"Articles can have at most {TOPIC_LIMIT} topics.")
     return topics
@@ -310,7 +327,7 @@ def article_detail(request: HttpRequest, article_id) -> JsonResponse:
             ).strip()
             document = normalize_document(payload.get("document", article.document))
             subjects = normalize_subjects(payload.get("subjects", existing_subjects))
-            topics = normalize_topics(payload.get("topics", article.topics))
+            topics = normalize_topics(payload.get("topics", article.topics), strict=True)
             source_notes = clean_text(
                 payload.get("source_notes", article.source_notes),
                 field="Source notes",
@@ -608,18 +625,25 @@ def public_articles(request: HttpRequest) -> JsonResponse:
     publications = list(active_publications()[:500])
     facets = public_facets(publications)
     query = request.GET.get("q", "").strip().casefold()
-    topic = request.GET.get("topic", "").strip().casefold()
+    selected_topics = {
+        topic.strip().casefold()
+        for topic in request.GET.get("topic", "").split(",")
+        if topic.strip()
+    }
     competition = request.GET.get("competition", "").strip().casefold()
     season = request.GET.get("season", "").strip().casefold()
     relationship = request.GET.get("relationship", "").strip()
-    kind = request.GET.get("entity_kind", "").strip()
     author_id = request.GET.get("author", "").strip()
     published_from = parse_date(request.GET.get("from", ""))
     published_to = parse_date(request.GET.get("to", ""))
     try:
-        entity_id = int(request.GET.get("entity_id", ""))
+        player_id = int(request.GET.get("player_id", ""))
     except (TypeError, ValueError):
-        entity_id = None
+        player_id = None
+    try:
+        team_id = int(request.GET.get("team_id", ""))
+    except (TypeError, ValueError):
+        team_id = None
 
     filtered = []
     for publication in publications:
@@ -636,7 +660,9 @@ def public_articles(request: HttpRequest) -> JsonResponse:
         ).casefold()
         if query and query not in searchable:
             continue
-        if topic and topic not in {value.casefold() for value in summary["topics"]}:
+        if selected_topics and selected_topics.isdisjoint(
+            {value.casefold() for value in summary["topics"]}
+        ):
             continue
         if competition and competition not in {value.casefold() for value in summary["context"]["competitions"]}:
             continue
@@ -648,10 +674,17 @@ def public_articles(request: HttpRequest) -> JsonResponse:
             continue
         if published_to and publication.published_at.date() > published_to:
             continue
-        if entity_id and kind in {"player", "team"} and not publication_matches_entity(
+        if player_id and not publication_matches_entity(
             publication,
-            kind=kind,
-            entity_id=entity_id,
+            kind="player",
+            entity_id=player_id,
+            relationship=relationship,
+        ):
+            continue
+        if team_id and not publication_matches_entity(
+            publication,
+            kind="team",
+            entity_id=team_id,
             relationship=relationship,
         ):
             continue

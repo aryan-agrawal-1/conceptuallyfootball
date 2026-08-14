@@ -508,7 +508,7 @@ class EditorialApiTests(TestCase):
                 "revision": 1,
                 "title": "Pressing after the turnover",
                 "subtitle": "Why the first five seconds matter.",
-                "topics": ["Pressing", "Tactics", "pressing"],
+                "topics": ["Data analysis", "Tactics", "tactics"],
                 "source_notes": "Event data supplied by the public match feed.",
                 "subjects": {
                     "players": [{"kind": "player", "id": player.id, "name": player.display_name}],
@@ -569,12 +569,11 @@ class EditorialApiTests(TestCase):
             reverse("editorial-public-articles"),
             {
                 "q": "turnover",
-                "topic": "pressing",
+                "topic": "Data analysis,Tactics",
                 "competition": "ENG1",
                 "season": "2025/26",
                 "author": self.writer.id,
-                "entity_kind": "player",
-                "entity_id": player.id,
+                "player_id": player.id,
                 "relationship": "subject",
             },
         )
@@ -582,7 +581,7 @@ class EditorialApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["pagination"]["total"], 1)
-        self.assertEqual(payload["articles"][0]["topics"], ["Pressing", "Tactics"])
+        self.assertEqual(payload["articles"][0]["topics"], ["Data analysis", "Tactics"])
         self.assertEqual(payload["articles"][0]["context"]["competitions"], ["ENG1"])
         slug = Article.objects.get(id=created["id"]).slug
         detail = Client().get(
@@ -641,6 +640,23 @@ class EditorialApiTests(TestCase):
             reverse("editorial-public-article-detail-by-slug", kwargs={"slug": original_slug})
         )
         self.assertEqual(detail.json()["article"]["title"], updated["title"])
+
+    def test_topics_are_limited_to_the_editorial_taxonomy(self):
+        created = self.create_article()
+
+        response = self.patch_article(
+            created["id"],
+            {
+                "revision": 1,
+                "title": "Unsupported topic",
+                "subtitle": "",
+                "topics": ["Premier League"],
+                "document": created["document"],
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("not a supported article topic", response.json()["errors"][0])
 
     def test_inline_links_are_normalized_and_legacy_link_blocks_are_upgraded(self):
         created = self.create_article()

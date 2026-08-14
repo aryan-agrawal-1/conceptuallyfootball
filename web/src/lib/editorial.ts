@@ -371,12 +371,12 @@ export interface PublicArticleIndex {
 
 export interface PublicArticleFilters {
   q?: string
-  topic?: string
+  topics?: string[]
   author?: string
   competition?: string
   season?: string
-  entityKind?: EditorialEntityKind
-  entityId?: string
+  playerId?: string
+  teamId?: string
   relationship?: 'subject' | 'reference' | ''
   from?: string
   to?: string
@@ -400,12 +400,12 @@ export async function getRelatedAnalysis(
 export async function listPublishedArticles(filters: PublicArticleFilters): Promise<PublicArticleIndex> {
   const params = new URLSearchParams()
   if (filters.q) params.set('q', filters.q)
-  if (filters.topic) params.set('topic', filters.topic)
+  if (filters.topics?.length) params.set('topic', filters.topics.join(','))
   if (filters.author) params.set('author', filters.author)
   if (filters.competition) params.set('competition', filters.competition)
   if (filters.season) params.set('season', filters.season)
-  if (filters.entityKind) params.set('entity_kind', filters.entityKind)
-  if (filters.entityId) params.set('entity_id', filters.entityId)
+  if (filters.playerId) params.set('player_id', filters.playerId)
+  if (filters.teamId) params.set('team_id', filters.teamId)
   if (filters.relationship) params.set('relationship', filters.relationship)
   if (filters.from) params.set('from', filters.from)
   if (filters.to) params.set('to', filters.to)

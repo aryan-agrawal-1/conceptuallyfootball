@@ -33,6 +33,7 @@ import { StaffFrame } from '../components/staff/StaffFrame'
 import { StaffRoute } from '../components/staff/StaffRoute'
 import { useStaffAuth } from '../context/StaffAuthContext'
 import { fetchSearchEntities } from '../lib/api'
+import { ARTICLE_TOPICS } from '../lib/articleTopics'
 import {
   clearDraftRecovery,
   createArticle,
@@ -546,9 +547,14 @@ function ArticleEditor() {
             <ArticleRelationshipsPanel subjects={draft.subjects} references={draftReferences} entities={entitiesQuery.data} loading={entitiesQuery.isLoading} readOnly={!canEdit} onChange={subjects => editDraft(current => ({ ...current, subjects }))} />
           </InspectorSection>
           <InspectorSection title="Public discovery">
-            <label className="block font-mono text-[7px] uppercase tracking-[0.15em] text-ink-muted" htmlFor="article-topics">Topics</label>
-            <input id="article-topics" value={draft.topics.join(', ')} onChange={event => editDraft(current => ({ ...current, topics: event.target.value.split(',').map(topic => topic.trim()).filter(Boolean).slice(0, 8) }))} disabled={!canEdit} maxLength={320} placeholder="Tactics, recruitment, data" className="mt-2 h-10 w-full border border-line bg-mat px-3 text-xs text-ink placeholder:text-ink-muted focus:border-electric focus:outline-none disabled:opacity-60" />
-            <p className="mt-2 text-[9px] leading-4 text-ink-muted">Up to eight comma-separated topics used on the public analysis index.</p>
+            <p className="font-mono text-[7px] uppercase tracking-[0.15em] text-ink-muted">Topics</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {ARTICLE_TOPICS.map(topic => {
+                const selected = draft.topics.includes(topic)
+                return <button key={topic} type="button" aria-pressed={selected} disabled={!canEdit} onClick={() => editDraft(current => ({ ...current, topics: selected ? current.topics.filter(value => value !== topic) : [...current.topics, topic] }))} className={`border px-2 py-1.5 font-mono text-[7px] uppercase tracking-[0.1em] transition-colors disabled:opacity-50 ${selected ? 'border-electric bg-electric/15 text-electric' : 'border-line text-ink-muted hover:border-electric hover:text-ink'}`}>{topic}</button>
+              })}
+            </div>
+            <p className="mt-2 text-[9px] leading-4 text-ink-muted">Choose the editorial themes that best describe the article. Competition and season are derived separately from published visual context.</p>
             <label className="mt-5 block font-mono text-[7px] uppercase tracking-[0.15em] text-ink-muted" htmlFor="article-source-notes">Source notes</label>
             <textarea id="article-source-notes" value={draft.source_notes} onChange={event => editDraft(current => ({ ...current, source_notes: event.target.value }))} disabled={!canEdit} rows={4} maxLength={2000} placeholder="Data sources, methodology and caveats readers should know…" className="mt-2 w-full resize-none border border-line bg-mat p-3 text-xs leading-5 text-ink placeholder:text-ink-muted focus:border-electric focus:outline-none disabled:opacity-60" />
           </InspectorSection>
