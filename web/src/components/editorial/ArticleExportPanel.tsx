@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Check, ClipboardCopy, Download, FileCode2, FileText, ImageDown, Loader2, TriangleAlert } from 'lucide-react'
 import type { ArticleDocument, VisualArticleBlock } from '../../lib/editorial'
-import { articleExportUrl, copyArticleForSubstack, downloadVisual } from '../../lib/editorialExports'
+import { copyArticleForSubstack, downloadArticleExport, downloadVisual } from '../../lib/editorialExports'
 
 type BusyExport = 'substack' | 'html' | 'markdown' | 'pdf' | string | null
 
@@ -26,15 +26,17 @@ export function ArticleExportPanel({ articleId, document }: { articleId: string;
     }
   }
 
-  function downloadArticle(format: 'html' | 'markdown' | 'pdf') {
+  async function downloadArticle(format: 'html' | 'markdown' | 'pdf') {
     setBusy(format)
     setMessage('')
-    const link = window.document.createElement('a')
-    link.href = articleExportUrl(articleId, format)
-    window.document.body.appendChild(link)
-    link.click()
-    link.remove()
-    window.setTimeout(() => setBusy(null), 500)
+    try {
+      await downloadArticleExport(articleId, format, visuals)
+      setMessage(`${format === 'pdf' ? 'PDF' : format === 'html' ? 'HTML' : 'Markdown'} exported with rendered visual images.`)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : `The ${format.toUpperCase()} export failed.`)
+    } finally {
+      setBusy(null)
+    }
   }
 
   async function exportVisual(block: VisualArticleBlock, format: 'png' | 'svg', index: number) {
@@ -61,9 +63,9 @@ export function ArticleExportPanel({ articleId, document }: { articleId: string;
       </div>
 
       <div className="grid grid-cols-3 gap-1.5">
-        <ExportButton label="PDF" icon={<FileText />} busy={busy === 'pdf'} onClick={() => downloadArticle('pdf')} />
-        <ExportButton label="HTML" icon={<FileCode2 />} busy={busy === 'html'} onClick={() => downloadArticle('html')} />
-        <ExportButton label="Markdown" icon={<Download />} busy={busy === 'markdown'} onClick={() => downloadArticle('markdown')} />
+        <ExportButton label="PDF" icon={<FileText />} disabled={busy !== null} busy={busy === 'pdf'} onClick={() => void downloadArticle('pdf')} />
+        <ExportButton label="HTML" icon={<FileCode2 />} disabled={busy !== null} busy={busy === 'html'} onClick={() => void downloadArticle('html')} />
+        <ExportButton label="Markdown" icon={<Download />} disabled={busy !== null} busy={busy === 'markdown'} onClick={() => void downloadArticle('markdown')} />
       </div>
 
       {visuals.length ? (
@@ -85,7 +87,7 @@ export function ArticleExportPanel({ articleId, document }: { articleId: string;
         </div>
       ) : null}
 
-      {message ? <p className={`text-[9px] leading-4 ${message.startsWith('Copied') ? 'text-mint' : 'text-gold'}`}>{message}</p> : null}
+      {message ? <p className={`text-[9px] leading-4 ${message.startsWith('Copied') || message.includes('exported with rendered') ? 'text-mint' : 'text-gold'}`}>{message}</p> : null}
       {message.startsWith('Copied') && visuals.length ? <p className="text-[9px] leading-4 text-ink-dim">If Substack replaces a chart with its alt text, add the matching numbered PNG below at that position.</p> : null}
       {warnings.map(warning => <p key={warning} className="flex gap-2 text-[9px] leading-4 text-gold"><TriangleAlert className="mt-0.5 size-3 shrink-0" />{warning}</p>)}
       <p className="font-mono text-[7px] leading-4 uppercase tracking-[0.1em] text-ink-muted">Draft exports stay private. Substack audience, paywall, email and scheduling remain under your control.</p>
@@ -93,6 +95,6 @@ export function ArticleExportPanel({ articleId, document }: { articleId: string;
   )
 }
 
-function ExportButton({ label, icon, busy, onClick }: { label: string; icon: ReactNode; busy: boolean; onClick: () => void }) {
-  return <button type="button" onClick={onClick} disabled={busy} className="flex min-h-12 flex-col items-center justify-center gap-1 border border-line text-[7px] font-bold uppercase tracking-[0.1em] text-ink-muted hover:border-electric hover:text-electric disabled:opacity-40">{busy ? <Loader2 className="size-3.5 animate-spin" /> : <span className="[&>svg]:size-3.5">{icon}</span>}{label}</button>
+function ExportButton({ label, icon, busy, disabled, onClick }: { label: string; icon: ReactNode; busy: boolean; disabled: boolean; onClick: () => void }) {
+  return <button type="button" onClick={onClick} disabled={disabled} className="flex min-h-12 flex-col items-center justify-center gap-1 border border-line text-[7px] font-bold uppercase tracking-[0.1em] text-ink-muted hover:border-electric hover:text-electric disabled:opacity-40">{busy ? <Loader2 className="size-3.5 animate-spin" /> : <span className="[&>svg]:size-3.5">{icon}</span>}{label}</button>
 }

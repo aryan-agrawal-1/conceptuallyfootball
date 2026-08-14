@@ -1,4 +1,4 @@
-import type { VisualArticleBlock } from './editorial'
+import { editorialCsrfHeaders, type VisualArticleBlock } from './editorial'
 
 const PRIVATE_BASE = '/api/v1/private/editorial'
 
@@ -30,16 +30,23 @@ function visualElement(blockId: string): HTMLElement | null {
     .find(element => element.dataset.visualBlockId === blockId) ?? null
 }
 
-async function renderedVisualPng(blockId: string): Promise<string> {
-  const element = visualElement(blockId)
-  if (!element) throw new Error('Open the rendered article before exporting its visuals.')
+async function renderedVisualDataUrls(blockIds: string[], format: 'png' | 'jpeg'): Promise<Map<string, string>> {
+  if (!blockIds.length) return new Map()
   await document.fonts?.ready
-  const { toPng } = await import('html-to-image')
-  return toPng(element, {
-    backgroundColor: '#070810',
-    cacheBust: true,
-    pixelRatio: 2,
-  })
+  const { toJpeg, toPng } = await import('html-to-image')
+  const render = format === 'jpeg' ? toJpeg : toPng
+  const entries = await Promise.all(blockIds.map(async blockId => {
+    const element = visualElement(blockId)
+    if (!element) throw new Error('Open the rendered article before exporting its visuals.')
+    const dataUrl = await render(element, {
+      backgroundColor: '#070810',
+      cacheBust: true,
+      pixelRatio: 2,
+      ...(format === 'jpeg' ? { quality: 0.95 } : {}),
+    })
+    return [blockId, dataUrl] as const
+  }))
+  return new Map(entries)
 }
 
 function richCopyFallback(html: string): boolean {
@@ -64,10 +71,11 @@ function richCopyFallback(html: string): boolean {
 export async function copyArticleForSubstack(articleId: string): Promise<SubstackExportPayload> {
   const payload = await substackPayload(articleId)
   const parsed = new DOMParser().parseFromString(payload.html, 'text/html')
+  const renderedVisuals = await renderedVisualDataUrls(payload.visuals.map(visual => visual.block_id), 'png')
   const visualImages = await Promise.all(
     payload.visuals.map(async visual => ({
       ...visual,
-      source: await renderedVisualPng(visual.block_id),
+      source: renderedVisuals.get(visual.block_id) ?? '',
     })),
   )
 
@@ -95,6 +103,35 @@ export async function copyArticleForSubstack(articleId: string): Promise<Substac
     throw new Error('This browser does not support rich clipboard copy. Download the HTML bundle instead.')
   }
   return payload
+}
+
+export async function downloadArticleExport(
+  articleId: string,
+  format: 'html' | 'markdown' | 'pdf',
+  visuals: VisualArticleBlock[],
+): Promise<void> {
+  const imageFormat = format === 'pdf' ? 'jpeg' : 'png'
+  const renderedVisuals = await renderedVisualDataUrls(visuals.map(visual => visual.id), imageFormat)
+  const response = await fetch(articleExportUrl(articleId, format), {
+    method: 'POST',
+    credentials: 'same-origin',
+    cache: 'no-store',
+    headers: await editorialCsrfHeaders(),
+    body: JSON.stringify({
+      visuals: visuals.map(visual => ({
+        block_id: visual.id,
+        data_url: renderedVisuals.get(visual.id),
+      })),
+    }),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(body.detail ?? `The ${format.toUpperCase()} export could not be prepared.`)
+  }
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const fileName = disposition.match(/filename="?([^";]+)"?/i)?.[1]
+    ?? `conceptually-football-analysis.${format === 'pdf' ? 'pdf' : 'zip'}`
+  downloadBlob(await response.blob(), fileName)
 }
 
 function downloadBlob(blob: Blob, fileName: string) {

@@ -218,7 +218,7 @@ async function responseJson<T>(response: Response): Promise<T> {
   return body as T
 }
 
-async function csrfHeaders(): Promise<HeadersInit> {
+export async function editorialCsrfHeaders(): Promise<HeadersInit> {
   let token = cookieValue('csrftoken')
   if (!token) {
     const response = await fetch('/api/v1/auth/csrf', {
@@ -237,7 +237,7 @@ async function privateRequest<T>(path: string, init: RequestInit = {}): Promise<
     ...init,
     credentials: 'same-origin',
     cache: 'no-store',
-    headers: method === 'GET' ? init.headers : await csrfHeaders(),
+    headers: method === 'GET' ? init.headers : await editorialCsrfHeaders(),
   })
   return responseJson<T>(response)
 }

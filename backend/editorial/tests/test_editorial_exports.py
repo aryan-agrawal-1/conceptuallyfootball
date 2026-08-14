@@ -15,6 +15,10 @@ from accounts.roles import configure_user_role
 from editorial.models import Article, ArticlePublication, ArticleStatus
 
 
+PNG_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+JPEG_DATA_URL = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAASABIAAD/4QCARXhpZgAATU0AKgAAAAgABAEaAAUAAAABAAAAPgEbAAUAAAABAAAARgEoAAMAAAABAAIAAIdpAAQAAAABAAAATgAAAAAAAABIAAAAAQAAAEgAAAABAAOgAQADAAAAAQABAACgAgAEAAAAAQAAAAKgAwAEAAAAAQAAAAIAAAAA/+0AOFBob3Rvc2hvcCAzLjAAOEJJTQQEAAAAAAAAOEJJTQQlAAAAAAAQ1B2M2Y8AsgTpgAmY7PhCfv/AABEIAAIAAgMBIgACEQEDEQH/xAAfAAABBQEBAQEBAQAAAAAAAAAAAQIDBAUGBwgJCgv/xAC1EAACAQMDAgQDBQUEBAAAAX0BAgMABBEFEiExQQYTUWEHInEUMoGRoQgjQrHBFVLR8CQzYnKCCQoWFxgZGiUmJygpKjQ1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4eLj5OXm5+jp6vHy8/T19vf4+fr/xAAfAQADAQEBAQEBAQEBAAAAAAAAAQIDBAUGBwgJCgv/xAC1EQACAQIEBAMEBwUEBAABAncAAQIDEQQFITEGEkFRB2FxEyIygQgUQpGhscEJIzNS8BVictEKFiQ04SXxFxgZGiYnKCkqNTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqCg4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2dri4+Tl5ufo6ery8/T19vf4+fr/2wBDAAICAgICAgMCAgMFAwMDBQYFBQUFBggGBgYGBggKCAgICAgICgoKCgoKCgoMDAwMDAwODg4ODg8PDw8PDw8PDw//2wBDAQICAgQEBAcEBAcQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD/3QAEAAH/2gAMAwEAAhEDEQA/AP22Hhzw9j/kF2v/AH4T/Cl/4Rzw9/0C7X/vwn+FbI6UV4594f/Z"
+
+
 class EditorialExportTests(TestCase):
     def setUp(self):
         self.writer = self.create_writer("writer@example.com")
@@ -176,6 +180,46 @@ class EditorialExportTests(TestCase):
         self.assertIn(b"Conceptually Football", response.content)
         self.assertIn(b"[VISUAL] Midfielder percentile profile", response.content)
         self.assertNotIn(str(article.preview_token).encode(), response.content)
+
+    def test_browser_rendered_visuals_are_embedded_in_downloaded_exports(self):
+        article, visual_id = self.create_article()
+
+        html_response = self.client.post(
+            self.export_url(article, "html"),
+            data=json.dumps({"visuals": [{"block_id": visual_id, "data_url": PNG_DATA_URL}]}),
+            content_type="application/json",
+        )
+        markdown_response = self.client.post(
+            self.export_url(article, "markdown"),
+            data=json.dumps({"visuals": [{"block_id": visual_id, "data_url": PNG_DATA_URL}]}),
+            content_type="application/json",
+        )
+        pdf_response = self.client.post(
+            self.export_url(article, "pdf"),
+            data=json.dumps({"visuals": [{"block_id": visual_id, "data_url": JPEG_DATA_URL}]}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(html_response.status_code, 200)
+        with zipfile.ZipFile(io.BytesIO(html_response.content)) as archive:
+            html = archive.read("article.html").decode()
+            manifest = json.loads(archive.read("export-manifest.json"))
+            visual_name = next(name for name in archive.namelist() if name.endswith(".png"))
+            visual = archive.read(visual_name)
+        self.assertIn("assets/visual-01", html)
+        self.assertIn(".png", html)
+        self.assertTrue(visual.startswith(b"\x89PNG"))
+        self.assertEqual(manifest["rendered_visual_assets"], 1)
+
+        self.assertEqual(markdown_response.status_code, 200)
+        with zipfile.ZipFile(io.BytesIO(markdown_response.content)) as archive:
+            markdown = archive.read("article.md").decode()
+            self.assertTrue(any(name.endswith(".png") for name in archive.namelist()))
+        self.assertIn(".png)", markdown)
+
+        self.assertEqual(pdf_response.status_code, 200)
+        self.assertIn(b"/Subtype /Image", pdf_response.content)
+        self.assertIn(b"/DCTDecode", pdf_response.content)
 
     def test_substack_payload_uses_rich_and_plain_formats_without_publishing_draft_assets(self):
         article, visual_id = self.create_article()

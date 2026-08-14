@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import io
 import json
 import re
@@ -16,7 +18,7 @@ from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.views.decorators.cache import never_cache
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_http_methods
 
 from accounts.profiles import display_name_for
 from editorial.api import PUBLIC_SITE_URL, editorial_error, visible_article
@@ -31,6 +33,8 @@ VISUAL_LABELS = {
     "player_comparison": "Player comparison",
     "custom_chart": "Custom chart",
 }
+MAX_RENDERED_VISUAL_BYTES = 12 * 1024 * 1024
+MAX_RENDERED_VISUAL_TOTAL_BYTES = 48 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -46,6 +50,15 @@ class ExportArticle:
     published_at: datetime | None
     canonical_url: str | None
     is_public: bool
+
+
+@dataclass(frozen=True)
+class RenderedVisual:
+    data: bytes
+    content_type: str
+    extension: str
+    width: int
+    height: int
 
 
 def active_publication(article: Article) -> ArticlePublication | None:
@@ -133,6 +146,93 @@ def human_metric(value: str) -> str:
 
 def visual_asset_name(index: int, block: dict, extension: str = "svg") -> str:
     return f"visual-{index + 1:02d}-{article_file_slug(visual_title(block))}.{extension}"
+
+
+def png_dimensions(data: bytes) -> tuple[int, int]:
+    if len(data) < 24 or not data.startswith(b"\x89PNG\r\n\x1a\n") or data[12:16] != b"IHDR":
+        raise ValueError("Rendered PNG is invalid.")
+    return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+
+
+def jpeg_dimensions(data: bytes) -> tuple[int, int]:
+    if len(data) < 4 or not data.startswith(b"\xff\xd8"):
+        raise ValueError("Rendered JPEG is invalid.")
+    position = 2
+    start_of_frame = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
+    while position + 4 <= len(data):
+        if data[position] != 0xFF:
+            position += 1
+            continue
+        while position < len(data) and data[position] == 0xFF:
+            position += 1
+        if position >= len(data):
+            break
+        marker = data[position]
+        position += 1
+        if marker in {0x01, *range(0xD0, 0xDA)}:
+            continue
+        if position + 2 > len(data):
+            break
+        segment_length = int.from_bytes(data[position : position + 2], "big")
+        if segment_length < 2 or position + segment_length > len(data):
+            break
+        if marker in start_of_frame:
+            if segment_length < 7:
+                break
+            height = int.from_bytes(data[position + 3 : position + 5], "big")
+            width = int.from_bytes(data[position + 5 : position + 7], "big")
+            if width > 0 and height > 0:
+                return width, height
+            break
+        position += segment_length
+    raise ValueError("Rendered JPEG dimensions could not be read.")
+
+
+def rendered_visuals_from_request(request: HttpRequest, article: ExportArticle) -> dict[str, RenderedVisual]:
+    if request.method != "POST":
+        return {}
+    if len(request.body) > MAX_RENDERED_VISUAL_TOTAL_BYTES * 2:
+        raise ValueError("The rendered visual payload is too large.")
+    try:
+        payload = json.loads(request.body or b"{}")
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise ValueError("The rendered visual payload is invalid.") from error
+    values = payload.get("visuals", []) if isinstance(payload, dict) else []
+    if not isinstance(values, list):
+        raise ValueError("Rendered visuals must be a list.")
+    expected_ids = {block["id"] for block in article.document["blocks"] if block["type"] == "visual"}
+    if len(values) > len(expected_ids):
+        raise ValueError("The rendered visual payload contains unexpected images.")
+    assets = {}
+    total_bytes = 0
+    for value in values:
+        if not isinstance(value, dict) or value.get("block_id") not in expected_ids:
+            raise ValueError("The rendered visual payload contains an unknown block.")
+        block_id = value["block_id"]
+        if block_id in assets:
+            raise ValueError("The rendered visual payload contains a duplicate block.")
+        match = re.fullmatch(r"data:(image/(?:png|jpeg));base64,([A-Za-z0-9+/=]+)", value.get("data_url", ""))
+        if not match:
+            raise ValueError("Rendered visuals must be PNG or JPEG data URLs.")
+        try:
+            data = base64.b64decode(match.group(2), validate=True)
+        except (binascii.Error, ValueError) as error:
+            raise ValueError("A rendered visual could not be decoded.") from error
+        if not data or len(data) > MAX_RENDERED_VISUAL_BYTES:
+            raise ValueError("A rendered visual is too large.")
+        total_bytes += len(data)
+        if total_bytes > MAX_RENDERED_VISUAL_TOTAL_BYTES:
+            raise ValueError("The rendered visual payload is too large.")
+        content_type = match.group(1)
+        width, height = png_dimensions(data) if content_type == "image/png" else jpeg_dimensions(data)
+        assets[block_id] = RenderedVisual(
+            data=data,
+            content_type=content_type,
+            extension="png" if content_type == "image/png" else "jpg",
+            width=width,
+            height=height,
+        )
+    return assets
 
 
 def visual_svg(block: dict) -> bytes:
@@ -263,7 +363,7 @@ def render_html(
     if substack:
         return article_markup
     styles = """
-body{margin:0;background:#f7f8fb;color:#151923;font:17px/1.7 Georgia,serif}article{box-sizing:border-box;max-width:820px;margin:0 auto;padding:64px 32px;background:#fff}h1,h2,h3{font-family:Arial,sans-serif;line-height:1.15}h1{font-size:46px}h2{margin-top:2em}a{color:#1768c4}img{display:block;max-width:100%;height:auto;margin:auto}figure{margin:2.2em 0}figcaption{color:#586174;font:14px/1.55 Arial,sans-serif}blockquote,aside{border-left:3px solid #4a9ef5;margin:2em 0;padding:.4em 0 .4em 1.4em}hr{border:0;border-top:1px solid #d9deea;margin:3em 0}footer{border-top:1px solid #d9deea;margin-top:4em;padding-top:1.5em;color:#586174}
+body{margin:0;background:#f7f8fb;color:#151923;font:17px/1.7 Georgia,serif}article{box-sizing:border-box;max-width:820px;margin:0 auto;padding:64px 32px;background:#fff}h1,h2,h3{font-family:Arial,sans-serif;line-height:1.15}h1{font-size:46px}h2{margin-top:2em}a{color:#1768c4}img{display:block;max-width:100%;height:auto;margin:auto}figure{margin:2.2em 0}figcaption{color:#586174;font:14px/1.55 Arial,sans-serif}ul,ol{padding-left:1.75em}li{padding-left:.3em}li::marker{color:#1768c4;font:700 1.05em Arial,sans-serif}blockquote,aside{border-left:3px solid #4a9ef5;margin:2em 0;padding:.4em 0 .4em 1.4em}hr{border:0;border-top:1px solid #d9deea;margin:3em 0}footer{border-top:1px solid #d9deea;margin-top:4em;padding-top:1.5em;color:#586174}
 """
     return f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>{escape(article.title)}</title><style>{styles}</style></head><body>{article_markup}</body></html>'
 
@@ -368,10 +468,13 @@ def pdf_lines(article: ExportArticle) -> list[tuple[str, int, bool]]:
     return values
 
 
-def render_pdf(article: ExportArticle) -> bytes:
+def render_pdf(
+    article: ExportArticle,
+    rendered_visuals: dict[str, RenderedVisual] | None = None,
+) -> bytes:
     page_width, page_height = 595, 842
     margin, y_start, y_floor = 54, 780, 62
-    pages: list[list[tuple[str, int, bool]]] = [[]]
+    text_pages: list[list[tuple[str, int, bool]]] = [[]]
     y = y_start
     for value, size, bold in pdf_lines(article):
         width = max(28, int(92 * 10 / max(size, 8)))
@@ -379,18 +482,39 @@ def render_pdf(article: ExportArticle) -> bytes:
         for line in wrapped:
             leading = max(12, int(size * 1.45))
             if y - leading < y_floor:
-                pages.append([])
+                text_pages.append([])
                 y = y_start
-            pages[-1].append((line, size, bold))
+            text_pages[-1].append((line, size, bold))
             y -= leading
 
+    rendered_visuals = rendered_visuals or {}
+    visual_pages = [
+        (block, rendered_visuals[block["id"]])
+        for block in article.document["blocks"]
+        if block["type"] == "visual"
+        and block["id"] in rendered_visuals
+        and rendered_visuals[block["id"]].content_type == "image/jpeg"
+    ]
     objects: list[bytes] = []
     objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
-    page_ids = [5 + index * 2 for index in range(len(pages))]
+    image_ids = {block["id"]: 5 + index for index, (block, asset) in enumerate(visual_pages)}
+    page_start = 5 + len(visual_pages)
+    page_count = len(text_pages) + len(visual_pages)
+    page_ids = [page_start + index * 2 for index in range(page_count)]
     objects.append(f'<< /Type /Pages /Kids [{" ".join(f"{page_id} 0 R" for page_id in page_ids)}] /Count {len(page_ids)} >>'.encode())
-    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
-    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>")
-    for page_number, lines in enumerate(pages, start=1):
+    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>")
+    for block, asset in visual_pages:
+        objects.append(
+            (
+                f"<< /Type /XObject /Subtype /Image /Width {asset.width} /Height {asset.height} "
+                f"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length {len(asset.data)} >>\nstream\n"
+            ).encode()
+            + asset.data
+            + b"\nendstream"
+        )
+
+    for page_number, lines in enumerate(text_pages, start=1):
         content = ["q", "0.08 0.10 0.15 rg", "54 814 487 2 re f", "Q"]
         y = y_start
         for line, size, bold in lines:
@@ -399,11 +523,49 @@ def render_pdf(article: ExportArticle) -> bytes:
             color = "0.08 0.10 0.15" if bold else "0.20 0.23 0.30"
             content.append(f"BT /{font} {size} Tf {color} rg {margin} {y} Td ({pdf_escape(line)}) Tj ET")
             y -= leading
-        footer = f"Conceptually Football · conceptuallyfootball.com · {page_number}/{len(pages)}"
+        footer = f"Conceptually Football · conceptuallyfootball.com · {page_number}/{page_count}"
         content.append(f"BT /F1 7 Tf 0.30 0.40 0.60 rg 54 34 Td ({pdf_escape(footer)}) Tj ET")
         stream = "\n".join(content).encode("cp1252", errors="replace")
-        content_id = 6 + (page_number - 1) * 2
+        content_id = page_ids[page_number - 1] + 1
         objects.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_width} {page_height}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents {content_id} 0 R >>".encode())
+        objects.append(f"<< /Length {len(stream)} >>\nstream\n".encode() + stream + b"\nendstream")
+
+    for visual_index, (block, asset) in enumerate(visual_pages):
+        page_number = len(text_pages) + visual_index + 1
+        image_name = f"Im{visual_index + 1}"
+        image_id = image_ids[block["id"]]
+        display_width = 487
+        display_height = min(520, display_width * asset.height / asset.width)
+        image_y = 736 - display_height
+        content = [
+            "q",
+            "0.08 0.10 0.15 rg",
+            "54 814 487 2 re f",
+            "Q",
+            f"BT /F2 15 Tf 0.08 0.10 0.15 rg 54 780 Td ({pdf_escape(visual_title(block))}) Tj ET",
+            f"q {display_width:.2f} 0 0 {display_height:.2f} 54 {image_y:.2f} cm /{image_name} Do Q",
+        ]
+        detail_y = image_y - 24
+        for value, size in (
+            (block.get("caption", ""), 9),
+            (f'Source: {block.get("source_note", "Conceptually Football")} · Data as of {block.get("data_as_of", "")}', 8),
+            (block.get("alt", ""), 8),
+        ):
+            for line in textwrap.wrap(value, width=104, break_long_words=False)[:3]:
+                content.append(f"BT /F1 {size} Tf 0.25 0.29 0.38 rg 54 {detail_y:.2f} Td ({pdf_escape(line)}) Tj ET")
+                detail_y -= max(12, int(size * 1.45))
+        footer = f"Conceptually Football · conceptuallyfootball.com · {page_number}/{page_count}"
+        content.append(f"BT /F1 7 Tf 0.30 0.40 0.60 rg 54 34 Td ({pdf_escape(footer)}) Tj ET")
+        stream = "\n".join(content).encode("cp1252", errors="replace")
+        page_id = page_ids[page_number - 1]
+        content_id = page_id + 1
+        objects.append(
+            (
+                f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_width} {page_height}] "
+                f"/Resources << /Font << /F1 3 0 R /F2 4 0 R >> /XObject << /{image_name} {image_id} 0 R >> >> "
+                f"/Contents {content_id} 0 R >>"
+            ).encode()
+        )
         objects.append(f"<< /Length {len(stream)} >>\nstream\n".encode() + stream + b"\nendstream")
 
     output = io.BytesIO()
@@ -431,14 +593,29 @@ def private_response(content: bytes | str, *, content_type: str, file_name: str)
     return response
 
 
-def bundled_export(article: ExportArticle, export_format: str) -> bytes:
+def bundled_export(
+    article: ExportArticle,
+    export_format: str,
+    rendered_visuals: dict[str, RenderedVisual] | None = None,
+) -> bytes:
     stream = io.BytesIO()
     warnings = export_warnings(article)
     visuals = [block for block in article.document["blocks"] if block["type"] == "visual"]
+    rendered_visuals = rendered_visuals or {}
+    asset_names = {}
     with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for index, block in enumerate(visuals):
-            archive.writestr(f"assets/{visual_asset_name(index, block)}", visual_svg(block))
-        resolver = lambda index, block: f"assets/{visual_asset_name(index, block)}"
+            rendered = rendered_visuals.get(block["id"])
+            extension = rendered.extension if rendered else "svg"
+            asset_name = visual_asset_name(index, block, extension)
+            asset_names[block["id"]] = asset_name
+            archive.writestr(f"assets/{asset_name}", rendered.data if rendered else visual_svg(block))
+            if not rendered:
+                warnings.append(f"Visual {index + 1} used the accessible fallback because no rendered image was supplied.")
+
+        def resolver(index, block):
+            return f"assets/{asset_names[block['id']]}"
+
         if export_format == "html":
             archive.writestr("article.html", render_html(article, visual_url=resolver))
         else:
@@ -452,6 +629,7 @@ def bundled_export(article: ExportArticle, export_format: str) -> bytes:
                     "exported_at": timezone.now().isoformat(),
                     "warnings": warnings,
                     "visual_assets": len(visuals),
+                    "rendered_visual_assets": len(rendered_visuals),
                 },
                 indent=2,
             ),
@@ -459,7 +637,7 @@ def bundled_export(article: ExportArticle, export_format: str) -> bytes:
     return stream.getvalue()
 
 
-@require_GET
+@require_http_methods(["GET", "POST"])
 @never_cache
 def article_export(request: HttpRequest, article_id, export_format: str) -> HttpResponse:
     error = editorial_error(request)
@@ -467,15 +645,34 @@ def article_export(request: HttpRequest, article_id, export_format: str) -> Http
         return error
     article = export_article(visible_article(request, article_id))
     slug = article_file_slug(article.title)
+    try:
+        rendered_visuals = rendered_visuals_from_request(request, article)
+    except ValueError as error:
+        return JsonResponse({"detail": str(error)}, status=400)
+    if request.method == "POST" and export_format == "substack":
+        return JsonResponse({"detail": "Substack copy is available as a browser clipboard action."}, status=405)
+    if request.method == "POST" and export_format in {"html", "markdown", "pdf"}:
+        visual_count = sum(block["type"] == "visual" for block in article.document["blocks"])
+        if len(rendered_visuals) != visual_count:
+            return JsonResponse(
+                {"detail": "Every visual must be rendered before this export can be downloaded."},
+                status=400,
+            )
+        required_content_type = "image/jpeg" if export_format == "pdf" else "image/png"
+        if any(asset.content_type != required_content_type for asset in rendered_visuals.values()):
+            return JsonResponse(
+                {"detail": f"Rendered visuals for {export_format.upper()} use an unsupported image format."},
+                status=400,
+            )
     if export_format in {"html", "markdown"}:
         return private_response(
-            bundled_export(article, export_format),
+            bundled_export(article, export_format, rendered_visuals),
             content_type="application/zip",
             file_name=f"{slug}-{export_format}.zip",
         )
     if export_format == "pdf":
         return private_response(
-            render_pdf(article),
+            render_pdf(article, rendered_visuals),
             content_type="application/pdf",
             file_name=f"{slug}.pdf",
         )
