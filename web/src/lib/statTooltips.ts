@@ -67,7 +67,7 @@ const STAT_HEADER_TOOLTIPS: Record<string, StatHeaderTooltip> = {
   },
   buildup_share: {
     fullName: 'Buildup share',
-    description: 'Share of xGChain that comes from xGBuildup—how much involvement is earlier-phase vs chance-ending.',
+    description: 'Share of xGChain that comes from xGBuildup - how much involvement is earlier-phase vs chance-ending.',
   },
   successful_dribbles_per_90: {
     fullName: 'Successful dribbles',

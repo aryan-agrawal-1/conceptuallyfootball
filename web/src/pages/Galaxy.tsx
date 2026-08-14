@@ -42,7 +42,7 @@ function readParamValues(params: URLSearchParams, key: string): string[] {
 }
 
 // Layout pass
-// UMAP can land similar players *extremely* close together — often overlapping
+// UMAP can land similar players *extremely* close together - often overlapping
 // within a single sprite. We do two things to fix that without touching the
 // backend:
 //   1. Uniformly scale the layout so the whole cluster feels airier.
@@ -325,7 +325,7 @@ export function Galaxy() {
     placeholderData: keepPreviousData,
   })
 
-  // Edges/selected are fetched independently — selecting a player does NOT
+  // Edges/selected are fetched independently - selecting a player does NOT
   // touch the heavy galaxy payload, so the scene doesn't flash.
   const similarQuery = useQuery({
     queryKey: ['galaxy-similar', filters.competition, filters.season, selectedPlayerId],

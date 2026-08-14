@@ -1406,7 +1406,7 @@ function ExportStatTile({
               background: theme === 'boring' ? `${pctColor}22` : `${pctColor}16`,
             }}
           >
-            {tile.percentile != null ? Math.round(tile.percentile) : '—'}
+            {tile.percentile != null ? Math.round(tile.percentile) : '-'}
           </div>
         )}
       </div>
@@ -1538,7 +1538,7 @@ function SimilarPlayersExportPanel({
                     style={{ color: style.muted }}
                     className={cn('block truncate font-medium', compact ? 'text-[9px]' : 'mt-1 text-[13px]')}
                   >
-                    {edge.to_team_name ?? edge.to_competition_code ?? '—'}
+                    {edge.to_team_name ?? edge.to_competition_code ?? '-'}
                   </span>
                 </span>
                 <span

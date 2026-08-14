@@ -53,6 +53,9 @@ class Article(models.Model):
     )
     title = models.CharField(max_length=180, default="Untitled analysis")
     subtitle = models.CharField(max_length=280, blank=True)
+    slug = models.SlugField(max_length=220, unique=True, null=True, blank=True)
+    topics = models.JSONField(default=list, blank=True)
+    source_notes = models.TextField(blank=True)
     status = models.CharField(
         max_length=20,
         choices=ArticleStatus.choices,
@@ -207,6 +210,8 @@ class ArticleRevision(models.Model):
     subtitle = models.CharField(max_length=280, blank=True)
     document = models.JSONField()
     subjects = models.JSONField(default=empty_subjects)
+    topics = models.JSONField(default=list, blank=True)
+    source_notes = models.TextField(blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -268,6 +273,8 @@ class ArticlePublication(models.Model):
     document = models.JSONField()
     subjects = models.JSONField(default=empty_subjects)
     references = models.JSONField(default=empty_subjects)
+    topics = models.JSONField(default=list, blank=True)
+    source_notes = models.TextField(blank=True)
     published_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,

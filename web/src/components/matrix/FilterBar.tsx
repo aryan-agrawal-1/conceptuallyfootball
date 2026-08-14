@@ -693,7 +693,7 @@ function ColumnPicker({
 // Popover chrome 
 // A shared dropdown surface with the same look as HudFrame, but positioned
 // below a trigger button. `align` decides which edge of the trigger the
-// popover snaps to — use `end` when the trigger sits near the right edge
+// popover snaps to - use `end` when the trigger sits near the right edge
 // of the viewport so the popover opens inward and doesn't clip.
 function HudPopover({
   children,

@@ -269,11 +269,11 @@ function ProfileLayout({
                 {player.canonical_team_name}
               </Link>
             ) : (
-              <span>{player.canonical_team_name ?? '—'}</span>
+              <span>{player.canonical_team_name ?? '-'}</span>
             )}
             <FormerClubsNote teams={player.secondary_teams} profileScope={playerTeamScope} />
             {' '}
-            · {player.minutes != null ? player.minutes.toLocaleString() : '—'} min
+            · {player.minutes != null ? player.minutes.toLocaleString() : '-'} min
           </p>
           <p className="mt-2 text-[11px] text-ink-dim leading-relaxed">
             <span className="text-electric/80 font-mono uppercase tracking-[0.15em] mr-2">

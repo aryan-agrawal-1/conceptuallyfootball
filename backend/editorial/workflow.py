@@ -5,6 +5,7 @@ from datetime import datetime
 from django.db import transaction
 from django.db.models import Max
 from django.utils import timezone
+from django.utils.text import slugify
 
 from editorial.models import (
     Article,
@@ -38,6 +39,8 @@ def create_revision_checkpoint(article: Article, actor) -> None:
             "subtitle": article.subtitle,
             "document": article.document,
             "subjects": subjects_payload(article),
+            "topics": article.topics,
+            "source_notes": article.source_notes,
             "created_by": actor,
         },
     )
@@ -65,6 +68,10 @@ def record_transition(
 
 
 def create_publication(article: Article, actor, published_at: datetime) -> ArticlePublication:
+    if not article.slug:
+        title_slug = slugify(article.title)[:180] or "analysis"
+        article.slug = f"{title_slug}-{article.id}"
+        article.save(update_fields=("slug", "updated_at"))
     latest_version = article.publications.aggregate(latest=Max("version"))["latest"] or 0
     return ArticlePublication.objects.create(
         article=article,
@@ -75,6 +82,8 @@ def create_publication(article: Article, actor, published_at: datetime) -> Artic
         document=article.document,
         subjects=subjects_payload(article),
         references=references_payload(article),
+        topics=article.topics,
+        source_notes=article.source_notes,
         published_by=actor,
         published_at=published_at,
     )

@@ -49,9 +49,9 @@
 
   --color-ink:          #E4EAF8;
   --color-ink-dim:      #8A95B8;
-  --color-ink-muted:    #4E5878;
+  --color-ink-muted: var(--color-control-fg);
 
-  /* Interactive-state hierarchy (kept separate from secondary copy). */
+  /* Interactive-state hierarchy (kept separate from secondary copy) but im using fg for muted as well now */
   --color-control-fg:       #8796BC;
   --color-control-fg-hover: #E4EAF8;
   --color-control-border:   #65759E;

@@ -341,7 +341,7 @@ export function CompareRadarChart({
                     {formatValue(pp.raw, pp.formatUnit)}
                     <span className="text-ink-muted mx-1">·</span>
                     Pctl{' '}
-                    {pp.pctOk && pp.pct != null ? Math.round(pp.pct) : '—'}
+                    {pp.pctOk && pp.pct != null ? Math.round(pp.pct) : '-'}
                   </span>
                 </div>
               )

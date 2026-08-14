@@ -77,7 +77,7 @@ export function HudFrame({
   )
 }
 
-// Tiny horizontal rule with tick marks — the "divider" staple of HUDs.
+// Tiny horizontal rule with tick marks - the "divider" staple of HUDs.
 export function HudDivider({ className }: { className?: string }) {
   return (
     <div
@@ -181,7 +181,7 @@ export function HudActionButton({
 }
 
 // Inline "pulse-dot + micro-label" readout. Mirrors the look of a HudFrame
-// header but flows inline — useful as a section marker inside a toolbar.
+// header but flows inline - useful as a section marker inside a toolbar.
 export function HudLabel({
   children,
   className,

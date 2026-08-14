@@ -1,4 +1,4 @@
-import { ImageIcon, Lightbulb, TriangleAlert } from 'lucide-react'
+import { BookOpen, ImageIcon, Lightbulb, TriangleAlert } from 'lucide-react'
 import { editorialEntityPath, type Article, type ArticleBlock, type ArticleDocument, type ArticleRelationships, type EditorialEntityReference, type InlineContent } from '../../lib/editorial'
 import type { SocialPlatform } from '../../lib/staffAuth'
 import { SocialBrandIcon } from '../social/SocialBrandIcon'
@@ -11,8 +11,12 @@ export function ArticleCanvas({
   author,
   updatedAt,
   preview = false,
+  published = false,
   subjects,
   references,
+  topics = [],
+  sourceNotes = '',
+  readingMinutes,
 }: {
   title: string
   subtitle: string
@@ -20,14 +24,18 @@ export function ArticleCanvas({
   author?: Article['author']
   updatedAt?: string
   preview?: boolean
+  published?: boolean
   subjects?: ArticleRelationships
   references?: ArticleRelationships
+  topics?: string[]
+  sourceNotes?: string
+  readingMinutes?: number
 }) {
   return (
     <article className="mx-auto w-full max-w-[1180px] px-6 py-14 sm:px-10 sm:py-20 lg:px-16">
       <header className="border-b border-line pb-10">
         <p className="font-mono text-[9px] uppercase tracking-[0.25em] text-electric">
-          {preview ? 'Private editorial preview' : 'Analysis draft'}
+          {preview ? 'Private editorial preview' : published ? 'Conceptually Football analysis' : 'Analysis draft'}
         </p>
         <h1 className="mt-5 text-4xl font-black leading-[1.04] tracking-[-0.05em] text-ink sm:text-6xl">
           {title.trim() || 'Untitled analysis'}
@@ -35,7 +43,8 @@ export function ArticleCanvas({
         {subtitle ? (
           <p className="mt-6 text-base leading-7 text-ink-dim sm:text-lg">{subtitle}</p>
         ) : null}
-        {author ? <AuthorByline author={author} updatedAt={updatedAt} /> : null}
+        {author ? <AuthorByline author={author} updatedAt={updatedAt} published={published} readingMinutes={readingMinutes} /> : null}
+        {topics.length ? <div className="mt-5 flex flex-wrap gap-2" aria-label="Article topics">{topics.map(topic => <span key={topic} className="border border-electric/30 bg-electric/5 px-2 py-1 font-mono text-[8px] uppercase tracking-[0.14em] text-electric">{topic}</span>)}</div> : null}
         <RelationshipMetadata subjects={subjects} references={references} />
       </header>
       <div className="space-y-7 pt-10">
@@ -43,6 +52,12 @@ export function ArticleCanvas({
           <RenderedBlock key={block.id} block={block} />
         ))}
       </div>
+      {sourceNotes ? (
+        <footer className="mt-14 border-t border-line pt-7">
+          <p className="font-mono text-[8px] uppercase tracking-[0.18em] text-electric">Source notes</p>
+          <p className="mt-3 whitespace-pre-wrap text-xs leading-6 text-ink-muted">{sourceNotes}</p>
+        </footer>
+      ) : null}
     </article>
   )
 }
@@ -91,13 +106,14 @@ const SOCIAL_LABELS: Record<SocialPlatform, string> = {
   website: 'Website',
 }
 
-function AuthorByline({ author, updatedAt }: { author: Article['author']; updatedAt?: string }) {
+function AuthorByline({ author, updatedAt, published, readingMinutes }: { author: Article['author']; updatedAt?: string; published: boolean; readingMinutes?: number }) {
   const socialEntries = Object.entries(author.social_links) as Array<[SocialPlatform, string]>
   return (
     <div className="mt-8 flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-[9px] uppercase tracking-[0.18em] text-ink-muted">
       <span>By {author.display_name}</span>
       {socialEntries.length ? <div className="flex overflow-hidden border border-line-bright bg-panel/60">{socialEntries.map(([platform, url]) => <a key={platform} href={url} target="_blank" rel="me noreferrer" title={SOCIAL_LABELS[platform]} aria-label={`${author.display_name} on ${SOCIAL_LABELS[platform]}`} className="grid size-7 place-items-center border-r border-line-bright text-ink-muted transition-colors last:border-r-0 hover:bg-electric hover:text-mat focus-visible:bg-electric focus-visible:text-mat focus-visible:outline-none"><SocialBrandIcon platform={platform} className="size-3.5" /></a>)}</div> : null}
-      {updatedAt ? <><span aria-hidden="true" className="text-line-bright">·</span><span>Updated {formatPreviewDate(updatedAt)}</span></> : null}
+      {updatedAt ? <><span aria-hidden="true" className="text-line-bright">·</span><time dateTime={updatedAt}>{published ? 'Published' : 'Updated'} {formatPreviewDate(updatedAt)}</time></> : null}
+      {readingMinutes ? <><span aria-hidden="true" className="text-line-bright">·</span><span className="inline-flex items-center gap-1.5"><BookOpen className="size-3" /> {readingMinutes} min read</span></> : null}
     </div>
   )
 }

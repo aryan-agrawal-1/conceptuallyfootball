@@ -524,7 +524,7 @@ export function Comparisons() {
                             {d.minutes < COMPARISON_MIN_MINUTES_WARNING &&
                               d.eligibility.percentiles_eligible && (
                                 <p className="text-[10px] text-ember/90 uppercase tracking-wide">
-                                  Below {COMPARISON_MIN_MINUTES_WARNING} minutes — interpret percentiles cautiously.
+                                  Below {COMPARISON_MIN_MINUTES_WARNING} minutes - interpret percentiles cautiously.
                                 </p>
                               )}
                           </div>

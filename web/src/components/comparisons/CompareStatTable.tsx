@@ -98,7 +98,7 @@ export function CompareStatTable({
                           {formatValue(r.value, r.formatUnit)}
                         </span>
                         <span className="text-[10px] text-ink-muted tabular-nums">
-                          {pct != null ? comparisonPercentileLabel(pct) : '— percentile'}
+                          {pct != null ? comparisonPercentileLabel(pct) : '- percentile'}
                         </span>
                       </div>
                     </td>

@@ -2,15 +2,25 @@ from django.urls import path
 
 from editorial.api import (
     player_related_analysis,
+    public_articles,
     public_article_detail,
+    public_article_detail_by_id,
+    public_sitemap,
     shared_preview,
     team_related_analysis,
 )
 
 
 urlpatterns = [
+    path("sitemap.xml", public_sitemap, name="editorial-public-sitemap"),
     path("previews/<uuid:token>", shared_preview, name="editorial-shared-preview"),
-    path("articles/<uuid:article_id>", public_article_detail, name="editorial-public-article-detail"),
+    path("articles", public_articles, name="editorial-public-articles"),
+    path(
+        "articles/<uuid:article_id>",
+        public_article_detail_by_id,
+        name="editorial-public-article-detail",
+    ),
+    path("articles/<slug:slug>", public_article_detail, name="editorial-public-article-detail-by-slug"),
     path(
         "entities/player/<int:entity_id>/related",
         player_related_analysis,

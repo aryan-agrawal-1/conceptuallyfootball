@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
   Archive,
-  BarChart3,
   CalendarClock,
   CheckCircle2,
   ChevronRight,
@@ -33,6 +32,8 @@ import { StaffFrame } from '../components/staff/StaffFrame'
 import { StaffRoute } from '../components/staff/StaffRoute'
 import { useStaffAuth } from '../context/StaffAuthContext'
 import { fetchSearchEntities } from '../lib/api'
+import { ARTICLE_TOPICS } from '../lib/articleTopics'
+import type { SearchEntitiesResponse } from '../types/api'
 import {
   clearDraftRecovery,
   createArticle,
@@ -181,7 +182,7 @@ function DraftCard({ article, isOwner, canDelete, deleting, onDelete }: { articl
       <Link to={`/analysis/${article.id}`} className="mt-8 flex flex-1 flex-col">
         <h2 className="text-xl font-black leading-tight tracking-[-0.035em] text-ink">{article.title}</h2>
         <p className="mt-2 font-mono text-[8px] uppercase tracking-[0.13em] text-ink-muted">By {article.author.display_name}</p>
-        <p className="mt-3 line-clamp-2 text-xs leading-5 text-ink-dim">{article.subtitle || 'No standfirst yet — open the article to continue.'}</p>
+        <p className="mt-3 line-clamp-2 text-xs leading-5 text-ink-dim">{article.subtitle || 'No standfirst yet - open the article to continue.'}</p>
         <div className="mt-auto flex items-center justify-between pt-8 font-mono text-[8px] uppercase tracking-[0.14em] text-ink-muted">
           <span>{relativeDate(article.updated_at)}</span>
           <span className={article.status === 'scheduled' ? 'text-gold' : article.preview_enabled ? 'text-mint' : ''}>{article.status === 'scheduled' && article.scheduled_for ? `Due ${shortDate(article.scheduled_for)}` : article.preview_enabled ? 'Preview shared' : 'Private'}</span>
@@ -192,6 +193,7 @@ function DraftCard({ article, isOwner, canDelete, deleting, onDelete }: { articl
 }
 
 type SaveState = 'saved' | 'unsaved' | 'saving' | 'recovered' | 'error'
+type SubmissionStep = 'subjects' | 'topics' | 'sources'
 
 function ArticleEditor() {
   const { articleId = '' } = useParams()
@@ -213,6 +215,8 @@ function ArticleEditor() {
   const [saveError, setSaveError] = useState('')
   const [mode, setMode] = useState<'write' | 'reader'>('write')
   const [copied, setCopied] = useState(false)
+  const [submissionSteps, setSubmissionSteps] = useState<SubmissionStep[]>([])
+  const [submissionStepIndex, setSubmissionStepIndex] = useState(0)
   const [visualPicker, setVisualPicker] = useState<{
     replaceBlockId?: string
     insertAfterIndex?: number
@@ -440,10 +444,10 @@ function ArticleEditor() {
     }
   }
 
-  async function runWorkflow(action: ArticleWorkflowAction, options: { note?: string; publishAt?: string } = {}) {
+  async function runWorkflow(action: ArticleWorkflowAction, options: { note?: string; publishAt?: string } = {}): Promise<boolean> {
     if (canEdit) {
       const saved = await performSaveRef.current(true)
-      if (!saved) return
+      if (!saved) return false
     }
     setSaveError('')
     try {
@@ -457,9 +461,30 @@ function ArticleEditor() {
       if (!['draft', 'changes_requested'].includes(updated.status)) setMode('reader')
       queryClient.setQueryData(['editorial-article', articleId], updated)
       queryClient.invalidateQueries({ queryKey: ARTICLE_LIST_KEY })
+      return true
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'The workflow action could not be completed.')
+      return false
     }
+  }
+
+  function requestSubmission() {
+    if (!draft) return
+    const missing: SubmissionStep[] = []
+    if (!draft.subjects.players.length && !draft.subjects.teams.length) missing.push('subjects')
+    if (!draft.topics.length) missing.push('topics')
+    if (!draft.source_notes.trim()) missing.push('sources')
+    if (!missing.length) {
+      void runWorkflow('submit')
+      return
+    }
+    setSubmissionSteps(missing)
+    setSubmissionStepIndex(0)
+  }
+
+  async function submitFromPreflight() {
+    const submitted = await runWorkflow('submit')
+    if (submitted) setSubmissionSteps([])
   }
 
   const previewUrl = article.preview_token ? `${window.location.origin}/analysis/preview/${article.preview_token}` : ''
@@ -521,10 +546,10 @@ function ArticleEditor() {
       <div className={`mx-auto ${mode === 'write' || !canEdit ? 'grid max-w-[1500px] lg:grid-cols-[minmax(0,1fr)_300px]' : 'w-full'}`}>
         <section className="min-h-[calc(100svh-4rem)] bg-panel/30">
           {mode === 'reader' ? (
-            <ArticleCanvas title={draft.title} subtitle={draft.subtitle} document={draft.document} author={article.author} updatedAt={article.updated_at} subjects={draft.subjects} references={draftReferences} />
+            <ArticleCanvas title={draft.title} subtitle={draft.subtitle} document={draft.document} author={article.author} updatedAt={article.updated_at} subjects={draft.subjects} references={draftReferences} topics={draft.topics} sourceNotes={draft.source_notes} />
           ) : (
             <div className="mx-auto max-w-[760px] px-7 py-12 sm:px-12 sm:py-16">
-              <div className="flex flex-wrap items-center justify-between gap-3"><p className="font-mono text-[8px] uppercase tracking-[0.22em] text-electric">{statusLabel(article.status)} · Revision {article.revision}</p><button type="button" onClick={() => setVisualPicker({ insertAfterIndex: draft.document.blocks.length - 1 })} className="inline-flex h-9 items-center gap-2 border border-electric/35 bg-electric-dim/25 px-3 text-[8px] font-black uppercase tracking-[0.14em] text-electric hover:border-electric hover:bg-electric hover:text-mat"><BarChart3 className="size-3.5" /> Add visual <span className="hidden font-mono font-normal opacity-60 sm:inline">/chart</span></button></div>
+              <p className="font-mono text-[8px] uppercase tracking-[0.22em] text-electric">{statusLabel(article.status)} · Revision {article.revision}</p>
               <textarea value={draft.title} onChange={event => editDraft(current => ({ ...current, title: event.target.value }))} rows={2} maxLength={180} placeholder="Untitled analysis" className="mt-5 w-full resize-none bg-transparent text-4xl font-black leading-[1.05] tracking-[-0.05em] text-ink placeholder:text-ink-muted focus:outline-none sm:text-5xl" />
               <textarea value={draft.subtitle} onChange={event => editDraft(current => ({ ...current, subtitle: event.target.value }))} rows={3} maxLength={280} placeholder="A clear standfirst that tells readers why this matters…" className="mt-4 w-full resize-none bg-transparent text-base leading-7 text-ink-dim placeholder:text-ink-muted focus:outline-none" />
               <div className="mt-8 border-t border-line pt-10">
@@ -540,10 +565,22 @@ function ArticleEditor() {
 
         {mode === 'write' || !canEdit ? <aside className="border-t border-line p-5 lg:sticky lg:top-16 lg:max-h-[calc(100svh-4rem)] lg:self-start lg:overflow-y-auto lg:border-l lg:border-t-0">
           <InspectorSection title="Publishing workflow">
-            <WorkflowPanel article={article} canApprove={Boolean(user?.can_approve_editorial)} canEdit={canEdit} pending={saveState === 'saving'} onTransition={runWorkflow} />
+            <WorkflowPanel article={article} canApprove={Boolean(user?.can_approve_editorial)} canEdit={canEdit} pending={saveState === 'saving'} onSubmit={requestSubmission} onTransition={runWorkflow} />
           </InspectorSection>
           <InspectorSection title="Discovery relationships">
             <ArticleRelationshipsPanel subjects={draft.subjects} references={draftReferences} entities={entitiesQuery.data} loading={entitiesQuery.isLoading} readOnly={!canEdit} onChange={subjects => editDraft(current => ({ ...current, subjects }))} />
+          </InspectorSection>
+          <InspectorSection title="Public discovery">
+            <p className="font-mono text-[7px] uppercase tracking-[0.15em] text-ink-muted">Topics</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {ARTICLE_TOPICS.map(topic => {
+                const selected = draft.topics.includes(topic)
+                return <button key={topic} type="button" aria-pressed={selected} disabled={!canEdit} onClick={() => editDraft(current => ({ ...current, topics: selected ? current.topics.filter(value => value !== topic) : [...current.topics, topic] }))} className={`border px-2 py-1.5 font-mono text-[7px] uppercase tracking-[0.1em] transition-colors disabled:opacity-50 ${selected ? 'border-electric bg-electric/15 text-electric' : 'border-line text-ink-muted hover:border-electric hover:text-ink'}`}>{topic}</button>
+              })}
+            </div>
+            <p className="mt-2 text-[9px] leading-4 text-ink-muted">Choose the editorial themes that best describe the article. Competition and season are derived separately from published visual context.</p>
+            <label className="mt-5 block font-mono text-[7px] uppercase tracking-[0.15em] text-ink-muted" htmlFor="article-source-notes">Source notes</label>
+            <textarea id="article-source-notes" value={draft.source_notes} onChange={event => editDraft(current => ({ ...current, source_notes: event.target.value }))} disabled={!canEdit} rows={4} maxLength={2000} placeholder="Data sources, methodology and caveats readers should know…" className="mt-2 w-full resize-none border border-line bg-mat p-3 text-xs leading-5 text-ink placeholder:text-ink-muted focus:border-electric focus:outline-none disabled:opacity-60" />
           </InspectorSection>
 
           {canEdit || user?.can_approve_editorial ? <InspectorSection title="Private preview">
@@ -587,11 +624,82 @@ function ArticleEditor() {
         />
       ) : null}
       {visualPicker ? <VisualBlockPicker initialType={visualPicker.initialType} initialBlock={visualPicker.initialBlock} onClose={() => setVisualPicker(null)} onInsert={insertVisual} /> : null}
+      {submissionSteps.length ? <SubmissionPreflight
+        step={submissionSteps[submissionStepIndex]}
+        stepNumber={submissionStepIndex + 1}
+        stepCount={submissionSteps.length}
+        draft={draft}
+        entities={entitiesQuery.data}
+        loadingEntities={entitiesQuery.isLoading}
+        pending={saveState === 'saving'}
+        onChange={editDraft}
+        onClose={() => setSubmissionSteps([])}
+        onContinue={() => setSubmissionStepIndex(index => Math.min(index + 1, submissionSteps.length - 1))}
+        onSubmit={() => void submitFromPreflight()}
+      /> : null}
     </main>
   )
 }
 
-function WorkflowPanel({ article, canApprove, canEdit, pending, onTransition }: { article: Article; canApprove: boolean; canEdit: boolean; pending: boolean; onTransition: (action: ArticleWorkflowAction, options?: { note?: string; publishAt?: string }) => Promise<void> }) {
+function SubmissionPreflight({ step, stepNumber, stepCount, draft, entities, loadingEntities, pending, onChange, onClose, onContinue, onSubmit }: {
+  step: SubmissionStep
+  stepNumber: number
+  stepCount: number
+  draft: ArticleDraft
+  entities?: SearchEntitiesResponse
+  loadingEntities: boolean
+  pending: boolean
+  onChange: (update: (current: ArticleDraft) => ArticleDraft) => void
+  onClose: () => void
+  onContinue: () => void
+  onSubmit: () => void
+}) {
+  const isLast = stepNumber === stepCount
+  const copy = {
+    subjects: {title: 'Who or what is this analysis about?', description: 'Add primary player or team subjects so the article appears on the right profiles.' },
+    topics: {title: 'Which themes fit this piece?', description: 'Choose any editorial topics that will help readers discover it.' },
+    sources: {title: 'Any source notes to share?', description: 'Add data sources, methodology or caveats that readers should know.' },
+  }[step]
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !pending) onClose()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [onClose, pending])
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-mat/90 p-4 backdrop-blur-sm" role="presentation" onMouseDown={event => {
+      if (event.target === event.currentTarget && !pending) onClose()
+    }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="submission-preflight-title" className="w-full max-w-2xl border border-line-bright bg-panel shadow-2xl">
+        <header className="flex items-start justify-between gap-6 border-b border-line px-5 py-5 sm:px-7">
+          <div>
+            <p className="font-mono text-[8px] uppercase tracking-[0.22em] text-electric">Submit for review · {stepNumber}/{stepCount}</p>
+            <h2 id="submission-preflight-title" className="mt-2 text-2xl font-black tracking-[-0.035em] text-ink">{copy.title}</h2>
+            <p className="mt-2 max-w-xl text-xs leading-5 text-ink-dim">{copy.description} This is optional, you can continue without adding anything.</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={pending} className="grid size-9 shrink-0 place-items-center border border-line text-ink-muted hover:border-electric hover:text-electric disabled:opacity-50" aria-label="Close submission checklist"><X className="size-4" /></button>
+        </header>
+        <div className="max-h-[60svh] overflow-y-auto p-5 sm:p-7">
+          {step === 'subjects' ? <ArticleRelationshipsPanel subjects={draft.subjects} references={{ players: [], teams: [] }} entities={entities} loading={loadingEntities} onChange={subjects => onChange(current => ({ ...current, subjects }))} showReferences={false} /> : null}
+          {step === 'topics' ? <div className="flex flex-wrap gap-2">{ARTICLE_TOPICS.map(topic => {
+            const selected = draft.topics.includes(topic)
+            return <button key={topic} type="button" aria-pressed={selected} onClick={() => onChange(current => ({ ...current, topics: selected ? current.topics.filter(value => value !== topic) : [...current.topics, topic] }))} className={`border px-3 py-2.5 font-mono text-[8px] uppercase tracking-[0.12em] transition-colors ${selected ? 'border-electric bg-electric/15 text-electric' : 'border-line-bright text-ink-muted hover:border-electric hover:text-ink'}`}>{topic}</button>
+          })}</div> : null}
+          {step === 'sources' ? <textarea autoFocus value={draft.source_notes} onChange={event => onChange(current => ({ ...current, source_notes: event.target.value }))} rows={7} maxLength={2000} placeholder="Data sources, methodology and caveats readers should know…" className="w-full resize-none border border-line bg-mat p-4 text-sm leading-6 text-ink placeholder:text-ink-muted focus:border-electric focus:outline-none" /> : null}
+        </div>
+        <footer className="flex flex-col-reverse gap-3 border-t border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-7">
+          <button type="button" onClick={onClose} disabled={pending} className="h-10 px-3 font-mono text-[8px] uppercase tracking-[0.15em] text-ink-muted hover:text-ink disabled:opacity-50">Return to draft</button>
+          <button type="button" onClick={isLast ? onSubmit : onContinue} disabled={pending} className="inline-flex h-11 items-center justify-center gap-2 bg-electric px-5 font-mono text-[8px] font-black uppercase tracking-[0.15em] text-mat disabled:opacity-50">{pending ? 'Saving…' : isLast ? 'Submit for review' : 'Continue'} <ChevronRight className="size-3.5" /></button>
+        </footer>
+      </section>
+    </div>
+  )
+}
+
+function WorkflowPanel({ article, canApprove, canEdit, pending, onSubmit, onTransition }: { article: Article; canApprove: boolean; canEdit: boolean; pending: boolean; onSubmit: () => void; onTransition: (action: ArticleWorkflowAction, options?: { note?: string; publishAt?: string }) => Promise<boolean> }) {
   const [note, setNote] = useState('')
   const [scheduleAt, setScheduleAt] = useState(() => localDateTimeValue(new Date()))
   const status = article.status
@@ -617,7 +725,7 @@ function WorkflowPanel({ article, canApprove, canEdit, pending, onTransition }: 
       {status === 'changes_requested' && article.workflow_events.find(event => event.action === 'changes_requested')?.note ? (
         <div className="mt-3 border-l-2 border-gold bg-gold/5 px-3 py-2 text-[11px] leading-5 text-ink-dim">{article.workflow_events.find(event => event.action === 'changes_requested')?.note}</div>
       ) : null}
-      {canEdit ? <button type="button" onClick={() => void onTransition('submit')} disabled={pending} className="mt-4 flex h-10 w-full items-center justify-center gap-2 bg-electric text-[8px] font-black uppercase tracking-[0.15em] text-mat disabled:opacity-50"><Send className="size-3.5" /> Submit for review</button> : null}
+      {canEdit ? <button type="button" onClick={onSubmit} disabled={pending} className="mt-4 flex h-10 w-full items-center justify-center gap-2 bg-electric text-[8px] font-black uppercase tracking-[0.15em] text-mat disabled:opacity-50"><Send className="size-3.5" /> Submit for review</button> : null}
       {canReview ? (
         <div className="mt-4 space-y-3">
           <textarea value={note} onChange={event => setNote(event.target.value)} rows={3} maxLength={2000} placeholder="Explain the requested changes…" className="w-full resize-none border border-line bg-mat p-3 text-xs leading-5 text-ink placeholder:text-ink-muted focus:border-gold focus:outline-none" />
@@ -681,7 +789,7 @@ function RevisionViewer({ article, revisionNumber, revision, loading, error, res
       </header>
       {loading ? <EditorMessage>Loading revision {revisionNumber}…</EditorMessage> : null}
       {error ? <EditorMessage error>This revision could not be loaded.</EditorMessage> : null}
-      {revision ? <ArticleCanvas title={revision.title} subtitle={revision.subtitle} document={revision.document} author={article.author} updatedAt={revision.created_at} subjects={revision.subjects} references={referencesFromDocument(revision.document)} /> : null}
+      {revision ? <ArticleCanvas title={revision.title} subtitle={revision.subtitle} document={revision.document} author={article.author} updatedAt={revision.created_at} subjects={revision.subjects} references={referencesFromDocument(revision.document)} topics={revision.topics} sourceNotes={revision.source_notes} /> : null}
     </div>
   )
 }
@@ -707,8 +815,8 @@ function InspectorSection({ title, children }: { title: string; children: ReactN
   return <section className="border-b border-line py-6 first:pt-0 last:border-0"><h2 className="mb-4 font-mono text-[8px] uppercase tracking-[0.2em] text-ink-muted">{title}</h2>{children}</section>
 }
 
-function articleToDraft(article: Pick<Article, 'title' | 'subtitle' | 'document' | 'subjects'> | ArticleRevision): ArticleDraft {
-  return { title: article.title, subtitle: article.subtitle, document: article.document, subjects: article.subjects }
+function articleToDraft(article: Pick<Article, 'title' | 'subtitle' | 'document' | 'subjects' | 'topics' | 'source_notes'> | ArticleRevision): ArticleDraft {
+  return { title: article.title, subtitle: article.subtitle, document: article.document, subjects: article.subjects, topics: article.topics, source_notes: article.source_notes }
 }
 
 function relativeDate(value: string): string {

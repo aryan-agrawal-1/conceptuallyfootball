@@ -89,7 +89,7 @@ export function useMatrixHeaderTooltip() {
   return { portal, show, scheduleHide, hide }
 }
 
-/** Viewport padding (px) — keep tooltip fully inside horizontal edges. */
+/** Viewport padding (px) - keep tooltip fully inside horizontal edges. */
 const TOOLTIP_VIEWPORT_PAD = 12
 
 function MatrixHeaderTooltipFloater({ active }: { active: ActiveTip }) {

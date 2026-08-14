@@ -63,7 +63,7 @@ export function TeamSquadList({ squad }: TeamSquadListProps) {
                 {formatValue(p.minutes, 'integer')}
               </span>
               <span className="w-10 shrink-0 text-right text-[11px] tabular-nums text-ink-dim">
-                {p.appearances != null ? p.appearances : '—'}
+                {p.appearances != null ? p.appearances : '-'}
               </span>
             </Link>
           ))}

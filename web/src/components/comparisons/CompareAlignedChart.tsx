@@ -288,7 +288,7 @@ export function CompareAlignedChart({
                           <span className="pointer-events-none absolute bottom-[calc(100%+8px)] z-30 hidden min-w-[190px] border border-electric/35 bg-panel/95 px-2.5 py-2 text-[10px] leading-relaxed text-ink shadow-xl group-hover/point:block group-focus/point:block" style={tooltipPosition(value.plotPercentile)}>
                             <span className="block text-ink-muted">{value.row.canonical_player_name}</span>
                             <span className="mt-0.5 block font-mono tabular-nums">
-                              {rawLabel} · Pctl {value.percentile == null ? '—' : Math.round(value.percentile)}
+                              {rawLabel} · Pctl {value.percentile == null ? '-' : Math.round(value.percentile)}
                             </span>
                             <span className="mt-1 block text-[9px] text-ink-muted">
                               {row.ends.note}
@@ -319,7 +319,7 @@ export function CompareAlignedChart({
                       >
                         {formatValue(value.raw, value.unit)} ·{' '}
                         {value.percentile == null
-                          ? '—'
+                          ? '-'
                           : comparisonCompactPercentileLabel(value.percentile)}
                       </span>
                     )

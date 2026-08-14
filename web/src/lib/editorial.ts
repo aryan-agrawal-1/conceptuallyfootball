@@ -126,6 +126,9 @@ export interface ArticleSummary {
   id: string
   title: string
   subtitle: string
+  slug: string | null
+  topics: string[]
+  source_notes: string
   status: ArticleStatus
   revision: number
   preview_enabled: boolean
@@ -167,6 +170,8 @@ export interface ArticleRevision {
   subtitle: string
   document: ArticleDocument
   subjects: ArticleRelationships
+  topics: string[]
+  source_notes: string
   created_at: string
 }
 
@@ -175,6 +180,8 @@ export interface ArticleDraft {
   subtitle: string
   document: ArticleDocument
   subjects: ArticleRelationships
+  topics: string[]
+  source_notes: string
 }
 
 export class EditorialApiError extends Error {
@@ -309,22 +316,71 @@ export async function getSharedPreview(token: string): Promise<Article> {
 
 export interface RelatedAnalysisArticle {
   id: string
+  slug: string
+  canonical_path: string
   title: string
   subtitle: string
   author: string
-  published_at: string | null
-  updated_at: string
+  published_at: string
+  reading_minutes: number
+  topics: string[]
+  context: ArticleReadingContext
 }
 
-export interface PublishedArticle {
+export interface ArticleReadingContext {
+  competitions: string[]
+  seasons: string[]
+}
+
+export interface PublicArticleSummary {
   id: string
+  slug: string
+  canonical_path: string
   title: string
   subtitle: string
+  topics: string[]
+  author: { id: number; display_name: string }
+  published_at: string
+  reading_minutes: number
+  context: ArticleReadingContext
+}
+
+export interface PublishedArticle extends PublicArticleSummary {
   document: ArticleDocument
   subjects: ArticleRelationships
   references: ArticleRelationships
+  source_notes: string
+  social_image: string | null
   author: { id: number; display_name: string; social_links: SocialLinks }
-  published_at: string
+}
+
+export interface PublicArticleFacets {
+  authors: { id: number; name: string }[]
+  topics: string[]
+  competitions: string[]
+  seasons: string[]
+  players: { id: number; name: string }[]
+  teams: { id: number; name: string }[]
+}
+
+export interface PublicArticleIndex {
+  articles: PublicArticleSummary[]
+  pagination: { page: number; page_size: number; total: number; pages: number }
+  facets: PublicArticleFacets
+}
+
+export interface PublicArticleFilters {
+  q?: string
+  topics?: string[]
+  author?: string
+  competition?: string
+  season?: string
+  playerId?: string
+  teamId?: string
+  relationship?: 'subject' | 'reference' | ''
+  from?: string
+  to?: string
+  page?: number
 }
 
 export interface RelatedAnalysisResponse {
@@ -341,8 +397,25 @@ export async function getRelatedAnalysis(
   return responseJson<RelatedAnalysisResponse>(response)
 }
 
-export async function getPublishedArticle(id: string): Promise<PublishedArticle> {
-  const response = await fetch(`${PUBLIC_BASE}/articles/${id}`)
+export async function listPublishedArticles(filters: PublicArticleFilters): Promise<PublicArticleIndex> {
+  const params = new URLSearchParams()
+  if (filters.q) params.set('q', filters.q)
+  if (filters.topics?.length) params.set('topic', filters.topics.join(','))
+  if (filters.author) params.set('author', filters.author)
+  if (filters.competition) params.set('competition', filters.competition)
+  if (filters.season) params.set('season', filters.season)
+  if (filters.playerId) params.set('player_id', filters.playerId)
+  if (filters.teamId) params.set('team_id', filters.teamId)
+  if (filters.relationship) params.set('relationship', filters.relationship)
+  if (filters.from) params.set('from', filters.from)
+  if (filters.to) params.set('to', filters.to)
+  if (filters.page && filters.page > 1) params.set('page', String(filters.page))
+  const response = await fetch(`${PUBLIC_BASE}/articles?${params.toString()}`)
+  return responseJson<PublicArticleIndex>(response)
+}
+
+export async function getPublishedArticle(slug: string): Promise<PublishedArticle> {
+  const response = await fetch(`${PUBLIC_BASE}/articles/${encodeURIComponent(slug)}`)
   const body = await responseJson<{ article: PublishedArticle }>(response)
   return body.article
 }

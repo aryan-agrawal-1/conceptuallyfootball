@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { BarChart3, ChevronDown, GitCompare, Microscope, Orbit, Search, Table2 } from 'lucide-react'
+import { BarChart3, ChevronDown, GitCompare, Microscope, Newspaper, Orbit, Search, Table2 } from 'lucide-react'
 import { useScope } from '../../context/ScopeContext'
 import { BRAND_LOGO_URL, BRAND_NAME } from '../../lib/brand'
 import { CREATE_CHARTS_PATH } from '../../lib/createChartsUrl'
@@ -18,6 +18,7 @@ const NAV_LINKS = [
   { to: CREATE_CHARTS_PATH, label: 'Create Charts', shortLabel: 'Charts', icon: BarChart3 },
   { to: '/comparisons', label: 'Comparisons', shortLabel: 'Compare', icon: GitCompare },
   { to: '/regression-lab', label: 'Regression Lab', shortLabel: 'Lab', icon: Microscope },
+  { to: '/articles', label: 'Analysis', shortLabel: 'Analysis', icon: Newspaper, unscoped: true },
 ]
 
 const IS_MAC =
@@ -81,8 +82,8 @@ export function NavBar() {
 
       {/* Nav links */}
       <div className="hidden items-center gap-2 lg:flex">
-        {NAV_LINKS.map(({ to, label }) => (
-          <NavLink key={to} to={buildScopedPath(to)} end={to === '/'}>
+        {NAV_LINKS.map(({ to, label, unscoped }) => (
+          <NavLink key={to} to={unscoped ? to : buildScopedPath(to)} end={to === '/'}>
             {({ isActive }) => <HudNavButton active={isActive}>{label}</HudNavButton>}
           </NavLink>
         ))}
@@ -194,11 +195,11 @@ export function NavBar() {
       )}
     </nav>
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 grid h-[64px] grid-cols-5 border-t border-electric/25 bg-mat/95 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_28px_-18px_rgba(74,158,245,0.55)] backdrop-blur-md lg:hidden"
+      className="fixed bottom-0 left-0 right-0 z-50 grid h-[64px] grid-cols-6 border-t border-electric/25 bg-mat/95 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_28px_-18px_rgba(74,158,245,0.55)] backdrop-blur-md lg:hidden"
       aria-label="Primary"
     >
-      {NAV_LINKS.map(({ to, shortLabel, icon: Icon }) => (
-        <NavLink key={to} to={buildScopedPath(to)} end={to === '/'} className="min-w-0">
+      {NAV_LINKS.map(({ to, shortLabel, icon: Icon, unscoped }) => (
+        <NavLink key={to} to={unscoped ? to : buildScopedPath(to)} end={to === '/'} className="min-w-0">
           {({ isActive }) => (
             <span
               className={cn(

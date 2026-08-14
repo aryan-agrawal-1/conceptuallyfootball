@@ -12,6 +12,11 @@ export interface SeoMeta {
   canonicalPath?: string
   image?: string
   robots?: string
+  type?: 'website' | 'article'
+  publishedTime?: string
+  authorName?: string
+  keywords?: string[]
+  headline?: string
 }
 
 export function absoluteUrl(path = '/'): string {
@@ -57,7 +62,7 @@ export function applySeoMeta(meta: SeoMeta) {
   upsertLink('link[rel="canonical"]', { rel: 'canonical', href: canonicalUrl })
 
   upsertMeta('meta[property="og:site_name"]', { property: 'og:site_name', content: SITE_NAME })
-  upsertMeta('meta[property="og:type"]', { property: 'og:type', content: 'website' })
+  upsertMeta('meta[property="og:type"]', { property: 'og:type', content: meta.type ?? 'website' })
   upsertMeta('meta[property="og:title"]', { property: 'og:title', content: title })
   upsertMeta('meta[property="og:description"]', {
     property: 'og:description',
@@ -66,19 +71,69 @@ export function applySeoMeta(meta: SeoMeta) {
   upsertMeta('meta[property="og:url"]', { property: 'og:url', content: canonicalUrl })
   upsertMeta('meta[property="og:image"]', { property: 'og:image', content: imageUrl })
 
-  upsertMeta('meta[name="twitter:card"]', { name: 'twitter:card', content: 'summary' })
+  upsertMeta('meta[name="twitter:card"]', { name: 'twitter:card', content: meta.image ? 'summary_large_image' : 'summary' })
   upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title', content: title })
   upsertMeta('meta[name="twitter:description"]', {
     name: 'twitter:description',
     content: description,
   })
   upsertMeta('meta[name="twitter:image"]', { name: 'twitter:image', content: imageUrl })
+
+  updateOptionalMeta('meta[property="article:published_time"]', meta.publishedTime, {
+    property: 'article:published_time',
+  })
+  updateOptionalMeta('meta[name="author"]', meta.authorName, { name: 'author' })
+  updateOptionalMeta('meta[name="keywords"]', meta.keywords?.join(', '), { name: 'keywords' })
+  updateStructuredArticle(meta, canonicalUrl, imageUrl, title, description)
 }
 
-export function useSeoMeta({ title, description, canonicalPath, image, robots }: SeoMeta) {
+function updateOptionalMeta(
+  selector: string,
+  value: string | undefined,
+  attributes: Record<string, string>,
+) {
+  if (!value) {
+    document.head.querySelector(selector)?.remove()
+    return
+  }
+  upsertMeta(selector, { ...attributes, content: value })
+}
+
+function updateStructuredArticle(
+  meta: SeoMeta,
+  canonicalUrl: string,
+  imageUrl: string,
+  title: string,
+  description: string,
+) {
+  const existing = document.head.querySelector<HTMLScriptElement>('script[data-cf-article-jsonld]')
+  if (meta.type !== 'article' || !meta.publishedTime || !meta.authorName) {
+    existing?.remove()
+    return
+  }
+  const script = existing ?? document.createElement('script')
+  script.type = 'application/ld+json'
+  script.dataset.cfArticleJsonld = ''
+  script.textContent = JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: meta.headline ?? title,
+    description,
+    datePublished: meta.publishedTime,
+    author: { '@type': 'Person', name: meta.authorName },
+    publisher: { '@type': 'Organization', name: SITE_NAME },
+    mainEntityOfPage: canonicalUrl,
+    image: imageUrl,
+    keywords: meta.keywords,
+  })
+  if (!existing) document.head.appendChild(script)
+}
+
+export function useSeoMeta({ title, description, canonicalPath, image, robots, type, publishedTime, authorName, keywords, headline }: SeoMeta) {
+  const keywordKey = keywords?.join('|')
   useEffect(() => {
-    applySeoMeta({ title, description, canonicalPath, image, robots })
-  }, [title, description, canonicalPath, image, robots])
+    applySeoMeta({ title, description, canonicalPath, image, robots, type, publishedTime, authorName, keywords: keywordKey ? keywordKey.split('|') : undefined, headline })
+  }, [title, description, canonicalPath, image, robots, type, publishedTime, authorName, keywordKey, headline])
 }
 
 export const seoDefaults = {
