@@ -235,6 +235,8 @@ class EditorialExportTests(TestCase):
         self.assertNotIn(str(article.preview_token), json.dumps(payload))
         self.assertEqual(payload["visuals"][0]["block_id"], visual_id)
         self.assertIn("Why the spare midfielder matters", payload["text"])
+        self.assertNotIn("By Writer", payload["html"])
+        self.assertNotIn("By Writer", payload["text"])
 
     def test_published_exports_use_the_immutable_publication_snapshot(self):
         article, _ = self.create_article(published=True, paragraph="Published snapshot text.")

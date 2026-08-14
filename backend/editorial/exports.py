@@ -341,7 +341,7 @@ def render_html(
         elif block_type == "divider":
             body.append("<hr>")
 
-    meta = [f"By {escape(article.author)}"]
+    meta = [] if substack else [f"By {escape(article.author)}"]
     if article.published_at:
         meta.append(article.published_at.strftime("%d %B %Y"))
     source_notes = (
@@ -355,10 +355,11 @@ def render_html(
         else ""
     )
     subtitle = f'<p><strong>{escape(article.subtitle)}</strong></p>' if article.subtitle else ""
+    meta_html = f'<p>{" · ".join(meta)}</p>' if meta else ""
     article_markup = (
         f'<article><header><h1>{escape(article.title)}</h1>'
         f'{subtitle}'
-        f'<p>{" · ".join(meta)}</p></header>{"".join(body)}{source_notes}<footer>{canonical}<p><small>conceptuallyfootball.com</small></p></footer></article>'
+        f'{meta_html}</header>{"".join(body)}{source_notes}<footer>{canonical}<p><small>conceptuallyfootball.com</small></p></footer></article>'
     )
     if substack:
         return article_markup
@@ -372,7 +373,6 @@ def render_plain(article: ExportArticle) -> str:
     lines = [article.title]
     if article.subtitle:
         lines.extend((article.subtitle, ""))
-    lines.extend((f"By {article.author}", ""))
     for block in article.document["blocks"]:
         block_type = block["type"]
         if block_type in {"heading", "paragraph", "quote", "callout"}:

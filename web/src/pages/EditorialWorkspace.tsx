@@ -213,6 +213,7 @@ function ArticleEditor() {
   const [article, setArticle] = useState<Article | null>(null)
   const [draft, setDraft] = useState<ArticleDraft | null>(null)
   const [saveState, setSaveState] = useState<SaveState>('saved')
+  const [workflowPending, setWorkflowPending] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [mode, setMode] = useState<'write' | 'reader'>('write')
   const [copied, setCopied] = useState(false)
@@ -230,6 +231,7 @@ function ArticleEditor() {
   const editSerialRef = useRef(0)
   const savedSerialRef = useRef(0)
   const savingRef = useRef(false)
+  const workflowPendingRef = useRef(false)
   const pendingSaveRef = useRef(false)
   const pendingCheckpointRef = useRef(false)
   const lastCheckpointAtRef = useRef(Date.now())
@@ -446,12 +448,15 @@ function ArticleEditor() {
   }
 
   async function runWorkflow(action: ArticleWorkflowAction, options: { note?: string; publishAt?: string } = {}): Promise<boolean> {
-    if (canEdit) {
-      const saved = await performSaveRef.current(true)
-      if (!saved) return false
-    }
-    setSaveError('')
+    if (workflowPendingRef.current) return false
+    workflowPendingRef.current = true
+    setWorkflowPending(true)
     try {
+      if (canEdit) {
+        const saved = await performSaveRef.current(true)
+        if (!saved) return false
+      }
+      setSaveError('')
       const updated = await transitionArticle(articleId, action, options)
       setArticle(updated)
       setDraft(articleToDraft(updated))
@@ -466,6 +471,9 @@ function ArticleEditor() {
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'The workflow action could not be completed.')
       return false
+    } finally {
+      workflowPendingRef.current = false
+      setWorkflowPending(false)
     }
   }
 
@@ -566,7 +574,7 @@ function ArticleEditor() {
 
         {mode === 'write' || !canEdit ? <aside className="border-t border-line p-5 lg:sticky lg:top-16 lg:max-h-[calc(100svh-4rem)] lg:self-start lg:overflow-y-auto lg:border-l lg:border-t-0">
           <InspectorSection title="Publishing workflow">
-            <WorkflowPanel article={article} canApprove={Boolean(user?.can_approve_editorial)} canEdit={canEdit} pending={saveState === 'saving'} onSubmit={requestSubmission} onTransition={runWorkflow} />
+            <WorkflowPanel article={article} canApprove={Boolean(user?.can_approve_editorial)} canEdit={canEdit} pending={workflowPending} onSubmit={requestSubmission} onTransition={runWorkflow} />
           </InspectorSection>
           <InspectorSection title="Discovery relationships">
             <ArticleRelationshipsPanel subjects={draft.subjects} references={draftReferences} entities={entitiesQuery.data} loading={entitiesQuery.isLoading} readOnly={!canEdit} onChange={subjects => editDraft(current => ({ ...current, subjects }))} />
@@ -636,7 +644,7 @@ function ArticleEditor() {
         draft={draft}
         entities={entitiesQuery.data}
         loadingEntities={entitiesQuery.isLoading}
-        pending={saveState === 'saving'}
+        pending={workflowPending}
         onChange={editDraft}
         onClose={() => setSubmissionSteps([])}
         onContinue={() => setSubmissionStepIndex(index => Math.min(index + 1, submissionSteps.length - 1))}
