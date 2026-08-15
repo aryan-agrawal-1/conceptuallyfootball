@@ -7,7 +7,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.html import format_html
 
-from accounts.models import AccessAuditAction, AccessAuditEvent, StaffAccess
+from accounts.models import AccessAuditAction, AccessAuditEvent, StaffAccess, WriterProfile
 from accounts.roles import configure_user_role
 
 
@@ -229,6 +229,14 @@ class StaffAccessAdmin(admin.ModelAdmin):
                 after_values={"must_change_password": True},
             )
         self.message_user(request, "Password change required for selected accounts.", messages.SUCCESS)
+
+
+@admin.register(WriterProfile)
+class WriterProfileAdmin(admin.ModelAdmin):
+    list_display = ("display_name", "user", "completed_at", "updated_at")
+    list_filter = ("completed_at",)
+    search_fields = ("display_name", "user__email", "user__first_name", "user__last_name")
+    readonly_fields = ("completed_at", "updated_at")
 
 
 @admin.register(AccessAuditEvent)
