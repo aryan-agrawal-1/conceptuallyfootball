@@ -51,8 +51,8 @@ class EditorialExportTests(TestCase):
                     "id": str(uuid.uuid4()),
                     "type": "paragraph",
                     "content": [
-                        {"text": paragraph},
-                        {"text": " Read the source.", "link": "https://example.com/source"},
+                        {"text": paragraph, "bold": True},
+                        {"text": " Read the source.", "link": "https://example.com/source", "italic": True},
                     ],
                 },
                 {
@@ -155,6 +155,8 @@ class EditorialExportTests(TestCase):
             visual_name = next(name for name in names if name.endswith(".svg"))
             visual = archive.read(visual_name).decode()
         self.assertIn("<h2>The decisive rotation</h2>", html)
+        self.assertIn("<strong>A patient overload creates the chance.</strong>", html)
+        self.assertIn('<a href="https://example.com/source"><em> Read the source.</em></a>', html)
         self.assertIn("assets/visual-01", html)
         self.assertIn("conceptuallyfootball.com", visual)
         self.assertIn("progressive passing", visual.lower())
@@ -165,6 +167,8 @@ class EditorialExportTests(TestCase):
         with zipfile.ZipFile(io.BytesIO(markdown_response.content)) as archive:
             markdown = archive.read("article.md").decode()
         self.assertIn("## The decisive rotation", markdown)
+        self.assertIn("**A patient overload creates the chance.**", markdown)
+        self.assertIn("[* Read the source.*](https://example.com/source)", markdown)
         self.assertIn("Source: Conceptually Football model", markdown)
         self.assertNotIn(str(article.preview_token), markdown)
         self.assertIn(visual_id, json.dumps(article.document))

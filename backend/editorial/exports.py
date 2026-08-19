@@ -111,6 +111,10 @@ def inline_html(content: list[dict]) -> str:
     values = []
     for run in content:
         text = escape(run.get("text", ""))
+        if run.get("italic"):
+            text = f"<em>{text}</em>"
+        if run.get("bold"):
+            text = f"<strong>{text}</strong>"
         link = run.get("link")
         values.append(f'<a href="{escape(link, quote=True)}">{text}</a>' if link else text)
     return "".join(values)
@@ -120,6 +124,10 @@ def inline_markdown(content: list[dict]) -> str:
     values = []
     for run in content:
         text = run.get("text", "").replace("[", "\\[").replace("]", "\\]")
+        if run.get("italic"):
+            text = f"*{text}*"
+        if run.get("bold"):
+            text = f"**{text}**"
         link = run.get("link")
         values.append(f"[{text}]({link})" if link else text)
     return "".join(values)

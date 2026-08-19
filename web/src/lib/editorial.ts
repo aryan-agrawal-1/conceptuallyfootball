@@ -46,6 +46,8 @@ export interface InlineRun {
   text: string
   link?: string
   reference?: EditorialEntityReference
+  bold?: boolean
+  italic?: boolean
 }
 
 export type InlineContent = InlineRun[]

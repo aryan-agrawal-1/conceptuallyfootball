@@ -141,7 +141,13 @@ def normalize_inline_content(value, *, field: str, maximum: int = MAX_TEXT_LENGT
             raise ValidationError(f"{field} is too long.")
         link = run.get("link")
         reference = run.get("reference")
+        bold = run.get("bold")
+        italic = run.get("italic")
         normalized_run = {"text": text}
+        if (bold is not None and not isinstance(bold, bool)) or (
+            italic is not None and not isinstance(italic, bool)
+        ):
+            raise ValidationError(f"{field} formatting is invalid.")
         if link is not None and reference is not None:
             raise ValidationError(f"{field} content cannot be both a link and an entity reference.")
         if link is not None:
@@ -151,12 +157,18 @@ def normalize_inline_content(value, *, field: str, maximum: int = MAX_TEXT_LENGT
             if text != f"@{normalized_reference['name']}":
                 raise ValidationError(f"{field} entity reference label is invalid.")
             normalized_run["reference"] = normalized_reference
+        if bold:
+            normalized_run["bold"] = True
+        if italic:
+            normalized_run["italic"] = True
 
         if (
             normalized
             and "reference" not in normalized[-1]
             and "reference" not in normalized_run
             and normalized[-1].get("link") == normalized_run.get("link")
+            and normalized[-1].get("bold") == normalized_run.get("bold")
+            and normalized[-1].get("italic") == normalized_run.get("italic")
         ):
             normalized[-1]["text"] += text
         else:

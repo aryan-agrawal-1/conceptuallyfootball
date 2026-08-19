@@ -690,6 +690,41 @@ class EditorialApiTests(TestCase):
         self.assertEqual(blocks[1]["type"], "paragraph")
         self.assertEqual(blocks[1]["content"], [{"text": "Legacy source", "link": "https://example.com"}])
 
+    def test_inline_bold_and_italic_formatting_is_normalized(self):
+        created = self.create_article()
+        response = self.patch_article(
+            created["id"],
+            {
+                "revision": 1,
+                "title": "Formatted",
+                "subtitle": "",
+                "document": {
+                    "version": 1,
+                    "blocks": [
+                        {
+                            "id": "formatted",
+                            "type": "paragraph",
+                            "content": [
+                                {"text": "Bold", "bold": True},
+                                {"text": " and ", "bold": False},
+                                {"text": "both", "bold": True, "italic": True},
+                            ],
+                        }
+                    ],
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["article"]["document"]["blocks"][0]["content"],
+            [
+                {"text": "Bold", "bold": True},
+                {"text": " and "},
+                {"text": "both", "bold": True, "italic": True},
+            ],
+        )
+
     def test_writer_assigns_separate_canonical_subjects_and_inline_references(self):
         subject_player = CanonicalPlayer.objects.create(display_name="Subject Player")
         referenced_player = CanonicalPlayer.objects.create(display_name="Referenced Player")
