@@ -74,17 +74,22 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
     onBackspaceEmptyRef.current = onBackspaceEmpty
   }, [onActivate, onBackspaceEmpty, onChange, onCommandKeyDown, onEnter, onMentionQuery, onRequestFormat, onRequestLink])
 
-  const rememberSelection = useCallback(() => {
+  const selectionForAction = useCallback(() => {
     const root = rootRef.current
-    if (!root) return
-    const selection = selectionOffsets(root)
-    if (selection) savedSelectionRef.current = selection
+    if (!root) return savedSelectionRef.current
+    const liveSelection = selectionOffsets(root)
+    if (liveSelection) savedSelectionRef.current = liveSelection
+    return liveSelection ?? savedSelectionRef.current
   }, [])
+
+  const rememberSelection = useCallback(() => {
+    selectionForAction()
+  }, [selectionForAction])
 
   const api = useMemo<InlineTextEditorHandle>(() => ({
     applyLink(url) {
       const root = rootRef.current
-      const selection = savedSelectionRef.current
+      const selection = selectionForAction()
       if (!root || !selection || selection.start === selection.end) return false
       const next = applyLinkToContent(readContent(root), selection.start, selection.end, url)
       renderContent(root, next)
@@ -95,8 +100,8 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
     },
     toggleFormat(format) {
       const root = rootRef.current
-      const selection = savedSelectionRef.current
-      if (!root || !selection) return false
+      const selection = selectionForAction()
+      if (!root || !selection || selection.start === selection.end) return false
       root.focus()
       restoreSelection(root, selection.start, selection.end)
       document.execCommand(format)
@@ -119,7 +124,7 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
       return true
     },
     referenceRequest() {
-      const selection = savedSelectionRef.current
+      const selection = selectionForAction()
       if (!selection) return null
       return { query: '', start: selection.start, end: selection.end }
     },
@@ -131,16 +136,16 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
       restoreSelection(root, offset, offset)
     },
     hasSelection() {
-      const selection = savedSelectionRef.current
+      const selection = selectionForAction()
       return Boolean(selection && selection.start !== selection.end)
     },
     selectionState() {
       const root = rootRef.current
-      const selection = savedSelectionRef.current
+      const selection = selectionForAction()
       if (!root || !selection || selection.start === selection.end) return EMPTY_SELECTION_STATE
       return selectionStateForContent(readContent(root), selection.start, selection.end)
     },
-  }), [rememberSelection])
+  }), [rememberSelection, selectionForAction])
 
   useImperativeHandle(forwardedRef, () => api, [api])
 
