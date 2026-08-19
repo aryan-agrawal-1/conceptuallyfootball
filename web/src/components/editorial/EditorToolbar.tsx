@@ -108,11 +108,11 @@ export function EditorToolbar({
         </div>
 
         <div className="hidden items-center gap-1 sm:flex">
-          <ToolbarIcon label={inspectorOpen ? 'Hide article details' : 'Show article details'} onClick={onToggleInspector}>{inspectorOpen ? <SidebarClose /> : <SidebarOpen />}</ToolbarIcon>
           <div className="relative" data-editor-menu-root="help">
             <ToolbarIcon label="Editor help" onClick={() => setDesktopMenu(current => current === 'help' ? null : 'help')}><HelpCircle /></ToolbarIcon>
             {desktopMenu === 'help' ? <div className="absolute right-0 top-full z-30 mt-2 w-80 border border-line-bright bg-panel p-5 shadow-2xl"><EditorHelp /></div> : null}
           </div>
+          <ToolbarIcon label={inspectorOpen ? 'Hide article details' : 'Show article details'} onClick={onToggleInspector}>{inspectorOpen ? <SidebarClose /> : <SidebarOpen />}</ToolbarIcon>
         </div>
       </div>
 
