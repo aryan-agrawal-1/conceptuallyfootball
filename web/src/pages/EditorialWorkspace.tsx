@@ -5,6 +5,7 @@ import {
   Archive,
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   Copy,
   ExternalLink,
@@ -28,6 +29,9 @@ import { ArticleCanvas } from '../components/editorial/ArticleCanvas'
 import { ArticleExportPanel } from '../components/editorial/ArticleExportPanel'
 import { ArticleRelationshipsPanel } from '../components/editorial/ArticleRelationshipsPanel'
 import { BlockEditor } from '../components/editorial/BlockEditor'
+import type { BlockEditorHandle } from '../components/editorial/BlockEditor'
+import { BlockInsertionControl, EditorStarter, EditorToolbar } from '../components/editorial/EditorToolbar'
+import { convertBlock, createBlockFromChoice, isVisualChoice, visualTypeFromChoice, type BlockTypeChoice, type EditorCommandChoice } from '../components/editorial/editorCommands'
 import { VisualBlockPicker } from '../components/editorial/VisualBlockPicker'
 import { StaffFrame } from '../components/staff/StaffFrame'
 import { StaffRoute } from '../components/staff/StaffRoute'
@@ -45,6 +49,7 @@ import {
   listArticles,
   loadDraftRecovery,
   newBlock,
+  plainText,
   referencesFromDocument,
   saveArticle,
   setArticlePreview,
@@ -216,6 +221,9 @@ function ArticleEditor() {
   const [workflowPending, setWorkflowPending] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [mode, setMode] = useState<'write' | 'reader'>('write')
+  const [activeBlockId, setActiveBlockId] = useState('')
+  const [activeBlockHandle, setActiveBlockHandle] = useState<BlockEditorHandle | null>(null)
+  const [inspectorOpen, setInspectorOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [submissionSteps, setSubmissionSteps] = useState<SubmissionStep[]>([])
   const [submissionStepIndex, setSubmissionStepIndex] = useState(0)
@@ -267,6 +275,7 @@ function ArticleEditor() {
     draftRef.current = initialDraft
     setArticle(serverArticle)
     setDraft(initialDraft)
+    setActiveBlockId(initialDraft.document.blocks[0]?.id ?? '')
     if (!['draft', 'changes_requested'].includes(serverArticle.status)) setMode('reader')
     setSaveState(hasNewerRecovery ? 'recovered' : 'saved')
   }, [articleQuery.data])
@@ -385,6 +394,47 @@ function ArticleEditor() {
     requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-editor-block-id="${block.id}"]`)?.focus())
   }
 
+  function insertEditorCommand(choice: EditorCommandChoice, afterIndex: number) {
+    if (!draft) return
+    const insertionIndex = Math.max(-1, Math.min(afterIndex, draft.document.blocks.length - 1))
+    if (isVisualChoice(choice)) {
+      setVisualPicker({ insertAfterIndex: insertionIndex, initialType: visualTypeFromChoice(choice) })
+      return
+    }
+    const block = createBlockFromChoice(choice)
+    const continuation = choice === 'image' || choice === 'divider' ? newBlock('paragraph') : null
+    editDraft(current => {
+      const blocks = [...current.document.blocks]
+      blocks.splice(insertionIndex + 1, 0, block, ...(continuation ? [continuation] : []))
+      return { ...current, document: { ...current.document, blocks } }
+    })
+    const focusTarget = continuation ?? block
+    setActiveBlockId(focusTarget.id)
+    setActiveBlockHandle(null)
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-editor-block-id="${focusTarget.id}"]`)?.focus())
+  }
+
+  function changeActiveBlockType(choice: BlockTypeChoice) {
+    if (!draft || !activeBlockId) return
+    const currentBlock = draft.document.blocks.find(block => block.id === activeBlockId)
+    if (!currentBlock || currentBlock.type === 'visual') return
+    updateBlock(activeBlockId, convertBlock(currentBlock, choice))
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-editor-block-id="${activeBlockId}"], [data-editor-block-id^="${activeBlockId}-"]`)?.focus())
+  }
+
+  function chooseStarter(choice: 'paragraph' | 'heading:2' | 'callout' | 'visual:custom_chart') {
+    if (!draft) return
+    const firstBlock = draft.document.blocks[0]
+    if (!firstBlock) return
+    setActiveBlockId(firstBlock.id)
+    if (isVisualChoice(choice)) {
+      setVisualPicker({ replaceBlockId: firstBlock.id, initialType: visualTypeFromChoice(choice) })
+      return
+    }
+    updateBlock(firstBlock.id, convertBlock(firstBlock, choice))
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-editor-block-id="${firstBlock.id}"], [data-editor-block-id^="${firstBlock.id}-"]`)?.focus())
+  }
+
   function insertVisual(block: VisualArticleBlock) {
     const target = visualPicker
     if (!target) return
@@ -406,10 +456,33 @@ function ArticleEditor() {
   }
 
   function removeBlock(index: number) {
+    if (!draft) return
+    const replacement = draft.document.blocks.length === 1 ? newBlock('paragraph') : null
+    const nextActiveBlock = replacement ?? draft.document.blocks[index + 1] ?? draft.document.blocks[index - 1]
     editDraft(current => {
       const blocks = current.document.blocks.filter((_, blockIndex) => blockIndex !== index)
-      return { ...current, document: { ...current.document, blocks: blocks.length ? blocks : [newBlock('paragraph')] } }
+      return { ...current, document: { ...current.document, blocks: blocks.length ? blocks : replacement ? [replacement] : [newBlock('paragraph')] } }
     })
+    if (nextActiveBlock) {
+      setActiveBlockId(nextActiveBlock.id)
+      setActiveBlockHandle(null)
+      requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-editor-block-id="${nextActiveBlock.id}"], [data-editor-block-id^="${nextActiveBlock.id}-"]`)?.focus())
+    }
+  }
+
+  function duplicateBlock(index: number) {
+    if (!draft) return
+    const source = draft.document.blocks[index]
+    if (!source) return
+    const duplicate = { ...structuredClone(source), id: crypto.randomUUID() } as ArticleBlock
+    editDraft(current => {
+      const blocks = [...current.document.blocks]
+      blocks.splice(index + 1, 0, duplicate)
+      return { ...current, document: { ...current.document, blocks } }
+    })
+    setActiveBlockId(duplicate.id)
+    setActiveBlockHandle(null)
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-editor-block-id="${duplicate.id}"], [data-editor-block-id^="${duplicate.id}-"]`)?.focus())
   }
 
   function removeEmptyBlock(index: number): boolean {
@@ -497,6 +570,11 @@ function ArticleEditor() {
   }
 
   const previewUrl = article.preview_token ? `${window.location.origin}/analysis/preview/${article.preview_token}` : ''
+  const activeBlockIndex = Math.max(0, draft.document.blocks.findIndex(block => block.id === activeBlockId))
+  const activeBlock = draft.document.blocks[activeBlockIndex]
+  const showStarter = draft.document.blocks.length === 1
+    && draft.document.blocks[0]?.type === 'paragraph'
+    && !plainText(draft.document.blocks[0].content).trim()
 
   async function copyPreview() {
     await navigator.clipboard.writeText(previewUrl)
@@ -552,31 +630,48 @@ function ArticleEditor() {
 
       {saveError ? <div className="border-b border-ember/35 bg-ember-dim/55 px-6 py-2 text-center text-xs text-ink">{saveError}</div> : null}
 
-      <div className={`mx-auto ${mode === 'write' || !canEdit ? 'grid max-w-[1500px] lg:grid-cols-[minmax(0,1fr)_300px]' : 'w-full'}`}>
+      <div className={`mx-auto ${mode === 'write' || !canEdit ? `grid max-w-[1500px] ${inspectorOpen ? 'lg:grid-cols-[minmax(0,1fr)_300px]' : ''}` : 'w-full'}`}>
         <section className="min-h-[calc(100svh-4rem)] bg-panel/30">
           {mode === 'reader' ? (
             <ArticleCanvas title={draft.title} subtitle={draft.subtitle} document={draft.document} author={article.author} updatedAt={article.updated_at} subjects={draft.subjects} references={draftReferences} topics={draft.topics} sourceNotes={draft.source_notes} />
           ) : (
+            <>
+            <EditorToolbar
+              activeBlock={activeBlock}
+              activeIndex={activeBlockIndex}
+              total={draft.document.blocks.length}
+              activeHandle={activeBlockHandle ?? undefined}
+              inspectorOpen={inspectorOpen}
+              onInsert={insertEditorCommand}
+              onChangeType={changeActiveBlockType}
+              onMove={direction => moveBlock(activeBlockIndex, direction)}
+              onDuplicate={() => duplicateBlock(activeBlockIndex)}
+              onRemove={() => removeBlock(activeBlockIndex)}
+              onToggleInspector={() => setInspectorOpen(current => !current)}
+            />
             <div className="mx-auto max-w-[760px] px-7 py-12 sm:px-12 sm:py-16">
               <p className="font-mono text-[8px] uppercase tracking-[0.22em] text-electric">{statusLabel(article.status)} · Revision {article.revision}</p>
               <textarea value={draft.title} onChange={event => editDraft(current => ({ ...current, title: event.target.value }))} rows={2} maxLength={180} placeholder="Untitled analysis" className="mt-5 w-full resize-none bg-transparent text-4xl font-black leading-[1.05] tracking-[-0.05em] text-ink placeholder:text-ink-muted focus:outline-none sm:text-5xl" />
               <textarea value={draft.subtitle} onChange={event => editDraft(current => ({ ...current, subtitle: event.target.value }))} rows={3} maxLength={280} placeholder="A clear standfirst that tells readers why this matters…" className="mt-4 w-full resize-none bg-transparent text-base leading-7 text-ink-dim placeholder:text-ink-muted focus:outline-none" />
               <div className="mt-8 border-t border-line pt-10">
-                <div className="space-y-4">
-                  {draft.document.blocks.map((block, index) => (
-                    <BlockEditor key={block.id} block={block} index={index} total={draft.document.blocks.length} entities={entitiesQuery.data} onChange={next => updateBlock(block.id, next)} onMove={direction => moveBlock(index, direction)} onRemove={() => removeBlock(index)} onInsertAfter={next => insertBlockAfter(index, next)} onBackspaceEmpty={() => removeEmptyBlock(index)} onRequestVisual={(initialType, initialBlock) => setVisualPicker({ replaceBlockId: block.id, initialType, initialBlock })} onNavigateBlock={direction => navigateFromBlock(index, direction)} />
-                  ))}
+                {showStarter ? <EditorStarter onChoose={chooseStarter} /> : null}
+                <div>
+                  {draft.document.blocks.map((block, index) => <div key={block.id}>
+                    <BlockEditor block={block} index={index} total={draft.document.blocks.length} entities={entitiesQuery.data} active={block.id === activeBlockId} onActivate={(blockId, handle) => { setActiveBlockId(blockId); setActiveBlockHandle(handle) }} onChange={next => updateBlock(block.id, next)} onMove={direction => moveBlock(index, direction)} onRemove={() => removeBlock(index)} onInsertAfter={next => insertBlockAfter(index, next)} onBackspaceEmpty={() => removeEmptyBlock(index)} onRequestVisual={(initialType, initialBlock) => setVisualPicker({ replaceBlockId: block.id, initialType, initialBlock })} onNavigateBlock={direction => navigateFromBlock(index, direction)} />
+                    <BlockInsertionControl afterIndex={index} onInsert={insertEditorCommand} />
+                  </div>)}
                 </div>
               </div>
             </div>
+            </>
           )}
         </section>
 
-        {mode === 'write' || !canEdit ? <aside className="border-t border-line p-5 lg:sticky lg:top-16 lg:max-h-[calc(100svh-4rem)] lg:self-start lg:overflow-y-auto lg:border-l lg:border-t-0">
-          <InspectorSection title="Publishing workflow">
+        {(mode === 'write' || !canEdit) && inspectorOpen ? <aside className="border-t border-line p-5 lg:sticky lg:top-16 lg:max-h-[calc(100svh-4rem)] lg:self-start lg:overflow-y-auto lg:border-l lg:border-t-0">
+          <InspectorSection title="Publishing workflow" defaultOpen>
             <WorkflowPanel article={article} canApprove={Boolean(user?.can_approve_editorial)} canEdit={canEdit} pending={workflowPending} onSubmit={requestSubmission} onTransition={runWorkflow} />
           </InspectorSection>
-          <InspectorSection title="Discovery relationships">
+          <InspectorSection title="Discovery relationships" defaultOpen>
             <ArticleRelationshipsPanel subjects={draft.subjects} references={draftReferences} entities={entitiesQuery.data} loading={entitiesQuery.isLoading} readOnly={!canEdit} onChange={subjects => editDraft(current => ({ ...current, subjects }))} />
           </InspectorSection>
           <InspectorSection title="Public discovery">
@@ -824,8 +919,9 @@ function SaveStatus({ state }: { state: SaveState }) {
   return <p className={`mt-1 flex items-center gap-1.5 font-mono text-[7px] uppercase tracking-[0.14em] ${state === 'error' ? 'text-ember' : state === 'saved' ? 'text-mint' : 'text-ink-muted'}`}><span className={`size-1.5 rounded-full ${state === 'error' ? 'bg-ember' : state === 'saved' ? 'bg-mint' : 'bg-gold'}`} />{labels[state]}</p>
 }
 
-function InspectorSection({ title, children }: { title: string; children: ReactNode }) {
-  return <section className="border-b border-line py-6 first:pt-0 last:border-0"><h2 className="mb-4 font-mono text-[8px] uppercase tracking-[0.2em] text-ink-muted">{title}</h2>{children}</section>
+function InspectorSection({ title, children, defaultOpen = false }: { title: string; children: ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return <section className="border-b border-line py-5 first:pt-0 last:border-0"><button type="button" onClick={() => setOpen(current => !current)} aria-expanded={open} className="flex w-full items-center justify-between gap-3 font-mono text-[8px] uppercase tracking-[0.2em] text-ink-muted hover:text-electric focus-visible:text-electric focus-visible:outline-none">{title}<ChevronDown className={`size-3 transition-transform ${open ? 'rotate-180' : ''}`} /></button>{open ? <div className="mt-4">{children}</div> : null}</section>
 }
 
 function articleToDraft(article: Pick<Article, 'title' | 'subtitle' | 'document' | 'subjects' | 'topics' | 'source_notes'> | ArticleRevision): ArticleDraft {
