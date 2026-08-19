@@ -1,8 +1,9 @@
-import { ArrowDown, ArrowUp, AtSign, BarChart3, Bold, ChevronDown, CopyPlus, FileImage, Heading2, HelpCircle, Italic, Lightbulb, Link2, List, ListOrdered, Menu, Minus, Pilcrow, Plus, Quote, SidebarClose, SidebarOpen, Trash2, X } from 'lucide-react'
-import { useEffect, useState, type MouseEvent, type ReactNode } from 'react'
+import { ArrowDown, ArrowUp, AtSign, BarChart3, Bold, ChevronDown, CopyPlus, FileImage, Heading2, HelpCircle, Italic, Lightbulb, Link2, List, ListOrdered, Menu, Minus, Pilcrow, Plus, Quote, Trash2, X } from 'lucide-react'
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { ArticleBlock } from '../../lib/editorial'
 import type { BlockEditorHandle } from './BlockEditor'
+import type { InlineSelectionState } from './InlineTextEditor'
 import { BLOCK_COMMANDS, EDITOR_COMMANDS, blockChoice, blockLabel, type BlockTypeChoice, type EditorCommandChoice } from './editorCommands'
 
 export function EditorToolbar({
@@ -10,26 +11,25 @@ export function EditorToolbar({
   activeIndex,
   total,
   activeHandle,
-  inspectorOpen,
+  selectionState,
   onInsert,
   onChangeType,
   onMove,
   onDuplicate,
   onRemove,
-  onToggleInspector,
 }: {
   activeBlock?: ArticleBlock
   activeIndex: number
   total: number
   activeHandle?: BlockEditorHandle
-  inspectorOpen: boolean
+  selectionState: InlineSelectionState
   onInsert: (choice: EditorCommandChoice, afterIndex: number) => void
   onChangeType: (choice: BlockTypeChoice) => void
   onMove: (direction: -1 | 1) => void
   onDuplicate: () => void
   onRemove: () => void
-  onToggleInspector: () => void
 }) {
+  const toolbarRef = useRef<HTMLDivElement>(null)
   const [desktopMenu, setDesktopMenu] = useState<'add' | 'help' | null>(null)
   const [mobileSheet, setMobileSheet] = useState<'add' | 'tools' | 'help' | null>(null)
   const hasTextHandle = Boolean(activeHandle && activeBlock && !['image', 'visual', 'divider'].includes(activeBlock.type))
@@ -46,6 +46,16 @@ export function EditorToolbar({
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [desktopMenu, mobileSheet])
 
+  useEffect(() => {
+    if (!desktopMenu) return
+    const closeOutside = (event: PointerEvent) => {
+      const menuRoot = toolbarRef.current?.querySelector(`[data-editor-menu-root="${desktopMenu}"]`)
+      if (!menuRoot?.contains(event.target as Node)) setDesktopMenu(null)
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    return () => document.removeEventListener('pointerdown', closeOutside)
+  }, [desktopMenu])
+
   const insert = (choice: EditorCommandChoice) => {
     onInsert(choice, activeIndex)
     setDesktopMenu(null)
@@ -53,11 +63,13 @@ export function EditorToolbar({
   }
 
   return (
-    <div className="sticky top-16 z-20 border-b border-line bg-panel/95 px-3 py-2 shadow-[0_10px_24px_rgba(0,0,0,0.16)] backdrop-blur sm:px-5">
+    <div ref={toolbarRef} className="sticky top-16 z-20 border-b border-line bg-panel/95 px-3 py-2 shadow-[0_10px_24px_rgba(0,0,0,0.16)] backdrop-blur sm:px-5">
       <div className="mx-auto flex max-w-[820px] items-center justify-between gap-2">
         <div className="relative hidden min-w-0 items-center gap-1 sm:flex">
-          <ToolbarButton strong label="Add block" onClick={() => setDesktopMenu(current => current === 'add' ? null : 'add')}><Plus /></ToolbarButton>
-          {desktopMenu === 'add' ? <div className="absolute left-0 top-full z-30 mt-2 w-[22rem] border border-line-bright bg-panel p-2 shadow-2xl"><BlockCommandMenu onChoose={insert} /></div> : null}
+          <div className="relative" data-editor-menu-root="add">
+            <ToolbarButton strong label="Add block" onClick={() => setDesktopMenu(current => current === 'add' ? null : 'add')}><Plus /></ToolbarButton>
+            {desktopMenu === 'add' ? <div className="absolute left-0 top-full z-30 mt-2 w-[22rem] border border-line-bright bg-panel p-2 shadow-2xl"><BlockCommandMenu onChoose={insert} /></div> : null}
+          </div>
           <div className="mx-1 h-6 w-px bg-line" />
           <label className="relative flex h-9 items-center gap-2 border border-line bg-mat px-3 text-[9px] font-bold text-ink-dim hover:border-electric">
             <span className="text-ink-muted">Block</span>
@@ -73,8 +85,8 @@ export function EditorToolbar({
               {BLOCK_COMMANDS.map(command => <option key={command.value} value={command.value}>{command.label}</option>)}
             </select>
           </label>
-          <ToolbarIcon label="Bold (⌘B)" disabled={!hasTextHandle} onClick={() => activeHandle?.toggleFormat('bold')}><Bold /></ToolbarIcon>
-          <ToolbarIcon label="Italic (⌘I)" disabled={!hasTextHandle} onClick={() => activeHandle?.toggleFormat('italic')}><Italic /></ToolbarIcon>
+          <ToolbarIcon label="Bold (⌘B)" active={selectionState.bold} disabled={!hasTextHandle} onClick={() => activeHandle?.toggleFormat('bold')}><Bold /></ToolbarIcon>
+          <ToolbarIcon label="Italic (⌘I)" active={selectionState.italic} disabled={!hasTextHandle} onClick={() => activeHandle?.toggleFormat('italic')}><Italic /></ToolbarIcon>
           <ToolbarIcon label="Link selected text (⌘K)" disabled={!hasTextHandle} onClick={() => activeHandle?.openLink()}><Link2 /></ToolbarIcon>
           <ToolbarIcon label="Reference a player or team" disabled={!hasTextHandle} onClick={() => activeHandle?.openReferencePicker()}><AtSign /></ToolbarIcon>
           <div className="mx-1 h-6 w-px bg-line" />
@@ -91,8 +103,7 @@ export function EditorToolbar({
           </button>
         </div>
 
-        <div className="relative hidden items-center gap-1 sm:flex">
-          <ToolbarIcon label={inspectorOpen ? 'Hide inspector' : 'Show inspector'} onClick={onToggleInspector}>{inspectorOpen ? <SidebarClose /> : <SidebarOpen />}</ToolbarIcon>
+        <div className="relative hidden items-center gap-1 sm:flex" data-editor-menu-root="help">
           <ToolbarIcon label="Editor help" onClick={() => setDesktopMenu(current => current === 'help' ? null : 'help')}><HelpCircle /></ToolbarIcon>
           {desktopMenu === 'help' ? <div className="absolute right-0 top-full z-30 mt-2 w-80 border border-line-bright bg-panel p-5 shadow-2xl"><EditorHelp /></div> : null}
         </div>
@@ -106,14 +117,13 @@ export function EditorToolbar({
             <div className="space-y-5">
               {activeBlock && activeBlock.type !== 'visual' ? <label className="block"><span className="mb-2 block font-mono text-[8px] uppercase tracking-[0.16em] text-ink-muted">Block type</span><select value={blockChoice(activeBlock)} onChange={event => onChangeType(event.target.value as BlockTypeChoice)} className="h-11 w-full border border-line-bright bg-mat px-3 text-sm text-ink focus:border-electric focus:outline-none">{BLOCK_COMMANDS.map(command => <option key={command.value} value={command.value}>{command.label}</option>)}</select></label> : null}
               <div className="grid grid-cols-2 gap-2">
-                <SheetAction disabled={!hasTextHandle} onClick={() => activeHandle?.toggleFormat('bold')} icon={<Bold />}>Bold</SheetAction>
-                <SheetAction disabled={!hasTextHandle} onClick={() => activeHandle?.toggleFormat('italic')} icon={<Italic />}>Italic</SheetAction>
+                <SheetAction active={selectionState.bold} disabled={!hasTextHandle} onClick={() => activeHandle?.toggleFormat('bold')} icon={<Bold />}>Bold</SheetAction>
+                <SheetAction active={selectionState.italic} disabled={!hasTextHandle} onClick={() => activeHandle?.toggleFormat('italic')} icon={<Italic />}>Italic</SheetAction>
                 <SheetAction disabled={!hasTextHandle} onClick={() => { setMobileSheet(null); activeHandle?.openLink() }} icon={<Link2 />}>Add link</SheetAction>
                 <SheetAction disabled={!hasTextHandle} onClick={() => { setMobileSheet(null); activeHandle?.openReferencePicker() }} icon={<AtSign />}>Reference</SheetAction>
                 <SheetAction disabled={activeIndex <= 0} onClick={() => onMove(-1)} icon={<ArrowUp />}>Move up</SheetAction>
                 <SheetAction disabled={activeIndex < 0 || activeIndex >= total - 1} onClick={() => onMove(1)} icon={<ArrowDown />}>Move down</SheetAction>
                 <SheetAction disabled={!activeBlock} onClick={onDuplicate} icon={<CopyPlus />}>Duplicate</SheetAction>
-                <SheetAction onClick={onToggleInspector} icon={inspectorOpen ? <SidebarClose /> : <SidebarOpen />}>{inspectorOpen ? 'Hide details' : 'Show details'}</SheetAction>
                 <SheetAction disabled={!activeBlock} destructive onClick={onRemove} icon={<Trash2 />}>Delete block</SheetAction>
               </div>
               <button type="button" onClick={() => setMobileSheet('help')} className="flex w-full items-center gap-3 border-t border-line pt-4 text-left text-xs text-ink-dim"><HelpCircle className="size-4 text-electric" /> Keyboard shortcuts and block help</button>
@@ -126,9 +136,18 @@ export function EditorToolbar({
 }
 
 export function BlockInsertionControl({ afterIndex, onInsert }: { afterIndex: number; onInsert: (choice: EditorCommandChoice, afterIndex: number) => void }) {
+  const rootRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    const closeOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    return () => document.removeEventListener('pointerdown', closeOutside)
+  }, [open])
   return (
-    <div className="group/insert relative -my-2 flex h-8 items-center justify-center" data-editor-insertion-after={afterIndex}>
+    <div ref={rootRef} className="group/insert relative -my-2 flex h-8 items-center justify-center" data-editor-insertion-after={afterIndex}>
       <div className={`absolute inset-x-0 top-1/2 border-t transition-colors ${open ? 'border-electric/60' : 'border-transparent group-hover/insert:border-line-bright group-focus-within/insert:border-line-bright'}`} />
       <button type="button" onClick={() => setOpen(current => !current)} className={`relative z-10 grid size-6 place-items-center rounded-full border bg-panel transition-[opacity,color,border-color,transform] hover:scale-105 hover:border-electric hover:text-electric focus-visible:border-electric focus-visible:text-electric focus-visible:outline-none sm:opacity-0 sm:group-hover/insert:opacity-100 sm:group-focus-within/insert:opacity-100 ${open ? 'border-electric text-electric opacity-100' : 'border-line-bright text-ink-muted opacity-70'}`} aria-label="Insert block here" aria-expanded={open}><Plus className="size-3" /></button>
       {open ? <div className="absolute left-1/2 top-7 z-30 w-[min(22rem,calc(100vw-2rem))] -translate-x-1/2 border border-line-bright bg-panel p-2 shadow-2xl"><BlockCommandMenu onChoose={choice => { onInsert(choice, afterIndex); setOpen(false) }} /></div> : null}
@@ -169,13 +188,13 @@ function ToolbarButton({ label, children, onClick, strong = false }: { label: st
   return <button type="button" onClick={onClick} className={`inline-flex h-9 items-center gap-2 px-3 text-[8px] font-black uppercase tracking-[0.13em] ${strong ? 'bg-electric text-mat hover:bg-ink' : 'border border-line text-ink-dim hover:border-electric'}`}><span className="[&>svg]:size-3.5">{children}</span>{label}</button>
 }
 
-function ToolbarIcon({ label, children, onClick, disabled = false, destructive = false }: { label: string; children: ReactNode; onClick: () => void; disabled?: boolean; destructive?: boolean }) {
+function ToolbarIcon({ label, children, onClick, disabled = false, destructive = false, active = false }: { label: string; children: ReactNode; onClick: () => void; disabled?: boolean; destructive?: boolean; active?: boolean }) {
   const preserveSelection = (event: MouseEvent<HTMLButtonElement>) => event.preventDefault()
-  return <button type="button" title={label} aria-label={label} disabled={disabled} onMouseDown={preserveSelection} onClick={onClick} className={`grid size-9 place-items-center border border-transparent text-ink-muted transition-colors disabled:pointer-events-none disabled:opacity-25 ${destructive ? 'hover:border-ember/50 hover:bg-ember-dim hover:text-ember' : 'hover:border-electric/50 hover:bg-electric-dim hover:text-electric'}`}><span className="[&>svg]:size-3.5">{children}</span></button>
+  return <button type="button" title={label} aria-label={label} aria-pressed={active || undefined} disabled={disabled} onMouseDown={preserveSelection} onClick={onClick} className={`grid size-9 place-items-center border transition-colors disabled:pointer-events-none disabled:opacity-25 ${active ? 'border-electric/50 bg-electric text-mat shadow-[0_0_16px_rgba(74,158,245,0.16)]' : destructive ? 'border-transparent text-ink-muted hover:border-ember/50 hover:bg-ember-dim hover:text-ember' : 'border-transparent text-ink-muted hover:border-electric/50 hover:bg-electric-dim hover:text-electric'}`}><span className="[&>svg]:size-3.5">{children}</span></button>
 }
 
-function SheetAction({ children, icon, onClick, disabled = false, destructive = false }: { children: ReactNode; icon: ReactNode; onClick: () => void; disabled?: boolean; destructive?: boolean }) {
-  return <button type="button" onClick={onClick} disabled={disabled} className={`flex min-h-12 items-center gap-3 border px-3 text-left text-xs font-bold disabled:opacity-35 ${destructive ? 'border-ember/30 text-ember' : 'border-line text-ink-dim'}`}><span className="[&>svg]:size-4">{icon}</span>{children}</button>
+function SheetAction({ children, icon, onClick, disabled = false, destructive = false, active = false }: { children: ReactNode; icon: ReactNode; onClick: () => void; disabled?: boolean; destructive?: boolean; active?: boolean }) {
+  return <button type="button" onClick={onClick} aria-pressed={active || undefined} disabled={disabled} className={`flex min-h-12 items-center gap-3 border px-3 text-left text-xs font-bold disabled:opacity-35 ${active ? 'border-electric bg-electric text-mat' : destructive ? 'border-ember/30 text-ember' : 'border-line text-ink-dim'}`}><span className="[&>svg]:size-4">{icon}</span>{children}</button>
 }
 
 function StarterChoice({ icon, title, description, onClick }: { icon: ReactNode; title: string; description: string; onClick: () => void }) {

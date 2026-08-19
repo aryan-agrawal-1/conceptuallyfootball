@@ -1,19 +1,20 @@
 import { ArrowDown, ArrowUp, AtSign, BarChart3, GripVertical, Link2, Plus, Shield, Trash2, UserRound } from 'lucide-react'
-import { useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactElement } from 'react'
 import { inlineText, plainText, type ArticleBlock, type EditorialEntityReference, type InlineContent, type VisualArticleBlock, type VisualBlockType } from '../../lib/editorial'
 import { foldForSearch } from '../../lib/foldAccents'
 import type { SearchEntitiesResponse, SearchPlayerEntity, SearchTeamEntity } from '../../types/api'
-import { InlineTextEditor, type InlineTextEditorHandle, type MentionRequest } from './InlineTextEditor'
+import { InlineTextEditor, type InlineSelectionState, type InlineTextEditorHandle, type MentionRequest } from './InlineTextEditor'
 import { VisualAnalysisBlock } from './VisualAnalysisBlock'
 import { BLOCK_COMMANDS, EDITOR_COMMANDS, blockChoice, blockLabel, convertBlock, isVisualChoice, visualTypeFromChoice, type BlockTypeChoice, type EditorCommandChoice } from './editorCommands'
 
 const metaInputClass = 'h-9 w-full border border-line bg-mat px-3 text-xs text-ink placeholder:text-ink-muted focus:border-electric focus:outline-none'
 
 export interface BlockEditorHandle {
-  openLink: () => void
-  toggleFormat: (format: 'bold' | 'italic') => void
+  openLink: () => boolean
+  toggleFormat: (format: 'bold' | 'italic') => boolean
   openReferencePicker: () => void
   focus: () => void
+  selectionState: () => InlineSelectionState
 }
 
 export function BlockEditor({
@@ -49,6 +50,7 @@ export function BlockEditor({
   const [linkEditor, setLinkEditor] = useState<InlineTextEditorHandle | null>(null)
   const [linkUrl, setLinkUrl] = useState('')
   const [linkError, setLinkError] = useState('')
+  const [selectionError, setSelectionError] = useState('')
   const [selectedCommand, setSelectedCommand] = useState<EditorCommandChoice | null>(null)
   const [mentionRequest, setMentionRequest] = useState<MentionRequest | null>(null)
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0)
@@ -61,6 +63,12 @@ export function BlockEditor({
     () => mentionRequest ? matchingEntityOptions(entities, mentionRequest.query) : [],
     [entities, mentionRequest],
   )
+
+  useEffect(() => {
+    if (!selectionError) return
+    const timeout = window.setTimeout(() => setSelectionError(''), 2_400)
+    return () => window.clearTimeout(timeout)
+  }, [selectionError])
 
   function changeType(value: BlockTypeChoice) {
     onChange(convertBlock(block, value))
@@ -98,20 +106,39 @@ export function BlockEditor({
 
   const editorHandle: BlockEditorHandle = {
     openLink: () => openLink(),
-    toggleFormat: format => { activeEditorRef.current?.toggleFormat(format) },
+    toggleFormat: format => requestFormat(format),
     openReferencePicker,
     focus: () => activeEditorRef.current?.focus(),
+    selectionState: () => activeEditorRef.current?.selectionState() ?? { hasSelection: false, bold: false, italic: false },
   }
 
-  function openLink(editor = activeEditorRef.current) {
+  function showSelectionError(message: string) {
+    setSelectionError(message)
+    setLinkError('')
+  }
+
+  function requestFormat(format: 'bold' | 'italic', editor = activeEditorRef.current): boolean {
     if (!editor?.hasSelection()) {
-      setLinkError('Highlight some text first.')
+      showSelectionError(`Highlight text to ${format === 'bold' ? 'bold' : 'italicise'} it.`)
+      return false
+    }
+    setSelectionError('')
+    const changed = editor.toggleFormat(format)
+    onActivate(block.id, editorHandle)
+    return changed
+  }
+
+  function openLink(editor = activeEditorRef.current): boolean {
+    if (!editor?.hasSelection()) {
+      showSelectionError('Highlight text to add a link.')
       setLinkEditor(null)
-      return
+      return false
     }
     setLinkEditor(editor)
     setLinkUrl('')
     setLinkError('')
+    setSelectionError('')
+    return true
   }
 
   function applyLink(event: FormEvent) {
@@ -122,7 +149,8 @@ export function BlockEditor({
       return
     }
     if (!linkEditor?.applyLink(normalized || undefined)) {
-      setLinkError('Highlight some text first.')
+      setLinkEditor(null)
+      showSelectionError('Highlight text to add a link.')
       return
     }
     setLinkEditor(null)
@@ -141,8 +169,9 @@ export function BlockEditor({
   }
 
   const inlineProps = {
-    onActivate: (editor: InlineTextEditorHandle) => { activeEditorRef.current = editor; onActivate(block.id, editorHandle) },
+    onActivate: (editor: InlineTextEditorHandle) => { activeEditorRef.current = editor; if (editor.hasSelection()) setSelectionError(''); onActivate(block.id, editorHandle) },
     onRequestLink: openLink,
+    onRequestFormat: requestFormat,
     onMentionQuery: (request: MentionRequest | null) => {
       setMentionRequest(request)
       setSelectedMentionIndex(0)
@@ -170,12 +199,13 @@ export function BlockEditor({
 
       {linkEditor ? (
         <form onSubmit={applyLink} className="absolute left-0 top-full z-30 mt-1 flex w-full max-w-md gap-2 border border-line-bright bg-panel p-2 shadow-xl">
-          <input autoFocus value={linkUrl} onChange={event => setLinkUrl(event.target.value)} className={metaInputClass} aria-label="Link URL" placeholder="https://…" />
+          <input autoFocus value={linkUrl} onChange={event => { setLinkUrl(event.target.value); setLinkError('') }} className={metaInputClass} aria-label="Link URL" placeholder="https://…" />
           <button type="submit" className="shrink-0 bg-electric px-3 text-[8px] font-black uppercase tracking-[0.14em] text-mat">Apply</button>
           <button type="button" onClick={() => setLinkEditor(null)} className="shrink-0 px-2 text-[8px] uppercase text-ink-muted">Cancel</button>
         </form>
       ) : null}
       {linkError ? <p className="absolute left-0 top-full z-20 mt-1 bg-panel px-2 py-1 text-[9px] text-ember">{linkError}</p> : null}
+      {selectionError ? <p role="status" className="absolute left-0 top-full z-20 mt-1 border border-gold/35 bg-panel px-3 py-2 text-[9px] text-gold shadow-xl">{selectionError}</p> : null}
 
       <BlockFields
         block={block}
@@ -264,7 +294,7 @@ function BlockFields({
   onChange: (block: ArticleBlock) => void
   onInsertAfter: (block: ArticleBlock) => void
   onBackspaceEmpty: () => boolean
-  inlineProps: { onActivate: (editor: InlineTextEditorHandle) => void; onRequestLink: (editor: InlineTextEditorHandle) => void; onMentionQuery: (request: MentionRequest | null) => void }
+  inlineProps: { onActivate: (editor: InlineTextEditorHandle) => void; onRequestLink: (editor: InlineTextEditorHandle) => void; onRequestFormat: (format: 'bold' | 'italic', editor: InlineTextEditorHandle) => void; onMentionQuery: (request: MentionRequest | null) => void }
   onCommandKeyDown: (key: 'ArrowDown' | 'ArrowUp' | 'Enter') => boolean
 }) {
   const splitIntoParagraph = (before: InlineContent, after: InlineContent) => {

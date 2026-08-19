@@ -8,6 +8,13 @@ export interface InlineTextEditorHandle {
   referenceRequest: () => Omit<MentionRequest, 'editor'> | null
   focus: (position?: 'start' | 'end') => void
   hasSelection: () => boolean
+  selectionState: () => InlineSelectionState
+}
+
+export interface InlineSelectionState {
+  hasSelection: boolean
+  bold: boolean
+  italic: boolean
 }
 
 export interface MentionRequest {
@@ -23,6 +30,7 @@ interface InlineTextEditorProps {
   onChange: (content: InlineContent) => void
   onEnter: (before: InlineContent, after: InlineContent) => void
   onRequestLink?: (editor: InlineTextEditorHandle) => void
+  onRequestFormat?: (format: 'bold' | 'italic', editor: InlineTextEditorHandle) => void
   onActivate?: (editor: InlineTextEditorHandle) => void
   onMentionQuery?: (request: MentionRequest | null) => void
   onCommandKeyDown?: (key: 'ArrowDown' | 'ArrowUp' | 'Enter') => boolean
@@ -37,6 +45,7 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
   onChange,
   onEnter,
   onRequestLink,
+  onRequestFormat,
   onActivate,
   onMentionQuery,
   onCommandKeyDown,
@@ -49,6 +58,7 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
   const onChangeRef = useRef(onChange)
   const onEnterRef = useRef(onEnter)
   const onRequestLinkRef = useRef(onRequestLink)
+  const onRequestFormatRef = useRef(onRequestFormat)
   const onActivateRef = useRef(onActivate)
   const onMentionQueryRef = useRef(onMentionQuery)
   const onCommandKeyDownRef = useRef(onCommandKeyDown)
@@ -57,11 +67,12 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
     onChangeRef.current = onChange
     onEnterRef.current = onEnter
     onRequestLinkRef.current = onRequestLink
+    onRequestFormatRef.current = onRequestFormat
     onActivateRef.current = onActivate
     onMentionQueryRef.current = onMentionQuery
     onCommandKeyDownRef.current = onCommandKeyDown
     onBackspaceEmptyRef.current = onBackspaceEmpty
-  }, [onActivate, onBackspaceEmpty, onChange, onCommandKeyDown, onEnter, onMentionQuery, onRequestLink])
+  }, [onActivate, onBackspaceEmpty, onChange, onCommandKeyDown, onEnter, onMentionQuery, onRequestFormat, onRequestLink])
 
   const rememberSelection = useCallback(() => {
     const root = rootRef.current
@@ -123,6 +134,12 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
       const selection = savedSelectionRef.current
       return Boolean(selection && selection.start !== selection.end)
     },
+    selectionState() {
+      const root = rootRef.current
+      const selection = savedSelectionRef.current
+      if (!root || !selection || selection.start === selection.end) return EMPTY_SELECTION_STATE
+      return selectionStateForContent(readContent(root), selection.start, selection.end)
+    },
   }), [rememberSelection])
 
   useImperativeHandle(forwardedRef, () => api, [api])
@@ -155,7 +172,9 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
     if ((event.metaKey || event.ctrlKey) && ['b', 'i'].includes(event.key.toLowerCase())) {
       event.preventDefault()
       rememberSelection()
-      api.toggleFormat(event.key.toLowerCase() === 'b' ? 'bold' : 'italic')
+      const format = event.key.toLowerCase() === 'b' ? 'bold' : 'italic'
+      if (onRequestFormatRef.current) onRequestFormatRef.current(format, api)
+      else api.toggleFormat(format)
       return
     }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
@@ -290,6 +309,24 @@ function appendRun(
     && Boolean(previous.italic) === italic
   ) previous.text += text
   else runs.push({ text, ...(link ? { link } : {}), ...(reference ? { reference } : {}), ...(bold ? { bold: true } : {}), ...(italic ? { italic: true } : {}) })
+}
+
+const EMPTY_SELECTION_STATE: InlineSelectionState = { hasSelection: false, bold: false, italic: false }
+
+function selectionStateForContent(content: InlineContent, start: number, end: number): InlineSelectionState {
+  const selectedRuns: InlineContent = []
+  let cursor = 0
+  for (const run of content) {
+    const runEnd = cursor + run.text.length
+    if (Math.max(start, cursor) < Math.min(end, runEnd)) selectedRuns.push(run)
+    cursor = runEnd
+  }
+  if (!selectedRuns.length) return EMPTY_SELECTION_STATE
+  return {
+    hasSelection: true,
+    bold: selectedRuns.every(run => Boolean(run.bold)),
+    italic: selectedRuns.every(run => Boolean(run.italic)),
+  }
 }
 
 function selectionOffsets(root: HTMLElement): { start: number; end: number } | null {
