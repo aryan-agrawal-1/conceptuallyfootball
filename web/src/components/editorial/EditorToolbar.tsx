@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, AtSign, BarChart3, Bold, ChevronDown, CopyPlus, FileImage, Heading2, HelpCircle, Italic, Lightbulb, Link2, List, ListOrdered, Menu, Minus, Pilcrow, Plus, Quote, SidebarClose, SidebarOpen, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, AtSign, BarChart3, Bold, ChevronDown, CopyPlus, FileImage, Heading2, HelpCircle, Italic, Lightbulb, Link2, List, ListOrdered, Menu, Minus, Pilcrow, Plus, Quote, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { ArticleBlock } from '../../lib/editorial'
@@ -12,26 +12,22 @@ export function EditorToolbar({
   total,
   activeHandle,
   selectionState,
-  inspectorOpen,
   onInsert,
   onChangeType,
   onMove,
   onDuplicate,
   onRemove,
-  onToggleInspector,
 }: {
   activeBlock?: ArticleBlock
   activeIndex: number
   total: number
   activeHandle?: BlockEditorHandle
   selectionState: InlineSelectionState
-  inspectorOpen: boolean
   onInsert: (choice: EditorCommandChoice, afterIndex: number) => void
   onChangeType: (choice: BlockTypeChoice) => void
   onMove: (direction: -1 | 1) => void
   onDuplicate: () => void
   onRemove: () => void
-  onToggleInspector: () => void
 }) {
   const toolbarRef = useRef<HTMLDivElement>(null)
   const [desktopMenu, setDesktopMenu] = useState<'add' | 'help' | null>(null)
@@ -112,7 +108,6 @@ export function EditorToolbar({
             <ToolbarIcon label="Editor help" onClick={() => setDesktopMenu(current => current === 'help' ? null : 'help')}><HelpCircle /></ToolbarIcon>
             {desktopMenu === 'help' ? <div className="absolute right-0 top-full z-30 mt-2 w-80 border border-line-bright bg-panel p-5 shadow-2xl"><EditorHelp /></div> : null}
           </div>
-          <ToolbarIcon label={inspectorOpen ? 'Hide article details' : 'Show article details'} onClick={onToggleInspector}>{inspectorOpen ? <SidebarClose /> : <SidebarOpen />}</ToolbarIcon>
         </div>
       </div>
 
@@ -131,7 +126,6 @@ export function EditorToolbar({
                 <SheetAction disabled={activeIndex <= 0} onClick={() => onMove(-1)} icon={<ArrowUp />}>Move up</SheetAction>
                 <SheetAction disabled={activeIndex < 0 || activeIndex >= total - 1} onClick={() => onMove(1)} icon={<ArrowDown />}>Move down</SheetAction>
                 <SheetAction disabled={!activeBlock} onClick={onDuplicate} icon={<CopyPlus />}>Duplicate</SheetAction>
-                <SheetAction onClick={() => { setMobileSheet(null); onToggleInspector() }} icon={inspectorOpen ? <SidebarClose /> : <SidebarOpen />}>{inspectorOpen ? 'Hide details' : 'Show details'}</SheetAction>
                 <SheetAction disabled={!activeBlock} destructive onClick={onRemove} icon={<Trash2 />}>Delete block</SheetAction>
               </div>
               <button type="button" onClick={() => setMobileSheet('help')} className="flex w-full items-center gap-3 border-t border-line pt-4 text-left text-xs text-ink-dim"><HelpCircle className="size-4 text-electric" /> Keyboard shortcuts and block help</button>
