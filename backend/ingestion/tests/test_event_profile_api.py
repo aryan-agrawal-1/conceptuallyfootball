@@ -159,7 +159,7 @@ class EventProfileApiTests(TestCase):
         self.assertEqual(payload["average_touch_location"]["sample_size"], 1)
         self.assertEqual(payload["average_touch_location"]["x"], 10.0)
         self.assertEqual(payload["average_touch_location"]["y"], 20.0)
-        self.assertEqual(len(payload["action_grid"]), 96)
+        self.assertEqual(len(payload["action_grid"]), 384)
         self.assertEqual(len(payload["shots"]), 1)
         self.assertEqual(payload["shots"][0]["match_ref"], 0)
         self.assertEqual(payload["shots"][0]["team_id"], self.home.id)
@@ -198,6 +198,7 @@ class EventProfileApiTests(TestCase):
 
     def test_every_pass_filter_and_compact_match_references(self):
         expected_counts = {
+            "all": 2,
             "completed": 1,
             "progressive": 1,
             "final_third_entry": 1,
@@ -272,8 +273,8 @@ class EventProfileApiTests(TestCase):
         payload = response.json()
         self.assertEqual(payload["canonical_team_name"], "Home")
         self.assertEqual(len(payload["pass_flow"]), 225)
-        self.assertEqual(len(payload["action_grid"]), 96)
-        self.assertEqual(len(payload["opponent_action_grid"]), 96)
+        self.assertEqual(len(payload["action_grid"]), 384)
+        self.assertEqual(len(payload["opponent_action_grid"]), 384)
         self.assertEqual(len(payload["shots_for"]), 1)
         self.assertEqual(len(payload["shots_against"]), 1)
         self.assertEqual(payload["shots_for"][0]["match_ref"], 0)
@@ -299,7 +300,7 @@ class EventProfileApiTests(TestCase):
             team__isnull=True,
             is_current=True,
         )
-        profile.formula_version = "event_profiles_v2"
+        profile.formula_version = "event_profiles_v3"
         profile.save(update_fields=["formula_version"])
         third = self.client.get(self.player_url, self.scope)
         self.assertEqual(third.status_code, 200)
@@ -308,7 +309,7 @@ class EventProfileApiTests(TestCase):
             cache_key__startswith=f"event-profile:{self.competition_season.id}:player:"
         ).order_by("-id").first()
         self.assertIsNotNone(cached)
-        self.assertIn("event_profiles_v2", cached.source_version)
+        self.assertIn("event_profiles_v3", cached.source_version)
 
     def test_public_json_excludes_raw_payload_and_provider_fields(self):
         forbidden = (
@@ -349,7 +350,7 @@ class EventProfileApiTests(TestCase):
         for payload in (player.json(), team.json()):
             flag = payload["event_profile"]
             self.assertTrue(flag["available"])
-            self.assertEqual(flag["formula_version"], "event_profiles_v1")
+            self.assertEqual(flag["formula_version"], "event_profiles_v2")
             self.assertIn("coverage", flag)
             self.assertNotIn("action_grid", flag)
             self.assertNotIn("pass_flow", flag)

@@ -28,7 +28,7 @@ from ingestion.services.whoscored_normalization import (
     action_grid_assignment, is_action_event, is_defensive_event, team_zone_assignment,
 )
 
-FORMULA_VERSION = "event_profiles_v1"
+FORMULA_VERSION = "event_profiles_v2"
 
 
 @dataclass
@@ -250,8 +250,8 @@ def _publish(cs: CompetitionSeason, run: IngestionRun, events: list[ProviderMatc
         raise ValueError("Duplicate player event-profile scope.")
     if (
         len({row.team_id for row in team_rows}) != len(team_rows)
-        or any(len(row.action_grid) != 96 for row in player_rows + team_rows)
-        or any(len(row.opponent_action_grid) != 96 for row in team_rows)
+        or any(len(row.action_grid) != ACTION_GRID_COLUMNS * ACTION_GRID_ROWS for row in player_rows + team_rows)
+        or any(len(row.opponent_action_grid) != ACTION_GRID_COLUMNS * ACTION_GRID_ROWS for row in team_rows)
         or any(len(row.pass_flow) != 225 for row in team_rows)
     ):
         raise ValueError("Invalid event-profile candidate shape.")

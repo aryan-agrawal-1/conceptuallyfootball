@@ -228,6 +228,7 @@ def compact_pass(event: ProviderMatchEvent, match_references: dict[int, int]) ->
 
 
 PASS_FILTERS: dict[str, Callable[[QuerySet], QuerySet]] = {
+    "all": lambda queryset: queryset,
     "completed": lambda queryset: queryset.filter(outcome_successful=True),
     "progressive": lambda queryset: queryset.filter(is_progressive_pass=True),
     "final_third_entry": lambda queryset: queryset.filter(is_final_third_entry=True),
@@ -239,7 +240,6 @@ PASS_FILTERS: dict[str, Callable[[QuerySet], QuerySet]] = {
 }
 
 PASS_FILTER_ALIASES = {
-    "all": "completed",
     "all_completed": "completed",
     "final-third-entry": "final_third_entry",
     "final_third_entries": "final_third_entry",
@@ -259,7 +259,7 @@ def normalized_pass_filter(request) -> str:
     value = PASS_FILTER_ALIASES.get(requested, requested)
     if value not in PASS_FILTERS:
         raise DjangoValidationError(
-            "Unsupported pass filter. Use completed, progressive, final_third_entry, "
+            "Unsupported pass filter. Use all, completed, progressive, final_third_entry, "
             "box_entry, key_pass, cross, long_ball, or failed."
         )
     return value

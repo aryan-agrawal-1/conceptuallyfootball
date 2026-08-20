@@ -106,7 +106,7 @@ class EventProfileMaterializationTests(TestCase):
         self.assertEqual((total.progressive_pass_attempts, total.progressive_pass_completions, total.final_third_entries, total.box_entries, total.key_passes, total.crosses, total.long_balls), (2, 2, 1, 1, 1, 1, 1))
         self.assertEqual((total.shots, total.goals, total.big_chance_shots, total.take_ons_attempted, total.take_ons_successful, total.defensive_actions), (1, 1, 1, 1, 1, 2))
         self.assertEqual((total.average_touch_x, total.average_touch_y), (2500, 3000))
-        self.assertEqual(len(total.action_grid), 96); self.assertEqual(sum(c["raw_count"] for c in total.action_grid), 7)
+        self.assertEqual(len(total.action_grid), 384); self.assertEqual(sum(c["raw_count"] for c in total.action_grid), 7)
         self.assertEqual(total.action_grid[0]["raw_count"], 1); self.assertEqual(total.action_grid[0]["share"], 1 / 7); self.assertEqual(total.action_grid[0]["per90_count"], .5)
         self.assertEqual(PlayerSeasonEventProfile.objects.filter(player=self.player, split_type=EventProfileSplitType.TEAM, is_current=True).count(), 2)
         self.assertEqual(PlayerSeasonEventProfile.objects.get(player=self.player, team=self.a, is_current=True).pass_attempts, 2)
@@ -115,7 +115,7 @@ class EventProfileMaterializationTests(TestCase):
         self.assertEqual((team.observed_match_count, team.expected_match_count, team.coverage), (2, 2, 1.0))
         self.assertEqual((team.valid_location_actions, team.touches, team.pass_attempts, team.pass_completions, team.progressive_pass_attempts, team.progressive_pass_completions, team.final_third_entries, team.box_entries, team.key_passes, team.crosses, team.long_balls), (5, 3, 2, 1, 1, 1, 1, 1, 1, 1, 1))
         self.assertEqual((team.shots_for, team.goals_for, team.big_chance_shots_for, team.shots_against, team.goals_against, team.big_chance_shots_against, team.take_ons_attempted, team.take_ons_successful, team.defensive_actions), (2, 1, 1, 1, 1, 0, 0, 0, 1))
-        self.assertEqual((len(team.action_grid), len(team.opponent_action_grid), len(team.pass_flow)), (96, 96, 225))
+        self.assertEqual((len(team.action_grid), len(team.opponent_action_grid), len(team.pass_flow)), (384, 384, 225))
         self.assertEqual(sum(c["raw_count"] for c in team.action_grid), 5); self.assertEqual(sum(c["raw_count"] for c in team.opponent_action_grid), 4)
         self.assertEqual([(x["origin_zone"], x["destination_zone"]) for x in team.pass_flow], [(o, d) for o in range(15) for d in range(15)])
         flow = next(x for x in team.pass_flow if (x["origin_zone"], x["destination_zone"]) == (0, 14))
@@ -183,7 +183,7 @@ class EventProfileMaterializationTests(TestCase):
         self.cs.whoscored_expected_match_count = 2; self.cs.save(update_fields=["whoscored_expected_match_count"])
         with patch("ingestion.services.whoscored_client.SoccerdataWhoScoredClient", side_effect=AssertionError("offline"), create=True):
             succeeded, result = self.materialize()
-        self.assertIsNotNone(result); self.assertEqual(succeeded.stats["formula_version"], "event_profiles_v1")
+        self.assertIsNotNone(result); self.assertEqual(succeeded.stats["formula_version"], "event_profiles_v2")
         with self.assertRaises(CommandError): call_command("materialize_event_profiles", self.cs.id, "--affected-player-id", self.player.id)
         with self.assertRaises(CommandError): call_command("materialize_event_profiles", self.cs.id, "--affected-match-id", "missing")
         with self.assertRaises(CommandError):

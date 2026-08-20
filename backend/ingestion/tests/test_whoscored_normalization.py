@@ -98,9 +98,9 @@ class WhoScoredNormalizationHelperTests(SimpleTestCase):
 
     def test_grid_assignment_boundaries(self):
         self.assertEqual(action_grid_assignment(0, 0), (0, 0, 0))
-        self.assertEqual(action_grid_assignment(833, 1249), (0, 0, 0))
-        self.assertEqual(action_grid_assignment(834, 1250), (1, 1, 9))
-        self.assertEqual(action_grid_assignment(10000, 10000), (11, 7, 95))
+        self.assertEqual(action_grid_assignment(416, 624), (0, 0, 0))
+        self.assertEqual(action_grid_assignment(417, 625), (1, 1, 17))
+        self.assertEqual(action_grid_assignment(10000, 10000), (23, 15, 383))
 
         self.assertEqual(team_zone_assignment(0, 0), (0, 0, 0))
         self.assertEqual(team_zone_assignment(1999, 3333), (0, 0, 0))
