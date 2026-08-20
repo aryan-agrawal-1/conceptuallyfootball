@@ -169,8 +169,13 @@ class WhoScoredIngestionCommandTests(TestCase):
         self.assertEqual(result.run.status, IngestionRunStatus.FAILED)
         self.assertEqual(result.stats["outcome"], "partial_failure")
         self.assertEqual(result.stats["successful_fetches"], 2)
-        self.assertEqual(result.stats["fetch_failures"], 1)
-        self.assertEqual(result.stats["validation_failures"], 0)
+        self.assertEqual(result.stats["fetch_failures"], 0)
+        self.assertEqual(result.stats["validation_failures"], 1)
+        failure = result.stats["per_match_failures"][0]
+        self.assertEqual(failure["category"], "source_change")
+        self.assertEqual(failure["stage"], "match_processing")
+        self.assertTrue(failure["headless"])
+        self.assertNotIn("malformed payload", failure["message"])
         self.assertEqual(result.stats["normalized_event_count"], 14)
 
     @patch("ingestion.services.whoscored_ingestion.WhoScoredLifecycleService")
@@ -269,6 +274,10 @@ class WhoScoredIngestionCommandTests(TestCase):
         self.assertEqual(result.stats["retries"], 3)
         self.assertEqual(result.stats["fetch_failures"], 1)
         self.assertEqual(result.stats["successful_fetches"], 0)
+        self.assertEqual(
+            result.stats["per_match_failures"][0]["category"],
+            "anti_bot_challenge",
+        )
 
     def test_invalid_scope_and_mixed_selectors_raise_without_a_run(self):
         with self.assertRaises(CommandError):
@@ -280,6 +289,58 @@ class WhoScoredIngestionCommandTests(TestCase):
             )
         self.assertEqual(IngestionRun.objects.count(), 0)
 
+    @patch("ingestion.services.whoscored_ingestion.SoccerdataWhoScoredClient")
+    def test_default_ingestion_constructs_a_headless_browser_client(self, client_class):
+        client_class.return_value.list_matches.return_value = []
+
+        result = run_whoscored_ingestion(
+            competition_season=self.slice,
+            options=WhoScoredIngestionOptions(),
+        )
+
+        source_config = client_class.call_args.args[0]
+        self.assertTrue(source_config.headless)
+        self.assertEqual(result.stats["browser"], {"headless": True, "mode": "headless"})
+
+    @patch("ingestion.services.whoscored_ingestion.SoccerdataWhoScoredClient")
+    def test_local_debug_override_is_explicitly_headed(self, client_class):
+        client_class.return_value.list_matches.return_value = []
+
+        result = run_whoscored_ingestion(
+            competition_season=self.slice,
+            options=WhoScoredIngestionOptions(headed_debug=True),
+        )
+
+        source_config = client_class.call_args.args[0]
+        self.assertFalse(source_config.headless)
+        self.assertEqual(
+            result.stats["browser"],
+            {"headless": False, "mode": "headed_local_debug"},
+        )
+
+    def test_fatal_failure_evidence_does_not_persist_provider_details(self):
+        private_detail = "https://user:password@example.test/?token=private cookie=session"
+        client = FakeClient([])
+        client.list_matches = lambda **kwargs: (_ for _ in ()).throw(
+            TimeoutError(private_detail)
+        )
+
+        with self.assertRaises(TimeoutError):
+            run_whoscored_ingestion(
+                competition_season=self.slice,
+                options=WhoScoredIngestionOptions(),
+                client=client,
+            )
+
+        run = IngestionRun.objects.get()
+        rendered = str(run.stats)
+        self.assertEqual(run.stats["fatal_failure"]["category"], "navigation_failure")
+        self.assertTrue(run.stats["fatal_failure"]["headless"])
+        self.assertNotIn("password", rendered)
+        self.assertNotIn("token", rendered)
+        self.assertNotIn("cookie", rendered)
+        self.assertNotIn("password", run.error_detail)
+
     @patch("ingestion.management.commands.ingest_whoscored_events.run_whoscored_ingestion")
     def test_command_parses_concrete_options(self, mock_run):
         from ingestion.services.whoscored_ingestion import WhoScoredIngestionResult
@@ -287,9 +348,10 @@ class WhoScoredIngestionCommandTests(TestCase):
         mock_run.return_value = WhoScoredIngestionResult(run=None, stats={})
         call_command(
             "ingest_whoscored_events", "--competition", "ENG1", "--season", "2025-26",
-            "--last-completed", "2", "--dry-run", "--allow-over-cap",
+            "--last-completed", "2", "--dry-run", "--allow-over-cap", "--headed-debug",
         )
         selected = mock_run.call_args.kwargs["options"]
         self.assertEqual(selected.last_completed, 2)
         self.assertTrue(selected.dry_run)
         self.assertTrue(selected.allow_over_cap)
+        self.assertTrue(selected.headed_debug)

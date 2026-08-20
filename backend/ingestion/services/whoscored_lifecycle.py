@@ -180,6 +180,8 @@ class WhoScoredMatchFailure:
     provider_match_id: str
     error_type: str
     message: str
+    category: str = "source_change"
+    stage: str = "match_processing"
 
 
 @dataclass

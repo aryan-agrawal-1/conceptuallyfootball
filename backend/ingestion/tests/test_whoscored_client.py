@@ -20,6 +20,7 @@ from ingestion.services.whoscored_client import (
     canonical_json_bytes,
     coordinate_range_errors,
     payload_sha256,
+    safe_failure_evidence,
     shot_orientation_gate,
     shot_orientation_summary,
     summarize_match_payload,
@@ -39,6 +40,7 @@ class FakeWhoScoredReader:
         self.schedule = schedule
         self.payloads = payloads
         self.data_dir = Path(kwargs["data_dir"])
+        self.options = kwargs
         self.calls: list[dict[str, Any]] = []
 
     def read_schedule(self, force_cache: bool = False):
@@ -74,6 +76,54 @@ class WhoScoredClientFoundationTests(SimpleTestCase):
         self.assertEqual(canonical_json_bytes(self.match_one), canonical_json_bytes(reordered))
         self.assertEqual(payload_sha256(self.match_one), payload_sha256(reordered))
         self.assertEqual(len(payload_sha256(self.match_one)), 64)
+
+    def test_source_config_and_reader_invocation_are_headless_by_default(self) -> None:
+        readers: list[FakeWhoScoredReader] = []
+
+        def factory(**kwargs):
+            reader = FakeWhoScoredReader(
+                schedule=self.schedule_fixture["matches"],
+                payloads={9000001: self.match_one, 9000002: self.match_two},
+                **kwargs,
+            )
+            readers.append(reader)
+            return reader
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WhoScoredSourceConfig(
+                league="ENG-Premier League",
+                season="2025-26",
+                data_dir=Path(tmp),
+            )
+            client = SoccerdataWhoScoredClient(config, reader_factory=factory)
+            client.list_matches()
+
+        self.assertTrue(config.headless)
+        self.assertTrue(readers[0].options["headless"])
+
+    def test_failure_evidence_is_categorical_and_does_not_retain_private_details(self) -> None:
+        secret = "https://user:password@example.test/match?token=private cookie=session"
+        cases = (
+            (RuntimeError(f"Cloudflare captcha at {secret}"), "anti_bot_challenge"),
+            (TimeoutError(secret), "navigation_failure"),
+            (json.JSONDecodeError(secret, "", 0), "parser_failure"),
+            (ValueError(f"schema drift {secret}"), "source_change"),
+            (FileNotFoundError(secret), "payload_extraction_failure"),
+        )
+
+        for error, category in cases:
+            with self.subTest(category=category):
+                evidence = safe_failure_evidence(
+                    error,
+                    stage="match_processing",
+                    headless=True,
+                )
+                rendered = json.dumps(evidence)
+                self.assertEqual(evidence["category"], category)
+                self.assertTrue(evidence["headless"])
+                self.assertNotIn("password", rendered)
+                self.assertNotIn("token", rendered)
+                self.assertNotIn("cookie", rendered)
 
     def test_data_endpoint_compatibility_extracts_json_and_rejects_html(self) -> None:
         payload = '{"tournaments":[{"matches":[]}]}'
@@ -302,12 +352,14 @@ class WhoScoredClientFoundationTests(SimpleTestCase):
             "probe_whoscored_source",
             match_id=[9000001],
             match_count=1,
-            headless=True,
             stdout=stdout,
         )
 
         rendered = stdout.getvalue()
+        source_config = client_class.call_args.args[0]
+        self.assertTrue(source_config.headless)
         self.assertIn("WhoScored source probe passed.", rendered)
+        self.assertIn('"mode": "headless"', rendered)
         self.assertIn('"passed": true', rendered)
         self.assertNotIn("playerIdNameDictionary", rendered)
         self.assertNotIn("Synthetic Player One", rendered)
