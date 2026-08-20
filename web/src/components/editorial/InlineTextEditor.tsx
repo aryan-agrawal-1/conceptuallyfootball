@@ -3,9 +3,18 @@ import { plainText, type EditorialEntityReference, type InlineContent } from '..
 
 export interface InlineTextEditorHandle {
   applyLink: (url?: string) => boolean
+  toggleFormat: (format: 'bold' | 'italic') => boolean
   insertReference: (start: number, end: number, reference: EditorialEntityReference) => boolean
+  referenceRequest: () => Omit<MentionRequest, 'editor'> | null
   focus: (position?: 'start' | 'end') => void
   hasSelection: () => boolean
+  selectionState: () => InlineSelectionState
+}
+
+export interface InlineSelectionState {
+  hasSelection: boolean
+  bold: boolean
+  italic: boolean
 }
 
 export interface MentionRequest {
@@ -21,6 +30,7 @@ interface InlineTextEditorProps {
   onChange: (content: InlineContent) => void
   onEnter: (before: InlineContent, after: InlineContent) => void
   onRequestLink?: (editor: InlineTextEditorHandle) => void
+  onRequestFormat?: (format: 'bold' | 'italic', editor: InlineTextEditorHandle) => void
   onActivate?: (editor: InlineTextEditorHandle) => void
   onMentionQuery?: (request: MentionRequest | null) => void
   onCommandKeyDown?: (key: 'ArrowDown' | 'ArrowUp' | 'Enter') => boolean
@@ -35,6 +45,7 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
   onChange,
   onEnter,
   onRequestLink,
+  onRequestFormat,
   onActivate,
   onMentionQuery,
   onCommandKeyDown,
@@ -47,6 +58,7 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
   const onChangeRef = useRef(onChange)
   const onEnterRef = useRef(onEnter)
   const onRequestLinkRef = useRef(onRequestLink)
+  const onRequestFormatRef = useRef(onRequestFormat)
   const onActivateRef = useRef(onActivate)
   const onMentionQueryRef = useRef(onMentionQuery)
   const onCommandKeyDownRef = useRef(onCommandKeyDown)
@@ -55,29 +67,47 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
     onChangeRef.current = onChange
     onEnterRef.current = onEnter
     onRequestLinkRef.current = onRequestLink
+    onRequestFormatRef.current = onRequestFormat
     onActivateRef.current = onActivate
     onMentionQueryRef.current = onMentionQuery
     onCommandKeyDownRef.current = onCommandKeyDown
     onBackspaceEmptyRef.current = onBackspaceEmpty
-  }, [onActivate, onBackspaceEmpty, onChange, onCommandKeyDown, onEnter, onMentionQuery, onRequestLink])
+  }, [onActivate, onBackspaceEmpty, onChange, onCommandKeyDown, onEnter, onMentionQuery, onRequestFormat, onRequestLink])
+
+  const selectionForAction = useCallback(() => {
+    const root = rootRef.current
+    if (!root) return savedSelectionRef.current
+    const liveSelection = selectionOffsets(root)
+    if (liveSelection) savedSelectionRef.current = liveSelection
+    return liveSelection ?? savedSelectionRef.current
+  }, [])
 
   const rememberSelection = useCallback(() => {
-    const root = rootRef.current
-    if (!root) return
-    const selection = selectionOffsets(root)
-    if (selection) savedSelectionRef.current = selection
-  }, [])
+    selectionForAction()
+  }, [selectionForAction])
 
   const api = useMemo<InlineTextEditorHandle>(() => ({
     applyLink(url) {
       const root = rootRef.current
-      const selection = savedSelectionRef.current
+      const selection = selectionForAction()
       if (!root || !selection || selection.start === selection.end) return false
       const next = applyLinkToContent(readContent(root), selection.start, selection.end, url)
       renderContent(root, next)
       onChangeRef.current(next)
       root.focus()
       restoreSelection(root, selection.start, selection.end)
+      return true
+    },
+    toggleFormat(format) {
+      const root = rootRef.current
+      const selection = selectionForAction()
+      if (!root || !selection || selection.start === selection.end) return false
+      root.focus()
+      restoreSelection(root, selection.start, selection.end)
+      document.execCommand(format)
+      const next = readContent(root)
+      onChangeRef.current(next)
+      rememberSelection()
       return true
     },
     insertReference(start, end, reference) {
@@ -93,6 +123,11 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
       onMentionQueryRef.current?.(null)
       return true
     },
+    referenceRequest() {
+      const selection = selectionForAction()
+      if (!selection) return null
+      return { query: '', start: selection.start, end: selection.end }
+    },
     focus(position = 'end') {
       const root = rootRef.current
       if (!root) return
@@ -101,10 +136,16 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
       restoreSelection(root, offset, offset)
     },
     hasSelection() {
-      const selection = savedSelectionRef.current
+      const selection = selectionForAction()
       return Boolean(selection && selection.start !== selection.end)
     },
-  }), [])
+    selectionState() {
+      const root = rootRef.current
+      const selection = selectionForAction()
+      if (!root || !selection || selection.start === selection.end) return EMPTY_SELECTION_STATE
+      return selectionStateForContent(readContent(root), selection.start, selection.end)
+    },
+  }), [rememberSelection, selectionForAction])
 
   useImperativeHandle(forwardedRef, () => api, [api])
 
@@ -133,6 +174,14 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if ((event.metaKey || event.ctrlKey) && ['b', 'i'].includes(event.key.toLowerCase())) {
+      event.preventDefault()
+      rememberSelection()
+      const format = event.key.toLowerCase() === 'b' ? 'bold' : 'italic'
+      if (onRequestFormatRef.current) onRequestFormatRef.current(format, api)
+      else api.toggleFormat(format)
+      return
+    }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault()
       rememberSelection()
@@ -189,19 +238,22 @@ export const InlineTextEditor = forwardRef<InlineTextEditorHandle, InlineTextEdi
 
 function readContent(root: HTMLElement): InlineContent {
   const runs: InlineContent = []
-  const visit = (node: Node, inheritedLink?: string, inheritedReference?: EditorialEntityReference) => {
+  const visit = (node: Node, inheritedLink?: string, inheritedReference?: EditorialEntityReference, inheritedBold = false, inheritedItalic = false) => {
     if (node.nodeType === Node.TEXT_NODE) {
-      appendRun(runs, node.textContent ?? '', inheritedLink, inheritedReference)
+      appendRun(runs, node.textContent ?? '', inheritedLink, inheritedReference, inheritedBold, inheritedItalic)
       return
     }
     if (!(node instanceof HTMLElement)) return
     if (node.tagName === 'BR') {
-      appendRun(runs, '\n', inheritedLink, inheritedReference)
+      appendRun(runs, '\n', inheritedLink, inheritedReference, inheritedBold, inheritedItalic)
       return
     }
     const link = node instanceof HTMLAnchorElement ? safeUrl(node.href) : inheritedLink
     const reference = referenceFromElement(node) ?? inheritedReference
-    node.childNodes.forEach(child => visit(child, link || inheritedLink, reference))
+    const weight = node.style.fontWeight
+    const bold = inheritedBold || node.tagName === 'B' || node.tagName === 'STRONG' || weight === 'bold' || Number.parseInt(weight, 10) >= 600
+    const italic = inheritedItalic || node.tagName === 'I' || node.tagName === 'EM' || node.style.fontStyle === 'italic'
+    node.childNodes.forEach(child => visit(child, link || inheritedLink, reference, bold, italic))
   }
   root.childNodes.forEach(node => visit(node))
   return runs.length ? runs : [{ text: '' }]
@@ -210,6 +262,17 @@ function readContent(root: HTMLElement): InlineContent {
 function renderContent(root: HTMLElement, content: InlineContent) {
   root.replaceChildren()
   for (const run of content) {
+    let node: Node = document.createTextNode(run.text)
+    if (run.italic) {
+      const emphasis = document.createElement('em')
+      emphasis.append(node)
+      node = emphasis
+    }
+    if (run.bold) {
+      const strong = document.createElement('strong')
+      strong.append(node)
+      node = strong
+    }
     const link = run.link ? safeUrl(run.link) : ''
     if (link) {
       const anchor = document.createElement('a')
@@ -217,7 +280,7 @@ function renderContent(root: HTMLElement, content: InlineContent) {
       anchor.target = '_blank'
       anchor.rel = 'noreferrer'
       anchor.className = 'border-b border-electric/60 text-electric'
-      anchor.append(document.createTextNode(run.text))
+      anchor.append(node)
       root.append(anchor)
     } else if (run.reference) {
       const mention = document.createElement('span')
@@ -225,10 +288,10 @@ function renderContent(root: HTMLElement, content: InlineContent) {
       mention.contentEditable = 'false'
       mention.className = 'inline-flex rounded-sm border border-electric/35 bg-electric-dim/55 px-1 py-0.5 text-electric'
       mention.title = `${run.reference.kind === 'player' ? 'Player' : 'Team'} reference · ${run.reference.name}`
-      mention.append(document.createTextNode(run.text))
+      mention.append(node)
       root.append(mention)
     } else if (run.text) {
-      root.append(document.createTextNode(run.text))
+      root.append(node)
     }
   }
 }
@@ -238,6 +301,8 @@ function appendRun(
   text: string,
   link?: string,
   reference?: EditorialEntityReference,
+  bold = false,
+  italic = false,
 ) {
   if (!text) return
   const previous = runs.at(-1)
@@ -245,8 +310,28 @@ function appendRun(
     previous
     && previous.link === link
     && JSON.stringify(previous.reference) === JSON.stringify(reference)
+    && Boolean(previous.bold) === bold
+    && Boolean(previous.italic) === italic
   ) previous.text += text
-  else runs.push({ text, ...(link ? { link } : {}), ...(reference ? { reference } : {}) })
+  else runs.push({ text, ...(link ? { link } : {}), ...(reference ? { reference } : {}), ...(bold ? { bold: true } : {}), ...(italic ? { italic: true } : {}) })
+}
+
+const EMPTY_SELECTION_STATE: InlineSelectionState = { hasSelection: false, bold: false, italic: false }
+
+function selectionStateForContent(content: InlineContent, start: number, end: number): InlineSelectionState {
+  const selectedRuns: InlineContent = []
+  let cursor = 0
+  for (const run of content) {
+    const runEnd = cursor + run.text.length
+    if (Math.max(start, cursor) < Math.min(end, runEnd)) selectedRuns.push(run)
+    cursor = runEnd
+  }
+  if (!selectedRuns.length) return EMPTY_SELECTION_STATE
+  return {
+    hasSelection: true,
+    bold: selectedRuns.every(run => Boolean(run.bold)),
+    italic: selectedRuns.every(run => Boolean(run.italic)),
+  }
 }
 
 function selectionOffsets(root: HTMLElement): { start: number; end: number } | null {
@@ -306,11 +391,11 @@ function splitContent(content: InlineContent, offset: number): [InlineContent, I
   let cursor = 0
   for (const run of content) {
     const boundary = offset - cursor
-    if (boundary <= 0) appendRun(after, run.text, run.link, run.reference)
-    else if (boundary >= run.text.length) appendRun(before, run.text, run.link, run.reference)
+    if (boundary <= 0) appendRun(after, run.text, run.link, run.reference, run.bold, run.italic)
+    else if (boundary >= run.text.length) appendRun(before, run.text, run.link, run.reference, run.bold, run.italic)
     else {
-      appendRun(before, run.text.slice(0, boundary), run.link, run.reference)
-      appendRun(after, run.text.slice(boundary), run.link, run.reference)
+      appendRun(before, run.text.slice(0, boundary), run.link, run.reference, run.bold, run.italic)
+      appendRun(after, run.text.slice(boundary), run.link, run.reference, run.bold, run.italic)
     }
     cursor += run.text.length
   }
@@ -326,11 +411,11 @@ function applyLinkToContent(content: InlineContent, start: number, end: number, 
     const overlapStart = Math.max(start, runStart)
     const overlapEnd = Math.min(end, runEnd)
     if (overlapStart >= overlapEnd) {
-      appendRun(result, run.text, run.link, run.reference)
+      appendRun(result, run.text, run.link, run.reference, run.bold, run.italic)
     } else {
-      appendRun(result, run.text.slice(0, overlapStart - runStart), run.link, run.reference)
-      appendRun(result, run.text.slice(overlapStart - runStart, overlapEnd - runStart), url)
-      appendRun(result, run.text.slice(overlapEnd - runStart), run.link, run.reference)
+      appendRun(result, run.text.slice(0, overlapStart - runStart), run.link, run.reference, run.bold, run.italic)
+      appendRun(result, run.text.slice(overlapStart - runStart, overlapEnd - runStart), url, undefined, run.bold, run.italic)
+      appendRun(result, run.text.slice(overlapEnd - runStart), run.link, run.reference, run.bold, run.italic)
     }
     cursor = runEnd
   }
@@ -346,9 +431,9 @@ function replaceRangeWithReference(
   const [before, remainder] = splitContent(content, start)
   const [, after] = splitContent(remainder, end - start)
   const result: InlineContent = []
-  for (const run of before) appendRun(result, run.text, run.link, run.reference)
+  for (const run of before) appendRun(result, run.text, run.link, run.reference, run.bold, run.italic)
   appendRun(result, `@${reference.name}`, undefined, reference)
-  for (const run of after) appendRun(result, run.text, run.link, run.reference)
+  for (const run of after) appendRun(result, run.text, run.link, run.reference, run.bold, run.italic)
   return result.length ? result : [{ text: '' }]
 }
 

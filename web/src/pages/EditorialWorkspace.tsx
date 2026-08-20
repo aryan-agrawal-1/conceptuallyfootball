@@ -5,6 +5,7 @@ import {
   Archive,
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   Copy,
   ExternalLink,
@@ -17,6 +18,7 @@ import {
   Search,
   Share2,
   ShieldCheck,
+  SidebarClose,
   Send,
   Trash2,
   Unlink,
@@ -28,6 +30,10 @@ import { ArticleCanvas } from '../components/editorial/ArticleCanvas'
 import { ArticleExportPanel } from '../components/editorial/ArticleExportPanel'
 import { ArticleRelationshipsPanel } from '../components/editorial/ArticleRelationshipsPanel'
 import { BlockEditor } from '../components/editorial/BlockEditor'
+import type { BlockEditorHandle } from '../components/editorial/BlockEditor'
+import { BlockInsertionControl, EditorStarter, EditorToolbar } from '../components/editorial/EditorToolbar'
+import { convertBlock, createBlockFromChoice, isVisualChoice, visualTypeFromChoice, type BlockTypeChoice, type EditorCommandChoice } from '../components/editorial/editorCommands'
+import type { InlineSelectionState } from '../components/editorial/InlineTextEditor'
 import { VisualBlockPicker } from '../components/editorial/VisualBlockPicker'
 import { StaffFrame } from '../components/staff/StaffFrame'
 import { StaffRoute } from '../components/staff/StaffRoute'
@@ -45,6 +51,7 @@ import {
   listArticles,
   loadDraftRecovery,
   newBlock,
+  plainText,
   referencesFromDocument,
   saveArticle,
   setArticlePreview,
@@ -65,6 +72,7 @@ const ARTICLE_LIST_KEY = ['editorial-articles'] as const
 const PAGE_LOADED_AT = Date.now()
 const REVISION_CHECKPOINT_INTERVAL_MS = 5 * 60 * 1_000
 const USER_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
+const EMPTY_INLINE_SELECTION: InlineSelectionState = { hasSelection: false, bold: false, italic: false }
 
 export function EditorialWorkspace() {
   return (
@@ -216,6 +224,10 @@ function ArticleEditor() {
   const [workflowPending, setWorkflowPending] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [mode, setMode] = useState<'write' | 'reader'>('write')
+  const [activeBlockId, setActiveBlockId] = useState('')
+  const [activeBlockHandle, setActiveBlockHandle] = useState<BlockEditorHandle | null>(null)
+  const [activeSelectionState, setActiveSelectionState] = useState<InlineSelectionState>(EMPTY_INLINE_SELECTION)
+  const [inspectorOpen, setInspectorOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [submissionSteps, setSubmissionSteps] = useState<SubmissionStep[]>([])
   const [submissionStepIndex, setSubmissionStepIndex] = useState(0)
@@ -267,6 +279,8 @@ function ArticleEditor() {
     draftRef.current = initialDraft
     setArticle(serverArticle)
     setDraft(initialDraft)
+    setActiveBlockId(initialDraft.document.blocks[0]?.id ?? '')
+    setActiveSelectionState(EMPTY_INLINE_SELECTION)
     if (!['draft', 'changes_requested'].includes(serverArticle.status)) setMode('reader')
     setSaveState(hasNewerRecovery ? 'recovered' : 'saved')
   }, [articleQuery.data])
@@ -385,6 +399,50 @@ function ArticleEditor() {
     requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-editor-block-id="${block.id}"]`)?.focus())
   }
 
+  function insertEditorCommand(choice: EditorCommandChoice, afterIndex: number) {
+    if (!draft) return
+    const insertionIndex = Math.max(-1, Math.min(afterIndex, draft.document.blocks.length - 1))
+    if (isVisualChoice(choice)) {
+      setVisualPicker({ insertAfterIndex: insertionIndex, initialType: visualTypeFromChoice(choice) })
+      return
+    }
+    const block = createBlockFromChoice(choice)
+    const continuation = choice === 'image' || choice === 'divider' ? newBlock('paragraph') : null
+    editDraft(current => {
+      const blocks = [...current.document.blocks]
+      blocks.splice(insertionIndex + 1, 0, block, ...(continuation ? [continuation] : []))
+      return { ...current, document: { ...current.document, blocks } }
+    })
+    const focusTarget = continuation ?? block
+    setActiveBlockId(focusTarget.id)
+    setActiveBlockHandle(null)
+    setActiveSelectionState(EMPTY_INLINE_SELECTION)
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-editor-block-id="${focusTarget.id}"]`)?.focus())
+  }
+
+  function changeActiveBlockType(choice: BlockTypeChoice) {
+    if (!draft || !activeBlockId) return
+    const currentBlock = draft.document.blocks.find(block => block.id === activeBlockId)
+    if (!currentBlock || currentBlock.type === 'visual') return
+    updateBlock(activeBlockId, convertBlock(currentBlock, choice))
+    setActiveSelectionState(EMPTY_INLINE_SELECTION)
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-editor-block-id="${activeBlockId}"], [data-editor-block-id^="${activeBlockId}-"]`)?.focus())
+  }
+
+  function chooseStarter(choice: 'paragraph' | 'heading:2' | 'callout' | 'visual:custom_chart') {
+    if (!draft) return
+    const firstBlock = draft.document.blocks[0]
+    if (!firstBlock) return
+    setActiveBlockId(firstBlock.id)
+    if (isVisualChoice(choice)) {
+      setVisualPicker({ replaceBlockId: firstBlock.id, initialType: visualTypeFromChoice(choice) })
+      return
+    }
+    updateBlock(firstBlock.id, convertBlock(firstBlock, choice))
+    setActiveSelectionState(EMPTY_INLINE_SELECTION)
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-editor-block-id="${firstBlock.id}"], [data-editor-block-id^="${firstBlock.id}-"]`)?.focus())
+  }
+
   function insertVisual(block: VisualArticleBlock) {
     const target = visualPicker
     if (!target) return
@@ -406,10 +464,35 @@ function ArticleEditor() {
   }
 
   function removeBlock(index: number) {
+    if (!draft) return
+    const replacement = draft.document.blocks.length === 1 ? newBlock('paragraph') : null
+    const nextActiveBlock = replacement ?? draft.document.blocks[index + 1] ?? draft.document.blocks[index - 1]
     editDraft(current => {
       const blocks = current.document.blocks.filter((_, blockIndex) => blockIndex !== index)
-      return { ...current, document: { ...current.document, blocks: blocks.length ? blocks : [newBlock('paragraph')] } }
+      return { ...current, document: { ...current.document, blocks: blocks.length ? blocks : replacement ? [replacement] : [newBlock('paragraph')] } }
     })
+    if (nextActiveBlock) {
+      setActiveBlockId(nextActiveBlock.id)
+      setActiveBlockHandle(null)
+      setActiveSelectionState(EMPTY_INLINE_SELECTION)
+      requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-editor-block-id="${nextActiveBlock.id}"], [data-editor-block-id^="${nextActiveBlock.id}-"]`)?.focus())
+    }
+  }
+
+  function duplicateBlock(index: number) {
+    if (!draft) return
+    const source = draft.document.blocks[index]
+    if (!source) return
+    const duplicate = { ...structuredClone(source), id: crypto.randomUUID() } as ArticleBlock
+    editDraft(current => {
+      const blocks = [...current.document.blocks]
+      blocks.splice(index + 1, 0, duplicate)
+      return { ...current, document: { ...current.document, blocks } }
+    })
+    setActiveBlockId(duplicate.id)
+    setActiveBlockHandle(null)
+    setActiveSelectionState(EMPTY_INLINE_SELECTION)
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-editor-block-id="${duplicate.id}"], [data-editor-block-id^="${duplicate.id}-"]`)?.focus())
   }
 
   function removeEmptyBlock(index: number): boolean {
@@ -497,6 +580,11 @@ function ArticleEditor() {
   }
 
   const previewUrl = article.preview_token ? `${window.location.origin}/analysis/preview/${article.preview_token}` : ''
+  const activeBlockIndex = Math.max(0, draft.document.blocks.findIndex(block => block.id === activeBlockId))
+  const activeBlock = draft.document.blocks[activeBlockIndex]
+  const showStarter = draft.document.blocks.length === 1
+    && draft.document.blocks[0]?.type === 'paragraph'
+    && !plainText(draft.document.blocks[0].content).trim()
 
   async function copyPreview() {
     await navigator.clipboard.writeText(previewUrl)
@@ -539,11 +627,11 @@ function ArticleEditor() {
             <div className="min-w-0"><p className="truncate text-xs font-bold text-ink">{draft.title || 'Untitled analysis'}</p><SaveStatus state={saveState} /></div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="hidden border border-line p-1 sm:flex">
-              {canEdit ? <button type="button" onClick={() => void selectMode('write')} className={`px-3 py-1.5 text-[8px] font-bold uppercase tracking-[0.15em] ${mode === 'write' ? 'bg-electric-dim text-electric' : 'text-ink-muted'}`}>Write</button> : null}
-              <button type="button" onClick={() => void selectMode('reader')} disabled={saveState === 'saving'} className={`px-3 py-1.5 text-[8px] font-bold uppercase tracking-[0.15em] disabled:opacity-50 ${mode === 'reader' ? 'bg-electric-dim text-electric' : 'text-ink-muted'}`}>Reader view</button>
+            <span className={`hidden h-9 items-center border px-3 font-mono text-[7px] uppercase tracking-[0.16em] sm:inline-flex ${statusTone(article.status)}`}>{statusLabel(article.status)}</span>
+            <div className="hidden h-9 border border-line p-1 sm:flex">
+              {canEdit ? <button type="button" onClick={() => void selectMode('write')} className={`h-7 px-3 text-[8px] font-bold uppercase tracking-[0.15em] ${mode === 'write' ? 'bg-electric-dim text-electric' : 'text-ink-muted'}`}>Write</button> : null}
+              <button type="button" onClick={() => void selectMode('reader')} disabled={saveState === 'saving'} className={`h-7 px-3 text-[8px] font-bold uppercase tracking-[0.15em] disabled:opacity-50 ${mode === 'reader' ? 'bg-electric-dim text-electric' : 'text-ink-muted'}`}>Reader view</button>
             </div>
-            <span className={`hidden border px-2 py-1 font-mono text-[7px] uppercase tracking-[0.16em] sm:inline ${statusTone(article.status)}`}>{statusLabel(article.status)}</span>
             {canEdit ? <button type="button" onClick={() => void performSaveRef.current(true)} disabled={saveState === 'saving'} className="inline-flex h-9 items-center gap-2 border border-line-bright px-3 text-[8px] font-bold uppercase tracking-[0.14em] text-ink-dim hover:border-electric hover:text-ink"><Save className="size-3.5" /> Save</button> : null}
             {article.preview_enabled && previewUrl ? <a href={previewUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 bg-electric px-3 text-[8px] font-black uppercase tracking-[0.14em] text-mat"><ExternalLink className="size-3.5" /> Preview</a> : null}
           </div>
@@ -552,31 +640,50 @@ function ArticleEditor() {
 
       {saveError ? <div className="border-b border-ember/35 bg-ember-dim/55 px-6 py-2 text-center text-xs text-ink">{saveError}</div> : null}
 
-      <div className={`mx-auto ${mode === 'write' || !canEdit ? 'grid max-w-[1500px] lg:grid-cols-[minmax(0,1fr)_300px]' : 'w-full'}`}>
+      <div className={`mx-auto ${mode === 'write' || !canEdit ? `grid max-w-[1500px] ${inspectorOpen ? 'lg:grid-cols-[minmax(0,1fr)_300px]' : ''}` : 'w-full'}`}>
         <section className="min-h-[calc(100svh-4rem)] bg-panel/30">
           {mode === 'reader' ? (
             <ArticleCanvas title={draft.title} subtitle={draft.subtitle} document={draft.document} author={article.author} updatedAt={article.updated_at} subjects={draft.subjects} references={draftReferences} topics={draft.topics} sourceNotes={draft.source_notes} />
           ) : (
+            <>
+            <EditorToolbar
+              activeBlock={activeBlock}
+              activeIndex={activeBlockIndex}
+              total={draft.document.blocks.length}
+              activeHandle={activeBlockHandle ?? undefined}
+              selectionState={activeBlockHandle ? activeSelectionState : EMPTY_INLINE_SELECTION}
+              inspectorOpen={inspectorOpen}
+              onInsert={insertEditorCommand}
+              onChangeType={changeActiveBlockType}
+              onMove={direction => moveBlock(activeBlockIndex, direction)}
+              onDuplicate={() => duplicateBlock(activeBlockIndex)}
+              onRemove={() => removeBlock(activeBlockIndex)}
+              onToggleInspector={() => setInspectorOpen(current => !current)}
+            />
             <div className="mx-auto max-w-[760px] px-7 py-12 sm:px-12 sm:py-16">
               <p className="font-mono text-[8px] uppercase tracking-[0.22em] text-electric">{statusLabel(article.status)} · Revision {article.revision}</p>
-              <textarea value={draft.title} onChange={event => editDraft(current => ({ ...current, title: event.target.value }))} rows={2} maxLength={180} placeholder="Untitled analysis" className="mt-5 w-full resize-none bg-transparent text-4xl font-black leading-[1.05] tracking-[-0.05em] text-ink placeholder:text-ink-muted focus:outline-none sm:text-5xl" />
-              <textarea value={draft.subtitle} onChange={event => editDraft(current => ({ ...current, subtitle: event.target.value }))} rows={3} maxLength={280} placeholder="A clear standfirst that tells readers why this matters…" className="mt-4 w-full resize-none bg-transparent text-base leading-7 text-ink-dim placeholder:text-ink-muted focus:outline-none" />
-              <div className="mt-8 border-t border-line pt-10">
-                <div className="space-y-4">
-                  {draft.document.blocks.map((block, index) => (
-                    <BlockEditor key={block.id} block={block} index={index} total={draft.document.blocks.length} entities={entitiesQuery.data} onChange={next => updateBlock(block.id, next)} onMove={direction => moveBlock(index, direction)} onRemove={() => removeBlock(index)} onInsertAfter={next => insertBlockAfter(index, next)} onBackspaceEmpty={() => removeEmptyBlock(index)} onRequestVisual={(initialType, initialBlock) => setVisualPicker({ replaceBlockId: block.id, initialType, initialBlock })} onNavigateBlock={direction => navigateFromBlock(index, direction)} />
-                  ))}
+              <textarea value={draft.title} onChange={event => editDraft(current => ({ ...current, title: event.target.value }))} rows={1} maxLength={180} placeholder="Untitled analysis" className="mt-5 w-full resize-none overflow-hidden bg-transparent text-4xl font-black leading-[1.05] tracking-[-0.05em] text-ink [field-sizing:content] placeholder:text-ink-muted focus:outline-none sm:text-5xl" />
+              <textarea value={draft.subtitle} onChange={event => editDraft(current => ({ ...current, subtitle: event.target.value }))} rows={1} maxLength={280} placeholder="A clear standfirst that tells readers why this matters…" className="mt-6 w-full resize-none overflow-hidden bg-transparent text-base leading-7 text-ink-dim [field-sizing:content] placeholder:text-ink-muted focus:outline-none" />
+              <div className="mt-10 border-t border-line pt-10">
+                {showStarter ? <EditorStarter onChoose={chooseStarter} /> : null}
+                <div>
+                  {draft.document.blocks.map((block, index) => <div key={block.id}>
+                    <BlockEditor block={block} index={index} total={draft.document.blocks.length} entities={entitiesQuery.data} active={block.id === activeBlockId} onActivate={(blockId, handle) => { setActiveBlockId(blockId); setActiveBlockHandle(handle); setActiveSelectionState(handle.selectionState()) }} onChange={next => updateBlock(block.id, next)} onMove={direction => moveBlock(index, direction)} onRemove={() => removeBlock(index)} onInsertAfter={next => insertBlockAfter(index, next)} onBackspaceEmpty={() => removeEmptyBlock(index)} onRequestVisual={(initialType, initialBlock) => setVisualPicker({ replaceBlockId: block.id, initialType, initialBlock })} onNavigateBlock={direction => navigateFromBlock(index, direction)} />
+                    <BlockInsertionControl afterIndex={index} onInsert={insertEditorCommand} />
+                  </div>)}
                 </div>
               </div>
             </div>
+            </>
           )}
         </section>
 
-        {mode === 'write' || !canEdit ? <aside className="border-t border-line p-5 lg:sticky lg:top-16 lg:max-h-[calc(100svh-4rem)] lg:self-start lg:overflow-y-auto lg:border-l lg:border-t-0">
-          <InspectorSection title="Publishing workflow">
+        {(mode === 'write' || !canEdit) && inspectorOpen ? <aside className="fixed inset-x-0 bottom-0 top-16 z-30 overflow-y-auto border-t border-line bg-mat lg:sticky lg:inset-auto lg:top-16 lg:z-auto lg:max-h-[calc(100svh-4rem)] lg:self-start lg:border-l lg:border-t-0 lg:bg-transparent">
+          <div className="border-b border-line p-3 lg:hidden"><button type="button" onClick={() => setInspectorOpen(false)} className="flex h-9 w-full items-center justify-between gap-3 px-2 font-mono text-[8px] uppercase tracking-[0.16em] text-ink-muted hover:bg-electric-dim hover:text-electric focus-visible:bg-electric-dim focus-visible:text-electric focus-visible:outline-none"><span>Hide article details</span><SidebarClose className="size-3.5" /></button></div>
+          <InspectorSection title="Publishing workflow" defaultOpen>
             <WorkflowPanel article={article} canApprove={Boolean(user?.can_approve_editorial)} canEdit={canEdit} pending={workflowPending} onSubmit={requestSubmission} onTransition={runWorkflow} />
           </InspectorSection>
-          <InspectorSection title="Discovery relationships">
+          <InspectorSection title="Discovery relationships" defaultOpen>
             <ArticleRelationshipsPanel subjects={draft.subjects} references={draftReferences} entities={entitiesQuery.data} loading={entitiesQuery.isLoading} readOnly={!canEdit} onChange={subjects => editDraft(current => ({ ...current, subjects }))} />
           </InspectorSection>
           <InspectorSection title="Public discovery">
@@ -824,8 +931,9 @@ function SaveStatus({ state }: { state: SaveState }) {
   return <p className={`mt-1 flex items-center gap-1.5 font-mono text-[7px] uppercase tracking-[0.14em] ${state === 'error' ? 'text-ember' : state === 'saved' ? 'text-mint' : 'text-ink-muted'}`}><span className={`size-1.5 rounded-full ${state === 'error' ? 'bg-ember' : state === 'saved' ? 'bg-mint' : 'bg-gold'}`} />{labels[state]}</p>
 }
 
-function InspectorSection({ title, children }: { title: string; children: ReactNode }) {
-  return <section className="border-b border-line py-6 first:pt-0 last:border-0"><h2 className="mb-4 font-mono text-[8px] uppercase tracking-[0.2em] text-ink-muted">{title}</h2>{children}</section>
+function InspectorSection({ title, children, defaultOpen = false }: { title: string; children: ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return <section className="border-b border-line last:border-0"><button type="button" onClick={() => setOpen(current => !current)} aria-expanded={open} className="flex w-full items-center justify-between gap-3 px-5 py-5 font-mono text-[8px] uppercase tracking-[0.2em] text-ink-muted hover:bg-electric-dim/40 hover:text-electric focus-visible:bg-electric-dim/40 focus-visible:text-electric focus-visible:outline-none">{title}<ChevronDown className={`size-3 transition-transform ${open ? 'rotate-180' : ''}`} /></button>{open ? <div className="px-5 pb-5">{children}</div> : null}</section>
 }
 
 function articleToDraft(article: Pick<Article, 'title' | 'subtitle' | 'document' | 'subjects' | 'topics' | 'source_notes'> | ArticleRevision): ArticleDraft {

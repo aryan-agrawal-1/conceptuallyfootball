@@ -1,35 +1,21 @@
 import { ArrowDown, ArrowUp, AtSign, BarChart3, GripVertical, Link2, Plus, Shield, Trash2, UserRound } from 'lucide-react'
-import { useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactElement } from 'react'
 import { inlineText, plainText, type ArticleBlock, type EditorialEntityReference, type InlineContent, type VisualArticleBlock, type VisualBlockType } from '../../lib/editorial'
 import { foldForSearch } from '../../lib/foldAccents'
 import type { SearchEntitiesResponse, SearchPlayerEntity, SearchTeamEntity } from '../../types/api'
-import { InlineTextEditor, type InlineTextEditorHandle, type MentionRequest } from './InlineTextEditor'
+import { InlineTextEditor, type InlineSelectionState, type InlineTextEditorHandle, type MentionRequest } from './InlineTextEditor'
 import { VisualAnalysisBlock } from './VisualAnalysisBlock'
+import { BLOCK_COMMANDS, EDITOR_COMMANDS, blockChoice, blockLabel, convertBlock, isVisualChoice, visualTypeFromChoice, type BlockTypeChoice, type EditorCommandChoice } from './editorCommands'
 
 const metaInputClass = 'h-9 w-full border border-line bg-mat px-3 text-xs text-ink placeholder:text-ink-muted focus:border-electric focus:outline-none'
 
-const BLOCK_TYPES = [
-  { value: 'paragraph', label: 'Text', keywords: 'paragraph text' },
-  { value: 'heading:2', label: 'Heading 2', keywords: 'heading section h2' },
-  { value: 'heading:3', label: 'Heading 3', keywords: 'heading subheading h3' },
-  { value: 'bulleted_list', label: 'Bulleted list', keywords: 'bullet unordered list' },
-  { value: 'numbered_list', label: 'Numbered list', keywords: 'number ordered list' },
-  { value: 'quote', label: 'Quote', keywords: 'quote pullquote' },
-  { value: 'callout', label: 'Callout', keywords: 'callout insight note warning' },
-  { value: 'image', label: 'Image', keywords: 'image photo media' },
-  { value: 'divider', label: 'Divider', keywords: 'divider rule separator' },
-] as const
-
-const VISUAL_COMMANDS = [
-  { value: 'visual:similar_players', label: 'Similar players', keywords: 'visual chart similarity player' },
-  { value: 'visual:player_radar', label: 'Player profile', keywords: 'visual chart pizza radar player profile percentile' },
-  { value: 'visual:stat_card', label: 'Key-stat cards', keywords: 'visual player team stats percentile cards' },
-  { value: 'visual:player_comparison', label: 'Player comparison', keywords: 'visual compare versus radar' },
-  { value: 'visual:custom_chart', label: 'Custom chart', keywords: 'visual graph scatter bar x y player team' },
-] as const
-
-type BlockTypeChoice = typeof BLOCK_TYPES[number]['value']
-type SlashCommandChoice = BlockTypeChoice | typeof VISUAL_COMMANDS[number]['value']
+export interface BlockEditorHandle {
+  openLink: () => boolean
+  toggleFormat: (format: 'bold' | 'italic') => boolean
+  openReferencePicker: () => void
+  focus: () => void
+  selectionState: () => InlineSelectionState
+}
 
 export function BlockEditor({
   block,
@@ -42,6 +28,8 @@ export function BlockEditor({
   onBackspaceEmpty,
   onRequestVisual,
   onNavigateBlock,
+  active,
+  onActivate,
   entities,
 }: {
   block: ArticleBlock
@@ -54,24 +42,33 @@ export function BlockEditor({
   onBackspaceEmpty: () => boolean
   onRequestVisual: (visualType: VisualBlockType, existing?: VisualArticleBlock) => void
   onNavigateBlock: (direction: -1 | 1) => boolean
+  active: boolean
+  onActivate: (blockId: string, handle: BlockEditorHandle) => void
   entities?: SearchEntitiesResponse
 }) {
   const activeEditorRef = useRef<InlineTextEditorHandle | null>(null)
   const [linkEditor, setLinkEditor] = useState<InlineTextEditorHandle | null>(null)
   const [linkUrl, setLinkUrl] = useState('')
   const [linkError, setLinkError] = useState('')
-  const [selectedCommand, setSelectedCommand] = useState<SlashCommandChoice | null>(null)
+  const [selectionError, setSelectionError] = useState('')
+  const [selectedCommand, setSelectedCommand] = useState<EditorCommandChoice | null>(null)
   const [mentionRequest, setMentionRequest] = useState<MentionRequest | null>(null)
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0)
   const slashQuery = block.type === 'paragraph' && plainText(block.content).startsWith('/')
     ? plainText(block.content).slice(1).trim().toLowerCase()
     : null
-  const matchingCommands = useMemo(() => slashQuery === null ? [] : [...BLOCK_TYPES, ...VISUAL_COMMANDS].filter(command => `${command.label} ${command.keywords}`.toLowerCase().includes(slashQuery)), [slashQuery])
+  const matchingCommands = useMemo(() => slashQuery === null ? [] : EDITOR_COMMANDS.filter(command => `${command.label} ${command.keywords}`.toLowerCase().includes(slashQuery)), [slashQuery])
   const selectedCommandIndex = Math.max(0, matchingCommands.findIndex(command => command.value === selectedCommand))
   const mentionOptions = useMemo(
     () => mentionRequest ? matchingEntityOptions(entities, mentionRequest.query) : [],
     [entities, mentionRequest],
   )
+
+  useEffect(() => {
+    if (!selectionError) return
+    const timeout = window.setTimeout(() => setSelectionError(''), 2_400)
+    return () => window.clearTimeout(timeout)
+  }, [selectionError])
 
   function changeType(value: BlockTypeChoice) {
     onChange(convertBlock(block, value))
@@ -82,10 +79,10 @@ export function BlockEditor({
     requestAnimationFrame(() => focusEditor(editorIdForBlockType(block.id, value)))
   }
 
-  function chooseCommand(value: SlashCommandChoice) {
-    if (value.startsWith('visual:')) {
+  function chooseCommand(value: EditorCommandChoice) {
+    if (isVisualChoice(value)) {
       onChange({ id: block.id, type: 'paragraph', content: inlineText('') })
-      onRequestVisual(value.slice('visual:'.length) as VisualBlockType)
+      onRequestVisual(visualTypeFromChoice(value))
       setSelectedCommand(null)
       return
     }
@@ -99,15 +96,49 @@ export function BlockEditor({
     requestAnimationFrame(() => focusEditor(editorIdForBlockType(block.id, value as BlockTypeChoice)))
   }
 
-  function openLink(editor = activeEditorRef.current) {
+  function openReferencePicker() {
+    const editor = activeEditorRef.current
+    const request = editor?.referenceRequest()
+    if (!editor || !request) return
+    setMentionRequest({ editor, ...request })
+    setSelectedMentionIndex(0)
+  }
+
+  const editorHandle: BlockEditorHandle = {
+    openLink: () => openLink(),
+    toggleFormat: format => requestFormat(format),
+    openReferencePicker,
+    focus: () => activeEditorRef.current?.focus(),
+    selectionState: () => activeEditorRef.current?.selectionState() ?? { hasSelection: false, bold: false, italic: false },
+  }
+
+  function showSelectionError(message: string) {
+    setSelectionError(message)
+    setLinkError('')
+  }
+
+  function requestFormat(format: 'bold' | 'italic', editor = activeEditorRef.current): boolean {
     if (!editor?.hasSelection()) {
-      setLinkError('Highlight some text first.')
+      showSelectionError(`Highlight text to ${format === 'bold' ? 'bold' : 'italicise'} it.`)
+      return false
+    }
+    setSelectionError('')
+    const changed = editor.toggleFormat(format)
+    onActivate(block.id, editorHandle)
+    return changed
+  }
+
+  function openLink(editor = activeEditorRef.current): boolean {
+    if (!editor?.hasSelection()) {
+      showSelectionError('Highlight text to add a link.')
       setLinkEditor(null)
-      return
+      return false
     }
     setLinkEditor(editor)
     setLinkUrl('')
     setLinkError('')
+    setSelectionError('')
+    return true
   }
 
   function applyLink(event: FormEvent) {
@@ -118,7 +149,8 @@ export function BlockEditor({
       return
     }
     if (!linkEditor?.applyLink(normalized || undefined)) {
-      setLinkError('Highlight some text first.')
+      setLinkEditor(null)
+      showSelectionError('Highlight text to add a link.')
       return
     }
     setLinkEditor(null)
@@ -137,8 +169,9 @@ export function BlockEditor({
   }
 
   const inlineProps = {
-    onActivate: (editor: InlineTextEditorHandle) => { activeEditorRef.current = editor },
+    onActivate: (editor: InlineTextEditorHandle) => { activeEditorRef.current = editor; if (editor.hasSelection()) setSelectionError(''); onActivate(block.id, editorHandle) },
     onRequestLink: openLink,
+    onRequestFormat: requestFormat,
     onMentionQuery: (request: MentionRequest | null) => {
       setMentionRequest(request)
       setSelectedMentionIndex(0)
@@ -146,14 +179,15 @@ export function BlockEditor({
   }
 
   return (
-    <section className="group relative -mx-4 px-4 py-1.5" data-block-type={block.type}>
+    <section className={`group relative -mx-4 border-l-2 px-4 py-2 transition-[border-color,background-color] ${active ? 'border-electric bg-electric/[0.045]' : 'border-transparent hover:border-line-bright'}`} data-block-type={block.type} onMouseDown={() => onActivate(block.id, editorHandle)}>
+      <span className={`pointer-events-none absolute right-3 top-1 font-mono text-[7px] uppercase tracking-[0.14em] transition-opacity ${active ? 'text-electric opacity-100' : 'text-ink-muted opacity-0 group-hover:opacity-100'}`}>{blockLabel(block)}</span>
       <div className={`pointer-events-none absolute z-10 hidden w-12 opacity-0 group-hover:pointer-events-auto group-hover:flex group-hover:opacity-100 lg:flex lg:transition-opacity ${block.type === 'visual' ? '-left-12 inset-y-0 items-start pt-5' : '-left-9 top-0 items-start'}`}>
         <div className={`relative flex w-8 flex-col items-center gap-0.5 border border-line bg-panel p-0.5 shadow-lg ${block.type === 'visual' ? 'sticky top-20 after:absolute after:left-full after:top-0 after:h-20 after:w-5 after:[clip-path:polygon(0_0,100%_50%,0_100%)]' : ''}`}>
         <BlockAction label="Add block below" onClick={() => onInsertAfter({ id: crypto.randomUUID(), type: 'paragraph', content: inlineText('') })}><Plus /></BlockAction>
         {block.type === 'visual' ? <BlockAction label="Edit visual" onClick={() => onRequestVisual(block.visual_type, block)}><BarChart3 /></BlockAction> : <label className="relative flex size-7 cursor-pointer items-center justify-center border border-transparent text-ink-muted transition-[color,background-color,border-color,transform] duration-150 hover:-translate-y-px hover:border-electric hover:bg-electric hover:text-mat focus-within:border-electric focus-within:bg-electric focus-within:text-mat" title="Change block type">
           <GripVertical className="size-3.5" />
           <select value={blockChoice(block)} onChange={event => changeType(event.target.value as BlockTypeChoice)} className="absolute inset-0 cursor-pointer opacity-0" aria-label="Change block type">
-            {BLOCK_TYPES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            {BLOCK_COMMANDS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>}
         {isTextBlock(block) ? <BlockAction label="Link selected text" onMouseDown={event => event.preventDefault()} onClick={() => openLink()}><Link2 /></BlockAction> : null}
@@ -165,12 +199,13 @@ export function BlockEditor({
 
       {linkEditor ? (
         <form onSubmit={applyLink} className="absolute left-0 top-full z-30 mt-1 flex w-full max-w-md gap-2 border border-line-bright bg-panel p-2 shadow-xl">
-          <input autoFocus value={linkUrl} onChange={event => setLinkUrl(event.target.value)} className={metaInputClass} aria-label="Link URL" placeholder="https://…" />
+          <input autoFocus value={linkUrl} onChange={event => { setLinkUrl(event.target.value); setLinkError('') }} className={metaInputClass} aria-label="Link URL" placeholder="https://…" />
           <button type="submit" className="shrink-0 bg-electric px-3 text-[8px] font-black uppercase tracking-[0.14em] text-mat">Apply</button>
           <button type="button" onClick={() => setLinkEditor(null)} className="shrink-0 px-2 text-[8px] uppercase text-ink-muted">Cancel</button>
         </form>
       ) : null}
       {linkError ? <p className="absolute left-0 top-full z-20 mt-1 bg-panel px-2 py-1 text-[9px] text-ember">{linkError}</p> : null}
+      {selectionError ? <p role="status" className="absolute left-0 top-full z-20 mt-1 border border-gold/35 bg-panel px-3 py-2 text-[9px] text-gold shadow-xl">{selectionError}</p> : null}
 
       <BlockFields
         block={block}
@@ -259,7 +294,7 @@ function BlockFields({
   onChange: (block: ArticleBlock) => void
   onInsertAfter: (block: ArticleBlock) => void
   onBackspaceEmpty: () => boolean
-  inlineProps: { onActivate: (editor: InlineTextEditorHandle) => void; onRequestLink: (editor: InlineTextEditorHandle) => void; onMentionQuery: (request: MentionRequest | null) => void }
+  inlineProps: { onActivate: (editor: InlineTextEditorHandle) => void; onRequestLink: (editor: InlineTextEditorHandle) => void; onRequestFormat: (format: 'bold' | 'italic', editor: InlineTextEditorHandle) => void; onMentionQuery: (request: MentionRequest | null) => void }
   onCommandKeyDown: (key: 'ArrowDown' | 'ArrowUp' | 'Enter') => boolean
 }) {
   const splitIntoParagraph = (before: InlineContent, after: InlineContent) => {
@@ -273,7 +308,7 @@ function BlockFields({
     case 'heading':
       return <InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} onCommandKeyDown={onCommandKeyDown} onBackspaceEmpty={onBackspaceEmpty} placeholder={block.level === 2 ? 'Section heading' : 'Subheading'} className={block.level === 2 ? 'py-1 text-2xl font-black leading-tight tracking-[-0.035em] text-ink sm:text-3xl' : 'py-1 text-xl font-bold tracking-[-0.025em] text-ink'} />
     case 'paragraph':
-      return <InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} onCommandKeyDown={onCommandKeyDown} onBackspaceEmpty={onBackspaceEmpty} placeholder="Write the next thought… Type / for blocks" className="text-[15px] leading-8 text-ink-dim" />
+      return <InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} onCommandKeyDown={onCommandKeyDown} onBackspaceEmpty={onBackspaceEmpty} placeholder="Write the next thought…" className="text-[15px] leading-8 text-ink-dim" />
     case 'quote':
       return <div className="border-l-2 border-electric py-2 pl-6"><InlineTextEditor {...inlineProps} blockId={block.id} content={block.content} onChange={content => onChange({ ...block, content })} onEnter={splitIntoParagraph} onCommandKeyDown={onCommandKeyDown} onBackspaceEmpty={onBackspaceEmpty} placeholder="A telling line or key conclusion…" className="text-xl font-semibold leading-8 tracking-[-0.02em] text-ink" /></div>
     case 'callout':
@@ -383,34 +418,6 @@ function referenceFromSearchEntity(entity: SearchPlayerEntity | SearchTeamEntity
     competition_season_id: membership.competition_season_id,
   } : undefined
   return { kind: 'team', id: entity.canonical_team_id, name: entity.canonical_team_name, ...(context ? { context } : {}) }
-}
-
-function convertBlock(block: ArticleBlock, choice: BlockTypeChoice): ArticleBlock {
-  const content = contentFromBlock(block)
-  const id = block.id
-  switch (choice) {
-    case 'paragraph': return { id, type: 'paragraph', content }
-    case 'heading:2': return { id, type: 'heading', level: 2, content }
-    case 'heading:3': return { id, type: 'heading', level: 3, content }
-    case 'quote': return { id, type: 'quote', content }
-    case 'callout': return { id, type: 'callout', tone: 'insight', content }
-    case 'bulleted_list': return { id, type: 'bulleted_list', items: [content] }
-    case 'numbered_list': return { id, type: 'numbered_list', items: [content] }
-    case 'image': return { id, type: 'image', url: '', caption: '', alt: '' }
-    case 'divider': return { id, type: 'divider' }
-  }
-}
-
-function contentFromBlock(block: ArticleBlock): InlineContent {
-  if (block.type === 'heading' || block.type === 'paragraph' || block.type === 'quote' || block.type === 'callout') return block.content
-  if (block.type === 'bulleted_list' || block.type === 'numbered_list') return block.items[0] ?? inlineText('')
-  if (block.type === 'image' || block.type === 'visual') return inlineText(block.caption || block.alt)
-  return inlineText('')
-}
-
-function blockChoice(block: ArticleBlock): BlockTypeChoice {
-  if (block.type === 'visual') return 'paragraph'
-  return block.type === 'heading' ? `heading:${block.level}` : block.type
 }
 
 function isTextBlock(block: ArticleBlock): boolean {
