@@ -19,7 +19,7 @@ from ingestion.models import (
     ProviderMatchEvent,
     TeamSeasonEventProfile,
 )
-from ingestion.services.event_profiles import event_profile_availability
+from ingestion.services.event_profiles import FORMULA_VERSION, event_profile_availability
 
 
 PASS_RESPONSE_LIMIT = 5_000
@@ -100,10 +100,15 @@ def parse_optional_team(request) -> int | None:
 
 
 def availability_for_player(profile: PlayerSeasonEventProfile) -> dict:
+    located_touches = (
+        sum(cell.get("raw_count", 0) for cell in profile.action_grid)
+        if profile.formula_version == FORMULA_VERSION
+        else 0
+    )
     return event_profile_availability(
         profile.pass_attempts,
         profile.shots,
-        profile.valid_location_actions,
+        located_touches,
     )
 
 
@@ -321,6 +326,7 @@ class PlayerEventProfileApi(PlayerEventProfileMixin, APIView):
             .order_by("provider_match__kickoff_at", "provider_match_id", "event_index")
         )
         matches, references = compact_match_lookup(shots)
+        located_touch_count = sum(cell.get("raw_count", 0) for cell in profile.action_grid)
         return {
             "canonical_player_id": profile.player_id,
             "canonical_player_name": profile.player.display_name,
@@ -337,8 +343,9 @@ class PlayerEventProfileApi(PlayerEventProfileMixin, APIView):
             "average_touch_location": {
                 "x": public_coordinate(profile.average_touch_x),
                 "y": public_coordinate(profile.average_touch_y),
-                "sample_size": profile.touches,
+                "sample_size": located_touch_count,
             },
+            "touch_grid": profile.action_grid if profile.formula_version == FORMULA_VERSION else [],
             "action_grid": profile.action_grid,
             "shots": [compact_shot(event, references) for event in shots],
             "matches": matches,
@@ -466,7 +473,9 @@ class TeamEventProfileApi(APIView):
             },
             "materialization": materialization_metadata(profile),
             "summary": {field: getattr(profile, field) for field in TEAM_SUMMARY_FIELDS},
-            "pass_flow": profile.pass_flow,
+            "pass_flow": profile.pass_flow if profile.formula_version == FORMULA_VERSION else [],
+            "touch_grid": profile.action_grid if profile.formula_version == FORMULA_VERSION else [],
+            "opponent_touch_grid": profile.opponent_action_grid if profile.formula_version == FORMULA_VERSION else [],
             "action_grid": profile.action_grid,
             "opponent_action_grid": profile.opponent_action_grid,
             "shots_for": [compact_shot(event, references) for event in shots_for],

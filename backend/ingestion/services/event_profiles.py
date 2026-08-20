@@ -24,11 +24,13 @@ from ingestion.services.identity import (
     validate_event_identity_publication,
 )
 from ingestion.services.whoscored_normalization import (
-    ACTION_GRID_COLUMNS, ACTION_GRID_ROWS, TEAM_ZONE_COLUMNS, TEAM_ZONE_ROWS,
-    action_grid_assignment, is_action_event, is_defensive_event, team_zone_assignment,
+    ACTION_GRID_COLUMNS, ACTION_GRID_ROWS,
+    action_grid_assignment, grid_assignment, is_action_event, is_defensive_event,
 )
 
-FORMULA_VERSION = "event_profiles_v2"
+FORMULA_VERSION = "event_profiles_v3"
+PASS_FLOW_COLUMNS = 6
+PASS_FLOW_ROWS = 4
 
 
 @dataclass
@@ -64,11 +66,20 @@ def event_profile_availability(passes: int, shots: int, actions: int) -> dict:
     }
 
 
-def _grid(events: Iterable[ProviderMatchEvent], minutes: int) -> tuple[list[dict], int]:
+def _grid(
+    events: Iterable[ProviderMatchEvent],
+    minutes: int,
+    *,
+    touches_only: bool = False,
+) -> tuple[list[dict], int]:
     counts = [0] * (ACTION_GRID_COLUMNS * ACTION_GRID_ROWS)
     total = 0
     for event in events:
-        if event.x is None or event.y is None or not is_action_event(
+        if event.x is None or event.y is None:
+            continue
+        if touches_only and not event.is_touch:
+            continue
+        if not touches_only and not is_action_event(
             event.event_type, defensive_qualifier=event.is_defensive
         ):
             continue
@@ -117,24 +128,47 @@ def _summary(events: list[ProviderMatchEvent]) -> dict:
 
 
 def _pass_flow(events: Iterable[ProviderMatchEvent]) -> list[dict]:
-    values = defaultdict(lambda: [0, 0, 0, 0])
+    values = defaultdict(lambda: [0, 0, 0, 0, 0, 0.0])
     for event in events:
-        if event.event_type != MatchEventType.PASS or None in (event.x, event.y, event.end_x, event.end_y):
+        if (
+            event.event_type != MatchEventType.PASS
+            or event.outcome_successful is not True
+            or None in (event.x, event.y, event.end_x, event.end_y)
+        ):
             continue
-        _, _, origin = team_zone_assignment(event.x, event.y)
-        _, _, destination = team_zone_assignment(event.end_x, event.end_y)
-        row = values[(origin, destination)]
-        row[0] += 1; row[1] += event.outcome_successful is True
-        row[2] += event.is_progressive_pass; row[3] += event.is_progressive_pass and event.outcome_successful is True
+        column, row, _ = grid_assignment(
+            event.x,
+            event.y,
+            PASS_FLOW_COLUMNS,
+            PASS_FLOW_ROWS,
+        )
+        value = values[(column, row)]
+        value[0] += 1
+        value[1] += event.x
+        value[2] += event.y
+        value[3] += event.end_x
+        value[4] += event.end_y
+        delta_x_metres = (event.end_x - event.x) * 0.0105
+        delta_y_metres = (event.end_y - event.y) * 0.0068
+        value[5] += (delta_x_metres ** 2 + delta_y_metres ** 2) ** 0.5
+    total = sum(value[0] for value in values.values())
     rows = []
-    for origin in range(TEAM_ZONE_COLUMNS * TEAM_ZONE_ROWS):
-        for destination in range(TEAM_ZONE_COLUMNS * TEAM_ZONE_ROWS):
-            attempts, completions, progressive_attempts, progressive_completions = values[(origin, destination)]
-            rows.append({"origin_zone": origin, "destination_zone": destination,
-                         "attempts": attempts, "completions": completions,
-                         "completion_rate": completions / attempts if attempts else None,
-                         "progressive_attempts": progressive_attempts,
-                         "progressive_completions": progressive_completions})
+    for column in range(PASS_FLOW_COLUMNS):
+        for row in range(PASS_FLOW_ROWS):
+            count, origin_x, origin_y, end_x, end_y, length = values[(column, row)]
+            if not count:
+                continue
+            rows.append({
+                "column": column,
+                "row": row,
+                "completed_count": count,
+                "share": count / total if total else 0.0,
+                "mean_origin_x": round(origin_x / count / 100, 4),
+                "mean_origin_y": round(origin_y / count / 100, 4),
+                "mean_destination_x": round(end_x / count / 100, 4),
+                "mean_destination_y": round(end_y / count / 100, 4),
+                "mean_length_metres": round(length / count, 3),
+            })
     return rows
 
 
@@ -252,7 +286,12 @@ def _publish(cs: CompetitionSeason, run: IngestionRun, events: list[ProviderMatc
         len({row.team_id for row in team_rows}) != len(team_rows)
         or any(len(row.action_grid) != ACTION_GRID_COLUMNS * ACTION_GRID_ROWS for row in player_rows + team_rows)
         or any(len(row.opponent_action_grid) != ACTION_GRID_COLUMNS * ACTION_GRID_ROWS for row in team_rows)
-        or any(len(row.pass_flow) != 225 for row in team_rows)
+        or any(len(row.pass_flow) > PASS_FLOW_COLUMNS * PASS_FLOW_ROWS for row in team_rows)
+        or any(
+            len({(flow.get("column"), flow.get("row")) for flow in row.pass_flow})
+            != len(row.pass_flow)
+            for row in team_rows
+        )
     ):
         raise ValueError("Invalid event-profile candidate shape.")
     # Insert non-current rows first, then switch the entire selected set together.
@@ -266,21 +305,21 @@ def _publish(cs: CompetitionSeason, run: IngestionRun, events: list[ProviderMatc
 
 
 def _player_row(cs, run, player_id, team_id, split_type, events, minutes, match_minutes):
-    summary = _summary(events); grid, _ = _grid(events, minutes)
+    summary = _summary(events); grid, _ = _grid(events, minutes, touches_only=True)
     return PlayerSeasonEventProfile(competition_season=cs, player_id=player_id, team_id=team_id, split_type=split_type,
         formula_version=FORMULA_VERSION, materialized_ingestion_run=run, observed_match_count=len({e.provider_match_id for e in events}),
         observed_event_minutes=_event_minutes(events, match_minutes), minutes=minutes, action_grid=grid, is_current=False, **summary)
 
 
 def _team_row(cs, run, team_id, events, all_events):
-    summary = _summary(events); grid, _ = _grid(events, 0)
+    summary = _summary(events); grid, _ = _grid(events, 0, touches_only=True)
     match_ids = {event.provider_match_id for event in events}
     opponents = [
         event
         for event in all_events
         if event.team_id != team_id and event.provider_match_id in match_ids
     ]
-    opponent_grid, _ = _grid(opponents, 0); against = _summary(opponents)
+    opponent_grid, _ = _grid(opponents, 0, touches_only=True); against = _summary(opponents)
     observed = len({e.provider_match_id for e in events})
     expected = (
         cs.whoscored_expected_match_count * 2 / cs.expected_team_count
