@@ -1,6 +1,6 @@
 # WhoScored 50-match Premier League pilot gate report
 
-Date: 2026-08-08
+Initial gate: 2026-08-08; Batch 7 headless/UI revalidation: 2026-08-20
 
 Scope: internal-only `ENG1` / `2025-26` pilot
 
@@ -18,17 +18,17 @@ Incomplete materialization on a published regular-stat slice still requires the 
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| Production ingestion | PASS | Run 2231 fetched and parsed 50/50 matches in 710.293 s: 51 requests (1 schedule, 50 detail), no retries, fetch failures, validation failures, or per-match failures. |
+| Production ingestion | PASS | With `DISPLAY` and `WAYLAND_DISPLAY` unset, the default production command ran headlessly and run 2246 live-fetched and parsed 50/50 matches in 912.578 s: 51 requests (1 schedule, 50 detail), zero cache reuses, retries, fetch failures, validation failures, or per-match failures. Its run evidence records `browser.headless=true` and `browser.mode=headless`. |
 | Competition and team identity | PASS | 50/50 matches use the intended competition-season; 100/100 home/away match sides and 74,272/74,272 events map to canonical teams. |
 | Player identity | PASS | 73,439/73,482 player-bearing events map to canonical players: **99.9415%**. The 43 tolerated events belong to two ambiguous youth identities; neither affects the 99% hard gate. |
 | Parser and vocabulary | PASS | All 50 final payloads reparsed to 74,272 events with zero validation errors, unknown event types, or unknown qualifiers. |
 | Event totals | PASS | 74,272 source timeline events equal 74,272 normalized rows. Source and normalized totals also agree for 46,814 passes and 1,331 shots. All 50 full-time score pairs agree, and 141 goal events equal the aggregate score total. |
 | Coordinates | PASS | Every stored coordinate is inside 0..100. No invalid values occurred for start, end, goal-mouth, or blocked-shot coordinates. |
 | Shot orientation | PASS | Both sides of all 50 matches were assessed (100 team-match sides). Every side attacks toward x=100; the lowest team-side median shot x was 78.0, above the 50.0 gate. |
-| Cached ingestion rerun | PASS | Run 2232 completed in 6.444 s with one schedule request, zero detail requests, and 50 raw-payload reuses. Event count and row IDs remained unchanged. |
-| Forced refetch and checksum lifecycle | PASS | A real forced refetch of match 1903397 found a source change: checksum `5117f6…bf09` became `197cba…92f`, and its 1,357 events were transactionally replaced. A second real forced refetch retained checksum `197cba…92f` and the exact event ID range 74,273..75,629, proving unchanged payloads do not rebuild rows. Both runs used one schedule and one detail request with no retry or validation failure. |
-| Materialization determinism | PASS | Consecutive internal materializations produced 834 current player profiles and 20 current team profiles. Logical content across all 854 rows had the identical SHA-256 `34ca7efcfa911551abc717b1eff0f7630cf00ea3a4327a6ddb979a174639592a`; the optimized rerun completed in 5.486 s. |
-| Manual map checks | PASS | Real Bernardo Silva player maps and Manchester City team maps were checked in the supported browser at 1440×1000 and 390×844. Player pass filters, shots, action density, average touch, team pass flow, shots for/against, territory, opponent territory, responsive scrolling, and tab changes were plausible and produced no console errors. |
+| Cached ingestion rerun | PASS | The same no-display command without `--force` produced run 2247 in 4.232 s with one schedule request, zero detail requests, and 50 raw-payload reuses. Event totals remained unchanged. |
+| Forced refetch and checksum lifecycle | PASS | Headless runs 2242 and 2243 force-refetched match 1903397 through real provider navigation. The first observed a legitimate source change to checksum `0bbc8c…4f27` and transactionally replaced its 1,357 events; the second retained that checksum and exact event IDs 75,630..76,986. Full forced run 2246 then revalidated all 50 payloads without rebuilding this unchanged match. |
+| Materialization determinism | PASS | Consecutive formula-v2 internal materializations (runs 2248 and 2249) produced 834 current player profiles and 20 current team profiles. Every player, team, and opponent action grid has 384 deterministic 24×16 cells; logical content across all 854 rows had identical SHA-256 `a156447d7c6a2adeb119389c1e6f2d289dc523485a976378c21394329af1ded3`. |
+| Manual map checks | PASS | Real Erling Haaland and Trai Hume player maps plus Manchester City team maps were checked in the supported browser at 1440×900 and 390×844. Continuous desktop two-column/mobile one-column cards, true All-pass filtering, pass/shot inspection, expansion, average-touch overlay, complete shot legends, automatic half/full shot pitches, volume-scaled directional pass flow, focus/show-all controls, territory maps, and responsive scrolling all worked with no console errors or horizontal overflow. |
 | 5,000-pass browser gate | PASS | The production `PortraitPitch` component was exercised with 5,000 pass lines through a temporary local QA injection that was removed immediately afterward. Desktop and 390 px mobile layouts rendered without console errors or page-level horizontal overflow; switching from the dense pass map to Actions completed in 282 ms. |
 | Feature-branch review access | PASS | Manchester City and Erling Haaland detail flags report `event_profile.available=true`; their event-profile endpoints return 200 while coverage metadata clearly remains incomplete. The delivery stack is not yet merged to `main`. |
 
@@ -62,21 +62,22 @@ The API defensive cap was previously measured with a real 5,002-row fixture: 5,0
 
 ## Defects found and resolved
 
-The real pilot exposed four production-path issues, each fixed before the final gates:
+The real pilot and Batch 7 revalidation exposed five production-path issues, each fixed before the final gates:
 
 1. Current match-centre payloads omit the redundant top-level `matchId`, and `OffsideGiven` companion events can omit `second`; both shapes now validate safely.
 2. The current known qualifier vocabulary exceeded the fixture vocabulary; all observed semantic pass/shot qualifiers and deliberately private untyped qualifiers are now recognized.
 3. Team materialization rebuilt the selected match-ID set for every opponent event, causing quadratic runtime. The set is now computed once per materialization.
 4. Incomplete materialization on a published regular-stat slice now requires explicit `--internal-pilot` acknowledgement, while feature-branch APIs remain reviewable before the delivery stack reaches `main`.
+5. WhoScored acquisition needed a production-safe VPS contract. Both supported commands now default to headless Chrome, headed mode requires explicit `--headed-debug`, browser startup fails closed instead of silently reading stale cache, access failures are classified, and stored failure evidence is categorical and sanitized.
 
 ## Verification
 
-- Backend: 249 tests passed with the exact CI command (`python manage.py test --noinput`).
+- Backend: 255 tests passed with the exact CI command (`python manage.py test --noinput`).
 - Django: system check passed; migration drift check reported no changes.
 - Python: ingestion package compilation passed.
-- Frontend: product-source TypeScript check and production Vite build passed.
+- Frontend: product-source TypeScript check and production Vite build passed. The broad `npm run build` remains blocked only by local ignored frontend test files importing unavailable `vitest` and `@testing-library/react`; no production dependency was added and no frontend test was committed.
 - ESLint: passed with zero errors and one existing TanStack Table React-compiler warning.
-- Browser: real desktop/mobile player and team flows plus the 5,000-pass responsive gate passed with no page console errors.
+- Browser: real desktop/mobile player and team flows, automatic half/full shot pitches, flow focus/show-all, expansion, selection, and the prior 5,000-pass responsive gate passed with no page console errors.
 
 ## Decision and next step
 
