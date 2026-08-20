@@ -66,6 +66,10 @@ type PortraitPitchProps = {
   className?: string
   layerOptions?: DenseLayerOptions
   pitchView?: 'full' | 'attacking-half'
+  densityStyle?: 'cells' | 'smooth'
+  selectedFlowId?: string | null
+  onSelectedFlowChange?: (flow: TeamPassFlow | null) => void
+  eventSelectionMode?: 'hover' | 'click'
 }
 
 const logicalTransform = createPitchTransform(PITCH_VIEWBOX_WIDTH, PITCH_VIEWBOX_HEIGHT)
@@ -126,6 +130,10 @@ function passAriaLabel(pass: EventPass) {
 
 function shotAriaLabel(shot: EventShot) {
   return `${shot.perspective === 'against' ? 'opponent ' : ''}${shot.outcome.replace('_', ' ')} shot, minute ${shot.minute}`
+}
+
+function flowAriaLabel(flow: TeamPassFlow) {
+  return `${flow.completedCount} completed passes from this area, mean length ${flow.meanLength.toFixed(1)} metres`
 }
 
 function createSelectableEvents(passes: EventPass[], shots: EventShot[]) {
@@ -208,6 +216,10 @@ export const PortraitPitch = memo(function PortraitPitch({
   className = '',
   layerOptions,
   pitchView = 'full',
+  densityStyle = 'cells',
+  selectedFlowId,
+  onSelectedFlowChange,
+  eventSelectionMode = 'hover',
 }: PortraitPitchProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -226,6 +238,7 @@ export const PortraitPitch = memo(function PortraitPitch({
   )
   const selectedEvent =
     selectableEvents.find((event) => event.id === selectedEventId) ?? null
+  const selectedFlow = flows.find(flow => flow.id === selectedFlowId) ?? null
   const hasSelection = selectedEvent !== null
 
   const selectEvent = useCallback(
@@ -248,10 +261,10 @@ export const PortraitPitch = memo(function PortraitPitch({
       context,
       viewport,
       { passes, densityCells, flows },
-      { ...layerOptions, selectedEventId },
+      { ...layerOptions, densityStyle, selectedEventId, selectedFlowId },
       pitchView,
     )
-  }, [densityCells, flows, layerOptions, passes, pitchView, selectedEventId, viewport])
+  }, [densityCells, densityStyle, flows, layerOptions, passes, pitchView, selectedEventId, selectedFlowId, viewport])
 
   const selectNearest = useCallback(
     (event: PointerEvent<SVGSVGElement>) => {
@@ -260,9 +273,10 @@ export const PortraitPitch = memo(function PortraitPitch({
         event.clientX,
         event.clientY,
         bounds,
-        PITCH_VIEWBOX_WIDTH,
-        pitchView === 'attacking-half' ? PITCH_VIEWBOX_HEIGHT / 2 : PITCH_VIEWBOX_HEIGHT,
+        pitchView === 'attacking-half' ? PITCH_VIEWBOX_WIDTH / 2 : PITCH_VIEWBOX_WIDTH,
+        PITCH_VIEWBOX_HEIGHT,
       )
+      if (pitchView === 'attacking-half') point.x += PITCH_VIEWBOX_WIDTH / 2
       const nearest = findNearestPitchEvent(logicalSelectionEvents, point, 26)
       if (!nearest) {
         selectEvent(null)
@@ -309,38 +323,9 @@ export const PortraitPitch = memo(function PortraitPitch({
 
   return (
     <figure className={`m-0 w-full ${className}`}>
-      <div className="flex w-full items-stretch gap-2">
-        <div className="relative w-[52px] shrink-0" aria-hidden="true">
-          <svg
-            viewBox={`0 0 64 ${pitchView === 'attacking-half' ? PITCH_VIEWBOX_HEIGHT / 2 : PITCH_VIEWBOX_HEIGHT}`}
-            preserveAspectRatio="none"
-            className="absolute inset-0 size-full overflow-visible"
-          >
-            <line
-              x1={48}
-              y1={pitchView === 'attacking-half' ? 445 : 930}
-              x2={48}
-              y2={126}
-              stroke="#4A9EF5"
-              strokeWidth={3}
-              strokeLinecap="round"
-              vectorEffect="non-scaling-stroke"
-            />
-            <path d="M 48 82 L 34 128 L 62 128 Z" fill="#4A9EF5" />
-            <text
-              transform={`translate(18 ${pitchView === 'attacking-half' ? 280 : 530}) rotate(-90)`}
-              textAnchor="middle"
-              dominantBaseline="central"
-              fill="#E4EAF8"
-              className="text-[14px] font-bold uppercase tracking-[0.16em]"
-            >
-              Direction of attack
-            </text>
-          </svg>
-        </div>
-        <div
+      <div
           ref={containerRef}
-          className={`relative isolate min-w-0 flex-1 overflow-hidden border border-line-bright bg-[radial-gradient(circle_at_50%_24%,rgba(74,158,245,0.10),transparent_38%),repeating-linear-gradient(0deg,rgba(255,255,255,0.018)_0,rgba(255,255,255,0.018)_1px,transparent_1px,transparent_52.5px),linear-gradient(180deg,#11192a_0%,#0a101b_100%)] shadow-[0_18px_48px_rgba(0,0,0,0.34),inset_0_0_42px_rgba(74,158,245,0.05)] ${pitchView === 'attacking-half' ? 'aspect-[136/105]' : 'aspect-[68/105]'}`}
+          className={`relative isolate w-full overflow-hidden border border-line-bright bg-[radial-gradient(circle_at_72%_44%,rgba(74,158,245,0.10),transparent_42%),repeating-linear-gradient(90deg,rgba(255,255,255,0.018)_0,rgba(255,255,255,0.018)_1px,transparent_1px,transparent_52.5px),linear-gradient(90deg,#0a101b_0%,#11192a_100%)] shadow-[0_18px_48px_rgba(0,0,0,0.30),inset_0_0_42px_rgba(74,158,245,0.05)] ${pitchView === 'attacking-half' ? 'aspect-[105/136]' : 'aspect-[105/68]'}`}
         >
         <canvas
           ref={canvasRef}
@@ -348,19 +333,44 @@ export const PortraitPitch = memo(function PortraitPitch({
           aria-hidden="true"
         />
         <svg
-          viewBox={`0 0 ${PITCH_VIEWBOX_WIDTH} ${pitchView === 'attacking-half' ? PITCH_VIEWBOX_HEIGHT / 2 : PITCH_VIEWBOX_HEIGHT}`}
+          viewBox={`${pitchView === 'attacking-half' ? PITCH_VIEWBOX_WIDTH / 2 : 0} 0 ${pitchView === 'attacking-half' ? PITCH_VIEWBOX_WIDTH / 2 : PITCH_VIEWBOX_WIDTH} ${PITCH_VIEWBOX_HEIGHT}`}
           preserveAspectRatio="xMidYMid meet"
           className="absolute inset-0 size-full touch-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-electric"
           role="application"
           tabIndex={0}
           aria-label={ariaLabel}
           aria-describedby={`${accessibleDescriptionId} ${accessibleSelectionId}`}
-          onPointerMove={handlePointerMove}
+          onPointerMove={eventSelectionMode === 'hover' ? handlePointerMove : undefined}
           onPointerDown={selectNearest}
-          onPointerLeave={handlePointerLeave}
+          onPointerLeave={eventSelectionMode === 'hover' ? handlePointerLeave : undefined}
           onKeyDown={handleKeyDown}
         >
           <PitchMarkings />
+
+          {flows.map(flow => {
+            const point = logicalTransform.toScreen(flow.origin)
+            return (
+              <g
+                key={flow.id}
+                role="button"
+                tabIndex={0}
+                aria-label={flowAriaLabel(flow)}
+                className="cursor-crosshair outline-none"
+                onFocus={() => onSelectedFlowChange?.(flow)}
+                onBlur={() => onSelectedFlowChange?.(null)}
+                onPointerEnter={event => { event.stopPropagation(); onSelectedFlowChange?.(flow) }}
+                onPointerLeave={event => {
+                  if (event.pointerType !== 'touch') onSelectedFlowChange?.(null)
+                }}
+                onPointerDown={event => {
+                  event.stopPropagation()
+                  onSelectedFlowChange?.(selectedFlowId === flow.id ? null : flow)
+                }}
+              >
+                <circle cx={point.x} cy={point.y} r={24} fill="transparent" stroke="transparent" />
+              </g>
+            )
+          })}
 
           {shots.map((shot) => {
             const point = logicalTransform.toScreen(shot.location)
@@ -462,14 +472,13 @@ export const PortraitPitch = memo(function PortraitPitch({
         <span className="absolute right-2 top-2 size-2 border-r border-t border-electric/70" aria-hidden />
         <span className="absolute bottom-2 left-2 size-2 border-b border-l border-electric/35" aria-hidden />
         <span className="absolute bottom-2 right-2 size-2 border-b border-r border-electric/35" aria-hidden />
-        </div>
       </div>
       <figcaption className="sr-only">
         <span id={accessibleDescriptionId}>
           Use the arrow keys to inspect nearby events. Press Escape to clear the selection.
         </span>
         <span id={accessibleSelectionId} aria-live="polite">
-          {selectedEvent?.ariaLabel ?? 'No event selected.'}
+          {selectedEvent?.ariaLabel ?? (selectedFlow ? flowAriaLabel(selectedFlow) : 'No event selected.')}
         </span>
       </figcaption>
     </figure>

@@ -99,6 +99,7 @@ type ApiPlayerProfile = {
   summary: Record<string, number>
   average_touch_location: { x: number | null; y: number | null; sample_size: number }
   action_grid: ApiGridCell[]
+  touch_grid?: ApiGridCell[]
   shots: ApiShot[]
   matches: ApiMatch[]
 }
@@ -123,14 +124,20 @@ type ApiTeamProfile = {
   materialization: ApiMaterialization
   summary: Record<string, number>
   pass_flow: Array<{
-    origin_zone: number
-    destination_zone: number
-    attempts: number
-    completions: number
-    completion_rate: number | null
+    column: number
+    row: number
+    completed_count: number
+    share: number
+    mean_origin_x: number
+    mean_origin_y: number
+    mean_destination_x: number
+    mean_destination_y: number
+    mean_length_metres: number
   }>
   action_grid: ApiGridCell[]
   opponent_action_grid: ApiGridCell[]
+  touch_grid?: ApiGridCell[]
+  opponent_touch_grid?: ApiGridCell[]
   shots_for: ApiShot[]
   shots_against: ApiShot[]
   matches: ApiMatch[]
@@ -218,10 +225,8 @@ function mapMatches(
 
 function mapGrid(cells: ApiGridCell[]): ActionGridCell[] {
   return cells.map(cell => ({
-    // The API indexes the pitch length as columns and width as rows; the
-    // portrait renderer uses rows for length and columns for width.
-    column: cell.row,
-    row: cell.column,
+    column: cell.column,
+    row: cell.row,
     rawCount: cell.raw_count,
     per90Count: cell.per90_count ?? 0,
     share: cell.share,
@@ -328,7 +333,7 @@ export async function fetchPlayerEventProfile(
             sampleSize: raw.average_touch_location.sample_size,
           }
         : null,
-    actionGrid: mapGrid(raw.action_grid),
+    touchGrid: mapGrid(raw.touch_grid ?? []),
     shots,
     matches: mapMatches(raw.matches, matchTeamIds(raw.shots)),
   }
@@ -358,21 +363,15 @@ export async function fetchPlayerPassMap(
   }
 }
 
-function flowZone(index: number) {
-  return { column: Math.floor(index / 3), row: index % 3 }
-}
-
-function mapFlow(
-  row: ApiTeamProfile['pass_flow'][number],
-  totalCompletions: number,
-): TeamPassFlow {
+function mapFlow(row: ApiTeamProfile['pass_flow'][number]): TeamPassFlow {
   return {
-    id: `flow-${row.origin_zone}-${row.destination_zone}`,
-    startZone: flowZone(row.origin_zone),
-    endZone: flowZone(row.destination_zone),
-    completedCount: row.completions,
-    attemptedCount: row.attempts,
-    share: totalCompletions ? row.completions / totalCompletions : 0,
+    id: `flow-${row.column}-${row.row}`,
+    bin: { column: row.column, row: row.row },
+    origin: { x: row.mean_origin_x, y: row.mean_origin_y },
+    destination: { x: row.mean_destination_x, y: row.mean_destination_y },
+    completedCount: row.completed_count,
+    share: row.share,
+    meanLength: row.mean_length_metres,
   }
 }
 
@@ -386,7 +385,6 @@ export async function fetchTeamEventProfile(
     `${BASE}/team-seasons/event-profile/${teamId}?${params}`,
   )
   const allShots = [...raw.shots_for, ...raw.shots_against]
-  const totalCompletions = raw.pass_flow.reduce((total, row) => total + row.completions, 0)
   return {
     teamId: raw.canonical_team_id,
     teamName: raw.canonical_team_name,
@@ -402,13 +400,13 @@ export async function fetchTeamEventProfile(
     },
     metadata: metadata(raw.materialization),
     summary: raw.summary,
-    passFlows: raw.pass_flow.map(row => mapFlow(row, totalCompletions)),
+    passFlows: raw.pass_flow.map(mapFlow),
     shots: [
       ...raw.shots_for.map(row => mapShot(row, 'for')),
       ...raw.shots_against.map(row => mapShot(row, 'against')),
     ],
-    actionTerritory: mapGrid(raw.action_grid),
-    opponentActionTerritory: mapGrid(raw.opponent_action_grid),
+    actionTerritory: mapGrid(raw.touch_grid ?? []),
+    opponentActionTerritory: mapGrid(raw.opponent_touch_grid ?? []),
     matches: mapMatches(raw.matches, matchTeamIds(allShots), raw.canonical_team_id),
   }
 }

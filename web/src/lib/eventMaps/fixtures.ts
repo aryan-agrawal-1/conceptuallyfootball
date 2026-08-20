@@ -158,10 +158,10 @@ export const eventShotFixture: EventShot[] = [
 export const eventActionGridFixture: ActionGridCell[] = Array.from(
   { length: 384 },
   (_, index): ActionGridCell => {
-    const column = index % 16
-    const row = Math.floor(index / 16)
-    const centrality = 1 - Math.abs(column - 7.5) / 8.5
-    const advancement = (row + 2) / 25
+    const column = index % 24
+    const row = Math.floor(index / 24)
+    const centrality = 1 - Math.abs(row - 7.5) / 8.5
+    const advancement = (column + 2) / 25
     const rawCount = Math.max(0, Math.round(centrality * advancement * 8) - ((index * 7) % 3))
 
     return {
@@ -177,40 +177,44 @@ export const eventActionGridFixture: ActionGridCell[] = Array.from(
 export const teamPassFlowFixture: TeamPassFlow[] = [
   {
     id: 'flow-01',
-    startZone: { column: 0, row: 1 },
-    endZone: { column: 1, row: 1 },
+    bin: { column: 0, row: 1 },
+    origin: { x: 8, y: 37 },
+    destination: { x: 31, y: 42 },
     completedCount: 118,
-    attemptedCount: 127,
     share: 0.12,
+    meanLength: 25.2,
   },
   {
     id: 'flow-02',
-    startZone: { column: 1, row: 1 },
-    endZone: { column: 2, row: 1 },
+    bin: { column: 1, row: 1 },
+    origin: { x: 24, y: 39 },
+    destination: { x: 48, y: 43 },
     completedCount: 84,
-    attemptedCount: 101,
     share: 0.085,
+    meanLength: 26.1,
   },
   {
     id: 'flow-03',
-    startZone: { column: 2, row: 0 },
-    endZone: { column: 3, row: 1 },
+    bin: { column: 2, row: 0 },
+    origin: { x: 42, y: 14 },
+    destination: { x: 63, y: 35 },
     completedCount: 43,
-    attemptedCount: 56,
     share: 0.044,
+    meanLength: 26.5,
   },
   {
     id: 'flow-04',
-    startZone: { column: 3, row: 2 },
-    endZone: { column: 4, row: 1 },
+    bin: { column: 3, row: 2 },
+    origin: { x: 59, y: 64 },
+    destination: { x: 78, y: 48 },
     completedCount: 31,
-    attemptedCount: 47,
     share: 0.032,
+    meanLength: 23.2,
   },
 ]
 
 const fixtureMetadata = {
-  formulaVersion: 'event_profiles_v2',
+  formulaVersion: 'event_profiles_v3',
   materialisationVersion: 'fixture-2026-07-28',
   updatedAt: '2026-07-28T12:00:00Z',
 }
@@ -239,7 +243,7 @@ export const playerEventProfileFixture: PlayerEventProfilePayload = {
     actionGrid: { available: true, sparse: false },
   },
   averageTouchLocation: { x: 58.2, y: 51.4, sampleSize: 1984 },
-  actionGrid: eventActionGridFixture,
+  touchGrid: eventActionGridFixture,
   shots: eventShotFixture,
   matches: eventMapMatchFixture,
 }

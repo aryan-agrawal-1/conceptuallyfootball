@@ -1,7 +1,7 @@
-import type { PitchCoordinate, TeamFlowZone } from '../../types/eventMaps'
+import type { PitchCoordinate } from '../../types/eventMaps'
 
-export const PITCH_VIEWBOX_WIDTH = 680
-export const PITCH_VIEWBOX_HEIGHT = 1050
+export const PITCH_VIEWBOX_WIDTH = 1050
+export const PITCH_VIEWBOX_HEIGHT = 680
 export const PITCH_ASPECT_RATIO = PITCH_VIEWBOX_WIDTH / PITCH_VIEWBOX_HEIGHT
 export const PITCH_LENGTH_METRES = 105
 export const PITCH_WIDTH_METRES = 68
@@ -67,33 +67,26 @@ export function createPitchTransform(
       const sourceY = clampCoordinate(coordinate.y)
 
       return {
-        x: bounds.left + (sourceY / 100) * bounds.width,
-        y: bounds.top + ((100 - sourceX) / 100) * bounds.height,
+        x: bounds.left + (sourceX / 100) * bounds.width,
+        y: bounds.top + (sourceY / 100) * bounds.height,
       }
     },
     toPitch(coordinate) {
       if (bounds.width === 0 || bounds.height === 0) return { x: 0, y: 0 }
 
       return {
-        x: clampCoordinate(100 - ((coordinate.y - bounds.top) / bounds.height) * 100),
-        y: clampCoordinate(((coordinate.x - bounds.left) / bounds.width) * 100),
+        x: clampCoordinate(((coordinate.x - bounds.left) / bounds.width) * 100),
+        y: clampCoordinate(((coordinate.y - bounds.top) / bounds.height) * 100),
       }
     },
-  }
-}
-
-export function flowZoneCentre(zone: TeamFlowZone): PitchCoordinate {
-  return {
-    x: ((zone.column + 0.5) / 5) * 100,
-    y: ((zone.row + 0.5) / 3) * 100,
   }
 }
 
 export function actionGridCellBounds(
   column: number,
   row: number,
-  columnCount = 8,
-  rowCount = 12,
+  columnCount = 12,
+  rowCount = 8,
 ) {
   const safeColumnCount = Math.max(1, columnCount)
   const safeRowCount = Math.max(1, rowCount)
@@ -101,10 +94,10 @@ export function actionGridCellBounds(
   const safeRow = Math.min(safeRowCount - 1, Math.max(0, row))
 
   return {
-    xMin: (safeRow / safeRowCount) * 100,
-    xMax: ((safeRow + 1) / safeRowCount) * 100,
-    yMin: (safeColumn / safeColumnCount) * 100,
-    yMax: ((safeColumn + 1) / safeColumnCount) * 100,
+    xMin: (safeColumn / safeColumnCount) * 100,
+    xMax: ((safeColumn + 1) / safeColumnCount) * 100,
+    yMin: (safeRow / safeRowCount) * 100,
+    yMax: ((safeRow + 1) / safeRowCount) * 100,
   }
 }
 

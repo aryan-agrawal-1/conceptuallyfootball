@@ -21,23 +21,40 @@ export function EventMapCard({
   controls,
   children,
   footer,
+  expanded,
+  onExpandedChange,
+  className,
 }: {
   title: string
   description: string
   controls?: ReactNode
   children: ReactNode
   footer?: ReactNode
+  expanded: boolean
+  onExpandedChange: (expanded: boolean) => void
+  className?: string
 }) {
   return (
-    <article className="flex min-w-0 flex-col border border-line-bright bg-panel">
-      <header className="flex min-h-16 flex-col gap-2 border-b border-line-bright px-3 py-2.5 sm:flex-row sm:items-start sm:justify-between">
+    <article className={cn('flex min-w-0 flex-col border border-line-bright bg-panel', className)}>
+      <header className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 border-b border-line-bright px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_minmax(9rem,0.55fr)_auto]">
         <div className="min-w-0">
           <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-ink">{title}</h3>
           <p className="mt-1 text-[9px] leading-relaxed text-ink-dim">{description}</p>
         </div>
-        {controls ? <div className="shrink-0">{controls}</div> : null}
+        <div className="col-start-1 row-start-2 flex w-full min-w-24 max-w-56 flex-col items-center justify-center justify-self-center text-electric sm:col-start-2 sm:row-start-1" aria-label="Attacking direction is left to right">
+          <span className="font-mono text-[8px] font-bold uppercase tracking-[0.2em]">Attack</span>
+          <svg viewBox="0 0 96 8" className="mt-0.5 h-2 w-full" aria-hidden="true">
+            <path d="M1 4H94M87 1L94 4L87 7" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="square" strokeLinejoin="miter" />
+          </svg>
+        </div>
+        <div className="col-start-2 row-start-2 flex shrink-0 items-center gap-2 sm:col-start-3 sm:row-start-1">
+          {controls}
+          <button type="button" onClick={() => onExpandedChange(!expanded)} className="flex size-8 items-center justify-center border border-control-border bg-raised text-control-fg transition-colors hover:border-electric hover:text-ink" aria-label={expanded ? 'Exit full-screen event map' : `Expand ${title.toLowerCase()}`}>
+            {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          </button>
+        </div>
       </header>
-      <div className="flex min-h-0 flex-1 items-start justify-center bg-mat p-2.5 sm:p-3">
+      <div className="flex min-h-0 flex-1 items-center justify-center bg-mat p-2 sm:p-2.5">
         {children}
       </div>
       {footer ? <footer className="border-t border-line-bright px-3 py-2.5">{footer}</footer> : null}
@@ -301,15 +318,8 @@ export function EventPitchStage({
         expanded && 'fixed inset-0 z-[80] overflow-y-auto bg-mat px-3 py-4 sm:px-8',
       )}
     >
-      <button
-        type="button"
-        onClick={() => onExpandedChange(!expanded)}
-        className="absolute right-2 top-2 z-20 flex size-9 items-center justify-center border border-control-border bg-panel/90 text-control-fg backdrop-blur hover:border-electric hover:text-ink"
-        aria-label={expanded ? 'Exit full-screen event map' : 'Expand event map'}
-      >
-        {expanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-      </button>
-      <div className={cn('mx-auto w-full max-w-[240px]', expanded && 'max-w-[min(72vh,560px)]')}>{children}</div>
+      {expanded ? <button type="button" onClick={() => onExpandedChange(false)} className="fixed right-4 top-4 z-[90] flex size-10 items-center justify-center border border-control-border bg-panel/90 text-control-fg backdrop-blur hover:border-electric hover:text-ink" aria-label="Exit full-screen event map"><Minimize2 size={16} /></button> : null}
+      <div className={cn('mx-auto w-full', expanded && 'flex min-h-[calc(100svh-2rem)] max-w-[1200px] items-center')}>{children}</div>
     </div>
   )
 }
