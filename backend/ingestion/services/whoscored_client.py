@@ -346,13 +346,20 @@ class SoccerdataWhoScoredClient:
                         return super()._validate_page(url)
 
                 factory = CompatibleWhoScored
-            self._reader = factory(
+            reader = factory(
                 leagues=self.config.league,
                 seasons=self.config.season,
                 data_dir=self.data_dir,
                 no_store=False,
                 headless=self.config.headless,
             )
+            # soccerdata logs WebDriver startup failures and returns a reader
+            # without ``_driver``. Failing here prevents a production command
+            # from appearing healthy merely because stale schedule/payload
+            # cache files remain readable after browser startup failed.
+            if getattr(reader, "_driver", None) is None:
+                raise RuntimeError("WhoScored browser failed to initialize.")
+            self._reader = reader
         return self._reader
 
     def list_matches(self, *, force_cache: bool = False) -> list[SourceMatch]:

@@ -41,6 +41,7 @@ class FakeWhoScoredReader:
         self.payloads = payloads
         self.data_dir = Path(kwargs["data_dir"])
         self.options = kwargs
+        self._driver = object()
         self.calls: list[dict[str, Any]] = []
 
     def read_schedule(self, force_cache: bool = False):
@@ -100,6 +101,24 @@ class WhoScoredClientFoundationTests(SimpleTestCase):
 
         self.assertTrue(config.headless)
         self.assertTrue(readers[0].options["headless"])
+
+    def test_reader_initialization_fails_closed_without_a_browser_driver(self) -> None:
+        class ReaderWithoutDriver:
+            def __init__(self, **kwargs):
+                self.options = kwargs
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = SoccerdataWhoScoredClient(
+                WhoScoredSourceConfig(
+                    league="ENG-Premier League",
+                    season="2025-26",
+                    data_dir=Path(tmp),
+                ),
+                reader_factory=ReaderWithoutDriver,
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "browser failed to initialize"):
+                client.list_matches()
 
     def test_failure_evidence_is_categorical_and_does_not_retain_private_details(self) -> None:
         secret = "https://user:password@example.test/match?token=private cookie=session"
