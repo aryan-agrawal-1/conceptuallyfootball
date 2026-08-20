@@ -107,6 +107,7 @@ export type EventProfileMetadata = {
 }
 
 export type PlayerPassFilter =
+  | 'all'
   | 'completed'
   | 'progressive'
   | 'final_third_entry'

@@ -89,15 +89,22 @@ export function flowZoneCentre(zone: TeamFlowZone): PitchCoordinate {
   }
 }
 
-export function actionGridCellBounds(column: number, row: number) {
-  const safeColumn = Math.min(7, Math.max(0, column))
-  const safeRow = Math.min(11, Math.max(0, row))
+export function actionGridCellBounds(
+  column: number,
+  row: number,
+  columnCount = 8,
+  rowCount = 12,
+) {
+  const safeColumnCount = Math.max(1, columnCount)
+  const safeRowCount = Math.max(1, rowCount)
+  const safeColumn = Math.min(safeColumnCount - 1, Math.max(0, column))
+  const safeRow = Math.min(safeRowCount - 1, Math.max(0, row))
 
   return {
-    xMin: (safeRow / 12) * 100,
-    xMax: ((safeRow + 1) / 12) * 100,
-    yMin: (safeColumn / 8) * 100,
-    yMax: ((safeColumn + 1) / 8) * 100,
+    xMin: (safeRow / safeRowCount) * 100,
+    xMax: ((safeRow + 1) / safeRowCount) * 100,
+    yMin: (safeColumn / safeColumnCount) * 100,
+    yMax: ((safeColumn + 1) / safeColumnCount) * 100,
   }
 }
 

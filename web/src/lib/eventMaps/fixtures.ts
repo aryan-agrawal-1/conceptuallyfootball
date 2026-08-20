@@ -156,13 +156,13 @@ export const eventShotFixture: EventShot[] = [
 ]
 
 export const eventActionGridFixture: ActionGridCell[] = Array.from(
-  { length: 96 },
+  { length: 384 },
   (_, index): ActionGridCell => {
-    const column = index % 8
-    const row = Math.floor(index / 8)
-    const centrality = 1 - Math.abs(column - 3.5) / 4.5
-    const advancement = (row + 2) / 13
-    const rawCount = Math.max(0, Math.round(centrality * advancement * 22) - ((index * 7) % 4))
+    const column = index % 16
+    const row = Math.floor(index / 16)
+    const centrality = 1 - Math.abs(column - 7.5) / 8.5
+    const advancement = (row + 2) / 25
+    const rawCount = Math.max(0, Math.round(centrality * advancement * 8) - ((index * 7) % 3))
 
     return {
       column,
@@ -210,7 +210,7 @@ export const teamPassFlowFixture: TeamPassFlow[] = [
 ]
 
 const fixtureMetadata = {
-  formulaVersion: 'event_profiles_v1',
+  formulaVersion: 'event_profiles_v2',
   materialisationVersion: 'fixture-2026-07-28',
   updatedAt: '2026-07-28T12:00:00Z',
 }

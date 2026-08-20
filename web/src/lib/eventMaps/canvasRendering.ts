@@ -56,13 +56,15 @@ export function drawDensityLayer(
   let maximumShare = 0
   for (const cell of cells) maximumShare = Math.max(maximumShare, cell.share)
   if (maximumShare === 0) return
+  const columnCount = Math.max(1, ...cells.map(cell => cell.column + 1))
+  const rowCount = Math.max(1, ...cells.map(cell => cell.row + 1))
 
   context.save()
   context.fillStyle = color
 
   for (const cell of cells) {
     if (cell.share <= 0) continue
-    const bounds = actionGridCellBounds(cell.column, cell.row)
+    const bounds = actionGridCellBounds(cell.column, cell.row, columnCount, rowCount)
     const topLeft = transform.toScreen({ x: bounds.xMax, y: bounds.yMin })
     const bottomRight = transform.toScreen({ x: bounds.xMin, y: bounds.yMax })
     const intensity = Math.sqrt(cell.share / maximumShare)
@@ -124,23 +126,77 @@ export function drawFlowLayer(
   if (maximumCount === 0) return
 
   context.save()
-  context.strokeStyle = color
   context.lineCap = 'round'
+  context.lineJoin = 'round'
+
+  const zoneVolumes = new Map<string, number>()
+  for (const flow of flows) {
+    const key = `${flow.startZone.column}:${flow.startZone.row}`
+    zoneVolumes.set(key, (zoneVolumes.get(key) ?? 0) + flow.completedCount)
+  }
+  const maximumZoneVolume = Math.max(1, ...zoneVolumes.values())
+
+  for (const [key, count] of zoneVolumes) {
+    const [column, row] = key.split(':').map(Number)
+    const point = transform.toScreen(flowZoneCentre({ column, row }))
+    context.beginPath()
+    context.arc(point.x, point.y, 2.5 + Math.sqrt(count / maximumZoneVolume) * 5, 0, Math.PI * 2)
+    context.fillStyle = color
+    context.globalAlpha = 0.2 + (count / maximumZoneVolume) * 0.35
+    context.fill()
+  }
 
   for (const flow of flows) {
     if (flow.completedCount === 0) continue
     const start = transform.toScreen(flowZoneCentre(flow.startZone))
     const end = transform.toScreen(flowZoneCentre(flow.endZone))
     const volume = Math.sqrt(flow.completedCount / maximumCount)
-    const controlX = (start.x + end.x) / 2 + (end.y - start.y) * 0.045
-    const controlY = (start.y + end.y) / 2 - (end.x - start.x) * 0.045
+    const deltaX = end.x - start.x
+    const deltaY = end.y - start.y
+    const distance = Math.hypot(deltaX, deltaY)
+    if (distance < 1) {
+      context.beginPath()
+      context.arc(start.x + 8, start.y - 8, 8 + volume * 3, 0.4, Math.PI * 1.85)
+      context.strokeStyle = color
+      context.globalAlpha = 0.18 + volume * 0.55
+      context.lineWidth = 0.8 + volume * 3.6
+      context.stroke()
+      continue
+    }
+    const unitX = deltaX / distance
+    const unitY = deltaY / distance
+    const inset = Math.min(14, distance * 0.18)
+    const fromX = start.x + unitX * inset
+    const fromY = start.y + unitY * inset
+    const toX = end.x - unitX * inset
+    const toY = end.y - unitY * inset
+    // Reversing a route also reverses its perpendicular vector, so a stable
+    // positive offset naturally places reciprocal routes on opposite sides.
+    const curve = Math.min(18, distance * 0.08)
+    const controlX = (fromX + toX) / 2 - unitY * curve
+    const controlY = (fromY + toY) / 2 + unitX * curve
 
     context.beginPath()
-    context.moveTo(start.x, start.y)
-    context.quadraticCurveTo(controlX, controlY, end.x, end.y)
-    context.globalAlpha = 1
-    context.lineWidth = 1.5 + volume * 6
+    context.moveTo(fromX, fromY)
+    context.quadraticCurveTo(controlX, controlY, toX, toY)
+    context.strokeStyle = color
+    context.globalAlpha = 0.18 + volume * 0.7
+    context.lineWidth = 0.75 + volume * 4.25
     context.stroke()
+
+    const tangentX = toX - controlX
+    const tangentY = toY - controlY
+    const tangentLength = Math.max(1, Math.hypot(tangentX, tangentY))
+    const arrowX = tangentX / tangentLength
+    const arrowY = tangentY / tangentLength
+    const arrowSize = 3 + volume * 3
+    context.beginPath()
+    context.moveTo(toX, toY)
+    context.lineTo(toX - arrowX * arrowSize - arrowY * arrowSize * 0.65, toY - arrowY * arrowSize + arrowX * arrowSize * 0.65)
+    context.lineTo(toX - arrowX * arrowSize + arrowY * arrowSize * 0.65, toY - arrowY * arrowSize - arrowX * arrowSize * 0.65)
+    context.closePath()
+    context.fillStyle = color
+    context.fill()
   }
 
   context.restore()
@@ -155,9 +211,13 @@ export function drawDensePitchLayers(
     flows?: TeamPassFlow[]
   },
   options: DenseLayerOptions = {},
+  pitchView: 'full' | 'attacking-half' = 'full',
 ) {
   context.clearRect(0, 0, viewport.width, viewport.height)
-  const transform = createPitchTransform(viewport.width, viewport.height)
+  const transform = createPitchTransform(
+    viewport.width,
+    pitchView === 'attacking-half' ? viewport.height * 2 : viewport.height,
+  )
   if (layers.densityCells?.length) {
     drawDensityLayer(context, layers.densityCells, transform, options.densityColor)
   }

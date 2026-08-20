@@ -15,6 +15,64 @@ export type EventMapViewOption<T extends string> = {
   disabled?: boolean
 }
 
+export function EventMapCard({
+  title,
+  description,
+  controls,
+  children,
+  footer,
+}: {
+  title: string
+  description: string
+  controls?: ReactNode
+  children: ReactNode
+  footer?: ReactNode
+}) {
+  return (
+    <article className="flex min-w-0 flex-col border border-line-bright bg-panel">
+      <header className="flex min-h-16 flex-col gap-2 border-b border-line-bright px-3 py-2.5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-ink">{title}</h3>
+          <p className="mt-1 text-[9px] leading-relaxed text-ink-dim">{description}</p>
+        </div>
+        {controls ? <div className="shrink-0">{controls}</div> : null}
+      </header>
+      <div className="flex min-h-0 flex-1 items-start justify-center bg-mat p-2.5 sm:p-3">
+        {children}
+      </div>
+      {footer ? <footer className="border-t border-line-bright px-3 py-2.5">{footer}</footer> : null}
+    </article>
+  )
+}
+
+const SHOT_OUTCOMES = [
+  { label: 'Goal', color: '#1FD17C' },
+  { label: 'Saved', color: '#4A9EF5' },
+  { label: 'Blocked', color: '#F0A832' },
+  { label: 'Off target', color: '#8A95B8' },
+  { label: 'Woodwork', color: '#EF5C66' },
+] as const
+
+export function ShotMapLegend() {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[8px] font-bold uppercase tracking-[0.1em] text-ink-dim" aria-label="Shot map legend">
+      {SHOT_OUTCOMES.map(item => (
+        <span key={item.label} className="inline-flex items-center gap-1.5">
+          <span className="size-2.5 rounded-full border border-ink/35" style={{ backgroundColor: item.color }} aria-hidden />
+          {item.label}
+        </span>
+      ))}
+      <span className="inline-flex items-center gap-1.5 border-l border-line-bright pl-3">
+        <span className="size-2 rounded-full bg-ink-dim" aria-hidden /> Standard chance
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className="size-3.5 rounded-full bg-ink-dim" aria-hidden /> Big chance
+      </span>
+      <span className="basis-full font-normal normal-case tracking-normal text-ink-muted">Marker size represents chance classification; colour represents outcome.</span>
+    </div>
+  )
+}
+
 export function EventMapViewTabs<T extends string>({
   value,
   options,
@@ -239,7 +297,7 @@ export function EventPitchStage({
   return (
     <div
       className={cn(
-        'relative bg-mat',
+        'relative w-full bg-mat',
         expanded && 'fixed inset-0 z-[80] overflow-y-auto bg-mat px-3 py-4 sm:px-8',
       )}
     >
@@ -251,7 +309,7 @@ export function EventPitchStage({
       >
         {expanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
       </button>
-      <div className={cn('mx-auto', expanded && 'max-w-[min(72vh,560px)]')}>{children}</div>
+      <div className={cn('mx-auto w-full max-w-[240px]', expanded && 'max-w-[min(72vh,560px)]')}>{children}</div>
     </div>
   )
 }
