@@ -111,12 +111,12 @@ export function PlayerEventMaps({ playerId, competition, season, teams }: {
             <EventMapNotice kind="truncated" title="Pass response capped at 5,000 rows">{passQuery.data.totalMatching.toLocaleString()} passes match; choose a narrower category to inspect every row.</EventMapNotice>
           ) : selection?.kind === 'pass' ? (
             <EventSelectionDetails selection={selection} matches={passQuery.data?.matches ?? {}} />
-          ) : <p className="text-[9px] text-ink-dim">Hover, tap or focus a pass to inspect it.</p>}>
+          ) : <p className="text-[9px] text-ink-dim">Click, tap or focus a pass to inspect it.</p>}>
             <MapStage map="passes" expanded={expanded} setExpanded={setExpanded}>
               {passQuery.isLoading ? <EventMapNotice kind="loading" title="Loading pass rows" /> : passQuery.isError || !passQuery.data ? (
                 <EventMapNotice kind="error" title="Pass map failed to load" onRetry={() => passQuery.refetch()} />
               ) : passQuery.data.passes.length ? (
-                <PortraitPitch passes={passQuery.data.passes} selectedEventId={selection?.kind === 'pass' ? selection.id : null} onSelectedEventChange={setSelection} ariaLabel={`${profile.playerName} ${PASS_FILTERS.find(item => item.value === passFilter)?.label.toLowerCase()} pass map. Attacking left to right.`} />
+                <PortraitPitch passes={passQuery.data.passes} eventSelectionMode="click" selectedEventId={selection?.kind === 'pass' ? selection.id : null} onSelectedEventChange={setSelection} ariaLabel={`${profile.playerName} ${PASS_FILTERS.find(item => item.value === passFilter)?.label.toLowerCase()} pass map. Attacking left to right.`} />
               ) : <EventMapNotice kind="empty" title="No passes match this category" />}
             </MapStage>
           </EventMapCard>

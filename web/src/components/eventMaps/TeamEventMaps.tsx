@@ -95,7 +95,7 @@ export function TeamEventMaps({ teamId, competition, season }: {
         <EventMapCard expanded={expanded === 'flow'} onExpandedChange={next => setExpanded(next ? 'flow' : null)} title="Pass flow field" description="Each arrow summarises completed passes beginning in one occupied 6×4 origin bin." footer={(
           <div className="space-y-2">
             <FlowLegend flows={profile.passFlows} />
-            {selectedFlow ? <p className="border-l-2 border-gold/60 pl-2 font-mono text-[9px] text-ink-dim"><span className="text-ink">{selectedFlow.completedCount.toLocaleString()} completed</span> · {selectedFlow.meanLength.toFixed(1)}m mean length · {(selectedFlow.share * 100).toFixed(1)}% of completed passes</p> : <p className="text-[9px] text-ink-muted">Hover, tap or focus an origin bin to inspect its field vector.</p>}
+            <p className="text-[9px] text-ink-muted">Hover, tap or focus anywhere in an origin bin to inspect its field vector on the pitch.</p>
           </div>
         )}>
           <MapStage map="flow" expanded={expanded} setExpanded={setExpanded}>

@@ -332,6 +332,22 @@ export const PortraitPitch = memo(function PortraitPitch({
           className="pointer-events-none absolute inset-0 size-full"
           aria-hidden="true"
         />
+        {selectedFlow ? (
+          <div
+            className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2 border border-gold/60 bg-panel/95 px-2.5 py-2 font-mono text-[8px] leading-relaxed text-ink-dim shadow-[0_10px_28px_rgba(0,0,0,0.45)] backdrop-blur-sm"
+            style={{
+              left: `${Math.min(82, Math.max(18, selectedFlow.origin.x))}%`,
+              top: `${Math.min(80, Math.max(20, selectedFlow.origin.y))}%`,
+            }}
+            role="status"
+          >
+            <span className="font-bold text-ink">{selectedFlow.completedCount.toLocaleString()} completed</span>
+            <span className="mx-1.5 text-gold/70">·</span>
+            {selectedFlow.meanLength.toFixed(1)}m mean
+            <span className="mx-1.5 text-gold/70">·</span>
+            {(selectedFlow.share * 100).toFixed(1)}%
+          </div>
+        ) : null}
         <svg
           viewBox={`${pitchView === 'attacking-half' ? PITCH_VIEWBOX_WIDTH / 2 : 0} 0 ${pitchView === 'attacking-half' ? PITCH_VIEWBOX_WIDTH / 2 : PITCH_VIEWBOX_WIDTH} ${PITCH_VIEWBOX_HEIGHT}`}
           preserveAspectRatio="xMidYMid meet"
@@ -348,7 +364,14 @@ export const PortraitPitch = memo(function PortraitPitch({
           <PitchMarkings />
 
           {flows.map(flow => {
-            const point = logicalTransform.toScreen(flow.origin)
+            const topLeft = logicalTransform.toScreen({
+              x: (flow.bin.column / 6) * 100,
+              y: (flow.bin.row / 4) * 100,
+            })
+            const bottomRight = logicalTransform.toScreen({
+              x: ((flow.bin.column + 1) / 6) * 100,
+              y: ((flow.bin.row + 1) / 4) * 100,
+            })
             return (
               <g
                 key={flow.id}
@@ -367,7 +390,14 @@ export const PortraitPitch = memo(function PortraitPitch({
                   onSelectedFlowChange?.(selectedFlowId === flow.id ? null : flow)
                 }}
               >
-                <circle cx={point.x} cy={point.y} r={24} fill="transparent" stroke="transparent" />
+                <rect
+                  x={topLeft.x}
+                  y={topLeft.y}
+                  width={bottomRight.x - topLeft.x}
+                  height={bottomRight.y - topLeft.y}
+                  fill="transparent"
+                  stroke="transparent"
+                />
               </g>
             )
           })}

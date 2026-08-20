@@ -36,18 +36,19 @@ export function EventMapCard({
 }) {
   return (
     <article className={cn('flex min-w-0 flex-col border border-line-bright bg-panel', className)}>
-      <header className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 border-b border-line-bright px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_minmax(9rem,0.55fr)_auto]">
-        <div className="min-w-0">
+      <header className="flex min-h-16 flex-col gap-2 border-b border-line-bright px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3">
+        <div className="min-w-0 sm:max-w-[42%] sm:shrink-0">
           <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-ink">{title}</h3>
           <p className="mt-1 text-[9px] leading-relaxed text-ink-dim">{description}</p>
         </div>
-        <div className="col-start-1 row-start-2 flex w-full min-w-24 max-w-56 flex-col items-center justify-center justify-self-center text-electric sm:col-start-2 sm:row-start-1" aria-label="Attacking direction is left to right">
+        <div className="flex w-full min-w-24 flex-1 flex-col items-center justify-center px-2 text-electric sm:px-4" aria-label="Attacking direction is left to right">
           <span className="font-mono text-[8px] font-bold uppercase tracking-[0.2em]">Attack</span>
-          <svg viewBox="0 0 96 8" className="mt-0.5 h-2 w-full" aria-hidden="true">
-            <path d="M1 4H94M87 1L94 4L87 7" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="square" strokeLinejoin="miter" />
-          </svg>
+          <span className="relative mt-0.5 h-2 w-full" aria-hidden="true">
+            <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-current" />
+            <span className="absolute right-0 top-1/2 size-1.5 -translate-y-1/2 rotate-45 border-r border-t border-current" />
+          </span>
         </div>
-        <div className="col-start-2 row-start-2 flex shrink-0 items-center gap-2 sm:col-start-3 sm:row-start-1">
+        <div className="flex shrink-0 items-center justify-end gap-2">
           {controls}
           <button type="button" onClick={() => onExpandedChange(!expanded)} className="flex size-8 items-center justify-center border border-control-border bg-raised text-control-fg transition-colors hover:border-electric hover:text-ink" aria-label={expanded ? 'Exit full-screen event map' : `Expand ${title.toLowerCase()}`}>
             {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
@@ -249,35 +250,23 @@ export function EventSelectionDetails({
   const shot = !isPass ? (event as EventShot) : null
   const tags = pass ? passTags(pass) : []
 
+  const outcome = pass
+    ? pass.outcome === 'successful' ? 'Completed' : 'Incomplete'
+    : displayLabel(shot!.outcome)
+  const context = pass ? `${pass.length.toFixed(1)} m` : displayLabel(shot!.situation)
+
   return (
-    <div className="border border-electric/45 bg-[linear-gradient(135deg,rgba(74,158,245,0.12),rgba(13,15,26,0.96)_58%)] px-4 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.25)]">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-electric">
-            {isPass ? 'Pass inspection' : 'Shot inspection'}
-          </p>
-          <p className="mt-1 text-[13px] font-bold text-ink">
-            {match?.opponent ?? 'Unknown opponent'} · {event.minute}&prime;
-          </p>
-        </div>
-        <span className="font-mono text-[9px] text-ink-dim">{match?.matchDate ?? '—'}</span>
+    <div className="border border-electric/45 bg-[linear-gradient(135deg,rgba(74,158,245,0.12),rgba(13,15,26,0.96)_58%)] px-3 py-2 shadow-[0_12px_30px_rgba(0,0,0,0.2)]">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <p className="text-[11px] font-bold text-ink">
+          {match?.opponent ?? 'Unknown opponent'} · {event.minute}&prime;
+        </p>
+        <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-electric">{outcome}</span>
+        <span className="text-[9px] uppercase tracking-[0.12em] text-ink-dim">{context}</span>
+        <span className="ml-auto font-mono text-[8px] text-ink-dim">{match?.matchDate ?? '—'}</span>
       </div>
-      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line-bright pt-3 text-[9px] uppercase tracking-[0.12em]">
-        <div>
-          <dt className="text-ink-dim">Outcome</dt>
-          <dd className="mt-0.5 text-ink">
-            {pass ? (pass.outcome === 'successful' ? 'Completed' : 'Incomplete') : displayLabel(shot!.outcome)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-ink-dim">{pass ? 'Length' : 'Context'}</dt>
-          <dd className="mt-0.5 text-ink">
-            {pass ? `${pass.length.toFixed(1)} m` : displayLabel(shot!.situation)}
-          </dd>
-        </div>
-      </dl>
       {shot ? (
-        <div className="mt-3 flex flex-wrap gap-1.5">
+        <div className="mt-2 flex flex-wrap gap-1.5">
           <span className="border border-line-bright bg-raised px-2 py-1 text-[8px] uppercase tracking-[0.13em] text-ink-dim">
             {displayLabel(shot.bodyPart)}
           </span>
@@ -286,7 +275,7 @@ export function EventSelectionDetails({
         </div>
       ) : null}
       {tags.length ? (
-        <div className="mt-3 flex flex-wrap gap-1.5">
+        <div className="mt-2 flex flex-wrap gap-1.5">
           {tags.map(tag => <EventTag key={tag}>{tag}</EventTag>)}
         </div>
       ) : null}
