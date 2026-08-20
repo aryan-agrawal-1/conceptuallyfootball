@@ -17,6 +17,7 @@ from ingestion.models import (
     MergedTeamSeason,
     PlayerSeasonDerivedStats,
     PlayerSeasonEventProfile,
+    PlayerSeasonGkDerivedStats,
     Provider,
     ProviderMatch,
     ProviderMatchEvent,
@@ -345,6 +346,14 @@ class EventProfileApiTests(TestCase):
                     self.assertNotIn(field, rendered)
 
     def test_existing_detail_endpoints_expose_only_lightweight_flags(self):
+        PlayerSeasonGkDerivedStats.objects.create(
+            competition_season=self.competition_season,
+            canonical_player=self.player,
+            canonical_display_team=self.home,
+            formula_version="gk-test",
+            minutes=90,
+            is_current=True,
+        )
         player = self.client.get(
             f"/api/v1/player-seasons/derived-stats/{self.player.id}",
             self.scope,
@@ -353,10 +362,15 @@ class EventProfileApiTests(TestCase):
             f"/api/v1/team-seasons/stats/{self.home.id}",
             self.scope,
         )
+        goalkeeper = self.client.get(
+            f"/api/v1/player-seasons/gk-derived-stats/{self.player.id}",
+            self.scope,
+        )
 
         self.assertEqual(player.status_code, 200)
         self.assertEqual(team.status_code, 200)
-        for payload in (player.json(), team.json()):
+        self.assertEqual(goalkeeper.status_code, 200)
+        for payload in (player.json(), goalkeeper.json(), team.json()):
             flag = payload["event_profile"]
             self.assertTrue(flag["available"])
             self.assertEqual(flag["formula_version"], "event_profiles_v3")
@@ -407,3 +421,20 @@ class EventProfileApiTests(TestCase):
             player.json()["event_profile"]["coverage"]["competition_complete"]
         )
         self.assertTrue(team.json()["event_profile"]["available"])
+
+    def test_goalkeeper_only_player_can_open_event_profile(self):
+        PlayerSeasonGkDerivedStats.objects.create(
+            competition_season=self.competition_season,
+            canonical_player=self.player,
+            canonical_display_team=self.home,
+            formula_version="gk-test",
+            minutes=90,
+            is_current=True,
+        )
+        PlayerSeasonDerivedStats.objects.filter(canonical_player=self.player).delete()
+        MaterializedApiPayload.objects.all().delete()
+
+        response = self.client.get(self.player_url, self.scope)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["canonical_player_id"], self.player.id)

@@ -15,6 +15,7 @@ from ingestion.models import (
     MatchEventType,
     PlayerSeasonDerivedStats,
     PlayerSeasonEventProfile,
+    PlayerSeasonGkDerivedStats,
     Provider,
     ProviderMatchEvent,
     TeamSeasonEventProfile,
@@ -274,11 +275,17 @@ class PlayerEventProfileMixin:
     def resolve_profile(self, request, canonical_player_id: int) -> PlayerSeasonEventProfile:
         competition_season = resolve_event_profile_competition_season(request)
         team_id = parse_optional_team(request)
-        if not PlayerSeasonDerivedStats.objects.filter(
+        has_outfield_profile = PlayerSeasonDerivedStats.objects.filter(
             competition_season=competition_season,
             canonical_player_id=canonical_player_id,
             is_current=True,
-        ).exists():
+        ).exists()
+        has_goalkeeper_profile = PlayerSeasonGkDerivedStats.objects.filter(
+            competition_season=competition_season,
+            canonical_player_id=canonical_player_id,
+            is_current=True,
+        ).exists()
+        if not has_outfield_profile and not has_goalkeeper_profile:
             raise PlayerSeasonEventProfile.DoesNotExist
         profile = player_profile_queryset(competition_season, canonical_player_id, team_id).first()
         if profile is None or not any(
