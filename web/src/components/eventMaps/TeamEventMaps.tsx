@@ -5,7 +5,7 @@ import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
 import type { EventShot, TeamPassFlow } from '../../types/eventMaps'
 import { PortraitPitch } from './PortraitPitch'
 import {
-  EventCoverage, EventMapCard, EventMapNotice, EventMetricStrip,
+  EventCoverage, EventMapCard, EventMapNotice, EventMatchFilter, EventMetricStrip,
   EventPitchStage, EventSelectionDetails, ShotMapLegend,
 } from './EventMapUi'
 
@@ -46,10 +46,11 @@ export function TeamEventMaps({ teamId, competition, season }: {
 }) {
   const [selection, setSelection] = useState<SelectablePitchEvent | null>(null)
   const [selectedFlow, setSelectedFlow] = useState<TeamPassFlow | null>(null)
+  const [matchRef, setMatchRef] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<TeamMap | null>(null)
   const profileQuery = useQuery({
-    queryKey: ['team-event-profile', teamId, competition, season],
-    queryFn: () => fetchTeamEventProfile(teamId, competition, season),
+    queryKey: ['team-event-profile', teamId, competition, season, matchRef],
+    queryFn: () => fetchTeamEventProfile(teamId, competition, season, matchRef),
     staleTime: 10 * 60 * 1000,
   })
   const profile = profileQuery.data
@@ -82,13 +83,14 @@ export function TeamEventMaps({ teamId, competition, season }: {
 
   return (
     <section aria-label="Team event maps">
-      <div className="mb-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(220px,0.55fr)]">
+      <div className="mb-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(220px,0.55fr)_auto]">
         <EventMetricStrip metrics={[
           { label: 'Passes', value: profile.summary.pass_attempts?.toLocaleString() ?? '—' },
           { label: 'Shots for', value: profile.summary.shots_for?.toLocaleString() ?? '—' },
           { label: 'Shots against', value: profile.summary.shots_against?.toLocaleString() ?? '—' },
         ]} />
         <EventCoverage coverage={profile.coverage} />
+        <EventMatchFilter matches={profile.matches} value={matchRef} onChange={value => { setSelection(null); setSelectedFlow(null); setMatchRef(value) }} />
       </div>
 
       <div className="space-y-3">

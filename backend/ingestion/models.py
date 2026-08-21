@@ -72,6 +72,7 @@ class MatchEventType(models.IntegerChoices):
     CARD = 16, "Card"
     SUBSTITUTION = 17, "Substitution"
     ADMINISTRATIVE = 18, "Administrative"
+    OWN_GOAL = 19, "Own goal"
 
 
 class MatchEventBodyPart(models.IntegerChoices):

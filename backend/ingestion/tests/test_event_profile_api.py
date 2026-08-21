@@ -39,8 +39,9 @@ class EventProfileApiTests(TestCase):
             has_whoscored=True,
             whoscored_league="test-league",
             whoscored_season="2025-2026",
-            whoscored_expected_match_count=1,
-            expected_team_count=2,
+            whoscored_expected_match_count=380,
+            expected_team_count=20,
+            refresh_enabled=True,
             is_published=True,
         )
         self.home = CanonicalTeam.objects.create(name="Home")
@@ -114,7 +115,7 @@ class EventProfileApiTests(TestCase):
         event_team = team or self.home
         event_player = player or self.player
         defaults = {
-            "provider_match": self.match,
+            "provider_match": values.pop("provider_match", self.match),
             "event_index": index,
             "provider_team_id": str(event_team.id),
             "team": event_team,
@@ -156,6 +157,7 @@ class EventProfileApiTests(TestCase):
         self.assertEqual(payload["canonical_player_name"], "Profile Player")
         self.assertIsNone(payload["canonical_team_id"])
         self.assertEqual(payload["coverage"]["observed_matches"], 1)
+        self.assertEqual(payload["coverage"]["expected_matches"], 38)
         self.assertEqual(payload["availability"]["pass_map"], {"available": True, "sparse": True})
         self.assertEqual(payload["average_touch_location"]["sample_size"], 1)
         self.assertEqual(payload["average_touch_location"]["x"], 10.0)
@@ -202,14 +204,12 @@ class EventProfileApiTests(TestCase):
     def test_every_pass_filter_and_compact_match_references(self):
         expected_counts = {
             "all": 2,
-            "completed": 1,
             "progressive": 1,
             "final_third_entry": 1,
             "box_entry": 1,
             "key_pass": 1,
             "cross": 1,
             "long_ball": 1,
-            "failed": 1,
         }
         for pass_filter, expected in expected_counts.items():
             with self.subTest(pass_filter=pass_filter):
@@ -228,8 +228,102 @@ class EventProfileApiTests(TestCase):
                 self.assertLessEqual(payload["passes"][0]["end_x"], 100)
                 self.assertNotIn("provider_match_id", str(payload))
 
+        completed_progressive = self.client.get(
+            self.passes_url,
+            {**self.scope, "filter": "progressive", "outcome": "completed"},
+        )
+        self.assertEqual(completed_progressive.status_code, 200)
+        self.assertEqual(completed_progressive.json()["filter"], "progressive")
+        self.assertEqual(completed_progressive.json()["outcome"], "completed")
+        self.assertEqual(completed_progressive.json()["total_matching_count"], 1)
+
+        incomplete = self.client.get(
+            self.passes_url,
+            {**self.scope, "filter": "all", "outcome": "incomplete"},
+        )
+        self.assertEqual(incomplete.status_code, 200)
+        self.assertEqual(incomplete.json()["total_matching_count"], 1)
+
+        legacy_failed = self.client.get(self.passes_url, {**self.scope, "filter": "failed"})
+        self.assertEqual(legacy_failed.status_code, 200)
+        self.assertEqual(legacy_failed.json()["filter"], "all")
+        self.assertEqual(legacy_failed.json()["outcome"], "incomplete")
+
         invalid = self.client.get(self.passes_url, {**self.scope, "filter": "sampled"})
         self.assertEqual(invalid.status_code, 400)
+        invalid_outcome = self.client.get(
+            self.passes_url,
+            {**self.scope, "outcome": "sometimes"},
+        )
+        self.assertEqual(invalid_outcome.status_code, 400)
+
+    def test_match_filter_scopes_every_event_map_and_keeps_season_match_options(self):
+        second_match = ProviderMatch.objects.create(
+            provider=Provider.WHOSCORED,
+            provider_match_id="provider-match-2",
+            competition_season=self.competition_season,
+            kickoff_at=datetime(2026, 1, 9, 15, 0, tzinfo=timezone.utc),
+            status=ProviderMatchStatus.COMPLETED,
+            home_provider_team_id="home-provider-id",
+            away_provider_team_id="away-provider-id",
+            home_team=self.home,
+            away_team=self.away,
+            home_score=1,
+            away_score=0,
+        )
+        self.add_event(
+            1,
+            provider_match=second_match,
+            outcome_successful=True,
+            is_touch=True,
+            is_progressive_pass=True,
+            x=2500,
+            y=3500,
+        )
+        self.add_event(
+            2,
+            provider_match=second_match,
+            event_type=MatchEventType.SHOT,
+            x=9200,
+            y=4800,
+            end_x=None,
+            end_y=None,
+            shot_outcome=MatchEventShotOutcome.SAVED,
+        )
+        run = IngestionRun.objects.create(
+            kind=IngestionKind.EVENT_PROFILES,
+            competition_season=self.competition_season,
+        )
+        self.assertIsNotNone(materialize_event_profiles(self.competition_season, run=run))
+
+        player = self.client.get(self.player_url, {**self.scope, "match": 1}).json()
+        self.assertEqual(len(player["matches"]), 2)
+        self.assertEqual(player["selected_match_ref"], 1)
+        self.assertEqual(player["summary"]["pass_attempts"], 1)
+        self.assertEqual(player["summary"]["shots"], 1)
+        self.assertEqual(sum(cell["raw_count"] for cell in player["touch_grid"]), 1)
+        self.assertEqual({shot["match_ref"] for shot in player["shots"]}, {1})
+
+        passes = self.client.get(
+            self.passes_url,
+            {**self.scope, "match": 1, "filter": "progressive", "outcome": "completed"},
+        ).json()
+        self.assertEqual(len(passes["matches"]), 2)
+        self.assertEqual(passes["total_matching_count"], 1)
+        self.assertEqual({row["match_ref"] for row in passes["passes"]}, {1})
+
+        team = self.client.get(self.team_url, {**self.scope, "match": 1}).json()
+        self.assertEqual(len(team["matches"]), 2)
+        self.assertEqual(team["summary"]["pass_attempts"], 1)
+        self.assertEqual(team["summary"]["shots_for"], 1)
+        self.assertEqual(team["summary"]["shots_against"], 0)
+        self.assertEqual(team["pass_flow"][0]["completed_count"], 1)
+        self.assertEqual(sum(cell["raw_count"] for cell in team["touch_grid"]), 1)
+
+        self.assertEqual(
+            self.client.get(self.player_url, {**self.scope, "match": 99}).status_code,
+            400,
+        )
 
     def test_pass_response_cap_reports_total_and_never_samples(self):
         existing = ProviderMatchEvent.objects.count()

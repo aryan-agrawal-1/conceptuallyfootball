@@ -109,14 +109,14 @@ export type EventProfileMetadata = {
 
 export type PlayerPassFilter =
   | 'all'
-  | 'completed'
   | 'progressive'
   | 'final_third_entry'
   | 'box_entry'
   | 'key_pass'
   | 'cross'
   | 'long_ball'
-  | 'failed'
+
+export type PlayerPassOutcome = 'all' | 'completed' | 'incomplete'
 
 export type PlayerEventProfilePayload = {
   playerId: number
@@ -145,6 +145,7 @@ export type PlayerPassMapPayload = {
   competition: string
   season: string
   filter: PlayerPassFilter
+  outcome: PlayerPassOutcome
   truncated: boolean
   totalMatching: number
   passes: EventPass[]

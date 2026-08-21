@@ -5,6 +5,7 @@ import type {
   EventShot,
   PlayerEventProfilePayload,
   PlayerPassFilter,
+  PlayerPassOutcome,
   PlayerPassMapPayload,
   ShotBodyPart,
   ShotOutcome,
@@ -22,6 +23,7 @@ type ApiMatch = {
   home_team_name: string | null
   away_team_id: number | null
   away_team_name: string | null
+  subject_team_id: number | null
 }
 
 type ApiShot = {
@@ -91,6 +93,7 @@ type ApiPlayerProfile = {
   coverage: {
     observed_matches: number
     competition_expected_matches: number | null
+    expected_matches: number | null
     observed_event_minutes: number
     competition_complete: boolean
   }
@@ -109,6 +112,7 @@ type ApiPlayerPasses = {
   competition_code: string
   season_label: string
   filter: PlayerPassFilter
+  outcome: PlayerPassOutcome
   total_matching_count: number
   truncated: boolean
   passes: ApiPass[]
@@ -152,9 +156,15 @@ async function readJson<T>(url: string): Promise<T> {
   return response.json()
 }
 
-function requestParams(competition: string, season: string, teamId?: number | null) {
+function requestParams(
+  competition: string,
+  season: string,
+  teamId?: number | null,
+  matchRef?: string | null,
+) {
   const params = new URLSearchParams({ competition, season })
   if (teamId != null) params.set('team', String(teamId))
+  if (matchRef != null) params.set('match', matchRef)
   return params
 }
 
@@ -203,7 +213,7 @@ function mapMatches(
 ): EventMatchLookup {
   return Object.fromEntries(
     matches.map(match => {
-      const teamId = viewedTeamId ?? eventTeamIds.get(match.ref)
+      const teamId = viewedTeamId ?? match.subject_team_id ?? eventTeamIds.get(match.ref)
       const isHome = teamId != null && teamId === match.home_team_id
       const isAway = teamId != null && teamId === match.away_team_id
       return [
@@ -297,12 +307,14 @@ export async function fetchPlayerEventProfile(
   competition: string,
   season: string,
   teamId?: number | null,
+  matchRef?: string | null,
 ): Promise<PlayerEventProfilePayload> {
-  const params = requestParams(competition, season, teamId)
+  const params = requestParams(competition, season, teamId, matchRef)
   const raw = await readJson<ApiPlayerProfile>(
     `${BASE}/player-seasons/event-profile/${playerId}?${params}`,
   )
   const shots = raw.shots.map(row => mapShot(row, 'for'))
+  const expectedMatches = raw.coverage.expected_matches ?? raw.coverage.observed_matches
   return {
     playerId: raw.canonical_player_id,
     playerName: raw.canonical_player_name,
@@ -313,10 +325,9 @@ export async function fetchPlayerEventProfile(
     splitType: raw.split_type,
     coverage: {
       matchesIncluded: raw.coverage.observed_matches,
-      matchesExpected:
-        raw.coverage.competition_expected_matches ?? raw.coverage.observed_matches,
+      matchesExpected: expectedMatches,
       minutes: raw.coverage.observed_event_minutes,
-      complete: raw.coverage.competition_complete,
+      complete: expectedMatches > 0 && raw.coverage.observed_matches >= expectedMatches,
     },
     metadata: metadata(raw.materialization),
     summary: raw.summary,
@@ -344,10 +355,13 @@ export async function fetchPlayerPassMap(
   competition: string,
   season: string,
   filter: PlayerPassFilter,
+  outcome: PlayerPassOutcome,
   teamId?: number | null,
+  matchRef?: string | null,
 ): Promise<PlayerPassMapPayload> {
-  const params = requestParams(competition, season, teamId)
+  const params = requestParams(competition, season, teamId, matchRef)
   params.set('filter', filter)
+  params.set('outcome', outcome)
   const raw = await readJson<ApiPlayerPasses>(
     `${BASE}/player-seasons/event-profile/${playerId}/passes?${params}`,
   )
@@ -356,6 +370,7 @@ export async function fetchPlayerPassMap(
     competition: raw.competition_code,
     season: raw.season_label,
     filter: raw.filter,
+    outcome: raw.outcome,
     truncated: raw.truncated,
     totalMatching: raw.total_matching_count,
     passes: raw.passes.map(mapPass),
@@ -379,8 +394,9 @@ export async function fetchTeamEventProfile(
   teamId: number,
   competition: string,
   season: string,
+  matchRef?: string | null,
 ): Promise<TeamEventProfilePayload> {
-  const params = requestParams(competition, season)
+  const params = requestParams(competition, season, null, matchRef)
   const raw = await readJson<ApiTeamProfile>(
     `${BASE}/team-seasons/event-profile/${teamId}?${params}`,
   )

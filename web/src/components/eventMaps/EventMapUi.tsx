@@ -15,6 +15,38 @@ export type EventMapViewOption<T extends string> = {
   disabled?: boolean
 }
 
+export function EventMatchFilter({
+  matches,
+  value,
+  onChange,
+}: {
+  matches: EventMatchLookup
+  value: string | null
+  onChange: (value: string | null) => void
+}) {
+  const rows = Object.values(matches).sort((left, right) =>
+    left.matchDate.localeCompare(right.matchDate) || left.matchId.localeCompare(right.matchId),
+  )
+  return (
+    <label className="flex min-w-0 items-center justify-between gap-2 border border-line-bright bg-panel px-3 text-[9px] font-bold uppercase tracking-[0.14em] text-ink-dim sm:justify-start">
+      Match
+      <select
+        aria-label="Match"
+        value={value ?? ''}
+        onChange={event => onChange(event.target.value || null)}
+        className="h-9 min-w-48 max-w-full border border-control-border bg-panel px-3 text-[10px] normal-case tracking-normal text-control-fg outline-none hover:border-electric focus:border-electric"
+      >
+        <option value="">All season matches</option>
+        {rows.map(match => (
+          <option key={match.matchId} value={match.matchId}>
+            {match.opponent} ({match.venue === 'home' ? 'H' : match.venue === 'away' ? 'A' : 'N'})
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
 export function EventMapCard({
   title,
   description,

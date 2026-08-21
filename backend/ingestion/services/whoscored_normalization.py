@@ -22,7 +22,7 @@ from ingestion.models import (
 
 
 RAW_PAYLOAD_SCHEMA_VERSION = 1
-NORMALIZATION_SCHEMA_VERSION = 1
+NORMALIZATION_SCHEMA_VERSION = 2
 ACTION_GRID_COLUMNS = 24
 ACTION_GRID_ROWS = 16
 TEAM_ZONE_COLUMNS = 5
@@ -714,6 +714,8 @@ def normalize_event(
             return None
 
     qualifier_names = qualifier_name_set(event.get("qualifiers"), source_index, diagnostics)
+    if event_type == MatchEventType.SHOT and "OwnGoal" in qualifier_names:
+        event_type = MatchEventType.OWN_GOAL
     successful = normalized_outcome(event.get("outcomeType"))
     start_x, start_y = coordinates["x"], coordinates["y"]
     end_x, end_y = coordinates["end_x"], coordinates["end_y"]

@@ -228,7 +228,6 @@ class WhoScoredParserTests(SimpleTestCase):
             if event.event_type == MatchEventType.SUBSTITUTION
         ]
         self.assertEqual(len(substitutions), 2)
-
         aerial = next(event for event in result.events if event.provider_event_id == "93016")
         challenge = next(event for event in result.events if event.provider_event_id == "93017")
         self.assertTrue(
@@ -237,6 +236,27 @@ class WhoScoredParserTests(SimpleTestCase):
         self.assertTrue(
             is_defensive_event(challenge.event_type, defensive_qualifier=True)
         )
+
+    def test_own_goal_is_not_normalized_as_a_shot(self):
+        own_goal = copy.deepcopy(
+            next(
+                event
+                for event in self.payload["events"]
+                if event["type"]["displayName"] == "Goal"
+            )
+        )
+        own_goal["id"] = 99901
+        own_goal["eventId"] = 99901
+        own_goal["qualifiers"].append(
+            {"type": {"value": 28, "displayName": "OwnGoal"}}
+        )
+        self.payload["events"].append(own_goal)
+
+        result = parse_match_payload(self.payload, policy=FIXTURE_POLICY)
+        normalized = next(event for event in result.events if event.provider_event_id == "99901")
+
+        self.assertEqual(normalized.event_type, MatchEventType.OWN_GOAL)
+        self.assertFalse(is_action_event(normalized.event_type))
 
     def test_current_match_centre_omissions_and_known_qualifiers_are_accepted(self):
         payload = copy.deepcopy(self.payload)
