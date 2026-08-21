@@ -19,6 +19,7 @@ import {
   Share2,
   ShieldCheck,
   SidebarClose,
+  SidebarOpen,
   Send,
   Trash2,
   Unlink,
@@ -634,13 +635,14 @@ function ArticleEditor() {
             </div>
             {canEdit ? <button type="button" onClick={() => void performSaveRef.current(true)} disabled={saveState === 'saving'} className="inline-flex h-9 items-center gap-2 border border-line-bright px-3 text-[8px] font-bold uppercase tracking-[0.14em] text-ink-dim hover:border-electric hover:text-ink"><Save className="size-3.5" /> Save</button> : null}
             {article.preview_enabled && previewUrl ? <a href={previewUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 bg-electric px-3 text-[8px] font-black uppercase tracking-[0.14em] text-mat"><ExternalLink className="size-3.5" /> Preview</a> : null}
+            <button type="button" onClick={() => setInspectorOpen(current => !current)} className={`grid size-9 shrink-0 place-items-center border transition-colors ${inspectorOpen ? 'border-electric/50 bg-electric text-mat' : 'border-line text-ink-muted hover:border-electric/50 hover:bg-electric-dim hover:text-electric'}`} aria-label={inspectorOpen ? 'Hide article details' : 'Show article details'} aria-expanded={inspectorOpen} title={inspectorOpen ? 'Hide article details' : 'Show article details'}>{inspectorOpen ? <SidebarClose className="size-4" /> : <SidebarOpen className="size-4" />}</button>
           </div>
         </div>
       </header>
 
       {saveError ? <div className="border-b border-ember/35 bg-ember-dim/55 px-6 py-2 text-center text-xs text-ink">{saveError}</div> : null}
 
-      <div className={`mx-auto ${mode === 'write' || !canEdit ? `grid max-w-[1500px] ${inspectorOpen ? 'lg:grid-cols-[minmax(0,1fr)_300px]' : ''}` : 'w-full'}`}>
+      <div className={`mx-auto grid max-w-[1500px] ${inspectorOpen ? 'lg:grid-cols-[minmax(0,1fr)_300px]' : ''}`}>
         <section className="min-h-[calc(100svh-4rem)] bg-panel/30">
           {mode === 'reader' ? (
             <ArticleCanvas title={draft.title} subtitle={draft.subtitle} document={draft.document} author={article.author} updatedAt={article.updated_at} subjects={draft.subjects} references={draftReferences} topics={draft.topics} sourceNotes={draft.source_notes} />
@@ -652,13 +654,11 @@ function ArticleEditor() {
               total={draft.document.blocks.length}
               activeHandle={activeBlockHandle ?? undefined}
               selectionState={activeBlockHandle ? activeSelectionState : EMPTY_INLINE_SELECTION}
-              inspectorOpen={inspectorOpen}
               onInsert={insertEditorCommand}
               onChangeType={changeActiveBlockType}
               onMove={direction => moveBlock(activeBlockIndex, direction)}
               onDuplicate={() => duplicateBlock(activeBlockIndex)}
               onRemove={() => removeBlock(activeBlockIndex)}
-              onToggleInspector={() => setInspectorOpen(current => !current)}
             />
             <div className="mx-auto max-w-[760px] px-7 py-12 sm:px-12 sm:py-16">
               <p className="font-mono text-[8px] uppercase tracking-[0.22em] text-electric">{statusLabel(article.status)} · Revision {article.revision}</p>
@@ -678,7 +678,7 @@ function ArticleEditor() {
           )}
         </section>
 
-        {(mode === 'write' || !canEdit) && inspectorOpen ? <aside className="fixed inset-x-0 bottom-0 top-16 z-30 overflow-y-auto border-t border-line bg-mat lg:sticky lg:inset-auto lg:top-16 lg:z-auto lg:max-h-[calc(100svh-4rem)] lg:self-start lg:border-l lg:border-t-0 lg:bg-transparent">
+        {inspectorOpen ? <aside className="fixed inset-x-0 bottom-0 top-16 z-30 overflow-y-auto border-t border-line bg-mat lg:sticky lg:inset-auto lg:top-16 lg:z-auto lg:max-h-[calc(100svh-4rem)] lg:self-start lg:border-l lg:border-t-0 lg:bg-transparent">
           <div className="border-b border-line p-3 lg:hidden"><button type="button" onClick={() => setInspectorOpen(false)} className="flex h-9 w-full items-center justify-between gap-3 px-2 font-mono text-[8px] uppercase tracking-[0.16em] text-ink-muted hover:bg-electric-dim hover:text-electric focus-visible:bg-electric-dim focus-visible:text-electric focus-visible:outline-none"><span>Hide article details</span><SidebarClose className="size-3.5" /></button></div>
           <InspectorSection title="Publishing workflow" defaultOpen>
             <WorkflowPanel article={article} canApprove={Boolean(user?.can_approve_editorial)} canEdit={canEdit} pending={workflowPending} onSubmit={requestSubmission} onTransition={runWorkflow} />

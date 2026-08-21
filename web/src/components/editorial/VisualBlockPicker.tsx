@@ -247,6 +247,20 @@ export function VisualBlockPicker({
     setBlock(current => ({ ...current, config: { ...current.config, metric_keys: selected ? effectiveMetricKeys.filter(item => item !== key) : [...effectiveMetricKeys, key].slice(0, max) } }))
   }
 
+  function changeScatterMetric(axis: 0 | 1, key: string) {
+    const next = effectiveMetricKeys.slice(0, 2)
+    const otherAxis = axis === 0 ? 1 : 0
+    if (next[otherAxis] === key) {
+      next[otherAxis] = next[axis]
+    }
+    next[axis] = key
+    setBlock(current => ({ ...current, config: { ...current.config, metric_keys: next.filter(Boolean) } }))
+  }
+
+  function changeBarMetric(key: string) {
+    setBlock(current => ({ ...current, config: { ...current.config, metric_keys: [key] } }))
+  }
+
   function continueToDetails() {
     if (!configurationComplete(effectiveBlock)) return
     setBlock({
@@ -316,11 +330,24 @@ export function VisualBlockPicker({
                     {block.visual_type === 'player_comparison' ? <Segmented value={block.config.chart_type} options={[['dumbbell', 'Dumbbell'], ['radar', 'Radar'], ['table', 'Stat table']]} onChange={value => setBlock(current => ({ ...current, config: { ...current.config, chart_type: value as 'dumbbell' | 'radar' | 'table' } }))} /> : null}
                     {block.visual_type === 'custom_chart' && block.config.chart_type === 'scatter' ? <div className="mt-3 grid gap-2 sm:grid-cols-2"><Toggle checked={block.config.filters.labels} label="Plot labels" onChange={checked => setBlock(current => ({ ...current, config: { ...current.config, filters: { ...current.config.filters, labels: checked } } }))} /><Toggle checked={block.config.filters.trendline} label="Trend line" onChange={checked => setBlock(current => ({ ...current, config: { ...current.config, filters: { ...current.config.filters, trendline: checked } } }))} /></div> : null}
                     {block.visual_type === 'custom_chart' && block.config.chart_type === 'bar' ? <div className="mt-3 grid gap-3 sm:grid-cols-2"><label><FieldLabel>Ranking</FieldLabel><select value={block.config.filters.bar_window} onChange={event => setBlock(current => ({ ...current, config: { ...current.config, filters: { ...current.config.filters, bar_window: event.target.value as 'top' | 'bottom' | 'all' } } }))} className={inputClass}><option value="top">Top</option><option value="bottom">Bottom</option><option value="all">All</option></select></label><label><FieldLabel>Number of bars</FieldLabel><input type="number" min="5" max="20" value={block.config.filters.bar_count} onChange={event => setBlock(current => ({ ...current, config: { ...current.config, filters: { ...current.config.filters, bar_count: Number(event.target.value) } } }))} className={inputClass} /></label></div> : null}
-                    <div className="relative mt-3"><Search className="pointer-events-none absolute left-3 top-3 size-3.5 text-ink-muted" /><input value={metricQuery} onChange={event => setMetricQuery(event.target.value)} className={`${inputClass} pl-9`} placeholder="Find a metric…" /></div>
-                    <div className="mt-2 max-h-56 overflow-y-auto border border-line bg-mat/40">
-                      {metricQueryResult.isLoading || comparisonDetailsQuery.isLoading ? <LoadingLine label="Loading compatible metrics" /> : filteredMetrics.map(metric => <MetricOption key={metric.key} metric={metric} selectedIndex={effectiveMetricKeys.indexOf(metric.key)} disabled={!effectiveMetricKeys.includes(metric.key) && effectiveMetricKeys.length >= metricMaximum(block)} onClick={() => toggleMetric(metric.key)} />)}
-                    </div>
-                    {effectiveMetricKeys.length ? <p className="mt-2 text-[9px] leading-4 text-ink-muted">{block.config.chart_type === 'scatter' ? 'Selection order sets X first, then Y.' : `${effectiveMetricKeys.length} selected · click a selected metric to remove it.`}</p> : null}
+                    {block.visual_type === 'custom_chart' && block.config.chart_type === 'scatter' ? (
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <MetricSelect label="X axis" value={effectiveMetricKeys[0] ?? ''} metrics={metricOptions} disabled={metricQueryResult.isLoading} onChange={value => changeScatterMetric(0, value)} />
+                        <MetricSelect label="Y axis" value={effectiveMetricKeys[1] ?? ''} metrics={metricOptions} disabled={metricQueryResult.isLoading} onChange={value => changeScatterMetric(1, value)} />
+                      </div>
+                    ) : block.visual_type === 'custom_chart' && block.config.chart_type === 'bar' ? (
+                      <div className="mt-3">
+                        <MetricSelect label="Metric" value={effectiveMetricKeys[0] ?? ''} metrics={metricOptions} disabled={metricQueryResult.isLoading} onChange={changeBarMetric} />
+                      </div>
+                    ) : (
+                      <>
+                        <div className="relative mt-3"><Search className="pointer-events-none absolute left-3 top-3 size-3.5 text-ink-muted" /><input value={metricQuery} onChange={event => setMetricQuery(event.target.value)} className={`${inputClass} pl-9`} placeholder="Find a metric…" /></div>
+                        <div className="mt-2 max-h-56 overflow-y-auto border border-line bg-mat/40">
+                          {metricQueryResult.isLoading || comparisonDetailsQuery.isLoading ? <LoadingLine label="Loading compatible metrics" /> : filteredMetrics.map(metric => <MetricOption key={metric.key} metric={metric} selectedIndex={effectiveMetricKeys.indexOf(metric.key)} disabled={!effectiveMetricKeys.includes(metric.key) && effectiveMetricKeys.length >= metricMaximum(block)} onClick={() => toggleMetric(metric.key)} />)}
+                        </div>
+                        {effectiveMetricKeys.length ? <p className="mt-2 text-[9px] leading-4 text-ink-muted">{effectiveMetricKeys.length} selected · click a selected metric to remove it.</p> : null}
+                      </>
+                    )}
                   </Section> : null}
                 </div>
               ) : (
@@ -363,6 +390,16 @@ function EntityOption({ entity, selected, disabled, multiple, onClick }: { entit
 
 function MetricOption({ metric, selectedIndex, disabled, onClick }: { metric: MetricOptionValue; selectedIndex: number; disabled: boolean; onClick: () => void }) {
   return <button type="button" disabled={disabled} onClick={onClick} className={`flex w-full items-center justify-between gap-3 border-b border-line px-3 py-2.5 text-left last:border-0 disabled:opacity-30 ${selectedIndex >= 0 ? 'bg-electric-dim/40' : 'hover:bg-panel'}`}><span className="min-w-0"><strong className="block truncate text-[11px] text-ink">{metric.label}</strong><span className="mt-1 block font-mono text-[7px] uppercase tracking-[0.1em] text-ink-muted">{metric.group}</span></span><span className={`grid size-5 shrink-0 place-items-center border font-mono text-[8px] ${selectedIndex >= 0 ? 'border-electric bg-electric text-mat' : 'border-line-bright text-transparent'}`}>{selectedIndex >= 0 ? selectedIndex + 1 : <Check className="size-3" />}</span></button>
+}
+
+function MetricSelect({ label, value, metrics, disabled, onChange }: { label: string; value: string; metrics: MetricOptionValue[]; disabled: boolean; onChange: (value: string) => void }) {
+  const groups = new Map<string, MetricOptionValue[]>()
+  for (const metric of metrics) {
+    const group = groups.get(metric.group)
+    if (group) group.push(metric)
+    else groups.set(metric.group, [metric])
+  }
+  return <label><FieldLabel>{label}</FieldLabel><select value={value} disabled={disabled || metrics.length === 0} onChange={event => onChange(event.target.value)} className={inputClass}><option value="" disabled>{disabled ? 'Loading metrics…' : 'Choose metric…'}</option>{[...groups].map(([group, options]) => <optgroup key={group} label={group}>{options.map(metric => <option key={metric.key} value={metric.key}>{metric.label}</option>)}</optgroup>)}</select></label>
 }
 
 function Section({ title, description, children }: { title: string; description: string; children: ReactNode }) {
