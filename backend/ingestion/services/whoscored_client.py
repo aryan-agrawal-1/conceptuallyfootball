@@ -36,7 +36,84 @@ class WhoScoredSourceConfig:
     league: str
     season: str
     data_dir: Path | None = None
-    headless: bool = False
+    # VPS, pilot, retry, and scheduled acquisition all use this default. A
+    # visible browser is only an explicit local debugging aid.
+    headless: bool = True
+
+
+FAILURE_MESSAGES = {
+    "anti_bot_challenge": "The provider returned an access-control or anti-bot response.",
+    "navigation_failure": "The browser could not complete provider navigation.",
+    "payload_extraction_failure": "The browser response could not be extracted as a complete match payload.",
+    "parser_failure": "The provider response could not be parsed.",
+    "source_change": "The provider payload no longer satisfies the expected source contract.",
+    "configuration_failure": "The WhoScored acquisition environment or configuration is invalid.",
+}
+
+
+def safe_failure_evidence(
+    error: Exception,
+    *,
+    stage: str,
+    headless: bool,
+) -> dict[str, Any]:
+    """Classify a failure without retaining source bodies, URLs, or browser state.
+
+    Exception strings from browsers can contain page HTML, request URLs,
+    headers, profiles, or filesystem paths. Operational evidence therefore
+    stores only allowlisted metadata and a category-specific message.
+    """
+    chain: list[BaseException] = []
+    current: BaseException | None = error
+    while current is not None and len(chain) < 5:
+        chain.append(current)
+        current = current.__cause__ or current.__context__
+    error_types = [type(item).__name__ for item in chain]
+    combined = " ".join(str(item).lower() for item in chain)
+
+    access_markers = (
+        "403", "429", "access denied", "access failure", "anti-bot", "blocked", "captcha",
+        "challenge", "cloudflare", "forbidden", "too many requests",
+    )
+    source_markers = (
+        "coordinate", "drift", "missing required", "normalization",
+        "schema", "unknown event", "unknown qualifier", "validation",
+    )
+    extraction_markers = (
+        "cache", "data endpoint", "empty response", "events list",
+        "full payload", "match payload", "no events", "not an object",
+    )
+    parser_types = {"JSONDecodeError", "ParserError", "DecodeError"}
+    navigation_types = {
+        "ConnectionError", "MaxRetryError", "NoSuchWindowException",
+        "TimeoutError", "TimeoutException", "WebDriverException",
+    }
+
+    if any(marker in combined for marker in access_markers):
+        category = "anti_bot_challenge"
+    elif any("Normalization" in error_type for error_type in error_types) or any(
+        marker in combined for marker in source_markers
+    ):
+        category = "source_change"
+    elif parser_types.intersection(error_types) or "json" in combined or "parse" in combined:
+        category = "parser_failure"
+    elif isinstance(error, FileNotFoundError) or any(
+        marker in combined for marker in extraction_markers
+    ):
+        category = "payload_extraction_failure"
+    elif navigation_types.intersection(error_types) or stage in {"schedule_navigation", "match_navigation"}:
+        category = "navigation_failure"
+    else:
+        category = "configuration_failure" if stage == "configuration" else "source_change"
+
+    return {
+        "category": category,
+        "stage": stage,
+        "error_type": error_types[0],
+        "cause_type": error_types[-1],
+        "message": FAILURE_MESSAGES[category],
+        "headless": headless,
+    }
 
 
 @dataclass(frozen=True)
@@ -269,13 +346,20 @@ class SoccerdataWhoScoredClient:
                         return super()._validate_page(url)
 
                 factory = CompatibleWhoScored
-            self._reader = factory(
+            reader = factory(
                 leagues=self.config.league,
                 seasons=self.config.season,
                 data_dir=self.data_dir,
                 no_store=False,
                 headless=self.config.headless,
             )
+            # soccerdata logs WebDriver startup failures and returns a reader
+            # without ``_driver``. Failing here prevents a production command
+            # from appearing healthy merely because stale schedule/payload
+            # cache files remain readable after browser startup failed.
+            if getattr(reader, "_driver", None) is None:
+                raise RuntimeError("WhoScored browser failed to initialize.")
+            self._reader = reader
         return self._reader
 
     def list_matches(self, *, force_cache: bool = False) -> list[SourceMatch]:

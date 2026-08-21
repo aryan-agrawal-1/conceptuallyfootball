@@ -24,6 +24,7 @@ from ingestion.services.whoscored_client import (
     WhoScoredProviderClient,
     WhoScoredSourceConfig,
     SoccerdataWhoScoredClient,
+    safe_failure_evidence,
 )
 from ingestion.services.whoscored_lifecycle import (
     WhoScoredAccessCutoffError,
@@ -46,6 +47,7 @@ class WhoScoredIngestionOptions:
     force: bool = False
     dry_run: bool = False
     allow_over_cap: bool = False
+    headed_debug: bool = False
 
 
 @dataclass
@@ -176,6 +178,10 @@ def run_whoscored_ingestion(
         "per_match_failures": [],
         "schedule_failures": [],
         "dry_run": options.dry_run,
+        "browser": {
+            "headless": not options.headed_debug,
+            "mode": "headed_local_debug" if options.headed_debug else "headless",
+        },
     }
     if options.dry_run:
         selected_persisted_matches = select_completed_provider_matches(
@@ -203,6 +209,7 @@ def run_whoscored_ingestion(
             WhoScoredSourceConfig(
                 league=competition_season.whoscored_league,
                 season=competition_season.whoscored_season,
+                headless=not options.headed_debug,
             )
         )
         stats["schedule_requests"] = 1
@@ -234,10 +241,14 @@ def run_whoscored_ingestion(
             try:
                 local_matches[source_match_id] = lifecycle.upsert_match(source_match)
             except Exception as error:
+                evidence = safe_failure_evidence(
+                    error,
+                    stage="schedule_validation",
+                    headless=not options.headed_debug,
+                )
                 failure = {
                     "match_id": source_match_id,
-                    "error_type": "ScheduleValidationError",
-                    "message": str(error)[:1000],
+                    **evidence,
                     "selected": source_match_id in selected_match_ids,
                 }
                 schedule_failures.append(failure)
@@ -247,6 +258,8 @@ def run_whoscored_ingestion(
                             source_match_id,
                             failure["error_type"],
                             failure["message"],
+                            failure["category"],
+                            failure["stage"],
                         )
                     )
         stats["schedule_failures"] = schedule_failures
@@ -259,11 +272,33 @@ def run_whoscored_ingestion(
             try:
                 result = lifecycle.process_match(provider_match, historical=True, force=options.force)
             except WhoScoredAccessCutoffError as error:
-                failures.append(WhoScoredMatchFailure(provider_match.provider_match_id, type(error).__name__, str(error)))
+                evidence = safe_failure_evidence(
+                    error,
+                    stage="match_navigation",
+                    headless=not options.headed_debug,
+                )
+                failures.append(WhoScoredMatchFailure(
+                    provider_match.provider_match_id,
+                    evidence["error_type"],
+                    evidence["message"],
+                    evidence["category"],
+                    evidence["stage"],
+                ))
                 stats["access_cutoff"] = True
                 break
             except Exception as error:  # isolate malformed matches from their neighbours
-                failures.append(WhoScoredMatchFailure(provider_match.provider_match_id, type(error).__name__, str(error)[:1000]))
+                evidence = safe_failure_evidence(
+                    error,
+                    stage="match_processing",
+                    headless=not options.headed_debug,
+                )
+                failures.append(WhoScoredMatchFailure(
+                    provider_match.provider_match_id,
+                    evidence["error_type"],
+                    evidence["message"],
+                    evidence["category"],
+                    evidence["stage"],
+                ))
                 continue
             if result.action == "reused_final":
                 stats["raw_payload_reuses"] += 1
@@ -276,11 +311,18 @@ def run_whoscored_ingestion(
         stats["requests"] = stats["schedule_requests"] + stats["match_detail_requests"]
         stats["retries"] = controller.stats.retries
         stats["validation_failures"] = sum(
-            1 for failure in failures if "Normalization" in failure.error_type or "Validation" in failure.error_type
+            1 for failure in failures if failure.category in {"source_change", "parser_failure"}
         )
         stats["fetch_failures"] = len(failures) - stats["validation_failures"]
         stats["per_match_failures"] = [
-            {"match_id": failure.provider_match_id, "error_type": failure.error_type, "message": failure.message}
+            {
+                "match_id": failure.provider_match_id,
+                "category": failure.category,
+                "stage": failure.stage,
+                "error_type": failure.error_type,
+                "message": failure.message,
+                "headless": not options.headed_debug,
+            }
             for failure in failures
         ]
         identity_report = build_event_identity_report(competition_season)
@@ -325,12 +367,19 @@ def run_whoscored_ingestion(
         run.save(update_fields=["stats", "status", "error_detail", "finished_at"])
         return WhoScoredIngestionResult(run=run, stats=stats, failures=failures)
     except Exception as error:
+        stage = "schedule_navigation" if stats["schedule_requests"] else "configuration"
+        evidence = safe_failure_evidence(
+            error,
+            stage=stage,
+            headless=not options.headed_debug,
+        )
         stats["elapsed_seconds"] = round(monotonic() - started_clock, 3)
         stats["outcome"] = "fatal_configuration_failure"
         stats["fatal_error"] = type(error).__name__
+        stats["fatal_failure"] = evidence
         run.stats = stats
         run.status = IngestionRunStatus.FAILED
-        run.error_detail = str(error)[:1000]
+        run.error_detail = evidence["message"]
         run.finished_at = timezone.now()
         run.save(update_fields=["stats", "status", "error_detail", "finished_at"])
         raise

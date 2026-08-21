@@ -15,11 +15,12 @@ from ingestion.models import (
     MatchEventType,
     PlayerSeasonDerivedStats,
     PlayerSeasonEventProfile,
+    PlayerSeasonGkDerivedStats,
     Provider,
     ProviderMatchEvent,
     TeamSeasonEventProfile,
 )
-from ingestion.services.event_profiles import event_profile_availability
+from ingestion.services.event_profiles import FORMULA_VERSION, event_profile_availability
 
 
 PASS_RESPONSE_LIMIT = 5_000
@@ -100,10 +101,15 @@ def parse_optional_team(request) -> int | None:
 
 
 def availability_for_player(profile: PlayerSeasonEventProfile) -> dict:
+    located_touches = (
+        sum(cell.get("raw_count", 0) for cell in profile.action_grid)
+        if profile.formula_version == FORMULA_VERSION
+        else 0
+    )
     return event_profile_availability(
         profile.pass_attempts,
         profile.shots,
-        profile.valid_location_actions,
+        located_touches,
     )
 
 
@@ -228,6 +234,7 @@ def compact_pass(event: ProviderMatchEvent, match_references: dict[int, int]) ->
 
 
 PASS_FILTERS: dict[str, Callable[[QuerySet], QuerySet]] = {
+    "all": lambda queryset: queryset,
     "completed": lambda queryset: queryset.filter(outcome_successful=True),
     "progressive": lambda queryset: queryset.filter(is_progressive_pass=True),
     "final_third_entry": lambda queryset: queryset.filter(is_final_third_entry=True),
@@ -239,7 +246,6 @@ PASS_FILTERS: dict[str, Callable[[QuerySet], QuerySet]] = {
 }
 
 PASS_FILTER_ALIASES = {
-    "all": "completed",
     "all_completed": "completed",
     "final-third-entry": "final_third_entry",
     "final_third_entries": "final_third_entry",
@@ -259,7 +265,7 @@ def normalized_pass_filter(request) -> str:
     value = PASS_FILTER_ALIASES.get(requested, requested)
     if value not in PASS_FILTERS:
         raise DjangoValidationError(
-            "Unsupported pass filter. Use completed, progressive, final_third_entry, "
+            "Unsupported pass filter. Use all, completed, progressive, final_third_entry, "
             "box_entry, key_pass, cross, long_ball, or failed."
         )
     return value
@@ -269,11 +275,17 @@ class PlayerEventProfileMixin:
     def resolve_profile(self, request, canonical_player_id: int) -> PlayerSeasonEventProfile:
         competition_season = resolve_event_profile_competition_season(request)
         team_id = parse_optional_team(request)
-        if not PlayerSeasonDerivedStats.objects.filter(
+        has_outfield_profile = PlayerSeasonDerivedStats.objects.filter(
             competition_season=competition_season,
             canonical_player_id=canonical_player_id,
             is_current=True,
-        ).exists():
+        ).exists()
+        has_goalkeeper_profile = PlayerSeasonGkDerivedStats.objects.filter(
+            competition_season=competition_season,
+            canonical_player_id=canonical_player_id,
+            is_current=True,
+        ).exists()
+        if not has_outfield_profile and not has_goalkeeper_profile:
             raise PlayerSeasonEventProfile.DoesNotExist
         profile = player_profile_queryset(competition_season, canonical_player_id, team_id).first()
         if profile is None or not any(
@@ -321,6 +333,7 @@ class PlayerEventProfileApi(PlayerEventProfileMixin, APIView):
             .order_by("provider_match__kickoff_at", "provider_match_id", "event_index")
         )
         matches, references = compact_match_lookup(shots)
+        located_touch_count = sum(cell.get("raw_count", 0) for cell in profile.action_grid)
         return {
             "canonical_player_id": profile.player_id,
             "canonical_player_name": profile.player.display_name,
@@ -337,8 +350,9 @@ class PlayerEventProfileApi(PlayerEventProfileMixin, APIView):
             "average_touch_location": {
                 "x": public_coordinate(profile.average_touch_x),
                 "y": public_coordinate(profile.average_touch_y),
-                "sample_size": profile.touches,
+                "sample_size": located_touch_count,
             },
+            "touch_grid": profile.action_grid if profile.formula_version == FORMULA_VERSION else [],
             "action_grid": profile.action_grid,
             "shots": [compact_shot(event, references) for event in shots],
             "matches": matches,
@@ -408,7 +422,8 @@ class TeamEventProfileApi(APIView):
         try:
             competition_season = resolve_event_profile_competition_season(request)
             profile = TeamSeasonEventProfile.objects.select_related(
-                "team", "competition_season__competition", "competition_season__season"
+                "team", "competition_season__competition", "competition_season__season",
+                "materialized_ingestion_run",
             ).get(
                 competition_season=competition_season,
                 team_id=canonical_team_id,
@@ -465,7 +480,9 @@ class TeamEventProfileApi(APIView):
             },
             "materialization": materialization_metadata(profile),
             "summary": {field: getattr(profile, field) for field in TEAM_SUMMARY_FIELDS},
-            "pass_flow": profile.pass_flow,
+            "pass_flow": profile.pass_flow if profile.formula_version == FORMULA_VERSION else [],
+            "touch_grid": profile.action_grid if profile.formula_version == FORMULA_VERSION else [],
+            "opponent_touch_grid": profile.opponent_action_grid if profile.formula_version == FORMULA_VERSION else [],
             "action_grid": profile.action_grid,
             "opponent_action_grid": profile.opponent_action_grid,
             "shots_for": [compact_shot(event, references) for event in shots_for],

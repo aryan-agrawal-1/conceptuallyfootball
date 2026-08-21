@@ -23,6 +23,10 @@ from ingestion.competition_scope import (
     scope_minimum_eligible_minutes,
 )
 from ingestion.derived_definitions import METRIC_META_CACHE_VERSION
+from ingestion.event_profile_flags import (
+    EVENT_PROFILE_FLAG_CACHE_VERSION,
+    player_event_profile_flag,
+)
 from ingestion.gk_definitions import (
     FORMULA_VERSION_GK,
     GK_METRIC_DEFINITIONS,
@@ -32,7 +36,12 @@ from ingestion.gk_definitions import (
     LIST_SORT_FIELDS_GK,
 )
 from ingestion.derived_api import _resolve_competition_scope
-from ingestion.models import CanonicalTeam, CompetitionSeason, PlayerSeasonGkDerivedStats
+from ingestion.models import (
+    CanonicalTeam,
+    CompetitionSeason,
+    PlayerSeasonEventProfile,
+    PlayerSeasonGkDerivedStats,
+)
 from ingestion.profile_modes import (
     comparison_source_code,
     comparison_scope_options,
@@ -402,10 +411,15 @@ class GkDerivedPlayerSeasonDetailApi(APIView):
         )
         source_version = joined_version(
             "gk-derived-detail",
+            EVENT_PROFILE_FLAG_CACHE_VERSION,
             METRIC_META_CACHE_VERSION,
             PROFILE_DISTRIBUTION_CACHE_VERSION,
             SCOPE_PERCENTILES_CACHE_VERSION,
             model_version(PlayerSeasonGkDerivedStats, {"is_current": True}),
+            model_version(
+                PlayerSeasonEventProfile,
+                {"is_current": True, "player_id": canonical_player_id},
+            ),
             model_version(CompetitionSeason),
         )
         try:
@@ -448,6 +462,10 @@ class GkDerivedPlayerSeasonDetailApi(APIView):
             raise
 
         payload = _row_payload(row)
+        payload["event_profile"] = player_event_profile_flag(
+            competition_season,
+            canonical_player_id,
+        )
         if scope_percentiles is not None:
             _attach_scope_percentiles(payload, row, scope_percentiles)
             payload["scope_percentile_context"] = scope_context(scope_code, competition_season.season.label, scope_seasons)

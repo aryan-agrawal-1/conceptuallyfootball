@@ -17,6 +17,7 @@ from ingestion.models import (
     MergedTeamSeason,
     PlayerSeasonDerivedStats,
     PlayerSeasonEventProfile,
+    PlayerSeasonGkDerivedStats,
     Provider,
     ProviderMatch,
     ProviderMatchEvent,
@@ -159,7 +160,9 @@ class EventProfileApiTests(TestCase):
         self.assertEqual(payload["average_touch_location"]["sample_size"], 1)
         self.assertEqual(payload["average_touch_location"]["x"], 10.0)
         self.assertEqual(payload["average_touch_location"]["y"], 20.0)
-        self.assertEqual(len(payload["action_grid"]), 96)
+        self.assertEqual(len(payload["action_grid"]), 384)
+        self.assertEqual(payload["touch_grid"], payload["action_grid"])
+        self.assertEqual(sum(cell["raw_count"] for cell in payload["touch_grid"]), 1)
         self.assertEqual(len(payload["shots"]), 1)
         self.assertEqual(payload["shots"][0]["match_ref"], 0)
         self.assertEqual(payload["shots"][0]["team_id"], self.home.id)
@@ -198,6 +201,7 @@ class EventProfileApiTests(TestCase):
 
     def test_every_pass_filter_and_compact_match_references(self):
         expected_counts = {
+            "all": 2,
             "completed": 1,
             "progressive": 1,
             "final_third_entry": 1,
@@ -271,9 +275,16 @@ class EventProfileApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["canonical_team_name"], "Home")
-        self.assertEqual(len(payload["pass_flow"]), 225)
-        self.assertEqual(len(payload["action_grid"]), 96)
-        self.assertEqual(len(payload["opponent_action_grid"]), 96)
+        self.assertEqual(len(payload["pass_flow"]), 1)
+        self.assertEqual(payload["pass_flow"][0]["completed_count"], 1)
+        self.assertEqual(payload["pass_flow"][0]["column"], 0)
+        self.assertEqual(payload["pass_flow"][0]["row"], 0)
+        self.assertEqual(payload["pass_flow"][0]["mean_origin_x"], 10.0)
+        self.assertEqual(payload["pass_flow"][0]["mean_destination_x"], 80.0)
+        self.assertEqual(len(payload["action_grid"]), 384)
+        self.assertEqual(len(payload["opponent_action_grid"]), 384)
+        self.assertEqual(payload["touch_grid"], payload["action_grid"])
+        self.assertEqual(payload["opponent_touch_grid"], payload["opponent_action_grid"])
         self.assertEqual(len(payload["shots_for"]), 1)
         self.assertEqual(len(payload["shots_against"]), 1)
         self.assertEqual(payload["shots_for"][0]["match_ref"], 0)
@@ -299,7 +310,7 @@ class EventProfileApiTests(TestCase):
             team__isnull=True,
             is_current=True,
         )
-        profile.formula_version = "event_profiles_v2"
+        profile.formula_version = "event_profiles_v4"
         profile.save(update_fields=["formula_version"])
         third = self.client.get(self.player_url, self.scope)
         self.assertEqual(third.status_code, 200)
@@ -308,7 +319,7 @@ class EventProfileApiTests(TestCase):
             cache_key__startswith=f"event-profile:{self.competition_season.id}:player:"
         ).order_by("-id").first()
         self.assertIsNotNone(cached)
-        self.assertIn("event_profiles_v2", cached.source_version)
+        self.assertIn("event_profiles_v4", cached.source_version)
 
     def test_public_json_excludes_raw_payload_and_provider_fields(self):
         forbidden = (
@@ -335,6 +346,14 @@ class EventProfileApiTests(TestCase):
                     self.assertNotIn(field, rendered)
 
     def test_existing_detail_endpoints_expose_only_lightweight_flags(self):
+        PlayerSeasonGkDerivedStats.objects.create(
+            competition_season=self.competition_season,
+            canonical_player=self.player,
+            canonical_display_team=self.home,
+            formula_version="gk-test",
+            minutes=90,
+            is_current=True,
+        )
         player = self.client.get(
             f"/api/v1/player-seasons/derived-stats/{self.player.id}",
             self.scope,
@@ -343,13 +362,18 @@ class EventProfileApiTests(TestCase):
             f"/api/v1/team-seasons/stats/{self.home.id}",
             self.scope,
         )
+        goalkeeper = self.client.get(
+            f"/api/v1/player-seasons/gk-derived-stats/{self.player.id}",
+            self.scope,
+        )
 
         self.assertEqual(player.status_code, 200)
         self.assertEqual(team.status_code, 200)
-        for payload in (player.json(), team.json()):
+        self.assertEqual(goalkeeper.status_code, 200)
+        for payload in (player.json(), goalkeeper.json(), team.json()):
             flag = payload["event_profile"]
             self.assertTrue(flag["available"])
-            self.assertEqual(flag["formula_version"], "event_profiles_v1")
+            self.assertEqual(flag["formula_version"], "event_profiles_v3")
             self.assertIn("coverage", flag)
             self.assertNotIn("action_grid", flag)
             self.assertNotIn("pass_flow", flag)
@@ -367,3 +391,50 @@ class EventProfileApiTests(TestCase):
         )
         self.assertFalse(player.json()["event_profile"]["available"])
         self.assertFalse(team.json()["event_profile"]["available"])
+
+    def test_incomplete_internal_pilot_profiles_remain_available_on_delivery_branch(self):
+        run = PlayerSeasonEventProfile.objects.get(
+            player=self.player,
+            split_type="season_total",
+            is_current=True,
+        ).materialized_ingestion_run
+        run.stats = run.stats | {
+            "public_complete": False,
+            "coverage": run.stats["coverage"] | {"complete": False},
+        }
+        run.save(update_fields=["stats"])
+
+        for url in (self.player_url, self.passes_url, self.team_url):
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url, self.scope).status_code, 200)
+
+        player = self.client.get(
+            f"/api/v1/player-seasons/derived-stats/{self.player.id}",
+            self.scope,
+        )
+        team = self.client.get(
+            f"/api/v1/team-seasons/stats/{self.home.id}",
+            self.scope,
+        )
+        self.assertTrue(player.json()["event_profile"]["available"])
+        self.assertFalse(
+            player.json()["event_profile"]["coverage"]["competition_complete"]
+        )
+        self.assertTrue(team.json()["event_profile"]["available"])
+
+    def test_goalkeeper_only_player_can_open_event_profile(self):
+        PlayerSeasonGkDerivedStats.objects.create(
+            competition_season=self.competition_season,
+            canonical_player=self.player,
+            canonical_display_team=self.home,
+            formula_version="gk-test",
+            minutes=90,
+            is_current=True,
+        )
+        PlayerSeasonDerivedStats.objects.filter(canonical_player=self.player).delete()
+        MaterializedApiPayload.objects.all().delete()
+
+        response = self.client.get(self.player_url, self.scope)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["canonical_player_id"], self.player.id)

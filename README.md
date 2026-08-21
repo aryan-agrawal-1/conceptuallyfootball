@@ -94,6 +94,35 @@ cd backend
 python manage.py diagnose_season_rollover <competition-season-id> --candidate-file path/to/candidate-teams.json --fail-on-anomaly
 ```
 
+### WhoScored VPS ingestion
+
+WhoScored acquisition is headless by default for the source probe, 50-match
+pilot, retries, force-refetches, and scheduled/VPS runs. A production host
+needs compatible Chrome/Chromium and a driver plus a private writable
+`SOCCERDATA_DIR`; it does not need a display server.
+
+Run the production-equivalent preflight and pilot as the service user:
+
+```bash
+backend/venv/bin/python backend/manage.py probe_whoscored_source \
+  --league "ENG-Premier League" --season "2025-26" --match-count 3
+
+backend/venv/bin/python backend/manage.py ingest_whoscored_events \
+  --competition ENG1 --season 2025-26 --last-completed 50
+```
+
+The ingestion run records its browser mode and sanitized categorical evidence
+for anti-bot challenges/cutoff, navigation, payload extraction, parsing,
+source-contract changes, and configuration failures. Browser exception text,
+response bodies, credentials, cookies, cache paths, and raw payload fragments
+are not persisted as evidence. Existing single-worker pacing, bounded retries,
+access cutoff, resumability, request cap, and `--force` checksum behavior apply
+unchanged in headless mode.
+
+Both commands offer `--headed-debug` only for interactive diagnosis on a local
+workstation. Never add it to pilot, retry, cron, service-unit, or VPS commands,
+because those runs would no longer exercise the supported production path.
+
 ## Status
 
 This is an active project. APIs, ingestion commands, and data coverage may change as more competitions, seasons, and visualisation tools are added.

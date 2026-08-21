@@ -2,7 +2,6 @@ import type { ActionGridCell, EventPass, TeamPassFlow } from '../../types/eventM
 import {
   actionGridCellBounds,
   createPitchTransform,
-  flowZoneCentre,
   type PitchTransform,
 } from './pitchGeometry'
 
@@ -18,6 +17,8 @@ export type DenseLayerOptions = {
   unsuccessfulColor?: string
   densityColor?: string
   flowColor?: string
+  densityStyle?: 'cells' | 'smooth'
+  selectedFlowId?: string | null
 }
 
 const defaultLayerOptions = {
@@ -52,19 +53,49 @@ export function drawDensityLayer(
   cells: ActionGridCell[],
   transform: PitchTransform,
   color = defaultLayerOptions.densityColor,
+  style: 'cells' | 'smooth' = 'cells',
 ) {
   let maximumShare = 0
   for (const cell of cells) maximumShare = Math.max(maximumShare, cell.share)
   if (maximumShare === 0) return
+  const columnCount = Math.max(1, ...cells.map(cell => cell.column + 1))
+  const rowCount = Math.max(1, ...cells.map(cell => cell.row + 1))
 
   context.save()
   context.fillStyle = color
 
+  if (style === 'smooth') {
+    const pitchCellWidth = transform.bounds.width / columnCount
+    const pitchCellHeight = transform.bounds.height / rowCount
+    context.filter = `blur(${Math.max(5, Math.min(pitchCellWidth, pitchCellHeight) * 1.35)}px)`
+    for (const cell of cells) {
+      if (cell.share <= 0) continue
+      const bounds = actionGridCellBounds(cell.column, cell.row, columnCount, rowCount)
+      const centre = transform.toScreen({
+        x: (bounds.xMin + bounds.xMax) / 2,
+        y: (bounds.yMin + bounds.yMax) / 2,
+      })
+      const intensity = Math.sqrt(cell.share / maximumShare)
+      context.globalAlpha = 0.08 + intensity * 0.34
+      context.beginPath()
+      context.arc(
+        centre.x,
+        centre.y,
+        Math.max(pitchCellWidth, pitchCellHeight) * (0.72 + intensity * 0.35),
+        0,
+        Math.PI * 2,
+      )
+      context.fill()
+    }
+    context.restore()
+    return
+  }
+
   for (const cell of cells) {
     if (cell.share <= 0) continue
-    const bounds = actionGridCellBounds(cell.column, cell.row)
-    const topLeft = transform.toScreen({ x: bounds.xMax, y: bounds.yMin })
-    const bottomRight = transform.toScreen({ x: bounds.xMin, y: bounds.yMax })
+    const bounds = actionGridCellBounds(cell.column, cell.row, columnCount, rowCount)
+    const topLeft = transform.toScreen({ x: bounds.xMin, y: bounds.yMin })
+    const bottomRight = transform.toScreen({ x: bounds.xMax, y: bounds.yMax })
     const intensity = Math.sqrt(cell.share / maximumShare)
     context.globalAlpha = 0.08 + intensity * 0.48
     context.fillRect(
@@ -88,7 +119,7 @@ export function drawPassLayer(
   const hasSelection = Boolean(options.selectedEventId)
 
   context.save()
-  context.lineCap = 'round'
+  context.lineCap = 'butt'
 
   for (const pass of passes) {
     const start = transform.toScreen(pass.start)
@@ -117,30 +148,83 @@ export function drawFlowLayer(
   context: CanvasRenderingContext2D,
   flows: TeamPassFlow[],
   transform: PitchTransform,
-  color = defaultLayerOptions.flowColor,
+  options: Pick<DenseLayerOptions, 'flowColor' | 'selectedFlowId'> = {},
 ) {
+  const color = options.flowColor ?? defaultLayerOptions.flowColor
   let maximumCount = 0
   for (const flow of flows) maximumCount = Math.max(maximumCount, flow.completedCount)
   if (maximumCount === 0) return
 
   context.save()
-  context.strokeStyle = color
   context.lineCap = 'round'
+  context.lineJoin = 'round'
 
   for (const flow of flows) {
     if (flow.completedCount === 0) continue
-    const start = transform.toScreen(flowZoneCentre(flow.startZone))
-    const end = transform.toScreen(flowZoneCentre(flow.endZone))
+    const xMin = (flow.bin.column / 6) * 100
+    const xMax = ((flow.bin.column + 1) / 6) * 100
+    const yMin = (flow.bin.row / 4) * 100
+    const yMax = ((flow.bin.row + 1) / 4) * 100
+    const topLeft = transform.toScreen({ x: xMin, y: yMin })
+    const bottomRight = transform.toScreen({ x: xMax, y: yMax })
     const volume = Math.sqrt(flow.completedCount / maximumCount)
-    const controlX = (start.x + end.x) / 2 + (end.y - start.y) * 0.045
-    const controlY = (start.y + end.y) / 2 - (end.x - start.x) * 0.045
+    const selected = flow.id === options.selectedFlowId
+    const hasSelection = Boolean(options.selectedFlowId)
+
+    context.fillStyle = color
+    context.globalAlpha = selected ? 0.28 : hasSelection ? 0.035 : 0.035 + volume * 0.12
+    context.fillRect(
+      topLeft.x + 1,
+      topLeft.y + 1,
+      Math.max(0, bottomRight.x - topLeft.x - 2),
+      Math.max(0, bottomRight.y - topLeft.y - 2),
+    )
+    if (selected) {
+      context.strokeStyle = '#E4EAF8'
+      context.globalAlpha = 0.82
+      context.lineWidth = 1.5
+      context.strokeRect(
+        topLeft.x + 1.5,
+        topLeft.y + 1.5,
+        Math.max(0, bottomRight.x - topLeft.x - 3),
+        Math.max(0, bottomRight.y - topLeft.y - 3),
+      )
+    }
+
+    const start = transform.toScreen(flow.origin)
+    const destination = transform.toScreen(flow.destination)
+    const rawDeltaX = destination.x - start.x
+    const rawDeltaY = destination.y - start.y
+    const rawDistance = Math.hypot(rawDeltaX, rawDeltaY)
+    if (rawDistance < 1) continue
+    const maximumArrowLength = Math.min(transform.bounds.width / 6, transform.bounds.height / 3.2)
+    const arrowDistance = Math.min(rawDistance, maximumArrowLength * (0.6 + Math.min(1, flow.meanLength / 35) * 0.65))
+    const unitX = rawDeltaX / rawDistance
+    const unitY = rawDeltaY / rawDistance
+    const end = { x: start.x + unitX * arrowDistance, y: start.y + unitY * arrowDistance }
+    const fromX = start.x
+    const fromY = start.y
+    const toX = end.x
+    const toY = end.y
+
+    const arrowSize = 5
+    const shaftEndX = toX - unitX * arrowSize * 0.82
+    const shaftEndY = toY - unitY * arrowSize * 0.82
+    context.beginPath()
+    context.moveTo(fromX, fromY)
+    context.lineTo(shaftEndX, shaftEndY)
+    context.strokeStyle = color
+    context.globalAlpha = selected ? 1 : hasSelection ? 0.2 : 0.9
+    context.lineWidth = selected ? 3.25 : 2.25
+    context.stroke()
 
     context.beginPath()
-    context.moveTo(start.x, start.y)
-    context.quadraticCurveTo(controlX, controlY, end.x, end.y)
-    context.globalAlpha = 1
-    context.lineWidth = 1.5 + volume * 6
-    context.stroke()
+    context.moveTo(toX, toY)
+    context.lineTo(toX - unitX * arrowSize - unitY * arrowSize * 0.72, toY - unitY * arrowSize + unitX * arrowSize * 0.72)
+    context.lineTo(toX - unitX * arrowSize + unitY * arrowSize * 0.72, toY - unitY * arrowSize - unitX * arrowSize * 0.72)
+    context.closePath()
+    context.fillStyle = color
+    context.fill()
   }
 
   context.restore()
@@ -155,16 +239,23 @@ export function drawDensePitchLayers(
     flows?: TeamPassFlow[]
   },
   options: DenseLayerOptions = {},
+  pitchView: 'full' | 'attacking-half' = 'full',
 ) {
   context.clearRect(0, 0, viewport.width, viewport.height)
-  const transform = createPitchTransform(viewport.width, viewport.height)
+  const transform = createPitchTransform(
+    pitchView === 'attacking-half' ? viewport.width * 2 : viewport.width,
+    viewport.height,
+  )
+  context.save()
+  if (pitchView === 'attacking-half') context.translate(-viewport.width, 0)
   if (layers.densityCells?.length) {
-    drawDensityLayer(context, layers.densityCells, transform, options.densityColor)
+    drawDensityLayer(context, layers.densityCells, transform, options.densityColor, options.densityStyle)
   }
   if (layers.flows?.length) {
-    drawFlowLayer(context, layers.flows, transform, options.flowColor)
+    drawFlowLayer(context, layers.flows, transform, options)
   }
   if (layers.passes?.length) {
     drawPassLayer(context, layers.passes, transform, options)
   }
+  context.restore()
 }

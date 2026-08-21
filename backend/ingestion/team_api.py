@@ -15,7 +15,10 @@ from ingestion.api_cache import (
     stable_cache_key,
 )
 from ingestion.derived_api import _resolve_competition_scope, _resolve_competition_season
-from ingestion.event_profile_flags import team_event_profile_flag
+from ingestion.event_profile_flags import (
+    EVENT_PROFILE_FLAG_CACHE_VERSION,
+    team_event_profile_flag,
+)
 from ingestion.models import (
     CanonicalTeam,
     MergedPlayerSeason,
@@ -226,6 +229,7 @@ class TeamSeasonDetailApi(APIView):
         )
         source_version = joined_version(
             "team-season-detail",
+            EVENT_PROFILE_FLAG_CACHE_VERSION,
             model_version(MergedTeamSeason, {"is_current": True}),
             model_version(MergedPlayerSeason, {"is_current": True}),
             model_version(

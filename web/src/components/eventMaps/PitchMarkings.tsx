@@ -9,7 +9,7 @@ import {
 
 const transform = createPitchTransform(PITCH_VIEWBOX_WIDTH, PITCH_VIEWBOX_HEIGHT)
 const centre = transform.toScreen({ x: 50, y: 50 })
-const centreCircleRadius = (9.15 / PITCH_WIDTH_METRES) * PITCH_VIEWBOX_WIDTH
+const centreCircleRadius = (9.15 / PITCH_WIDTH_METRES) * PITCH_VIEWBOX_HEIGHT
 const penaltySpotDistance = (11 / PITCH_LENGTH_METRES) * 100
 const sixYardDepth = (5.5 / PITCH_LENGTH_METRES) * 100
 const sixYardWidthInset = ((PITCH_WIDTH_METRES - 18.32) / 2 / PITCH_WIDTH_METRES) * 100
@@ -52,7 +52,7 @@ export const PitchMarkings = memo(function PitchMarkings() {
       aria-hidden="true"
     >
       <rect x={0.7} y={0.7} width={PITCH_VIEWBOX_WIDTH - 1.4} height={PITCH_VIEWBOX_HEIGHT - 1.4} />
-      <line x1={0} y1={centre.y} x2={PITCH_VIEWBOX_WIDTH} y2={centre.y} />
+      <line x1={centre.x} y1={0} x2={centre.x} y2={PITCH_VIEWBOX_HEIGHT} />
       <circle cx={centre.x} cy={centre.y} r={centreCircleRadius} />
       <circle cx={centre.x} cy={centre.y} r={2.6} fill="currentColor" stroke="none" />
 

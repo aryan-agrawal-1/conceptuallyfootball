@@ -74,18 +74,19 @@ export type ActionGridCell = {
   share: number
 }
 
-export type TeamFlowZone = {
+export type TeamFlowBin = {
   column: number
   row: number
 }
 
 export type TeamPassFlow = {
   id: string
-  startZone: TeamFlowZone
-  endZone: TeamFlowZone
+  bin: TeamFlowBin
+  origin: PitchCoordinate
+  destination: PitchCoordinate
   completedCount: number
-  attemptedCount: number
   share: number
+  meanLength: number
 }
 
 export type EventProfileCoverage = {
@@ -107,6 +108,7 @@ export type EventProfileMetadata = {
 }
 
 export type PlayerPassFilter =
+  | 'all'
   | 'completed'
   | 'progressive'
   | 'final_third_entry'
@@ -133,7 +135,7 @@ export type PlayerEventProfilePayload = {
     actionGrid: EventModuleState
   }
   averageTouchLocation: (PitchCoordinate & { sampleSize: number }) | null
-  actionGrid: ActionGridCell[]
+  touchGrid: ActionGridCell[]
   shots: EventShot[]
   matches: EventMatchLookup
 }

@@ -1,29 +1,17 @@
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { fetchPlayerEventProfile, fetchPlayerPassMap } from '../../lib/eventMaps/api'
 import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
 import type { PlayerPassFilter } from '../../types/eventMaps'
-import { cn } from '../../lib/utils'
 import { PortraitPitch } from './PortraitPitch'
 import {
-  EventCoverage,
-  EventMapNotice,
-  EventMapViewTabs,
-  EventMetricStrip,
-  EventPitchStage,
-  EventSelectionDetails,
+  EventCoverage, EventMapCard, EventMapNotice, EventMetricStrip,
+  EventPitchStage, EventSelectionDetails, ShotMapLegend,
 } from './EventMapUi'
 
-type PlayerMapView = 'passes' | 'shots' | 'actions' | 'touch'
-
-const PLAYER_VIEWS = [
-  { value: 'passes', label: 'Passes' },
-  { value: 'shots', label: 'Shots' },
-  { value: 'actions', label: 'Actions' },
-  { value: 'touch', label: 'Avg touch' },
-] satisfies Array<{ value: PlayerMapView; label: string }>
-
 const PASS_FILTERS: Array<{ value: PlayerPassFilter; label: string }> = [
+  { value: 'all', label: 'All passes' },
   { value: 'completed', label: 'Completed' },
   { value: 'progressive', label: 'Progressive' },
   { value: 'final_third_entry', label: 'Final third' },
@@ -35,171 +23,74 @@ const PASS_FILTERS: Array<{ value: PlayerPassFilter; label: string }> = [
 ]
 
 export type PlayerEventMapTeam = { id: number; name: string }
+type PlayerMap = 'passes' | 'shots' | 'actions'
 
-export function PlayerEventMaps({
-  playerId,
-  competition,
-  season,
-  teams,
-}: {
+function MapStage({ map, expanded, setExpanded, children }: {
+  map: PlayerMap
+  expanded: PlayerMap | null
+  setExpanded: (map: PlayerMap | null) => void
+  children: ReactNode
+}) {
+  return (
+    <EventPitchStage expanded={expanded === map} onExpandedChange={next => setExpanded(next ? map : null)}>
+      {children}
+    </EventPitchStage>
+  )
+}
+
+export function PlayerEventMaps({ playerId, competition, season, teams }: {
   playerId: number
   competition: string
   season: string
   teams: PlayerEventMapTeam[]
 }) {
-  const [view, setView] = useState<PlayerMapView>('passes')
-  const [passFilter, setPassFilter] = useState<PlayerPassFilter>('completed')
+  const [passFilter, setPassFilter] = useState<PlayerPassFilter>('all')
   const [teamId, setTeamId] = useState<number | null>(null)
   const [selection, setSelection] = useState<SelectablePitchEvent | null>(null)
-  const [expanded, setExpanded] = useState(false)
-
+  const [expanded, setExpanded] = useState<PlayerMap | null>(null)
   const profileQuery = useQuery({
     queryKey: ['player-event-profile', playerId, competition, season, teamId],
     queryFn: () => fetchPlayerEventProfile(playerId, competition, season, teamId),
     staleTime: 10 * 60 * 1000,
   })
-
+  const profile = profileQuery.data
   const passQuery = useQuery({
     queryKey: ['player-event-passes', playerId, competition, season, teamId, passFilter],
     queryFn: () => fetchPlayerPassMap(playerId, competition, season, passFilter, teamId),
-    enabled: view === 'passes' && profileQuery.data?.modules.passMap.available === true,
+    enabled: profile?.modules.passMap.available === true,
     staleTime: 10 * 60 * 1000,
   })
-
-  const profile = profileQuery.data
-  const selectedMatches = view === 'passes' ? passQuery.data?.matches ?? {} : profile?.matches ?? {}
-  const availableViews = useMemo(
-    () => PLAYER_VIEWS.map(option => ({
-      ...option,
-      disabled:
-        option.value === 'passes'
-          ? profile?.modules.passMap.available === false
-          : option.value === 'shots'
-            ? profile?.modules.shotMap.available === false
-            : option.value === 'actions'
-              ? profile?.modules.actionGrid.available === false
-              : profile?.averageTouchLocation == null,
-    })),
-    [profile],
+  const shotPitchView = useMemo(
+    () => profile?.shots.some(shot => shot.location.x < 50) ? 'full' as const : 'attacking-half' as const,
+    [profile?.shots],
+  )
+  const locatedTouchCount = useMemo(
+    () => profile?.touchGrid.reduce((total, cell) => total + cell.rawCount, 0) ?? 0,
+    [profile?.touchGrid],
   )
 
-  if (profileQuery.isLoading) {
-    return <EventMapNotice kind="loading" title="Loading player event profile" />
-  }
+  if (profileQuery.isLoading) return <EventMapNotice kind="loading" title="Loading player event profile" />
   if (profileQuery.isError || !profile) {
-    return (
-      <EventMapNotice
-        kind="error"
-        title="Player event profile failed to load"
-        onRetry={() => profileQuery.refetch()}
-      >
-        {profileQuery.error?.message ?? 'The event-profile service returned no data.'}
-      </EventMapNotice>
-    )
-  }
-
-  const moduleState =
-    view === 'passes'
-      ? profile.modules.passMap
-      : view === 'shots'
-        ? profile.modules.shotMap
-        : profile.modules.actionGrid
-
-  const renderPitch = () => {
-    if (view === 'passes') {
-      if (passQuery.isLoading) {
-        return <EventMapNotice kind="loading" title="Loading pass rows" />
-      }
-      if (passQuery.isError || !passQuery.data) {
-        return (
-          <EventMapNotice kind="error" title="Pass map failed to load" onRetry={() => passQuery.refetch()}>
-            {passQuery.error?.message ?? 'Pass rows are temporarily unavailable.'}
-          </EventMapNotice>
-        )
-      }
-      if (!passQuery.data.passes.length) {
-        return (
-          <EventMapNotice kind="empty" title="No passes match this filter">
-            Choose another pass type or season/team split.
-          </EventMapNotice>
-        )
-      }
-      return (
-        <PortraitPitch
-          passes={passQuery.data.passes}
-          selectedEventId={selection?.id ?? null}
-          onSelectedEventChange={setSelection}
-          ariaLabel={`${profile.playerName} ${PASS_FILTERS.find(item => item.value === passFilter)?.label.toLowerCase()} pass map. Attacking bottom to top.`}
-        />
-      )
-    }
-    if (view === 'shots') {
-      if (!profile.shots.length) {
-        return <EventMapNotice kind="empty" title="No shots recorded for this scope" />
-      }
-      return (
-        <PortraitPitch
-          shots={profile.shots}
-          selectedEventId={selection?.id ?? null}
-          onSelectedEventChange={setSelection}
-          ariaLabel={`${profile.playerName} shot map. Attacking bottom to top.`}
-        />
-      )
-    }
-    if (view === 'actions') {
-      if (!profile.actionGrid.some(cell => cell.rawCount > 0)) {
-        return <EventMapNotice kind="empty" title="No located actions recorded for this scope" />
-      }
-      return (
-        <PortraitPitch
-          densityCells={profile.actionGrid}
-          ariaLabel={`${profile.playerName} action-density share map. Attacking bottom to top.`}
-        />
-      )
-    }
-    if (!profile.averageTouchLocation) {
-      return <EventMapNotice kind="empty" title="No average touch location is available" />
-    }
-    return (
-      <PortraitPitch
-        markers={[{
-          id: 'average-touch',
-          coordinate: profile.averageTouchLocation,
-          kind: 'jersey',
-          ariaLabel: `Average touch location from ${profile.averageTouchLocation.sampleSize} touches`,
-          label: `${profile.averageTouchLocation.sampleSize.toLocaleString()} touches`,
-          tone: 'accent',
-        }]}
-        ariaLabel={`${profile.playerName} average touch location. Attacking bottom to top.`}
-      />
-    )
+    return <EventMapNotice kind="error" title="Player event profile failed to load" onRetry={() => profileQuery.refetch()}>
+      {profileQuery.error?.message ?? 'The event-profile service returned no data.'}
+    </EventMapNotice>
   }
 
   return (
-    <section aria-labelledby="player-event-maps-heading" className="relative">
-      <div className="mb-4 flex flex-col gap-3 border-b border-line-bright pb-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="mb-1 font-mono text-[9px] uppercase tracking-[0.2em] text-electric/80">
-            WhoScored season events
-          </p>
-          <h2 id="player-event-maps-heading" className="text-[20px] font-black tracking-tight text-ink">
-            Event Maps
-          </h2>
-          <p className="mt-1 max-w-xl text-[10px] leading-relaxed text-ink-dim">
-            Portrait maps share one direction: the player&apos;s team attacks from bottom to top.
-          </p>
+    <section aria-label="Player event maps" className="relative">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-stretch">
+        <div className="min-w-0 flex-1">
+          <EventMetricStrip metrics={[
+            { label: 'Passes', value: profile.summary.pass_attempts?.toLocaleString() ?? '—' },
+            { label: 'Shots', value: profile.summary.shots?.toLocaleString() ?? '—' },
+            { label: 'Touches', value: locatedTouchCount.toLocaleString() },
+          ]} />
         </div>
+        <div className="min-w-[220px]"><EventCoverage coverage={profile.coverage} /></div>
         {teams.length > 1 ? (
-          <label className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.14em] text-ink-dim">
+          <label className="flex items-center justify-between gap-2 border border-line-bright bg-panel px-3 text-[9px] font-bold uppercase tracking-[0.14em] text-ink-dim sm:justify-start">
             Team split
-            <select
-              value={teamId ?? ''}
-              onChange={event => {
-                setSelection(null)
-                setTeamId(event.target.value ? Number(event.target.value) : null)
-              }}
-              className="h-9 min-w-40 border border-control-border bg-panel px-3 text-[10px] text-control-fg outline-none hover:border-electric focus:border-electric"
-            >
+            <select value={teamId ?? ''} onChange={event => { setSelection(null); setTeamId(event.target.value ? Number(event.target.value) : null) }} className="h-9 min-w-40 max-w-full border border-control-border bg-panel px-3 text-[10px] text-control-fg outline-none hover:border-electric focus:border-electric">
               <option value="">Season total</option>
               {teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}
             </select>
@@ -207,79 +98,58 @@ export function PlayerEventMaps({
         ) : null}
       </div>
 
-      <div className="mb-4 flex flex-col gap-3">
-        <EventMapViewTabs
-          value={view}
-          options={availableViews}
-          onChange={nextView => {
-            setSelection(null)
-            setView(nextView)
-          }}
-          label="Player event map"
-        />
-        {view === 'passes' ? (
-          <div className="flex gap-1.5 overflow-x-auto pb-1" aria-label="Pass filter">
-            {PASS_FILTERS.map(filter => (
-              <button
-                key={filter.value}
-                type="button"
-                onClick={() => {
-                  setSelection(null)
-                  setPassFilter(filter.value)
-                }}
-                className={cn(
-                  'h-8 shrink-0 border px-2.5 text-[9px] font-bold uppercase tracking-[0.11em] transition-colors',
-                  filter.value === passFilter
-                    ? 'border-electric/50 bg-electric/12 text-electric'
-                    : 'border-control-border text-control-fg hover:border-electric hover:text-ink',
-                )}
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
+      <div className="grid items-start gap-3 lg:grid-cols-12">
+        {profile.modules.passMap.available ? (
+          <EventMapCard className="lg:col-span-8" expanded={expanded === 'passes'} onExpandedChange={next => setExpanded(next ? 'passes' : null)} title="Pass map" description={`${passQuery.data?.totalMatching.toLocaleString() ?? '—'} ${PASS_FILTERS.find(item => item.value === passFilter)?.label.toLowerCase()} in this scope.`} controls={(
+            <span className="relative inline-flex">
+              <select aria-label="Pass category" value={passFilter} onChange={event => { setSelection(null); setPassFilter(event.target.value as PlayerPassFilter) }} className="h-8 max-w-36 appearance-none border border-control-border bg-raised py-0 pl-2.5 pr-9 text-[9px] font-bold uppercase tracking-[0.08em] text-control-fg outline-none focus:border-electric">
+                {PASS_FILTERS.map(filter => <option key={filter.value} value={filter.value}>{filter.label}</option>)}
+              </select>
+              <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-control-fg" aria-hidden="true" />
+            </span>
+          )} footer={passQuery.data?.truncated ? (
+            <EventMapNotice kind="truncated" title="Pass response capped at 5,000 rows">{passQuery.data.totalMatching.toLocaleString()} passes match; choose a narrower category to inspect every row.</EventMapNotice>
+          ) : selection?.kind === 'pass' ? (
+            <EventSelectionDetails selection={selection} matches={passQuery.data?.matches ?? {}} />
+          ) : <p className="text-[9px] text-ink-dim">Click, tap or focus a pass to inspect it.</p>}>
+            <MapStage map="passes" expanded={expanded} setExpanded={setExpanded}>
+              {passQuery.isLoading ? <EventMapNotice kind="loading" title="Loading pass rows" /> : passQuery.isError || !passQuery.data ? (
+                <EventMapNotice kind="error" title="Pass map failed to load" onRetry={() => passQuery.refetch()} />
+              ) : passQuery.data.passes.length ? (
+                <PortraitPitch passes={passQuery.data.passes} eventSelectionMode="click" selectedEventId={selection?.kind === 'pass' ? selection.id : null} onSelectedEventChange={setSelection} ariaLabel={`${profile.playerName} ${PASS_FILTERS.find(item => item.value === passFilter)?.label.toLowerCase()} pass map. Attacking left to right.`} />
+              ) : <EventMapNotice kind="empty" title="No passes match this category" />}
+            </MapStage>
+          </EventMapCard>
         ) : null}
-      </div>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(250px,0.42fr)] lg:items-start">
-        <div className="min-w-0">
-          {!moduleState.available && view !== 'touch' ? (
-            <EventMapNotice kind="unavailable" title="This map is unavailable for the selected scope" />
-          ) : (
-            <EventPitchStage expanded={expanded} onExpandedChange={setExpanded}>
-              {renderPitch()}
-            </EventPitchStage>
-          )}
-        </div>
-        <aside className="flex min-w-0 flex-col gap-3">
-          <EventMetricStrip metrics={[
-            { label: 'Passes', value: profile.summary.pass_attempts?.toLocaleString() ?? '—' },
-            { label: 'Shots', value: profile.summary.shots?.toLocaleString() ?? '—' },
-            { label: 'Actions', value: profile.summary.valid_location_actions?.toLocaleString() ?? '—' },
-          ]} />
-          <EventCoverage coverage={profile.coverage} />
-          {moduleState.sparse && view !== 'touch' ? (
-            <EventMapNotice kind="sparse" title="Small event sample">
-              Treat the visible pattern as directional context, not a settled season tendency.
-            </EventMapNotice>
-          ) : null}
-          {view === 'passes' && passQuery.data?.truncated ? (
-            <EventMapNotice kind="truncated" title="Pass response capped at 5,000 rows">
-              {passQuery.data.totalMatching.toLocaleString()} passes match. Choose a narrower filter or team split to inspect every row.
-            </EventMapNotice>
-          ) : null}
-          {view === 'touch' && profile.averageTouchLocation ? (
-            <div className="border border-line-bright bg-panel px-4 py-3">
-              <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-electric">Sample context</p>
-              <p className="mt-2 text-[12px] leading-relaxed text-ink">
-                Mean location across <span className="font-mono text-electric">{profile.averageTouchLocation.sampleSize.toLocaleString()}</span> located touches.
-              </p>
+        {profile.modules.shotMap.available ? (
+          <EventMapCard className="lg:col-span-4" expanded={expanded === 'shots'} onExpandedChange={next => setExpanded(next ? 'shots' : null)} title="Shot map" description={shotPitchView === 'attacking-half' ? 'Attacking half shown; all shots originate beyond halfway.' : 'Full pitch shown because this scope includes a shot from behind halfway.'} footer={(
+            <div className="space-y-2">
+              <ShotMapLegend />
+              {selection?.kind === 'shot' ? <EventSelectionDetails selection={selection} matches={profile.matches} /> : <p className="text-[9px] text-ink-dim">Click, tap or focus a shot to inspect it.</p>}
             </div>
-          ) : null}
-          {(view === 'passes' || view === 'shots') ? (
-            <EventSelectionDetails selection={selection} matches={selectedMatches} />
-          ) : null}
-        </aside>
+          )}>
+            <MapStage map="shots" expanded={expanded} setExpanded={setExpanded}>
+              <PortraitPitch shots={profile.shots} pitchView={shotPitchView} eventSelectionMode="click" selectedEventId={selection?.kind === 'shot' ? selection.id : null} onSelectedEventChange={setSelection} ariaLabel={`${profile.playerName} shot map. ${shotPitchView === 'attacking-half' ? 'Attacking half' : 'Full pitch'}; attacking left to right.`} />
+            </MapStage>
+          </EventMapCard>
+        ) : null}
+
+        {locatedTouchCount > 0 ? (
+          <EventMapCard className="lg:col-span-12" expanded={expanded === 'actions'} onExpandedChange={next => setExpanded(next ? 'actions' : null)} title="Touch heatmap" description="Smoothed density of located touches only, with the average touch position overlaid." footer={(
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-3 text-[8px] font-bold uppercase tracking-[0.1em] text-ink-dim">
+              <span className="inline-flex items-center gap-1.5"><span className="size-3 rounded-full bg-mint/55 blur-[2px]" aria-hidden /> Higher touch density</span>
+              {profile.averageTouchLocation ? <span className="inline-flex items-center gap-1.5 text-electric"><span aria-hidden>◆</span> Average touch · {profile.averageTouchLocation.sampleSize.toLocaleString()} touches</span> : null}
+              </div>
+              {locatedTouchCount < 100 ? <EventMapNotice kind="sparse" title="Small located-touch sample">The heatmap is directional context, not a settled season tendency.</EventMapNotice> : null}
+            </div>
+          )}>
+            <MapStage map="actions" expanded={expanded} setExpanded={setExpanded}>
+              <PortraitPitch densityCells={profile.touchGrid} densityStyle="smooth" markers={profile.averageTouchLocation ? [{ id: 'average-touch', coordinate: profile.averageTouchLocation, kind: 'jersey', ariaLabel: `Average touch location from ${profile.averageTouchLocation.sampleSize} located touches`, label: 'Avg touch', tone: 'accent' }] : []} ariaLabel={`${profile.playerName} touch-only heatmap with average touch overlay. Attacking left to right.`} />
+            </MapStage>
+          </EventMapCard>
+        ) : null}
       </div>
     </section>
   )

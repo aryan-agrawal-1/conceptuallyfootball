@@ -81,9 +81,9 @@ export function findNearestPitchEvent(
 }
 
 function directionVector(key: DirectionKey): PitchCoordinate {
-  if (key === 'ArrowUp') return { x: 1, y: 0 }
-  if (key === 'ArrowDown') return { x: -1, y: 0 }
-  if (key === 'ArrowLeft') return { x: 0, y: -1 }
+  if (key === 'ArrowRight') return { x: 1, y: 0 }
+  if (key === 'ArrowLeft') return { x: -1, y: 0 }
+  if (key === 'ArrowUp') return { x: 0, y: -1 }
   return { x: 0, y: 1 }
 }
 
@@ -96,17 +96,17 @@ export function findDirectionalPitchEvent(
 
   const current = events.find((event) => event.id === currentId)
   if (!current) {
-    if (key === 'ArrowUp') {
+    if (key === 'ArrowRight') {
       return events.reduce((candidate, event) =>
         selectableEventAnchor(event).x < selectableEventAnchor(candidate).x ? event : candidate,
       )
     }
-    if (key === 'ArrowDown') {
+    if (key === 'ArrowLeft') {
       return events.reduce((candidate, event) =>
         selectableEventAnchor(event).x > selectableEventAnchor(candidate).x ? event : candidate,
       )
     }
-    if (key === 'ArrowLeft') {
+    if (key === 'ArrowDown') {
       return events.reduce((candidate, event) =>
         selectableEventAnchor(event).y > selectableEventAnchor(candidate).y ? event : candidate,
       )

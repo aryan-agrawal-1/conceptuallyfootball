@@ -98,9 +98,9 @@ class WhoScoredNormalizationHelperTests(SimpleTestCase):
 
     def test_grid_assignment_boundaries(self):
         self.assertEqual(action_grid_assignment(0, 0), (0, 0, 0))
-        self.assertEqual(action_grid_assignment(833, 1249), (0, 0, 0))
-        self.assertEqual(action_grid_assignment(834, 1250), (1, 1, 9))
-        self.assertEqual(action_grid_assignment(10000, 10000), (11, 7, 95))
+        self.assertEqual(action_grid_assignment(416, 624), (0, 0, 0))
+        self.assertEqual(action_grid_assignment(417, 625), (1, 1, 17))
+        self.assertEqual(action_grid_assignment(10000, 10000), (23, 15, 383))
 
         self.assertEqual(team_zone_assignment(0, 0), (0, 0, 0))
         self.assertEqual(team_zone_assignment(1999, 3333), (0, 0, 0))
@@ -238,6 +238,24 @@ class WhoScoredParserTests(SimpleTestCase):
             is_defensive_event(challenge.event_type, defensive_qualifier=True)
         )
 
+    def test_current_match_centre_omissions_and_known_qualifiers_are_accepted(self):
+        payload = copy.deepcopy(self.payload)
+        payload.pop("matchId")
+        offside = payload["events"][0]
+        offside["type"] = {"displayName": "OffsideGiven", "value": 10000}
+        offside.pop("second")
+        offside["qualifiers"] = [
+            {"type": {"displayName": "Offensive", "value": 286}},
+            {"type": {"displayName": "StandingSave", "value": 178}},
+        ]
+
+        result = parse_match_payload(payload, policy=FIXTURE_POLICY)
+
+        self.assertTrue(result.diagnostics.valid)
+        self.assertEqual(result.events[0].second, 0)
+        self.assertNotIn("286:Offensive", result.diagnostics.unknown_qualifiers)
+        self.assertNotIn("178:StandingSave", result.diagnostics.unknown_qualifiers)
+
     def test_missing_optional_fields_and_qualifiers_are_allowed(self):
         event = self.payload["events"][0]
         event.pop("playerId")
@@ -328,7 +346,7 @@ class WhoScoredParserTests(SimpleTestCase):
 
     def test_structural_coordinate_and_clock_errors_are_diagnostic(self):
         cases = (
-            ("missing match field", lambda payload: payload.pop("matchId")),
+            ("missing match field", lambda payload: payload.pop("home")),
             (
                 "coordinate",
                 lambda payload: payload["events"][0].__setitem__("x", 100.01),

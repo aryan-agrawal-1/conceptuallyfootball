@@ -8,6 +8,9 @@ from ingestion.models import (
 from ingestion.services.event_profiles import event_profile_availability
 
 
+EVENT_PROFILE_FLAG_CACHE_VERSION = "v2"
+
+
 def unavailable_event_profile_flag() -> dict:
     return {
         "available": False,
@@ -57,7 +60,7 @@ def team_event_profile_flag(competition_season, canonical_team_id: int) -> dict:
         competition_season=competition_season,
         team_id=canonical_team_id,
         is_current=True,
-    ).first()
+    ).select_related("materialized_ingestion_run").first()
     if profile is None:
         return unavailable_event_profile_flag()
     return {

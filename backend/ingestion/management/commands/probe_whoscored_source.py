@@ -9,6 +9,7 @@ from django.core.management.base import BaseCommand, CommandError
 from ingestion.services.whoscored_client import (
     SoccerdataWhoScoredClient,
     WhoScoredSourceConfig,
+    safe_failure_evidence,
     shot_orientation_gate,
     summarize_match_payload,
 )
@@ -41,10 +42,18 @@ class Command(BaseCommand):
             action="store_true",
             help="Bypass event cache. Use sparingly; this opens match pages again.",
         )
-        parser.add_argument(
+        browser_mode = parser.add_mutually_exclusive_group()
+        browser_mode.add_argument(
             "--headless",
             action="store_true",
-            help="Run Chrome headlessly. Headed mode is the soccerdata default and may be less blocked.",
+            default=True,
+            help="Run Chrome headlessly (the default and production-equivalent mode).",
+        )
+        browser_mode.add_argument(
+            "--headed-debug",
+            action="store_false",
+            dest="headless",
+            help="LOCAL DEBUGGING ONLY: show the browser; never use on a VPS or pilot run.",
         )
         parser.add_argument(
             "--output",
@@ -105,6 +114,7 @@ class Command(BaseCommand):
 
             safe_report = {
                 "source": "soccerdata.WhoScored",
+                "browser": {"headless": options["headless"], "mode": "headless" if options["headless"] else "headed_local_debug"},
                 "league": options["league"],
                 "season": options["season"],
                 "schedule_match_count": len(schedule),
@@ -118,10 +128,16 @@ class Command(BaseCommand):
         except CommandError:
             raise
         except Exception as exc:  # noqa: BLE001
+            evidence = safe_failure_evidence(
+                exc,
+                stage="probe",
+                headless=options["headless"],
+            )
             raise CommandError(
-                "WhoScored probe failed. Check Chrome/driver availability, provider access, "
-                "SOCCERDATA_DIR permissions, pacing, and the local soccerdata cache. "
-                f"Underlying error: {exc}"
+                "WhoScored probe failed: "
+                f"category={evidence['category']} stage={evidence['stage']} "
+                f"error_type={evidence['error_type']} headless={evidence['headless']}; "
+                f"{evidence['message']}"
             ) from exc
 
         rendered = json.dumps(safe_report, indent=2, sort_keys=True)
