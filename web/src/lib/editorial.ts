@@ -1,4 +1,8 @@
 import type { SocialLinks } from './staffAuth'
+import type { VisualiserSelectionMode } from './dataVisualiserUrl'
+import { fetchPlayerCohort, fetchTeamStatMatrix } from './api'
+import { profileMetricDataKeys } from './profileMetrics'
+import type { MatrixResponse, TeamMatrixResponse } from '../types/api'
 
 export type ArticleStatus =
   | 'draft'
@@ -94,6 +98,8 @@ export interface VisualBlockConfig {
     trendline: boolean
     bar_window: 'top' | 'bottom' | 'all'
     bar_count: number
+    /** Custom charts only: manual entity pins vs the default auto highlights. */
+    pin_mode?: VisualiserSelectionMode
   }
 }
 
@@ -420,6 +426,40 @@ export async function getPublishedArticle(slug: string): Promise<PublishedArticl
   const response = await fetch(`${PUBLIC_BASE}/articles/${encodeURIComponent(slug)}`)
   const body = await responseJson<{ article: PublishedArticle }>(response)
   return body.article
+}
+
+export type CustomChartCohort =
+  | { kind: 'player_cohort'; data: MatrixResponse }
+  | { kind: 'team_cohort'; data: TeamMatrixResponse }
+
+/**
+ * Cohort payload for custom charts. Shared by the published/preview renderer and
+ * the visual studio so both surfaces read from one request shape.
+ */
+export async function fetchCustomChartCohort(config: VisualBlockConfig): Promise<CustomChartCohort> {
+  if (config.entity_kind === 'team') {
+    return {
+      kind: 'team_cohort',
+      data: await fetchTeamStatMatrix({
+        competition: config.context.scope_code,
+        season: config.context.season_label,
+        include: 'meta',
+      }),
+    }
+  }
+  return {
+    kind: 'player_cohort',
+    data: await fetchPlayerCohort(
+      {
+        competition: config.context.scope_code,
+        season: config.context.season_label,
+        position_group: config.filters.position_group === 'ALL' ? undefined : config.filters.position_group,
+        teams: config.filters.team_names,
+        min_minutes: config.filters.minimum_minutes,
+      },
+      profileMetricDataKeys(config.metric_keys, config.rate_mode),
+    ),
+  }
 }
 
 export function newBlock(type: ArticleBlock['type']): ArticleBlock {

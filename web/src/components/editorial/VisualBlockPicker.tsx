@@ -24,8 +24,20 @@ import {
 import { foldForSearch } from '../../lib/foldAccents'
 import { canonicalProfileMetricKey, defaultPizzaMetricKeys, stripPer90Suffix } from '../../lib/profileMetrics'
 import { comparisonAxisPacksForPosition } from '../../lib/comparisonAxisPacks'
+import { rankBarCandidates, rankScatterPointsByTopRight } from '../../lib/visualiserRanking'
+import {
+  AUTO_HIGHLIGHT_LIMIT,
+  effectivePinIds,
+  playerBarCandidates as buildPlayerBarCandidates,
+  playerScatterPoints as buildPlayerScatterPoints,
+  relevanceSortedOptions,
+  teamBarCandidates as buildTeamBarCandidates,
+  teamScatterPoints as buildTeamScatterPoints,
+} from '../../lib/visualiserCharts'
+import { VisualiserEntityPicker } from '../visualizer/VisualiserEntityPicker'
 import {
   newVisualBlock,
+  fetchCustomChartCohort,
   type VisualArticleBlock,
   type VisualBlockType,
   type VisualEntityKind,
@@ -77,6 +89,7 @@ export function VisualBlockPicker({
   const [block, setBlock] = useState<VisualArticleBlock>(() => initialBlock ?? newVisualBlock(initialType ?? 'custom_chart'))
   const [entityQuery, setEntityQuery] = useState('')
   const [metricQuery, setMetricQuery] = useState('')
+  const [pinPickerOpen, setPinPickerOpen] = useState(false)
   const dialogRef = useRef<HTMLDivElement>(null)
   const searchQuery = useQuery({ queryKey: ['search-entities'], queryFn: fetchSearchEntities, staleTime: 10 * 60 * 1_000 })
   const catalogQuery = useQuery({ queryKey: ['competition-seasons'], queryFn: fetchCompetitionSeasonsCatalog, staleTime: 10 * 60 * 1_000 })
@@ -125,6 +138,100 @@ export function VisualBlockPicker({
     const needle = foldForSearch(metricQuery.trim())
     return needle ? metricOptions.filter(metric => foldForSearch(`${metric.label} ${metric.group}`).includes(needle)) : metricOptions
   }, [metricOptions, metricQuery])
+  const customCohortQuery = useQuery({
+    queryKey: ['editorial-custom-chart-cohort', block.config.entity_kind, block.config.context.scope_code, block.config.context.season_label, block.config.filters.position_group, block.config.filters.minimum_minutes, block.config.rate_mode, effectiveMetricKeys],
+    queryFn: () => fetchCustomChartCohort({ ...block.config, metric_keys: effectiveMetricKeys }),
+    enabled: block.visual_type === 'custom_chart' && Boolean(block.config.context.scope_code && block.config.context.season_label),
+    staleTime: 10 * 60 * 1_000,
+  })
+  const customPinModel = useMemo(() => {
+    if (block.visual_type !== 'custom_chart' || block.config.chart_type === 'radar') return null
+    const payload = customCohortQuery.data
+    if (!payload) return null
+    const chartType = block.config.chart_type
+    const keys = effectiveMetricKeys
+    const barWindow = block.config.filters.bar_window
+    let rows: Array<{ id: number; label: string; sublabel?: string; meta?: string; reference: VisualEntityReference }>
+    let relevanceIds: number[] = []
+    if (payload.kind === 'player_cohort') {
+      const meta = payload.data.meta
+      if (!meta) return null
+      const results = payload.data.results
+      if (chartType === 'scatter' && keys.length >= 2) {
+        relevanceIds = rankScatterPointsByTopRight(buildPlayerScatterPoints(results, meta, block.config.rate_mode, keys[0], keys[1])).map(item => item.point.id)
+      } else if (chartType === 'bar' && keys.length >= 1) {
+        relevanceIds = rankBarCandidates(buildPlayerBarCandidates(results, meta, block.config.rate_mode, keys[0]), barWindow).map(item => item.id)
+      }
+      rows = results.map(row => ({
+        id: row.canonical_player_id,
+        label: row.canonical_player_name,
+        sublabel: row.canonical_team_name ?? undefined,
+        meta: `${row.minutes.toLocaleString()}′`,
+        reference: {
+          kind: 'player',
+          id: row.canonical_player_id,
+          name: row.canonical_player_name,
+          source_competition: row.competition_code,
+          season_label: row.season_label,
+          competition_season_id: row.competition_season,
+          position_group: row.position_group,
+          team_name: row.canonical_team_name ?? '',
+        },
+      }))
+    } else {
+      const results = payload.data.results
+      if (chartType === 'scatter' && keys.length >= 2) {
+        relevanceIds = rankScatterPointsByTopRight(buildTeamScatterPoints(results, block.config.rate_mode, keys[0], keys[1])).map(item => item.point.id)
+      } else if (chartType === 'bar' && keys.length >= 1) {
+        relevanceIds = rankBarCandidates(buildTeamBarCandidates(results, block.config.rate_mode, keys[0]), barWindow).map(item => item.id)
+      }
+      rows = results.map(row => ({
+        id: row.canonical_team_id,
+        label: row.canonical_team_name,
+        meta: `Rank ${row.ranks.rank ?? '-'}`,
+        reference: {
+          kind: 'team',
+          id: row.canonical_team_id,
+          name: row.canonical_team_name,
+          source_competition: row.competition_code,
+          season_label: row.season_label,
+          competition_season_id: row.competition_season,
+        },
+      }))
+    }
+    const autoIds = relevanceIds.slice(0, AUTO_HIGHLIGHT_LIMIT)
+    const manualIds = block.config.entities.map(entity => entity.id)
+    const pinnedIds = effectivePinIds(
+      block.config.filters.pin_mode === 'manual' ? 'manual' : 'auto',
+      manualIds,
+      autoIds,
+      rows.map(row => row.id),
+    )
+    return {
+      options: relevanceSortedOptions(
+        rows.map(row => ({ id: row.id, label: row.label, sublabel: row.sublabel, meta: row.meta })),
+        relevanceIds,
+      ),
+      pinnedIds,
+      entitiesById: new Map(rows.map(row => [row.id, row.reference])),
+    }
+  }, [customCohortQuery.data, effectiveMetricKeys, block.visual_type, block.config.chart_type, block.config.rate_mode, block.config.filters.bar_window, block.config.filters.pin_mode, block.config.entities])
+
+  function setPinnedEntities(ids: number[]) {
+    if (!customPinModel) return
+    setBlock(current => ({
+      ...current,
+      config: {
+        ...current.config,
+        entities: ids.flatMap(id => {
+          const entity = customPinModel.entitiesById.get(id)
+          return entity ? [entity] : []
+        }),
+        filters: { ...current.config.filters, pin_mode: 'manual' },
+      },
+    }))
+  }
+
   const entityOptions = useMemo(() => {
     const source = block.config.entity_kind === 'player' ? searchQuery.data?.players ?? [] : searchQuery.data?.teams ?? []
     const needle = foldForSearch(entityQuery.trim())
@@ -145,11 +252,13 @@ export function VisualBlockPicker({
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key !== 'Escape') return
+      if (pinPickerOpen) setPinPickerOpen(false)
+      else onClose()
     }
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [onClose])
+  }, [onClose, pinPickerOpen])
 
   function chooseType(type: VisualBlockType) {
     const next = newVisualBlock(type)
@@ -348,6 +457,20 @@ export function VisualBlockPicker({
                         {effectiveMetricKeys.length ? <p className="mt-2 text-[9px] leading-4 text-ink-muted">{effectiveMetricKeys.length} selected · click a selected metric to remove it.</p> : null}
                       </>
                     )}
+                    {block.visual_type === 'custom_chart' && block.config.chart_type !== 'radar' ? (
+                      <div className="mt-4">
+                        <FieldLabel>Highlights</FieldLabel>
+                        <button
+                          type="button"
+                          onClick={() => setPinPickerOpen(true)}
+                          disabled={!customPinModel}
+                          className={`border px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${(customPinModel?.pinnedIds.length ?? 0) > 0 ? 'border-electric bg-electric-dim/40 text-electric' : 'border-line-bright bg-panel text-ink hover:border-electric'}`}
+                        >
+                          {customPinModel?.pinnedIds.length ? `${customPinModel.pinnedIds.length} pinned` : 'Pin entities'}
+                        </button>
+                        <p className="mt-2 text-[9px] leading-4 text-ink-muted">Pinned entities stay visually distinct across scatter and bar charts, and keep their bar in view even outside the ranked slice.</p>
+                      </div>
+                    ) : null}
                   </Section> : null}
                 </div>
               ) : (
@@ -371,6 +494,22 @@ export function VisualBlockPicker({
           {step === 2 ? <button type="button" disabled={!configurationComplete(effectiveBlock)} onClick={continueToDetails} className="inline-flex h-10 items-center gap-2 bg-electric px-5 text-[8px] font-black uppercase tracking-[0.15em] text-mat hover:bg-ink disabled:cursor-not-allowed disabled:opacity-35">Add context <ArrowRight className="size-3.5" /></button> : <button type="button" disabled={!detailsComplete(effectiveBlock)} onClick={finish} className="inline-flex h-10 items-center gap-2 bg-electric px-5 text-[8px] font-black uppercase tracking-[0.15em] text-mat hover:bg-ink disabled:cursor-not-allowed disabled:opacity-35"><Check className="size-3.5" /> Insert visual</button>}
         </footer> : null}
       </div>
+
+      <VisualiserEntityPicker
+        open={pinPickerOpen}
+        title={`Highlight ${block.config.entity_kind === 'player' ? 'players' : 'teams'}`}
+        description="Pinned entities stay visually distinct across scatter and bar charts. Labels will show only pinned entities on large scatter cohorts."
+        options={customPinModel?.options ?? []}
+        selectedIds={customPinModel?.pinnedIds ?? []}
+        groupSelected
+        selectedSectionLabel="Pinned"
+        clearAllLabel="Unpin all"
+        closeLabel="Done"
+        isLoading={customCohortQuery.isLoading}
+        isError={customCohortQuery.isError}
+        onChange={setPinnedEntities}
+        onClose={() => setPinPickerOpen(false)}
+      />
     </div>
   )
 }
