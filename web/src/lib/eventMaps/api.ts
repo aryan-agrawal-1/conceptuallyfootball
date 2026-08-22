@@ -77,6 +77,10 @@ type ApiCarry = {
   y: number
   end_x: number
   end_y: number
+  progressive: boolean
+  final_third_entry: boolean
+  box_entry: boolean
+  low_confidence: boolean
 }
 
 type ApiShotZoneCell = {
@@ -178,6 +182,9 @@ type ApiPlayerPasses = {
   outcome: PlayerPassOutcome
   total_matching_count: number
   truncated: boolean
+  total_carry_count?: number
+  total_all_carry_count?: number
+  carries_truncated?: boolean
   passes: ApiPass[]
   carries?: ApiCarry[]
   matches: ApiMatch[]
@@ -377,6 +384,8 @@ function mapPass(row: ApiPass): EventPass {
 }
 
 function mapCarry(row: ApiCarry): EventCarry {
+  const deltaX = (row.end_x - row.x) * 1.05
+  const deltaY = (row.end_y - row.y) * 0.68
   return {
     id: `carry-${row.match_ref}-${row.start_event_index}`,
     matchRef: String(row.match_ref),
@@ -384,6 +393,11 @@ function mapCarry(row: ApiCarry): EventCarry {
     minute: eventMinute(row.match_seconds),
     start: toDisplay({ x: row.x, y: row.y }),
     end: toDisplay({ x: row.end_x, y: row.end_y }),
+    length: Math.sqrt(deltaX * deltaX + deltaY * deltaY),
+    progressive: row.progressive,
+    finalThirdEntry: row.final_third_entry,
+    boxEntry: row.box_entry,
+    lowConfidence: row.low_confidence,
   }
 }
 
@@ -468,6 +482,9 @@ export async function fetchPlayerPassMap(
     outcome: raw.outcome,
     truncated: raw.truncated,
     totalMatching: raw.total_matching_count,
+    carriesTruncated: raw.carries_truncated ?? false,
+    totalCarries: raw.total_carry_count ?? raw.carries?.length ?? 0,
+    totalAllCarries: raw.total_all_carry_count ?? raw.total_carry_count ?? raw.carries?.length ?? 0,
     passes: raw.passes.map(mapPass),
     carries: (raw.carries ?? []).map(mapCarry),
     matches: mapMatches(raw.matches, matchTeamIds(raw.passes)),

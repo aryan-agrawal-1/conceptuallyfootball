@@ -9,8 +9,8 @@ from ingestion.services.carry_derivation import backfill_match_carries
 class Command(BaseCommand):
     help = (
         "Rebuild derived carries for already-ingested WhoScored matches. "
-        "New ingestions derive carries automatically; this command covers "
-        "matches stored before carry derivation existed."
+        "New ingestions derive carries automatically; this command also "
+        "recalculates stored matches after derivation-formula changes."
     )
 
     def add_arguments(self, parser) -> None:

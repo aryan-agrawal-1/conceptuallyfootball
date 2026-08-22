@@ -156,18 +156,26 @@ export function drawCarryLayer(
 
   context.save()
   context.lineCap = 'round'
-  context.setLineDash([4, 4])
+  context.setLineDash([5, 3])
 
   for (const carry of carries) {
     const start = transform.toScreen(carry.start)
     const end = transform.toScreen(carry.end)
+    const selected = carry.id === options.selectedEventId
     context.beginPath()
     context.moveTo(start.x, start.y)
     context.lineTo(end.x, end.y)
-    context.strokeStyle = colors.carryColor ?? '#8A95B8'
-    context.globalAlpha = hasSelection ? 0.28 : 0.62
-    context.lineWidth = 0.9
+    context.strokeStyle = colors.carryColor ?? '#F0A832'
+    context.globalAlpha = selected ? 1 : hasSelection ? 0.24 : 0.9
+    context.lineWidth = selected ? 2.5 : 1.5
     context.stroke()
+
+    context.setLineDash([])
+    context.beginPath()
+    context.arc(end.x, end.y, selected ? 3 : 1.8, 0, Math.PI * 2)
+    context.fillStyle = context.strokeStyle
+    context.fill()
+    context.setLineDash([5, 3])
   }
 
   context.restore()

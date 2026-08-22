@@ -1,4 +1,4 @@
-import type { EventPass, EventShot, PitchCoordinate } from '../../types/eventMaps'
+import type { EventCarry, EventPass, EventShot, PitchCoordinate } from '../../types/eventMaps'
 
 export type SelectablePitchEvent =
   | {
@@ -8,6 +8,14 @@ export type SelectablePitchEvent =
       end: PitchCoordinate
       ariaLabel: string
       event: EventPass
+    }
+  | {
+      id: string
+      kind: 'carry'
+      start: PitchCoordinate
+      end: PitchCoordinate
+      ariaLabel: string
+      event: EventCarry
     }
   | {
       id: string
@@ -67,7 +75,7 @@ export function findNearestPitchEvent(
 
   for (const event of events) {
     const distance =
-      event.kind === 'pass'
+      event.kind !== 'shot'
         ? distanceToSegment(point, event.start, event.end)
         : Math.sqrt(squaredDistance(point, event.point))
 

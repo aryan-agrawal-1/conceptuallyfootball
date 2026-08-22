@@ -41,6 +41,11 @@ export type EventCarry = {
   second?: number
   start: PitchCoordinate
   end: PitchCoordinate
+  length: number
+  progressive: boolean
+  finalThirdEntry: boolean
+  boxEntry: boolean
+  lowConfidence: boolean
 }
 
 export type ShotOutcome = 'goal' | 'saved' | 'blocked' | 'off_target' | 'woodwork'
@@ -158,6 +163,9 @@ export type PlayerPassMapPayload = {
   outcome: PlayerPassOutcome
   truncated: boolean
   totalMatching: number
+  carriesTruncated: boolean
+  totalCarries: number
+  totalAllCarries: number
   passes: EventPass[]
   carries: EventCarry[]
   matches: EventMatchLookup

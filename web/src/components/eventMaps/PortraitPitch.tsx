@@ -131,6 +131,16 @@ function passAriaLabel(pass: EventPass) {
   return `${outcome} pass, minute ${pass.minute}, from ${pass.start.x.toFixed(0)} to ${pass.end.x.toFixed(0)} percent upfield`
 }
 
+function carryAriaLabel(carry: EventCarry) {
+  const classifications = [
+    carry.progressive ? 'progressive' : null,
+    carry.finalThirdEntry ? 'final third entry' : null,
+    carry.boxEntry ? 'box entry' : null,
+    carry.lowConfidence ? 'low confidence' : null,
+  ].filter(Boolean).join(', ')
+  return `derived carry, minute ${carry.minute}, ${carry.length.toFixed(1)} metres${classifications ? `, ${classifications}` : ''}`
+}
+
 function shotAriaLabel(shot: EventShot) {
   return `${shot.perspective === 'against' ? 'opponent ' : ''}${shot.outcome.replace('_', ' ')} shot, minute ${shot.minute}`
 }
@@ -139,7 +149,7 @@ function flowAriaLabel(flow: TeamPassFlow) {
   return `${flow.completedCount} completed passes from this area, mean length ${flow.meanLength.toFixed(1)} metres`
 }
 
-function createSelectableEvents(passes: EventPass[], shots: EventShot[]) {
+function createSelectableEvents(passes: EventPass[], carries: EventCarry[], shots: EventShot[]) {
   const events: SelectablePitchEvent[] = []
   for (const pass of passes) {
     events.push({
@@ -149,6 +159,16 @@ function createSelectableEvents(passes: EventPass[], shots: EventShot[]) {
       end: pass.end,
       ariaLabel: passAriaLabel(pass),
       event: pass,
+    })
+  }
+  for (const carry of carries) {
+    events.push({
+      id: carry.id,
+      kind: 'carry',
+      start: carry.start,
+      end: carry.end,
+      ariaLabel: carryAriaLabel(carry),
+      event: carry,
     })
   }
   for (const shot of shots) {
@@ -310,7 +330,10 @@ export const PortraitPitch = memo(function PortraitPitch({
     controlledSelectedEventId === undefined
       ? internalSelectedEventId
       : controlledSelectedEventId
-  const selectableEvents = useMemo(() => createSelectableEvents(passes, shots), [passes, shots])
+  const selectableEvents = useMemo(
+    () => createSelectableEvents(passes, carries, shots),
+    [carries, passes, shots],
+  )
   const logicalSelectionEvents = useMemo(
     () => selectableEvents.map(toLogicalSelectionEvent),
     [selectableEvents],

@@ -20,6 +20,7 @@ from ingestion.models import (
     PlayerSeasonGkDerivedStats,
     Provider,
     ProviderMatch,
+    ProviderMatchCarry,
     ProviderMatchEvent,
     ProviderMatchStatus,
     Season,
@@ -290,6 +291,27 @@ class EventProfileApiTests(TestCase):
             end_y=None,
             shot_outcome=MatchEventShotOutcome.SAVED,
         )
+        for provider_match, start_event_index in ((self.match, 20), (second_match, 30)):
+            ProviderMatchCarry.objects.create(
+                provider_match=provider_match,
+                start_event_index=start_event_index,
+                end_event_index=start_event_index + 1,
+                provider_team_id=str(self.home.id),
+                team=self.home,
+                provider_player_id=str(self.player.id),
+                player=self.player,
+                minute=25,
+                second=0,
+                match_seconds=1500,
+                x=2000,
+                y=3000,
+                end_x=2600,
+                end_y=3400,
+                is_progressive_carry=True,
+                is_final_third_entry=True,
+                is_box_entry=True,
+                is_low_confidence=True,
+            )
         run = IngestionRun.objects.create(
             kind=IngestionKind.EVENT_PROFILES,
             competition_season=self.competition_season,
@@ -311,6 +333,22 @@ class EventProfileApiTests(TestCase):
         self.assertEqual(len(passes["matches"]), 2)
         self.assertEqual(passes["total_matching_count"], 1)
         self.assertEqual({row["match_ref"] for row in passes["passes"]}, {1})
+        self.assertEqual(passes["total_carry_count"], 1)
+        self.assertEqual(passes["total_all_carry_count"], 1)
+        self.assertFalse(passes["carries_truncated"])
+        self.assertEqual({row["match_ref"] for row in passes["carries"]}, {1})
+        self.assertTrue(passes["carries"][0]["progressive"])
+        self.assertTrue(passes["carries"][0]["final_third_entry"])
+        self.assertTrue(passes["carries"][0]["box_entry"])
+        self.assertTrue(passes["carries"][0]["low_confidence"])
+
+        pass_only_filter = self.client.get(
+            self.passes_url,
+            {**self.scope, "match": 1, "filter": "key_pass"},
+        ).json()
+        self.assertEqual(pass_only_filter["total_carry_count"], 0)
+        self.assertEqual(pass_only_filter["total_all_carry_count"], 1)
+        self.assertEqual(pass_only_filter["carries"], [])
 
         team = self.client.get(self.team_url, {**self.scope, "match": 1}).json()
         self.assertEqual(len(team["matches"]), 2)

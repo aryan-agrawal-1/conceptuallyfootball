@@ -920,7 +920,7 @@ class ProviderMatchEvent(models.Model):
 
 
 class ProviderMatchCarry(models.Model):
-    """A derived ball-carry between two consecutive touches by the same player.
+    """A derived ball-carry between consecutive same-team on-ball actions.
 
     Opta/WhoScored does not publish carry events; these rows are rebuilt from
     the normalized event stream whenever a match's events are replaced. They
@@ -967,6 +967,10 @@ class ProviderMatchCarry(models.Model):
     y = _scaled_coordinate_field()
     end_x = _scaled_coordinate_field()
     end_y = _scaled_coordinate_field()
+    is_progressive_carry = models.BooleanField(default=False)
+    is_final_third_entry = models.BooleanField(default=False)
+    is_box_entry = models.BooleanField(default=False)
+    is_low_confidence = models.BooleanField(default=False)
 
     class Meta:
         constraints = [

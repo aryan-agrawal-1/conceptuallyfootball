@@ -421,10 +421,10 @@ def decode_coordinate(value: int | None) -> float | None:
     return value / 100
 
 
-def progressive_pass(start_x: int, start_y: int, end_x: int, end_y: int) -> bool:
+def progressive_action(start_x: int, start_y: int, end_x: int, end_y: int) -> bool:
     values = (start_x, start_y, end_x, end_y)
     if any(isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 10000 for value in values):
-        raise ValueError("Progressive-pass coordinates must be scaled integers within 0..10000.")
+        raise ValueError("Progressive-action coordinates must be scaled integers within 0..10000.")
     start_m = (start_x / 10000 * 105, start_y / 10000 * 68)
     end_m = (end_x / 10000 * 105, end_y / 10000 * 68)
     start_distance = math.dist(start_m, (105, 34))
@@ -435,6 +435,10 @@ def progressive_pass(start_x: int, start_y: int, end_x: int, end_y: int) -> bool
     if start_x < 5000 <= end_x:
         return progress >= 15
     return progress >= 10
+
+
+def progressive_pass(start_x: int, start_y: int, end_x: int, end_y: int) -> bool:
+    return progressive_action(start_x, start_y, end_x, end_y)
 
 
 def final_third_entry(

@@ -38,7 +38,7 @@ from ingestion.services.event_profiles import (
 
 PASS_RESPONSE_LIMIT = 5_000
 COORDINATE_SCALE = 100
-EVENT_PROFILE_API_VERSION = "v2"
+EVENT_PROFILE_API_VERSION = "v4"
 
 PLAYER_SUMMARY_FIELDS = (
     "minutes",
@@ -316,6 +316,10 @@ def compact_carry(carry: ProviderMatchCarry, match_references: dict[int, int]) -
         "y": public_coordinate(carry.y),
         "end_x": public_coordinate(carry.end_x),
         "end_y": public_coordinate(carry.end_y),
+        "progressive": carry.is_progressive_carry,
+        "final_third_entry": carry.is_final_third_entry,
+        "box_entry": carry.is_box_entry,
+        "low_confidence": carry.is_low_confidence,
     }
 
 
@@ -327,6 +331,16 @@ PASS_FILTERS: dict[str, Callable[[QuerySet], QuerySet]] = {
     "key_pass": lambda queryset: queryset.filter(is_key_pass=True),
     "cross": lambda queryset: queryset.filter(is_cross=True),
     "long_ball": lambda queryset: queryset.filter(is_long_ball=True),
+}
+
+CARRY_FILTERS: dict[str, Callable[[QuerySet], QuerySet]] = {
+    "all": lambda queryset: queryset,
+    "progressive": lambda queryset: queryset.filter(is_progressive_carry=True),
+    "final_third_entry": lambda queryset: queryset.filter(is_final_third_entry=True),
+    "box_entry": lambda queryset: queryset.filter(is_box_entry=True),
+    "key_pass": lambda queryset: queryset.none(),
+    "cross": lambda queryset: queryset.none(),
+    "long_ball": lambda queryset: queryset.none(),
 }
 
 PASS_OUTCOMES: dict[str, Callable[[QuerySet], QuerySet]] = {
@@ -549,6 +563,7 @@ class PlayerEventProfilePassesApi(PlayerEventProfileMixin, APIView):
     ) -> dict:
         base_queryset = player_event_queryset(profile)
         queryset, matches, references = scope_queryset_to_match(base_queryset, match_ref)
+        scoped_events = queryset
         queryset = queryset.filter(event_type=MatchEventType.PASS)
         queryset = PASS_FILTERS[pass_filter](queryset)
         queryset = PASS_OUTCOMES[pass_outcome](queryset)
@@ -558,7 +573,11 @@ class PlayerEventProfilePassesApi(PlayerEventProfileMixin, APIView):
                 :PASS_RESPONSE_LIMIT
             ]
         )
-        carries = self.derived_carries(profile, match_ref)
+        all_carries_queryset = self.derived_carries(profile, scoped_events)
+        total_all_carry_count = all_carries_queryset.count()
+        carries_queryset = CARRY_FILTERS[pass_filter](all_carries_queryset)
+        total_carry_count = carries_queryset.count()
+        carries = list(carries_queryset[:PASS_RESPONSE_LIMIT])
         return {
             "canonical_player_id": profile.player_id,
             "canonical_team_id": profile.team_id,
@@ -569,6 +588,9 @@ class PlayerEventProfilePassesApi(PlayerEventProfileMixin, APIView):
             "outcome": pass_outcome,
             "total_matching_count": total_matching_count,
             "truncated": total_matching_count > PASS_RESPONSE_LIMIT,
+            "total_carry_count": total_carry_count,
+            "total_all_carry_count": total_all_carry_count,
+            "carries_truncated": total_carry_count > PASS_RESPONSE_LIMIT,
             "materialization": materialization_metadata(profile),
             "passes": [compact_pass(event, references) for event in events],
             "carries": [compact_carry(carry, references) for carry in carries],
@@ -576,20 +598,21 @@ class PlayerEventProfilePassesApi(PlayerEventProfileMixin, APIView):
             "selected_match_ref": match_ref,
         }
 
-    def derived_carries(self, profile: PlayerSeasonEventProfile, match_ref: int | None):
-        """Derived carries for the same scope; independent of pass filters."""
-        carries_queryset = ProviderMatchCarry.objects.filter(player_id=profile.player_id)
+    def derived_carries(
+        self,
+        profile: PlayerSeasonEventProfile,
+        scoped_events: QuerySet[ProviderMatchEvent],
+    ):
+        """All derived carries for the same player, team and match scope."""
+        scoped_match_ids = scoped_events.values_list("provider_match_id", flat=True).distinct()
+        carries_queryset = ProviderMatchCarry.objects.filter(
+            player_id=profile.player_id,
+            provider_match_id__in=scoped_match_ids,
+        )
         if profile.team_id is not None:
             carries_queryset = carries_queryset.filter(team_id=profile.team_id)
-        if match_ref is not None:
-            scoped_ids = set(
-                player_event_queryset(profile).values_list("provider_match_id", flat=True)
-            )
-            carries_queryset = carries_queryset.filter(provider_match_id__in=scoped_ids)
-        return list(
-            carries_queryset.select_related("provider_match").order_by(
-                "provider_match__kickoff_at", "provider_match_id", "start_event_index"
-            )[:PASS_RESPONSE_LIMIT]
+        return carries_queryset.select_related("provider_match").order_by(
+            "provider_match__kickoff_at", "provider_match_id", "start_event_index"
         )
 
 

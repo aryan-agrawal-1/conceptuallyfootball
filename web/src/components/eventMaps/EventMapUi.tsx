@@ -2,6 +2,7 @@ import { AlertCircle, Loader2, Maximize2, Minimize2, RotateCcw } from 'lucide-re
 import type { ReactNode } from 'react'
 import type {
   EventMatchLookup,
+  EventCarry,
   EventPass,
   EventProfileCoverage,
   EventShot,
@@ -210,7 +211,7 @@ export function EventCoverage({ coverage }: { coverage: EventProfileCoverage }) 
     ? Math.min(1, coverage.matchesIncluded / coverage.matchesExpected)
     : 0
   return (
-    <div className="border border-line-bright bg-panel px-3 py-2.5">
+    <div className="flex h-full min-h-[55px] flex-col justify-center border border-line-bright bg-panel px-3 py-2.5">
       <div className="mb-2 flex items-center justify-between gap-3 text-[9px] font-mono uppercase tracking-[0.14em]">
         <span className="text-ink-dim">Observed coverage</span>
         <span className={coverage.complete ? 'text-mint' : 'text-gold'}>
@@ -233,7 +234,10 @@ export function EventMetricStrip({
   metrics: Array<{ label: string; value: string | number }>
 }) {
   return (
-    <dl className="grid grid-cols-3 border border-line-bright bg-line">
+    <dl
+      className="grid h-full min-h-[55px] border border-line-bright bg-line"
+      style={{ gridTemplateColumns: `repeat(${metrics.length}, minmax(0, 1fr))` }}
+    >
       {metrics.map(metric => (
         <div key={metric.label} className="bg-panel px-3 py-2.5 text-center">
           <dt className="text-[8px] font-bold uppercase tracking-[0.15em] text-ink-dim">
@@ -261,6 +265,14 @@ function passTags(pass: EventPass) {
   ].filter((tag): tag is string => tag != null)
 }
 
+function carryTags(carry: EventCarry) {
+  return [
+    carry.progressive ? 'Progressive' : null,
+    carry.finalThirdEntry ? 'Final-third entry' : null,
+    carry.boxEntry ? 'Box entry' : null,
+  ].filter((tag): tag is string => tag != null)
+}
+
 export function EventSelectionDetails({
   selection,
   matches,
@@ -278,15 +290,17 @@ export function EventSelectionDetails({
 
   const event = selection.event
   const match = matches[event.matchRef]
-  const isPass = selection.kind === 'pass'
-  const pass = isPass ? (event as EventPass) : null
-  const shot = !isPass ? (event as EventShot) : null
-  const tags = pass ? passTags(pass) : []
+  const pass = selection.kind === 'pass' ? (event as EventPass) : null
+  const carry = selection.kind === 'carry' ? (event as EventCarry) : null
+  const shot = selection.kind === 'shot' ? (event as EventShot) : null
+  const tags = pass ? passTags(pass) : carry ? carryTags(carry) : []
 
   const outcome = pass
     ? pass.outcome === 'successful' ? 'Completed' : 'Incomplete'
-    : displayLabel(shot!.outcome)
-  const context = pass ? `${pass.length.toFixed(1)} m` : displayLabel(shot!.situation)
+    : carry ? 'Derived carry' : displayLabel(shot!.outcome)
+  const context = pass || carry
+    ? `${(pass ?? carry)!.length.toFixed(1)} m`
+    : displayLabel(shot!.situation)
 
   return (
     <div className="border border-electric/45 bg-[linear-gradient(135deg,rgba(74,158,245,0.12),rgba(13,15,26,0.96)_58%)] px-3 py-2 shadow-[0_12px_30px_rgba(0,0,0,0.2)]">
@@ -296,6 +310,11 @@ export function EventSelectionDetails({
         </p>
         <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-electric">{outcome}</span>
         <span className="text-[9px] uppercase tracking-[0.12em] text-ink-dim">{context}</span>
+        {carry?.lowConfidence ? (
+          <span className="border border-amber-400/45 bg-amber-400/10 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.12em] text-amber-300">
+            Low confidence
+          </span>
+        ) : null}
         <span className="ml-auto font-mono text-[8px] text-ink-dim">{match?.matchDate ?? '—'}</span>
       </div>
       {shot ? (

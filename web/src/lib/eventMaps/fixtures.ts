@@ -256,7 +256,11 @@ export const playerPassMapFixture: PlayerPassMapPayload = {
   outcome: 'completed',
   truncated: false,
   totalMatching: eventPassFixture.length,
+  carriesTruncated: false,
+  totalCarries: 0,
+  totalAllCarries: 0,
   passes: eventPassFixture,
+  carries: [],
   matches: eventMapMatchFixture,
 }
 
