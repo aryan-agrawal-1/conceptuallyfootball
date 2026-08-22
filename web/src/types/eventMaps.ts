@@ -68,6 +68,8 @@ export type EventShot = {
   id: string
   matchRef: string
   teamId?: number | null
+  playerId?: number | null
+  playerName?: string | null
   minute: number
   second?: number
   location: PitchCoordinate

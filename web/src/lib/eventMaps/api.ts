@@ -34,6 +34,8 @@ type ApiMatch = {
 type ApiShot = {
   match_ref: number
   team_id: number | null
+  player_id: number | null
+  player_name: string | null
   event_index: number
   match_seconds: number | null
   x: number
@@ -343,6 +345,8 @@ function mapShot(row: ApiShot, perspective: 'for' | 'against'): EventShot {
     id: `shot-${row.match_ref}-${row.event_index}-${perspective}`,
     matchRef: String(row.match_ref),
     teamId: row.team_id,
+    playerId: row.player_id,
+    playerName: row.player_name,
     minute: eventMinute(row.match_seconds),
     location: toDisplay({ x: row.x, y: row.y }),
     outcome: shotOutcome(row.outcome),

@@ -306,7 +306,7 @@ export function EventSelectionDetails({
     <div className="border border-electric/45 bg-[linear-gradient(135deg,rgba(74,158,245,0.12),rgba(13,15,26,0.96)_58%)] px-3 py-2 shadow-[0_12px_30px_rgba(0,0,0,0.2)]">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <p className="text-[11px] font-bold text-ink">
-          {match?.opponent ?? 'Unknown opponent'} · {event.minute}&prime;
+          {shot?.playerName ? `${shot.playerName} · ` : ''}{match?.opponent ?? 'Unknown opponent'} · {event.minute}&prime;
         </p>
         <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-electric">{outcome}</span>
         <span className="text-[9px] uppercase tracking-[0.12em] text-ink-dim">{context}</span>

@@ -142,7 +142,8 @@ function carryAriaLabel(carry: EventCarry) {
 }
 
 function shotAriaLabel(shot: EventShot) {
-  return `${shot.perspective === 'against' ? 'opponent ' : ''}${shot.outcome.replace('_', ' ')} shot, minute ${shot.minute}`
+  const shooter = shot.playerName ? `${shot.playerName}, ` : ''
+  return `${shooter}${shot.perspective === 'against' ? 'opponent ' : ''}${shot.outcome.replace('_', ' ')} shot, minute ${shot.minute}`
 }
 
 function flowAriaLabel(flow: TeamPassFlow) {
