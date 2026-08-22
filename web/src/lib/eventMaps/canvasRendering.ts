@@ -1,4 +1,4 @@
-import type { ActionGridCell, EventPass, TeamPassFlow } from '../../types/eventMaps'
+import type { ActionGridCell, EventCarry, EventPass, TeamPassFlow } from '../../types/eventMaps'
 import {
   actionGridCellBounds,
   createPitchTransform,
@@ -17,6 +17,7 @@ export type DenseLayerOptions = {
   unsuccessfulColor?: string
   densityColor?: string
   flowColor?: string
+  carryColor?: string
   densityStyle?: 'cells' | 'smooth'
   selectedFlowId?: string | null
 }
@@ -144,6 +145,34 @@ export function drawPassLayer(
   context.restore()
 }
 
+export function drawCarryLayer(
+  context: CanvasRenderingContext2D,
+  carries: EventCarry[],
+  transform: PitchTransform,
+  options: DenseLayerOptions = {},
+) {
+  const colors = { ...defaultLayerOptions, ...options }
+  const hasSelection = Boolean(options.selectedEventId)
+
+  context.save()
+  context.lineCap = 'round'
+  context.setLineDash([4, 4])
+
+  for (const carry of carries) {
+    const start = transform.toScreen(carry.start)
+    const end = transform.toScreen(carry.end)
+    context.beginPath()
+    context.moveTo(start.x, start.y)
+    context.lineTo(end.x, end.y)
+    context.strokeStyle = colors.carryColor ?? '#8A95B8'
+    context.globalAlpha = hasSelection ? 0.28 : 0.62
+    context.lineWidth = 0.9
+    context.stroke()
+  }
+
+  context.restore()
+}
+
 export function drawFlowLayer(
   context: CanvasRenderingContext2D,
   flows: TeamPassFlow[],
@@ -235,6 +264,7 @@ export function drawDensePitchLayers(
   viewport: Pick<CanvasViewport, 'width' | 'height'>,
   layers: {
     passes?: EventPass[]
+    carries?: EventCarry[]
     densityCells?: ActionGridCell[]
     flows?: TeamPassFlow[]
   },
@@ -256,6 +286,9 @@ export function drawDensePitchLayers(
   }
   if (layers.passes?.length) {
     drawPassLayer(context, layers.passes, transform, options)
+  }
+  if (layers.carries?.length) {
+    drawCarryLayer(context, layers.carries, transform, options)
   }
   context.restore()
 }

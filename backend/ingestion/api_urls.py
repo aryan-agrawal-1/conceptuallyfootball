@@ -12,6 +12,7 @@ from ingestion.gk_api import GkDerivedPlayerSeasonDetailApi, GkDerivedPlayerSeas
 from ingestion.team_api import TeamSeasonDetailApi, TeamSeasonListApi, TeamSquadApi
 from ingestion.regression_api import RegressionLabFitApi
 from ingestion.search_api import SearchEntitiesApi
+from ingestion.shot_zones_api import PlayerGkShotZonesApi, PlayerShotZonesApi
 
 
 urlpatterns = [
@@ -34,6 +35,14 @@ urlpatterns = [
     path(
         "player-seasons/event-profile/<int:canonical_player_id>/passes",
         PlayerEventProfilePassesApi.as_view(),
+    ),
+    path(
+        "player-seasons/event-profile/<int:canonical_player_id>/shot-zones",
+        PlayerShotZonesApi.as_view(),
+    ),
+    path(
+        "player-seasons/event-profile/<int:canonical_player_id>/gk-shot-zones",
+        PlayerGkShotZonesApi.as_view(),
     ),
     path("galaxy", GalaxyApi.as_view()),
     path("galaxy/similar", GalaxySimilarApi.as_view()),

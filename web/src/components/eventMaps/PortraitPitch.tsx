@@ -12,9 +12,11 @@ import {
 } from 'react'
 import type {
   ActionGridCell,
+  EventCarry,
   EventPass,
   EventShot,
   PitchCoordinate,
+  ShotOutcome,
   TeamPassFlow,
 } from '../../types/eventMaps'
 import {
@@ -55,6 +57,7 @@ export type PitchMarker = {
 
 type PortraitPitchProps = {
   passes?: EventPass[]
+  carries?: EventCarry[]
   shots?: EventShot[]
   densityCells?: ActionGridCell[]
   flows?: TeamPassFlow[]
@@ -197,6 +200,81 @@ function labelClasses(tone: PitchLabel['tone']) {
   return 'fill-ink-dim'
 }
 
+const ON_TARGET_OUTCOMES: ReadonlySet<ShotOutcome> = new Set(['goal', 'saved', 'woodwork'])
+
+// GoalMouthZ crossbar height — see lib/eventMaps/goalMouth.ts.
+const GOAL_CROSSBAR_Z = 38
+
+function targetHeightRadius(z: number) {
+  return 2 + (Math.min(GOAL_CROSSBAR_Z, Math.max(0, z)) / GOAL_CROSSBAR_Z) * 3.5
+}
+
+function shotTargetArrow(shot: EventShot): {
+  from: PitchCoordinate
+  to: PitchCoordinate
+  break?: PitchCoordinate
+  heightRadius: number
+} | null {
+  const onTarget = ON_TARGET_OUTCOMES.has(shot.outcome)
+  if (shot.outcome === 'blocked' && shot.blockedAt) {
+    // Blocked shots show a broken arrow; a faint continuation to the projected
+    // target keeps the intended destination readable.
+    return shot.goalMouth
+      ? {
+          from: shot.location,
+          to: { x: 100, y: shot.goalMouth.y },
+          break: shot.blockedAt,
+          heightRadius: targetHeightRadius(shot.goalMouth.z),
+        }
+      : null
+  }
+  if (!onTarget || !shot.goalMouth) return null
+  return {
+    from: shot.location,
+    to: { x: 100, y: shot.goalMouth.y },
+    heightRadius: targetHeightRadius(shot.goalMouth.z),
+  }
+}
+
+function ShotTargetArrow({ shot }: { shot: EventShot }) {
+  const arrow = shotTargetArrow(shot)
+  if (!arrow) return null
+  // goalMouth stays in native Opta space (zone labels depend on it); flip the
+  // y here so the rendered arrow matches the display orientation.
+  const displayTo = { x: arrow.to.x, y: 100 - arrow.to.y }
+  const from = logicalTransform.toScreen(arrow.from)
+  const to = logicalTransform.toScreen(displayTo)
+  const mid = arrow.break ? logicalTransform.toScreen(arrow.break) : null
+  const deltaX = to.x - from.x
+  const deltaY = to.y - from.y
+  const distance = Math.hypot(deltaX, deltaY)
+  if (distance < 1) return null
+  const unitX = deltaX / distance
+  const unitY = deltaY / distance
+  const headSize = 7
+  const shaftEndX = to.x - unitX * headSize * 0.8
+  const shaftEndY = to.y - unitY * headSize * 0.8
+  const color = shot.outcome === 'goal' ? '#1FD17C' : '#E4EAF8'
+  return (
+    <g aria-hidden="true" className="pointer-events-none">
+      {mid ? (
+        <>
+          <line x1={from.x} y1={from.y} x2={mid.x} y2={mid.y} stroke={color} strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
+          <rect x={mid.x - 3.5} y={mid.y - 3.5} width={7} height={7} fill="#F0A832" stroke="#07101B" strokeWidth={1} transform={`rotate(45 ${mid.x} ${mid.y})`} />
+          <line x1={mid.x} y1={mid.y} x2={shaftEndX} y2={shaftEndY} stroke={color} strokeWidth={1.5} strokeDasharray="4 4" opacity={0.55} vectorEffect="non-scaling-stroke" />
+        </>
+      ) : (
+        <line x1={from.x} y1={from.y} x2={shaftEndX} y2={shaftEndY} stroke={color} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+      )}
+      <path
+        d={`M ${to.x} ${to.y} L ${to.x - unitX * headSize - unitY * headSize * 0.55} ${to.y - unitY * headSize + unitX * headSize * 0.55} L ${to.x - unitX * headSize + unitY * headSize * 0.55} ${to.y - unitY * headSize - unitX * headSize * 0.55} Z`}
+        fill={color}
+      />
+      <circle cx={to.x} cy={to.y} r={arrow.heightRadius + 2.5} fill={color} opacity={0.28} />
+    </g>
+  )
+}
+
 function markerClasses(tone: PitchMarker['tone']) {
   if (tone === 'warning') return 'fill-gold stroke-gold text-gold'
   if (tone === 'neutral') return 'fill-ink-dim stroke-ink-dim text-ink-dim'
@@ -205,6 +283,7 @@ function markerClasses(tone: PitchMarker['tone']) {
 
 export const PortraitPitch = memo(function PortraitPitch({
   passes = [],
+  carries = [],
   shots = [],
   densityCells = [],
   flows = [],
@@ -260,11 +339,11 @@ export const PortraitPitch = memo(function PortraitPitch({
     drawDensePitchLayers(
       context,
       viewport,
-      { passes, densityCells, flows },
+      { passes, carries, densityCells, flows },
       { ...layerOptions, densityStyle, selectedEventId, selectedFlowId },
       pitchView,
     )
-  }, [densityCells, densityStyle, flows, layerOptions, passes, pitchView, selectedEventId, selectedFlowId, viewport])
+  }, [carries, densityCells, densityStyle, flows, layerOptions, passes, pitchView, selectedEventId, selectedFlowId, viewport])
 
   const selectNearest = useCallback(
     (event: PointerEvent<SVGSVGElement>) => {
@@ -401,6 +480,10 @@ export const PortraitPitch = memo(function PortraitPitch({
               </g>
             )
           })}
+
+          {selectedEvent?.kind === 'shot' ? (
+            <ShotTargetArrow shot={selectedEvent.event as EventShot} />
+          ) : null}
 
           {shots.map((shot) => {
             const point = logicalTransform.toScreen(shot.location)

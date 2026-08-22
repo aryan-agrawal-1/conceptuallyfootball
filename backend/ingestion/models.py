@@ -919,6 +919,90 @@ class ProviderMatchEvent(models.Model):
         return f"{self.provider_match_id}:{self.event_index}"
 
 
+class ProviderMatchCarry(models.Model):
+    """A derived ball-carry between two consecutive touches by the same player.
+
+    Opta/WhoScored does not publish carry events; these rows are rebuilt from
+    the normalized event stream whenever a match's events are replaced. They
+    are deliberately kept out of :class:`ProviderMatchEvent` so synthetic rows
+    can never contaminate event counts or raw-event fidelity.
+    """
+
+    provider_match = models.ForeignKey(
+        ProviderMatch,
+        on_delete=models.CASCADE,
+        related_name="derived_carries",
+    )
+    start_event_index = models.PositiveIntegerField()
+    end_event_index = models.PositiveIntegerField()
+    provider_team_id = models.CharField(max_length=64)
+    team = models.ForeignKey(
+        CanonicalTeam,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="provider_match_carries",
+        db_index=False,
+    )
+    provider_player_id = models.CharField(max_length=64, null=True, blank=True)
+    player = models.ForeignKey(
+        CanonicalPlayer,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="provider_match_carries",
+        db_index=False,
+    )
+    period = models.PositiveSmallIntegerField(
+        choices=MatchEventPeriod.choices,
+        default=MatchEventPeriod.UNKNOWN,
+    )
+    minute = models.PositiveSmallIntegerField()
+    second = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(0), MaxValueValidator(59)],
+        default=0,
+    )
+    match_seconds = models.PositiveIntegerField(null=True, blank=True)
+    x = _scaled_coordinate_field()
+    y = _scaled_coordinate_field()
+    end_x = _scaled_coordinate_field()
+    end_y = _scaled_coordinate_field()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["provider_match", "start_event_index"],
+                name="uniq_provider_match_carry",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    (models.Q(x__isnull=True) | models.Q(x__gte=0, x__lte=10000))
+                    & (models.Q(y__isnull=True) | models.Q(y__gte=0, y__lte=10000))
+                    & (models.Q(end_x__isnull=True) | models.Q(end_x__gte=0, end_x__lte=10000))
+                    & (models.Q(end_y__isnull=True) | models.Q(end_y__gte=0, end_y__lte=10000))
+                    & models.Q(second__gte=0, second__lte=59)
+                ),
+                name="provider_carry_coords_range",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["player", "provider_match"],
+                name="prov_carry_player_match_idx",
+            ),
+            models.Index(
+                fields=["team", "provider_match"],
+                name="prov_carry_team_match_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.provider_match_id}:{self.start_event_index}"
+            f"->{self.end_event_index}"
+        )
+
+
 class PlayerSeasonEventProfile(models.Model):
     competition_season = models.ForeignKey(
         CompetitionSeason,

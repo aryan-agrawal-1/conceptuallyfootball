@@ -1,15 +1,20 @@
 import type {
   ActionGridCell,
+  EventCarry,
   EventMatchLookup,
   EventPass,
   EventShot,
+  GkShotZonesPayload,
+  PitchCoordinate,
   PlayerEventProfilePayload,
   PlayerPassFilter,
   PlayerPassOutcome,
   PlayerPassMapPayload,
+  PlayerShotZonesPayload,
   ShotBodyPart,
   ShotOutcome,
   ShotSituation,
+  ShotZoneVariant,
   TeamEventProfilePayload,
   TeamPassFlow,
 } from '../../types/eventMaps'
@@ -60,6 +65,64 @@ type ApiPass = {
   key_pass: boolean
   cross: boolean
   long_ball: boolean
+}
+
+type ApiCarry = {
+  match_ref: number
+  team_id: number | null
+  start_event_index: number
+  end_event_index: number
+  match_seconds: number | null
+  x: number
+  y: number
+  end_x: number
+  end_y: number
+}
+
+type ApiShotZoneCell = {
+  column: number
+  row: number
+  shots: number
+  goals: number
+  conversion?: number | null
+  save_rate?: number | null
+}
+
+type ApiShotZoneVariant = {
+  cells: ApiShotZoneCell[]
+  totals: Record<string, number>
+}
+
+export type ApiShotZoneVariants = {
+  all: ApiShotZoneVariant
+  open_play: ApiShotZoneVariant
+  penalties_only: ApiShotZoneVariant
+}
+
+type ApiPlayerShotZones = {
+  canonical_player_id: number
+  canonical_team_id: number | null
+  canonical_team_name: string | null
+  competition_code: string
+  season_label: string
+  grid: PlayerShotZonesPayload['grid']
+  shot_count: number
+  variants: ApiShotZoneVariants
+  matches: ApiMatch[]
+}
+
+type ApiGkShotZones = {
+  canonical_player_id: number
+  competition_code: string
+  season_label: string
+  grid: GkShotZonesPayload['grid']
+  matches_included: number
+  matches_excluded: number
+  attribution_note: string
+  selected_match_included: boolean
+  shots_faced: number
+  variants: ApiShotZoneVariants
+  matches: ApiMatch[]
 }
 
 type ApiGridCell = {
@@ -116,6 +179,7 @@ type ApiPlayerPasses = {
   total_matching_count: number
   truncated: boolean
   passes: ApiPass[]
+  carries?: ApiCarry[]
   matches: ApiMatch[]
 }
 
@@ -170,6 +234,24 @@ function requestParams(
 
 function eventMinute(matchSeconds: number | null) {
   return matchSeconds == null ? 0 : Math.floor(matchSeconds / 60)
+}
+
+/**
+ * Opta coordinates have their origin at the BOTTOM-left corner (y increases
+ * toward the far touchline), but our components render y top-down. Flip once
+ * here so every event-map consumer works in display space; grid row indices
+ * are inverted to match.
+ */
+function toDisplay(coordinate: PitchCoordinate): PitchCoordinate {
+  return { x: coordinate.x, y: 100 - coordinate.y }
+}
+
+/** Action grids are 24x16, flow bins 6x4 — row 0 sits at the bottom in Opta space. */
+const ACTION_GRID_ROWS = 16
+const FLOW_GRID_ROWS = 4
+
+function invertRow(row: number, rowCount: number) {
+  return rowCount - 1 - row
 }
 
 function slug(value: string) {
@@ -236,7 +318,7 @@ function mapMatches(
 function mapGrid(cells: ApiGridCell[]): ActionGridCell[] {
   return cells.map(cell => ({
     column: cell.column,
-    row: cell.row,
+    row: invertRow(cell.row, ACTION_GRID_ROWS),
     rawCount: cell.raw_count,
     per90Count: cell.per90_count ?? 0,
     share: cell.share,
@@ -255,7 +337,7 @@ function mapShot(row: ApiShot, perspective: 'for' | 'against'): EventShot {
     matchRef: String(row.match_ref),
     teamId: row.team_id,
     minute: eventMinute(row.match_seconds),
-    location: { x: row.x, y: row.y },
+    location: toDisplay({ x: row.x, y: row.y }),
     outcome: shotOutcome(row.outcome),
     bodyPart: shotBodyPart(row.body_part),
     situation: shotSituation(row.situation),
@@ -268,7 +350,7 @@ function mapShot(row: ApiShot, perspective: 'for' | 'against'): EventShot {
         : undefined,
     blockedAt:
       row.blocked_x != null && row.blocked_y != null
-        ? { x: row.blocked_x, y: row.blocked_y }
+        ? toDisplay({ x: row.blocked_x, y: row.blocked_y })
         : undefined,
   }
 }
@@ -281,8 +363,8 @@ function mapPass(row: ApiPass): EventPass {
     matchRef: String(row.match_ref),
     teamId: row.team_id,
     minute: eventMinute(row.match_seconds),
-    start: { x: row.x, y: row.y },
-    end: { x: row.end_x, y: row.end_y },
+    start: toDisplay({ x: row.x, y: row.y }),
+    end: toDisplay({ x: row.end_x, y: row.end_y }),
     outcome: row.completed ? 'successful' : 'unsuccessful',
     length: Math.sqrt(deltaX * deltaX + deltaY * deltaY),
     progressive: row.progressive,
@@ -291,6 +373,17 @@ function mapPass(row: ApiPass): EventPass {
     keyPass: row.key_pass,
     cross: row.cross,
     longBall: row.long_ball,
+  }
+}
+
+function mapCarry(row: ApiCarry): EventCarry {
+  return {
+    id: `carry-${row.match_ref}-${row.start_event_index}`,
+    matchRef: String(row.match_ref),
+    teamId: row.team_id,
+    minute: eventMinute(row.match_seconds),
+    start: toDisplay({ x: row.x, y: row.y }),
+    end: toDisplay({ x: row.end_x, y: row.end_y }),
   }
 }
 
@@ -339,8 +432,10 @@ export async function fetchPlayerEventProfile(
     averageTouchLocation:
       raw.average_touch_location.x != null && raw.average_touch_location.y != null
         ? {
-            x: raw.average_touch_location.x,
-            y: raw.average_touch_location.y,
+            ...toDisplay({
+              x: raw.average_touch_location.x,
+              y: raw.average_touch_location.y,
+            }),
             sampleSize: raw.average_touch_location.sample_size,
           }
         : null,
@@ -374,16 +469,101 @@ export async function fetchPlayerPassMap(
     truncated: raw.truncated,
     totalMatching: raw.total_matching_count,
     passes: raw.passes.map(mapPass),
+    carries: (raw.carries ?? []).map(mapCarry),
     matches: mapMatches(raw.matches, matchTeamIds(raw.passes)),
+  }
+}
+
+function mapZoneVariant(variant: ApiShotZoneVariant): ShotZoneVariant {
+  return {
+    cells: variant.cells.map(cell => ({
+      column: cell.column,
+      row: cell.row,
+      shots: cell.shots,
+      goals: cell.goals,
+      rate: cell.conversion ?? cell.save_rate ?? null,
+    })),
+    totals: variant.totals,
+  }
+}
+
+function emptyZoneVariant(): ShotZoneVariant {
+  return { cells: [], totals: {} }
+}
+
+type ApiZonePayloadBase = {
+  canonical_player_id: number
+  competition_code: string
+  season_label: string
+  grid: PlayerShotZonesPayload['grid']
+  variants: ApiShotZoneVariants
+  matches: ApiMatch[]
+}
+
+function mapZoneCommon(raw: ApiZonePayloadBase) {
+  return {
+    playerId: raw.canonical_player_id,
+    competition: raw.competition_code,
+    season: raw.season_label,
+    grid: raw.grid,
+    variants: {
+      all: raw.variants.all ? mapZoneVariant(raw.variants.all) : emptyZoneVariant(),
+      open_play: raw.variants.open_play
+        ? mapZoneVariant(raw.variants.open_play)
+        : emptyZoneVariant(),
+      penalties_only: raw.variants.penalties_only
+        ? mapZoneVariant(raw.variants.penalties_only)
+        : emptyZoneVariant(),
+    },
+    matches: mapMatches(raw.matches, new Map()),
+  }
+}
+
+export async function fetchPlayerShotZones(
+  playerId: number,
+  competition: string,
+  season: string,
+  teamId?: number | null,
+  matchRef?: string | null,
+): Promise<PlayerShotZonesPayload> {
+  const params = requestParams(competition, season, teamId, matchRef)
+  const raw = await readJson<ApiPlayerShotZones>(
+    `${BASE}/player-seasons/event-profile/${playerId}/shot-zones?${params}`,
+  )
+  return {
+    ...mapZoneCommon(raw),
+    teamId: raw.canonical_team_id,
+    teamName: raw.canonical_team_name,
+    shotCount: raw.shot_count,
+  }
+}
+
+export async function fetchGkShotZones(
+  playerId: number,
+  competition: string,
+  season: string,
+  matchRef?: string | null,
+): Promise<GkShotZonesPayload> {
+  const params = requestParams(competition, season, null, matchRef)
+  const raw = await readJson<ApiGkShotZones>(
+    `${BASE}/player-seasons/event-profile/${playerId}/gk-shot-zones?${params}`,
+  )
+  return {
+    ...mapZoneCommon(raw),
+    matchesIncluded: raw.matches_included,
+    matchesExcluded: raw.matches_excluded,
+    attributionNote: raw.attribution_note,
+    selectedMatchIncluded: raw.selected_match_included,
+    shotsFaced: raw.shots_faced,
   }
 }
 
 function mapFlow(row: ApiTeamProfile['pass_flow'][number]): TeamPassFlow {
   return {
     id: `flow-${row.column}-${row.row}`,
-    bin: { column: row.column, row: row.row },
-    origin: { x: row.mean_origin_x, y: row.mean_origin_y },
-    destination: { x: row.mean_destination_x, y: row.mean_destination_y },
+    bin: { column: row.column, row: invertRow(row.row, FLOW_GRID_ROWS) },
+    origin: toDisplay({ x: row.mean_origin_x, y: row.mean_origin_y }),
+    destination: toDisplay({ x: row.mean_destination_x, y: row.mean_destination_y }),
     completedCount: row.completed_count,
     share: row.share,
     meanLength: row.mean_length_metres,

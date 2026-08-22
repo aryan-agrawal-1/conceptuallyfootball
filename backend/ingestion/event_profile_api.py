@@ -8,7 +8,12 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ingestion.api_cache import get_or_build_payload_response, joined_version, stable_cache_key
+from ingestion.api_cache import (
+    get_or_build_payload_response,
+    joined_version,
+    model_version,
+    stable_cache_key,
+)
 from ingestion.derived_api import _resolve_competition_season
 from ingestion.models import (
     EventProfileSplitType,
@@ -18,6 +23,7 @@ from ingestion.models import (
     PlayerSeasonGkDerivedStats,
     Provider,
     ProviderMatch,
+    ProviderMatchCarry,
     ProviderMatchEvent,
     TeamSeasonEventProfile,
 )
@@ -299,6 +305,20 @@ def compact_pass(event: ProviderMatchEvent, match_references: dict[int, int]) ->
     }
 
 
+def compact_carry(carry: ProviderMatchCarry, match_references: dict[int, int]) -> dict:
+    return {
+        "match_ref": match_references[carry.provider_match_id],
+        "team_id": carry.team_id,
+        "start_event_index": carry.start_event_index,
+        "end_event_index": carry.end_event_index,
+        "match_seconds": carry.match_seconds,
+        "x": public_coordinate(carry.x),
+        "y": public_coordinate(carry.y),
+        "end_x": public_coordinate(carry.end_x),
+        "end_y": public_coordinate(carry.end_y),
+    }
+
+
 PASS_FILTERS: dict[str, Callable[[QuerySet], QuerySet]] = {
     "all": lambda queryset: queryset,
     "progressive": lambda queryset: queryset.filter(is_progressive_pass=True),
@@ -484,6 +504,10 @@ class PlayerEventProfilePassesApi(PlayerEventProfileMixin, APIView):
             profile = self.resolve_profile(request, canonical_player_id)
             pass_filter, pass_outcome = normalized_pass_filter(request)
             match_ref = parse_optional_match(request)
+            carry_version = model_version(
+                ProviderMatchCarry,
+                {"provider_match__competition_season": profile.competition_season_id},
+            )
             cache_key = stable_cache_key(
                 f"event-profile:{profile.competition_season_id}:player-passes",
                 {
@@ -503,7 +527,7 @@ class PlayerEventProfilePassesApi(PlayerEventProfileMixin, APIView):
             response, _ = get_or_build_payload_response(
                 cache_key=cache_key,
                 source_version=profile_source_version(
-                    "player-passes", profile, pass_filter, pass_outcome, match_ref
+                    "player-passes", profile, pass_filter, pass_outcome, match_ref, carry_version
                 ),
                 builder=lambda: self.build_payload(profile, pass_filter, pass_outcome, match_ref),
             )
@@ -523,9 +547,8 @@ class PlayerEventProfilePassesApi(PlayerEventProfileMixin, APIView):
         pass_outcome: str,
         match_ref: int | None,
     ) -> dict:
-        queryset, matches, references = scope_queryset_to_match(
-            player_event_queryset(profile), match_ref
-        )
+        base_queryset = player_event_queryset(profile)
+        queryset, matches, references = scope_queryset_to_match(base_queryset, match_ref)
         queryset = queryset.filter(event_type=MatchEventType.PASS)
         queryset = PASS_FILTERS[pass_filter](queryset)
         queryset = PASS_OUTCOMES[pass_outcome](queryset)
@@ -535,6 +558,7 @@ class PlayerEventProfilePassesApi(PlayerEventProfileMixin, APIView):
                 :PASS_RESPONSE_LIMIT
             ]
         )
+        carries = self.derived_carries(profile, match_ref)
         return {
             "canonical_player_id": profile.player_id,
             "canonical_team_id": profile.team_id,
@@ -547,9 +571,26 @@ class PlayerEventProfilePassesApi(PlayerEventProfileMixin, APIView):
             "truncated": total_matching_count > PASS_RESPONSE_LIMIT,
             "materialization": materialization_metadata(profile),
             "passes": [compact_pass(event, references) for event in events],
+            "carries": [compact_carry(carry, references) for carry in carries],
             "matches": matches,
             "selected_match_ref": match_ref,
         }
+
+    def derived_carries(self, profile: PlayerSeasonEventProfile, match_ref: int | None):
+        """Derived carries for the same scope; independent of pass filters."""
+        carries_queryset = ProviderMatchCarry.objects.filter(player_id=profile.player_id)
+        if profile.team_id is not None:
+            carries_queryset = carries_queryset.filter(team_id=profile.team_id)
+        if match_ref is not None:
+            scoped_ids = set(
+                player_event_queryset(profile).values_list("provider_match_id", flat=True)
+            )
+            carries_queryset = carries_queryset.filter(provider_match_id__in=scoped_ids)
+        return list(
+            carries_queryset.select_related("provider_match").order_by(
+                "provider_match__kickoff_at", "provider_match_id", "start_event_index"
+            )[:PASS_RESPONSE_LIMIT]
+        )
 
 
 class TeamEventProfileApi(APIView):

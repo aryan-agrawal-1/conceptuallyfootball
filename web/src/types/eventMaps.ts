@@ -33,6 +33,16 @@ export type EventPass = {
   longBall: boolean
 }
 
+export type EventCarry = {
+  id: string
+  matchRef: string
+  teamId?: number | null
+  minute: number
+  second?: number
+  start: PitchCoordinate
+  end: PitchCoordinate
+}
+
 export type ShotOutcome = 'goal' | 'saved' | 'blocked' | 'off_target' | 'woodwork'
 export type ShotBodyPart = 'left_foot' | 'right_foot' | 'head' | 'other'
 export type ShotSituation =
@@ -149,6 +159,68 @@ export type PlayerPassMapPayload = {
   truncated: boolean
   totalMatching: number
   passes: EventPass[]
+  carries: EventCarry[]
+  matches: EventMatchLookup
+}
+
+export type ShotZoneCell = {
+  column: number
+  row: number
+  shots: number
+  goals: number
+  rate: number | null
+}
+
+export type ShotZoneTotals = Record<string, number>
+
+export type ShotZoneVariant = {
+  cells: ShotZoneCell[]
+  totals: ShotZoneTotals
+}
+
+export type ShotZoneGrid = {
+  columns: number
+  rows: number
+  y_min: number
+  y_max: number
+  z_low_max: number
+}
+
+export type ShotZoneMatchLookup = Record<
+  string,
+  {
+    matchId: string
+    opponent: string
+    matchDate: string
+    venue: 'home' | 'away' | 'neutral'
+  }
+>
+
+export type ShotZoneVariantKey = 'all' | 'open_play' | 'penalties_only'
+
+export type PlayerShotZonesPayload = {
+  playerId: number
+  teamId: number | null
+  teamName: string | null
+  competition: string
+  season: string
+  grid: ShotZoneGrid
+  shotCount: number
+  variants: Record<ShotZoneVariantKey, ShotZoneVariant>
+  matches: EventMatchLookup
+}
+
+export type GkShotZonesPayload = {
+  playerId: number
+  competition: string
+  season: string
+  grid: ShotZoneGrid
+  matchesIncluded: number
+  matchesExcluded: number
+  attributionNote: string
+  selectedMatchIncluded: boolean
+  shotsFaced: number
+  variants: Record<ShotZoneVariantKey, ShotZoneVariant>
   matches: EventMatchLookup
 }
 

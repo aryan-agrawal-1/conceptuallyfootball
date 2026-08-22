@@ -68,6 +68,9 @@ def json_payload_response(rendered: str, etag: str = "") -> HttpResponse:
     response = HttpResponse(rendered, content_type="application/json")
     if etag:
         response["ETag"] = etag
+    # Payloads are versioned via source_version; never serve them from the
+    # browser's heuristic cache without revalidation.
+    response["Cache-Control"] = "no-cache"
     return response
 
 

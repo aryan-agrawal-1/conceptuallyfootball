@@ -880,6 +880,9 @@ def replace_match_events(
             player_names=dict(normalized_match.player_names),
             include_report=False,
         )
+        from ingestion.services.carry_derivation import replace_match_carries
+
+        replace_match_carries(locked_match)
     return len(normalized_match.events)
 
 

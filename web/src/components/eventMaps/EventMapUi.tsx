@@ -7,6 +7,7 @@ import type {
   EventShot,
 } from '../../types/eventMaps'
 import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
+import { goalZone, goalZoneLabel } from '../../lib/eventMaps/goalMouth'
 import { cn } from '../../lib/utils'
 
 export type EventMapViewOption<T extends string> = {
@@ -302,6 +303,9 @@ export function EventSelectionDetails({
           <span className="border border-line-bright bg-raised px-2 py-1 text-[8px] uppercase tracking-[0.13em] text-ink-dim">
             {displayLabel(shot.bodyPart)}
           </span>
+          {shot.goalMouth && goalZone(shot.goalMouth) ? (
+            <EventTag>Target: {goalZoneLabel(goalZone(shot.goalMouth)!)}</EventTag>
+          ) : null}
           {shot.bigChance ? <EventTag>Big chance</EventTag> : null}
           {shot.assisted ? <EventTag>Assisted</EventTag> : null}
         </div>

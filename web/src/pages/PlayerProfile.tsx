@@ -439,6 +439,7 @@ function ProfileLayout({
             competition={player.competition_code}
             season={player.season_label}
             teams={eventMapTeams}
+            positionGroup={player.position_group}
           />
         </Suspense>
       )}

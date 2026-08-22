@@ -28,3 +28,19 @@ The result is deterministic for a given event set, performs in a single canvas p
 - Player pass maps retain individual event start/end coordinates and default to **All**, so unsuccessful passes are not silently excluded from the overall total.
 
 Future work can add possession/value weighting, or recipient-aware networks, if those fields are introduced to the provider-neutral contract. The frontend should continue to render only materialized evidence rather than infer either concept.
+
+## Coordinate orientation
+
+Opta/WhoScored event coordinates use a bottom-left origin: `x` increases toward
+the opponent goal (the acting team always attacks toward x=100 after
+normalization) and `y` increases toward the far touchline. Our SVG/canvas
+surfaces render y top-down, so `lib/eventMaps/api.ts` flips y once at the API
+mapping layer (`toDisplay`) and inverts grid row indices (24×16 action grid,
+6×4 flow bins). Everything downstream of that file works in display space;
+the database keeps native Opta coordinates.
+
+Goal-mouth zones follow the shooter's perspective: the shooter's left is the
+high-y side of the goal, so ascending pitch-y columns read right-to-left.
+WhoScored text descriptions ("low to the right") were used to confirm the
+handedness — e.g. Haaland's 94' goal vs Bournemouth (match 1903442) has
+goalMouthY 48.1 and is described as low to the right.
