@@ -3,20 +3,29 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Database, Loader2 } from 'lucide-react'
 import {
   fetchGalaxySimilarForPlayer,
-  fetchPlayerCohort,
   fetchPlayerDetail,
   fetchTeamDetail,
-  fetchTeamStatMatrix,
 } from '../../lib/api'
 import { formatValue } from '../../lib/format'
 import {
   barKindForMetricKey,
-  profileMetricDataKeys,
   resolveProfileMetric,
   stripPer90Suffix,
 } from '../../lib/profileMetrics'
-import { formatTeamStatMode, teamKeyStatLabel, teamStatValueForMode } from '../../lib/teamProfileMetrics'
-import type { VisualArticleBlock } from '../../lib/editorial'
+import { formatTeamStatMode, teamKeyStatLabel } from '../../lib/teamProfileMetrics'
+import {
+  autoBarHighlightIds,
+  autoHighlightIds,
+  effectivePinIds,
+  finalizeBarRows,
+  playerBarCandidates as buildPlayerBarCandidates,
+  playerScatterPoints as buildPlayerScatterPoints,
+  scatterLabelsFor,
+  teamBarCandidates as buildTeamBarCandidates,
+  teamScatterPoints as buildTeamScatterPoints,
+} from '../../lib/visualiserCharts'
+import type { VisualArticleBlock, VisualBlockConfig } from '../../lib/editorial'
+import { fetchCustomChartCohort } from '../../lib/editorial'
 import type {
   GalaxySimilarResponse,
   MatrixResponse,
@@ -27,9 +36,9 @@ import type {
   TeamMatrixResponse,
   TeamSeasonRow,
 } from '../../types/api'
-import { VisualiserBarChart, type VisualiserBarDatum } from '../visualizer/VisualiserBarChart'
+import { VisualiserBarChart } from '../visualizer/VisualiserBarChart'
 import { VisualiserRadarChart } from '../visualizer/VisualiserRadarChart'
-import { VisualiserScatterPlot, type VisualiserScatterDatum } from '../visualizer/VisualiserScatterPlot'
+import { VisualiserScatterPlot } from '../visualizer/VisualiserScatterPlot'
 import { ProfilePizzaSvg } from '../profile/ProfilePizzaSection'
 import { CompareAlignedChart } from '../comparisons/CompareAlignedChart'
 import { CompareRadarChart } from '../comparisons/CompareRadarChart'
@@ -117,29 +126,7 @@ async function fetchVisualPayload(block: VisualArticleBlock): Promise<VisualPayl
     }
   }
   if (block.visual_type === 'custom_chart') {
-    if (config.entity_kind === 'team') {
-      return {
-        kind: 'team_cohort',
-        data: await fetchTeamStatMatrix({
-          competition: config.context.scope_code,
-          season: config.context.season_label,
-          include: 'meta',
-        }),
-      }
-    }
-    return {
-      kind: 'player_cohort',
-      data: await fetchPlayerCohort(
-        {
-          competition: config.context.scope_code,
-          season: config.context.season_label,
-          position_group: config.filters.position_group === 'ALL' ? undefined : config.filters.position_group,
-          teams: config.filters.team_names,
-          min_minutes: config.filters.minimum_minutes,
-        },
-        profileMetricDataKeys(config.metric_keys, config.rate_mode),
-      ),
-    }
+    return await fetchCustomChartCohort(config)
   }
   if (config.entity_kind === 'team' && first) {
     return {
@@ -235,23 +222,30 @@ function PlayerRadar({ block, players }: { block: VisualArticleBlock; players: P
 function PlayerCohortChart({ block, data }: { block: VisualArticleBlock; data: MatrixResponse }) {
   const meta = data.meta
   if (!meta) return <EmptyVisual label="Player chart metadata is unavailable." />
-  if (block.config.chart_type === 'scatter') {
-    const [xKey, yKey] = block.config.metric_keys
-    const points = data.results.flatMap<VisualiserScatterDatum>(row => {
-      const x = resolveProfileMetric(row, block.config.rate_mode, barKindForMetricKey(xKey), meta)
-      const y = resolveProfileMetric(row, block.config.rate_mode, barKindForMetricKey(yKey), meta)
-      if (x.value == null || y.value == null) return []
-      return [{ id: row.canonical_player_id, label: row.canonical_player_name, sublabel: row.canonical_team_name ?? undefined, x: x.value, y: y.value, xText: formatValue(x.value, x.formatUnit), yText: formatValue(y.value, y.formatUnit), highlighted: block.config.entities.some(entity => entity.id === row.canonical_player_id) }]
-    })
-    return <VisualiserScatterPlot points={points} xLabel={metricLabel(meta, xKey)} yLabel={metricLabel(meta, yKey)} showLabels={block.config.filters.labels} labelIds={block.config.entities.map(entity => entity.id)} showTrendline={block.config.filters.trendline} />
+  const config = block.config
+  if (config.chart_type === 'scatter') {
+    const [xKey, yKey] = config.metric_keys
+    const points = buildPlayerScatterPoints(data.results, meta, config.rate_mode, xKey, yKey)
+    const pointIds = points.map(point => point.id)
+    const pins = cohortPins(config, autoHighlightIds(points), pointIds)
+    return (
+      <VisualiserScatterPlot
+        points={points.map(point => ({ ...point, highlighted: pins.pinnedIdSet.has(point.id) }))}
+        xLabel={metricLabel(meta, xKey)}
+        yLabel={metricLabel(meta, yKey)}
+        showLabels={config.filters.labels}
+        labelIds={scatterLabelsFor(pointIds, pins.pinnedIds, config.filters.labels)}
+        showTrendline={config.filters.trendline}
+      />
+    )
   }
-  if (block.config.chart_type === 'bar') {
-    const key = block.config.metric_keys[0]
-    const rows = data.results.flatMap<VisualiserBarDatum>(row => {
-      const resolved = resolveProfileMetric(row, block.config.rate_mode, barKindForMetricKey(key), meta)
-      return resolved.value == null ? [] : [{ id: row.canonical_player_id, label: row.canonical_player_name, sublabel: row.canonical_team_name ?? undefined, value: resolved.value, valueText: formatValue(resolved.value, resolved.formatUnit), highlighted: block.config.entities.some(entity => entity.id === row.canonical_player_id) }]
-    }).toSorted((left, right) => block.config.filters.bar_window === 'bottom' ? left.value - right.value : right.value - left.value).slice(0, block.config.filters.bar_count)
-    return <VisualiserBarChart rows={rows} metricLabel={metricLabel(meta, key)} />
+  if (config.chart_type === 'bar') {
+    const key = config.metric_keys[0]
+    const candidates = buildPlayerBarCandidates(data.results, meta, config.rate_mode, key)
+    const candidateIds = candidates.map(row => row.id)
+    const pins = cohortPins(config, autoBarHighlightIds(candidates, config.filters.bar_window), candidateIds)
+    const rows = finalizeBarRows(candidates, config.filters.bar_window, config.filters.bar_count, pins.pinnedIds)
+    return <VisualiserBarChart rows={rows.map(row => ({ ...row, highlighted: pins.pinnedIdSet.has(row.id) }))} metricLabel={metricLabel(meta, key)} />
   }
   return <CohortPlayerRadar block={block} rows={data.results} meta={meta} />
 }
@@ -265,24 +259,53 @@ function CohortPlayerRadar({ block, rows, meta }: { block: VisualArticleBlock; r
 function TeamCohortChart({ block, data }: { block: VisualArticleBlock; data: TeamMatrixResponse }) {
   const meta = data.meta
   if (!meta) return <EmptyVisual label="Team chart metadata is unavailable." />
-  if (block.config.chart_type === 'scatter') {
-    const [xKey, yKey] = block.config.metric_keys
-    const points = data.results.flatMap<VisualiserScatterDatum>(row => {
-      const x = teamStatValueForMode(xKey, row.stats[xKey], row.stats.matches ?? null, block.config.rate_mode)
-      const y = teamStatValueForMode(yKey, row.stats[yKey], row.stats.matches ?? null, block.config.rate_mode)
-      if (x == null || y == null) return []
-      return [{ id: row.canonical_team_id, label: row.canonical_team_name, x, y, xText: formatTeamStatMode(xKey, row.stats[xKey], row.stats.matches ?? null, block.config.rate_mode), yText: formatTeamStatMode(yKey, row.stats[yKey], row.stats.matches ?? null, block.config.rate_mode), highlighted: block.config.entities.some(entity => entity.id === row.canonical_team_id) }]
-    })
-    return <VisualiserScatterPlot points={points} xLabel={teamKeyStatLabel(xKey, meta)} yLabel={teamKeyStatLabel(yKey, meta)} showLabels={block.config.filters.labels} labelIds={block.config.entities.map(entity => entity.id)} showTrendline={block.config.filters.trendline} />
+  const config = block.config
+  if (config.chart_type === 'scatter') {
+    const [xKey, yKey] = config.metric_keys
+    const points = buildTeamScatterPoints(data.results, config.rate_mode, xKey, yKey)
+    const pointIds = points.map(point => point.id)
+    const pins = cohortPins(config, autoHighlightIds(points), pointIds)
+    return (
+      <VisualiserScatterPlot
+        points={points.map(point => ({ ...point, highlighted: pins.pinnedIdSet.has(point.id) }))}
+        xLabel={teamKeyStatLabel(xKey, meta)}
+        yLabel={teamKeyStatLabel(yKey, meta)}
+        showLabels={config.filters.labels}
+        labelIds={scatterLabelsFor(pointIds, pins.pinnedIds, config.filters.labels)}
+        showTrendline={config.filters.trendline}
+      />
+    )
   }
-  if (block.config.chart_type === 'bar') {
-    const key = block.config.metric_keys[0]
-    const rows = data.results.flatMap<VisualiserBarDatum>(row => { const value = teamStatValueForMode(key, row.stats[key], row.stats.matches ?? null, block.config.rate_mode); return value == null ? [] : [{ id: row.canonical_team_id, label: row.canonical_team_name, value, valueText: formatTeamStatMode(key, row.stats[key], row.stats.matches ?? null, block.config.rate_mode), highlighted: block.config.entities.some(entity => entity.id === row.canonical_team_id) }] }).toSorted((left, right) => block.config.filters.bar_window === 'bottom' ? left.value - right.value : right.value - left.value).slice(0, block.config.filters.bar_count)
-    return <VisualiserBarChart rows={rows} metricLabel={teamKeyStatLabel(key, meta)} />
+  if (config.chart_type === 'bar') {
+    const key = config.metric_keys[0]
+    const candidates = buildTeamBarCandidates(data.results, config.rate_mode, key)
+    const candidateIds = candidates.map(row => row.id)
+    const pins = cohortPins(config, autoBarHighlightIds(candidates, config.filters.bar_window), candidateIds)
+    const rows = finalizeBarRows(candidates, config.filters.bar_window, config.filters.bar_count, pins.pinnedIds)
+    return <VisualiserBarChart rows={rows.map(row => ({ ...row, highlighted: pins.pinnedIdSet.has(row.id) }))} metricLabel={teamKeyStatLabel(key, meta)} />
   }
   const chosen = block.config.entities.length ? data.results.filter(row => block.config.entities.some(entity => entity.id === row.canonical_team_id)) : data.results.slice(0, 3)
   const series = chosen.slice(0, 3).map((row, index) => ({ id: row.canonical_team_id, label: row.canonical_team_name, ...SERIES_COLOURS[index], values: block.config.metric_keys.map(key => ({ pct: teamPercentile(row, key, data.results.length, block.config.rate_mode), text: `${teamKeyStatLabel(key, meta)} · ${formatTeamStatMode(key, row.stats[key], row.stats.matches ?? null, block.config.rate_mode)}` })) }))
   return <VisualiserRadarChart axisLabels={block.config.metric_keys.map(key => teamKeyStatLabel(key, meta))} series={series} />
+}
+
+/**
+ * Pin state for custom cohort charts. Mirrors the DataVisualiser behaviour:
+ * manual picks win and are validated against the plotted cohort, otherwise the
+ * default auto highlights are used.
+ */
+function cohortPins(
+  config: VisualBlockConfig,
+  autoIds: number[],
+  availableIds: number[],
+): { pinnedIds: number[]; pinnedIdSet: Set<number> } {
+  const pinnedIds = effectivePinIds(
+    config.filters.pin_mode === 'manual' ? 'manual' : 'auto',
+    config.entities.map(entity => entity.id),
+    autoIds,
+    availableIds,
+  )
+  return { pinnedIds, pinnedIdSet: new Set(pinnedIds) }
 }
 
 function VisualWarning({ children }: { children: string }) {

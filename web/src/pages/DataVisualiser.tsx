@@ -39,8 +39,8 @@ import { ProfileRateToggle } from '../components/profile/ProfileRateToggle'
 import { formatTeamStatMode, teamKeyStatLabel, teamStatValueForMode } from '../lib/teamProfileMetrics'
 import { ChartShareCard } from '../components/visualizer/ChartShareCard'
 import { VisualiserEntityPicker, type VisualiserEntityOption } from '../components/visualizer/VisualiserEntityPicker'
-import { VisualiserScatterPlot, type VisualiserScatterDatum } from '../components/visualizer/VisualiserScatterPlot'
-import { VisualiserBarChart, type VisualiserBarDatum } from '../components/visualizer/VisualiserBarChart'
+import { VisualiserScatterPlot } from '../components/visualizer/VisualiserScatterPlot'
+import { VisualiserBarChart } from '../components/visualizer/VisualiserBarChart'
 import { VisualiserRadarChart } from '../components/visualizer/VisualiserRadarChart'
 import { filterMetricGroups, usableTeamMetricKeys } from '../lib/metricAvailability'
 import { HudMultiSelectDropdown, HudSelectDropdown, type HudDropdownGroup } from '../components/hud/HudDropdown'
@@ -50,6 +50,16 @@ import {
   rankScatterPointsByTopRight,
   scatterLabelIds,
 } from '../lib/visualiserRanking'
+import {
+  autoHighlightIds,
+  effectivePinIds,
+  finalizeBarRows,
+  playerBarCandidates as buildPlayerBarCandidates,
+  playerScatterPoints as buildPlayerScatterPoints,
+  relevanceSortedOptions,
+  teamBarCandidates as buildTeamBarCandidates,
+  teamScatterPoints as buildTeamScatterPoints,
+} from '../lib/visualiserCharts'
 
 const MINUTE_OPTIONS = [0, 450, 900, 1350]
 const CHART_TYPES: Array<{ value: VisualiserChartType; label: string }> = [
@@ -227,65 +237,33 @@ export function DataVisualiser() {
     ? playerMetaQuery.isError || playerQuery.isError
     : teamQuery.isError
 
-  const playerScatterPoints = useMemo(() => {
-    if (!playerMeta || !xMetric || !yMetric) return []
-    return playerRows.flatMap<VisualiserScatterDatum>(row => {
-      const x = resolveProfileMetric(row, state.mode, barKindForMetricKey(xMetric), playerMeta)
-      const y = resolveProfileMetric(row, state.mode, barKindForMetricKey(yMetric), playerMeta)
-      if (x.value == null || y.value == null) return []
-      return [
-        {
-          id: row.canonical_player_id,
-          label: row.canonical_player_name,
-          sublabel: row.canonical_team_name ?? undefined,
-          profileCompetition: row.competition_code,
-          profileSeason: row.season_label,
-          x: x.value,
-          y: y.value,
-          xText: formatValue(x.value, x.formatUnit),
-          yText: formatValue(y.value, y.formatUnit),
-          tieBreak: row.minutes,
-        },
-      ]
-    })
-  }, [playerMeta, playerRows, state.mode, xMetric, yMetric])
+  const playerScatterPoints = useMemo(
+    () =>
+      playerMeta && xMetric && yMetric
+        ? buildPlayerScatterPoints(playerRows, playerMeta, state.mode, xMetric, yMetric)
+        : [],
+    [playerMeta, playerRows, state.mode, xMetric, yMetric],
+  )
 
-  const teamScatterPoints = useMemo(() => {
-    if (!xMetric || !yMetric) return []
-    return (teamQuery.data?.results ?? []).flatMap<VisualiserScatterDatum>(row => {
-      const xValue = teamStatValueForMode(xMetric, row.stats[xMetric], row.stats.matches ?? null, state.mode)
-      const yValue = teamStatValueForMode(yMetric, row.stats[yMetric], row.stats.matches ?? null, state.mode)
-      if (xValue == null || yValue == null) return []
-      return [
-        {
-          id: row.canonical_team_id,
-          label: row.canonical_team_name,
-          x: xValue,
-          y: yValue,
-          xText: formatTeamStatMode(xMetric, row.stats[xMetric], row.stats.matches ?? null, state.mode),
-          yText: formatTeamStatMode(yMetric, row.stats[yMetric], row.stats.matches ?? null, state.mode),
-          tieBreak: row.stats.matches ?? 0,
-        },
-      ]
-    })
-  }, [teamQuery.data?.results, state.mode, xMetric, yMetric])
+  const teamScatterPoints = useMemo(
+    () => (xMetric && yMetric ? buildTeamScatterPoints(teamQuery.data?.results ?? [], state.mode, xMetric, yMetric) : []),
+    [teamQuery.data?.results, state.mode, xMetric, yMetric],
+  )
 
   const activeScatterPoints = state.tab === 'players' ? playerScatterPoints : teamScatterPoints
 
-  const autoHighlightItems = useMemo(
-    () => rankScatterPointsByTopRight(activeScatterPoints).slice(0, 3),
-    [activeScatterPoints],
-  )
-  const autoPinnedIds = useMemo(
-    () => autoHighlightItems.map(item => item.point.id),
-    [autoHighlightItems],
-  )
+  const autoPinnedIds = useMemo(() => autoHighlightIds(activeScatterPoints), [activeScatterPoints])
 
-  const validManualPinnedIds = useMemo(() => {
-    const available = new Set(activeScatterPoints.map(point => point.id))
-    return state.pinnedIds.filter(id => available.has(id))
-  }, [activeScatterPoints, state.pinnedIds])
-  const effectivePinnedIds = state.pinMode === 'manual' ? validManualPinnedIds : autoPinnedIds
+  const effectivePinnedIds = useMemo(
+    () =>
+      effectivePinIds(
+        state.pinMode,
+        state.pinnedIds,
+        autoPinnedIds,
+        activeScatterPoints.map(point => point.id),
+      ),
+    [activeScatterPoints, autoPinnedIds, state.pinMode, state.pinnedIds],
+  )
   const effectivePinnedIdSet = useMemo(() => new Set(effectivePinnedIds), [effectivePinnedIds])
 
   const labelIds = useMemo(() => {
@@ -296,40 +274,15 @@ export function DataVisualiser() {
     )
   }, [activeScatterPoints, state.labels, effectivePinnedIds])
 
-  const playerBarCandidates = useMemo(() => {
-    if (!playerMeta || !barMetric) return []
-    return playerRows.flatMap<VisualiserBarDatum>(row => {
-      const resolved = resolveProfileMetric(row, state.mode, barKindForMetricKey(barMetric), playerMeta)
-      if (resolved.value == null) return []
-      return [
-        {
-          id: row.canonical_player_id,
-          label: row.canonical_player_name,
-          sublabel: row.canonical_team_name ?? undefined,
-          profileCompetition: row.competition_code,
-          profileSeason: row.season_label,
-          value: resolved.value,
-          valueText: formatValue(resolved.value, resolved.formatUnit),
-        },
-      ]
-    })
-  }, [barMetric, playerMeta, playerRows, state.mode])
+  const playerBarCandidates = useMemo(
+    () => (playerMeta && barMetric ? buildPlayerBarCandidates(playerRows, playerMeta, state.mode, barMetric) : []),
+    [barMetric, playerMeta, playerRows, state.mode],
+  )
 
-  const teamBarCandidates = useMemo(() => {
-    if (!barMetric) return []
-    return (teamQuery.data?.results ?? []).flatMap<VisualiserBarDatum>(row => {
-      const value = teamStatValueForMode(barMetric, row.stats[barMetric], row.stats.matches ?? null, state.mode)
-      if (value == null) return []
-      return [
-        {
-          id: row.canonical_team_id,
-          label: row.canonical_team_name,
-          value,
-          valueText: formatTeamStatMode(barMetric, row.stats[barMetric], row.stats.matches ?? null, state.mode),
-        },
-      ]
-    })
-  }, [barMetric, state.mode, teamQuery.data?.results])
+  const teamBarCandidates = useMemo(
+    () => (barMetric ? buildTeamBarCandidates(teamQuery.data?.results ?? [], state.mode, barMetric) : []),
+    [barMetric, state.mode, teamQuery.data?.results],
+  )
 
   const activeBarCandidates = state.tab === 'players' ? playerBarCandidates : teamBarCandidates
   const activeBarRows = useMemo(
@@ -430,32 +383,25 @@ export function DataVisualiser() {
         : state.chart === 'bar'
           ? rankBarCandidates(activeBarCandidates, state.barWindow).map(item => item.id)
           : []
-    const relevanceOrder = new Map(relevanceIds.map((id, index) => [id, index]))
     if (state.tab === 'players') {
-      return playerRows
-        .map(row => ({
+      return relevanceSortedOptions(
+        playerRows.map(row => ({
           id: row.canonical_player_id,
           label: row.canonical_player_name,
           sublabel: row.canonical_team_name ?? undefined,
           meta: row.minutes == null ? 'Minutes unavailable' : `${row.minutes.toLocaleString()}′`,
-        }))
-        .toSorted((left, right) =>
-          (relevanceOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
-            (relevanceOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER) ||
-          left.label.localeCompare(right.label),
-        )
+        })),
+        relevanceIds,
+      )
     }
-    return (teamQuery.data?.results ?? [])
-      .map(row => ({
+    return relevanceSortedOptions(
+      (teamQuery.data?.results ?? []).map(row => ({
         id: row.canonical_team_id,
         label: row.canonical_team_name,
         meta: `Rank ${row.ranks.rank ?? '-'}`,
-      }))
-      .toSorted((left, right) =>
-        (relevanceOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
-          (relevanceOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER) ||
-        left.label.localeCompare(right.label),
-      )
+      })),
+      relevanceIds,
+    )
   }, [
     activeBarCandidates,
     activeScatterPoints,
@@ -1186,23 +1132,6 @@ function coerceMetricKeys(current: string[], available: string[], preferred: str
     ...available,
   ]).filter(key => available.includes(key))
   return padded.slice(0, targetCount)
-}
-
-function finalizeBarRows(
-  rows: VisualiserBarDatum[],
-  window: VisualiserBarWindow,
-  count: number,
-  pinnedIds: number[],
-): VisualiserBarDatum[] {
-  const sorted = rows.toSorted((left, right) => right.value - left.value)
-  let base = sorted
-  if (window === 'top') base = sorted.slice(0, count)
-  if (window === 'bottom') base = sorted.toReversed().slice(0, count)
-  if (window === 'all') base = sorted
-  const baseIds = new Set(base.map(row => row.id))
-  const pinnedIdSet = new Set(pinnedIds)
-  const extras = sorted.filter(row => pinnedIdSet.has(row.id) && !baseIds.has(row.id))
-  return [...base, ...extras]
 }
 
 function writeState(
