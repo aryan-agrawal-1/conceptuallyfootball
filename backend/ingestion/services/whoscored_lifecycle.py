@@ -202,9 +202,7 @@ class WhoScoredLifecycleService:
         normalization_policy: NormalizationPolicy | None = None,
     ) -> None:
         if not competition_season.supports_whoscored:
-            raise ValueError(
-                "WhoScored is not configured for this competition season."
-            )
+            raise ValueError("WhoScored is not configured for this competition season.")
         self.competition_season = competition_season
         self.client = client
         self.request_controller = request_controller or WhoScoredRequestController()
@@ -334,8 +332,14 @@ class WhoScoredLifecycleService:
         wrapped_bytes = canonical_raw_payload_bytes(retrieved.payload)
         checksum = hashlib.sha256(wrapped_bytes).hexdigest()
         changed = current_payload is None or current_payload.payload_sha256 != checksum
+        settling_unchanged_preliminary = bool(
+            not changed
+            and current_payload
+            and current_payload.lifecycle_state == ProviderPayloadLifecycle.PRELIMINARY
+            and target_lifecycle == ProviderPayloadLifecycle.FINAL
+        )
         normalized_match = None
-        if changed:
+        if changed or settling_unchanged_preliminary:
             normalized_match = parse_match_payload(
                 retrieved.payload,
                 policy=self.normalization_policy,
@@ -389,6 +393,18 @@ class WhoScoredLifecycleService:
                             "final_fetched_at",
                             "fetched_at",
                         ]
+                    )
+                    if normalized_match is None:
+                        raise ValueError(
+                            "Finalizing an unchanged payload requires normalized metadata."
+                        )
+                    from ingestion.services.game_state import (
+                        materialize_match_game_state,
+                    )
+
+                    materialize_match_game_state(
+                        locked_match,
+                        clock=normalized_match.clock,
                     )
                     return lifecycle_result(
                         locked_match,
@@ -466,9 +482,7 @@ class WhoScoredLifecycleService:
                 lifecycle_state=stored_payload.lifecycle_state,
                 payload_sha256=stored_payload.payload_sha256,
                 normalized_event_count=len(normalized_match.events),
-                affected_player_ids=tuple(
-                    sorted(old_player_ids | new_player_ids)
-                ),
+                affected_player_ids=tuple(sorted(old_player_ids | new_player_ids)),
                 affected_team_ids=tuple(sorted(old_team_ids | new_team_ids)),
             )
 
