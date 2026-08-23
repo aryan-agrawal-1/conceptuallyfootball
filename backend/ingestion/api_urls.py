@@ -17,6 +17,7 @@ from ingestion.gk_api import (
 )
 from ingestion.player_state_api import PlayerStateExposureApi
 from ingestion.possession_context_api import TeamPossessionContextApi
+from ingestion.pass_state_api import TeamPassStateApi
 from ingestion.team_api import TeamSeasonDetailApi, TeamSeasonListApi, TeamSquadApi
 from ingestion.regression_api import RegressionLabFitApi
 from ingestion.search_api import SearchEntitiesApi
@@ -63,6 +64,10 @@ urlpatterns = [
     path(
         "team-seasons/event-profile/<int:canonical_team_id>",
         TeamEventProfileApi.as_view(),
+    ),
+    path(
+        "team-seasons/event-profile/<int:canonical_team_id>/pass-state",
+        TeamPassStateApi.as_view(),
     ),
     path("team-seasons/squad/<int:canonical_team_id>", TeamSquadApi.as_view()),
     path(
