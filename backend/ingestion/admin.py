@@ -23,7 +23,15 @@ from ingestion.models import (
     PlayerSeasonSimilarity,
     ProviderMatch,
     ProviderMatchEvent,
+    ProviderMatchGameState,
+    ProviderMatchPlayedPeriod,
+    ProviderMatchPlayerInterval,
+    ProviderMatchPlayerParticipation,
+    ProviderMatchPlayerParticipationBuild,
+    ProviderMatchPlayerStateExposure,
     ProviderMatchPayload,
+    ProviderMatchTeamGameStateEpisode,
+    ProviderMatchTeamGameStateExposure,
     ProviderPlayerMapping,
     ProviderTeamMapping,
     ReepPlayerRow,
@@ -106,7 +114,14 @@ class CompetitionSeasonAdmin(admin.ModelAdmin):
 
 @admin.register(IngestionRun)
 class IngestionRunAdmin(admin.ModelAdmin):
-    list_display = ("id", "kind", "status", "competition_season", "started_at", "finished_at")
+    list_display = (
+        "id",
+        "kind",
+        "status",
+        "competition_season",
+        "started_at",
+        "finished_at",
+    )
     list_filter = ("kind", "status")
     readonly_fields = ("stats", "error_detail", "started_at", "finished_at")
 
@@ -235,6 +250,123 @@ class ProviderMatchEventAdmin(admin.ModelAdmin):
     raw_id_fields = ("provider_match", "team", "player")
 
 
+@admin.register(ProviderMatchGameState)
+class ProviderMatchGameStateAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "provider_match",
+        "status",
+        "event_count",
+        "goal_event_count",
+        "replayed_home_score",
+        "replayed_away_score",
+        "calculated_at",
+    )
+    list_filter = ("status", "calculation_version")
+    search_fields = ("provider_match__provider_match_id",)
+    raw_id_fields = ("provider_match",)
+    readonly_fields = ("diagnostics", "calculated_at")
+
+
+@admin.register(ProviderMatchPlayedPeriod)
+class ProviderMatchPlayedPeriodAdmin(admin.ModelAdmin):
+    list_display = (
+        "provider_match",
+        "period_index",
+        "period",
+        "start_second",
+        "end_second",
+        "duration_seconds",
+    )
+    raw_id_fields = ("provider_match",)
+
+
+@admin.register(ProviderMatchTeamGameStateEpisode)
+class ProviderMatchTeamGameStateEpisodeAdmin(admin.ModelAdmin):
+    list_display = (
+        "provider_match",
+        "focal_team",
+        "episode_index",
+        "state",
+        "goal_difference",
+        "phase",
+        "start_second",
+        "end_second",
+    )
+    list_filter = ("state", "phase", "draw_provenance")
+    raw_id_fields = ("provider_match", "focal_team", "entry_event")
+
+
+@admin.register(ProviderMatchTeamGameStateExposure)
+class ProviderMatchTeamGameStateExposureAdmin(admin.ModelAdmin):
+    list_display = (
+        "provider_match",
+        "focal_team",
+        "state",
+        "goal_difference",
+        "phase",
+        "exposure_seconds",
+    )
+    list_filter = ("state", "phase", "draw_provenance")
+    raw_id_fields = ("provider_match", "focal_team")
+
+
+@admin.register(ProviderMatchPlayerParticipationBuild)
+class ProviderMatchPlayerParticipationBuildAdmin(admin.ModelAdmin):
+    list_display = (
+        "provider_match",
+        "status",
+        "participant_count",
+        "verified_participant_count",
+        "excluded_participant_count",
+        "interval_count",
+        "calculated_at",
+    )
+    list_filter = ("status", "formula_version")
+    raw_id_fields = ("provider_match",)
+    readonly_fields = ("diagnostics", "calculated_at")
+
+
+@admin.register(ProviderMatchPlayerParticipation)
+class ProviderMatchPlayerParticipationAdmin(admin.ModelAdmin):
+    list_display = (
+        "provider_match",
+        "player",
+        "team",
+        "roster_role",
+        "status",
+        "on_pitch_seconds",
+    )
+    list_filter = ("roster_role", "status", "confidence")
+    raw_id_fields = ("build", "provider_match", "team", "player")
+
+
+@admin.register(ProviderMatchPlayerInterval)
+class ProviderMatchPlayerIntervalAdmin(admin.ModelAdmin):
+    list_display = (
+        "participation",
+        "sequence",
+        "start_second",
+        "end_second",
+        "duration_seconds",
+        "confidence",
+    )
+    raw_id_fields = ("participation",)
+
+
+@admin.register(ProviderMatchPlayerStateExposure)
+class ProviderMatchPlayerStateExposureAdmin(admin.ModelAdmin):
+    list_display = (
+        "player_interval",
+        "coarse_state",
+        "goal_difference",
+        "phase",
+        "duration_seconds",
+    )
+    list_filter = ("coarse_state", "phase", "provenance")
+    raw_id_fields = ("player_interval", "team_episode")
+
+
 @admin.register(PlayerSeasonEventProfile)
 class PlayerSeasonEventProfileAdmin(admin.ModelAdmin):
     list_display = (
@@ -250,7 +382,12 @@ class PlayerSeasonEventProfileAdmin(admin.ModelAdmin):
     )
     list_filter = ("competition_season", "split_type", "formula_version", "is_current")
     search_fields = ("player__display_name", "team__name")
-    raw_id_fields = ("competition_season", "player", "team", "materialized_ingestion_run")
+    raw_id_fields = (
+        "competition_season",
+        "player",
+        "team",
+        "materialized_ingestion_run",
+    )
     readonly_fields = ("action_grid", "created_at")
 
 
@@ -275,13 +412,30 @@ class TeamSeasonEventProfileAdmin(admin.ModelAdmin):
 
 @admin.register(ReepPlayerRow)
 class ReepPlayerRowAdmin(admin.ModelAdmin):
-    list_display = ("reep_id", "full_name", "understat_player_id", "sofascore_player_id", "synced_at")
-    search_fields = ("reep_id", "full_name", "understat_player_id", "sofascore_player_id")
+    list_display = (
+        "reep_id",
+        "full_name",
+        "understat_player_id",
+        "sofascore_player_id",
+        "synced_at",
+    )
+    search_fields = (
+        "reep_id",
+        "full_name",
+        "understat_player_id",
+        "sofascore_player_id",
+    )
 
 
 @admin.register(ReepTeamRow)
 class ReepTeamRowAdmin(admin.ModelAdmin):
-    list_display = ("reep_id", "name", "understat_team_id", "sofascore_team_id", "synced_at")
+    list_display = (
+        "reep_id",
+        "name",
+        "understat_team_id",
+        "sofascore_team_id",
+        "synced_at",
+    )
     search_fields = ("reep_id", "name")
 
 
@@ -299,14 +453,28 @@ class CanonicalTeamAdmin(admin.ModelAdmin):
 
 @admin.register(ProviderPlayerMapping)
 class ProviderPlayerMappingAdmin(admin.ModelAdmin):
-    list_display = ("id", "provider", "provider_player_id", "canonical_player", "match_method", "updated_at")
+    list_display = (
+        "id",
+        "provider",
+        "provider_player_id",
+        "canonical_player",
+        "match_method",
+        "updated_at",
+    )
     list_filter = ("provider", "match_method")
     search_fields = ("provider_player_id", "canonical_player__display_name")
 
 
 @admin.register(ProviderTeamMapping)
 class ProviderTeamMappingAdmin(admin.ModelAdmin):
-    list_display = ("id", "provider", "provider_team_id", "canonical_team", "match_method", "updated_at")
+    list_display = (
+        "id",
+        "provider",
+        "provider_team_id",
+        "canonical_team",
+        "match_method",
+        "updated_at",
+    )
     list_filter = ("provider", "match_method")
 
 
@@ -345,7 +513,9 @@ class UnmatchedProviderPlayerAdmin(admin.ModelAdmin):
     @admin.display(description="Automatic candidate evidence")
     def automatic_candidate_details(self, obj):
         if obj is None:
-            return "Candidate evidence is available after ingestion creates a review case."
+            return (
+                "Candidate evidence is available after ingestion creates a review case."
+            )
         if obj.resolved_player_id:
             return f"Resolved to {obj.resolved_player}."
         candidates = unmatched_player_identity_candidates(obj)
@@ -359,7 +529,8 @@ class UnmatchedProviderPlayerAdmin(admin.ModelAdmin):
                     candidate.canonical_player.display_name,
                     candidate.canonical_player.id,
                     candidate.match_reason,
-                    ", ".join(str(team_id) for team_id in candidate.canonical_team_ids) or "none",
+                    ", ".join(str(team_id) for team_id in candidate.canonical_team_ids)
+                    or "none",
                     ", ".join(candidate.source_providers),
                 )
                 for candidate in candidates
@@ -386,7 +557,9 @@ class UnmatchedProviderPlayerAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         with transaction.atomic():
             super().save_model(request, obj, form, change)
-            if obj.resolved_player and (not change or "resolved_player" in form.changed_data):
+            if obj.resolved_player and (
+                not change or "resolved_player" in form.changed_data
+            ):
                 apply_manual_player_resolution(obj, obj.resolved_player)
 
 
@@ -466,7 +639,14 @@ class SofascoreTeamSeasonSourceAdmin(admin.ModelAdmin):
 
 @admin.register(PlayerSeasonClubSpell)
 class PlayerSeasonClubSpellAdmin(admin.ModelAdmin):
-    list_display = ("id", "canonical_player", "competition_season", "canonical_team", "minutes", "source_provider")
+    list_display = (
+        "id",
+        "canonical_player",
+        "competition_season",
+        "canonical_team",
+        "minutes",
+        "source_provider",
+    )
 
 
 @admin.register(MergedPlayerSeason)
@@ -574,7 +754,12 @@ class GalaxyPlayerEmbeddingAdmin(admin.ModelAdmin):
         "primary_archetype_label",
         "minutes",
     )
-    list_filter = ("snapshot", "competition_season", "position_group", "primary_archetype")
+    list_filter = (
+        "snapshot",
+        "competition_season",
+        "position_group",
+        "primary_archetype",
+    )
     search_fields = ("galaxy_player_id", "canonical_player__display_name")
     readonly_fields = ("created_at",)
 

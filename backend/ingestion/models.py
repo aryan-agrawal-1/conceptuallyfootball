@@ -102,6 +102,115 @@ class MatchEventShotOutcome(models.IntegerChoices):
     WOODWORK = 5, "Woodwork"
 
 
+class MatchEventGameState(models.IntegerChoices):
+    UNKNOWN = 0, "Unknown"
+    DRAWING = 1, "Drawing"
+    WINNING = 2, "Winning"
+    LOSING = 3, "Losing"
+
+
+class MatchGameStateStatus(models.TextChoices):
+    VERIFIED = "verified", "Verified"
+    VERIFIED_WITH_SHOOTOUT = "verified_with_shootout", "Verified with shootout"
+    UNVERIFIED = "unverified", "Unverified"
+    NO_EVENTS = "no_events", "No events"
+    SCORE_MISMATCH = "score_mismatch", "Score mismatch"
+    INVALID = "invalid", "Invalid"
+
+
+class MatchGameStateExclusionReason(models.TextChoices):
+    NOT_COMPLETED = "not_completed", "Match is not completed"
+    NON_FINAL_PAYLOAD = "non_final_payload", "Payload is not final"
+    TEAM_IDENTITY_UNRESOLVED = "team_identity_unresolved", "Team identity unresolved"
+    SCORE_UNAVAILABLE = "score_unavailable", "Score unavailable"
+    SCORE_MISMATCH = "score_mismatch", "Score mismatch"
+    INVALID_SCORE_REPLAY = "invalid_score_replay", "Invalid score replay"
+    CLOCK_METADATA_MISSING = "clock_metadata_missing", "Clock metadata missing"
+    CLOCK_METADATA_INVALID = "clock_metadata_invalid", "Clock metadata invalid"
+    EVENT_TIMESTAMP_INVALID = "event_timestamp_invalid", "Event timestamp invalid"
+    NO_SUPPORTED_PLAY = "no_supported_play", "No supported play"
+    ABANDONED_OR_INCOMPLETE = "abandoned_or_incomplete", "Abandoned or incomplete"
+
+
+class MatchStatePhase(models.TextChoices):
+    FIRST_HALF = "first_half", "First half"
+    SECOND_HALF = "second_half", "Second half"
+    FIRST_EXTRA_TIME = "first_extra_time", "First period of extra time"
+    SECOND_EXTRA_TIME = "second_extra_time", "Second period of extra time"
+
+
+class MatchStateDrawProvenance(models.TextChoices):
+    NONE = "none", "Not a draw"
+    NEUTRAL = "neutral", "Neutral draw"
+    RESTORED = "restored", "Restored draw"
+    SURRENDERED = "surrendered", "Surrendered draw"
+
+
+class MatchParticipationAction(models.TextChoices):
+    NONE = "none", "None"
+    SUBSTITUTION_ON = "substitution_on", "Substitution on"
+    SUBSTITUTION_OFF = "substitution_off", "Substitution off"
+    PLAYER_ON = "player_on", "Player on"
+    PLAYER_OFF = "player_off", "Player off"
+    PLAYER_RETIRED = "player_retired", "Player retired"
+    PLAYER_RETURNS = "player_returns", "Player returns"
+
+
+class MatchDismissalType(models.TextChoices):
+    NONE = "none", "None"
+    RED = "red", "Red card"
+    SECOND_YELLOW = "second_yellow", "Second yellow"
+
+
+class MatchPlayerRosterRole(models.TextChoices):
+    STARTER = "starter", "Starter"
+    SUBSTITUTE = "substitute", "Substitute"
+    ADDED = "added", "Added from event evidence"
+    UNKNOWN = "unknown", "Unknown"
+
+
+class MatchPlayerPositionRole(models.TextChoices):
+    GOALKEEPER = "goalkeeper", "Goalkeeper"
+    OUTFIELD = "outfield", "Outfield"
+    UNKNOWN = "unknown", "Unknown"
+
+
+class MatchPlayerParticipationStatus(models.TextChoices):
+    VERIFIED = "verified", "Verified"
+    PARTIAL = "partial", "Partial"
+    EXCLUDED = "excluded", "Excluded"
+    UNUSED = "unused", "Unused substitute"
+
+
+class MatchPlayerParticipationBuildStatus(models.TextChoices):
+    VERIFIED = "verified", "Verified"
+    PARTIAL = "partial", "Partial"
+    EXCLUDED = "excluded", "Excluded"
+    NO_LINEUP = "no_lineup", "No lineup"
+
+
+class MatchPlayerIntervalConfidence(models.TextChoices):
+    VERIFIED = "verified", "Verified"
+    PARTIAL = "partial", "Partial"
+    UNVERIFIED = "unverified", "Unverified"
+
+
+class MatchPlayerIntervalStartEvidence(models.TextChoices):
+    LINEUP_STARTER = "lineup_starter", "Lineup starter"
+    SUBSTITUTION_ON = "substitution_on", "Substitution on"
+    PLAYER_ON = "player_on", "Player on"
+    PLAYER_RETURNS = "player_returns", "Player returns"
+
+
+class MatchPlayerIntervalEndEvidence(models.TextChoices):
+    SUBSTITUTION_OFF = "substitution_off", "Substitution off"
+    PLAYER_OFF = "player_off", "Player off"
+    PLAYER_RETIRED = "player_retired", "Player retired"
+    DISMISSAL_RED = "dismissal_red", "Red-card dismissal"
+    DISMISSAL_SECOND_YELLOW = "dismissal_second_yellow", "Second-yellow dismissal"
+    MATCH_END = "match_end", "Match end"
+
+
 class EventProfileSplitType(models.TextChoices):
     SEASON_TOTAL = "season_total", "Season total"
     TEAM = "team", "Team"
@@ -212,8 +321,12 @@ class Season(models.Model):
 
 
 class CompetitionSeason(models.Model):
-    competition = models.ForeignKey(Competition, on_delete=models.CASCADE, related_name="seasons")
-    season = models.ForeignKey(Season, on_delete=models.CASCADE, related_name="competition_links")
+    competition = models.ForeignKey(
+        Competition, on_delete=models.CASCADE, related_name="seasons"
+    )
+    season = models.ForeignKey(
+        Season, on_delete=models.CASCADE, related_name="competition_links"
+    )
     player_data_mode = models.CharField(
         max_length=24,
         choices=PlayerDataMode.choices,
@@ -221,7 +334,9 @@ class CompetitionSeason(models.Model):
     )
     has_understat = models.BooleanField(default=True)
     has_sofascore = models.BooleanField(default=True)
-    understat_league = models.CharField(max_length=32, blank=True, null=True, default="EPL")
+    understat_league = models.CharField(
+        max_length=32, blank=True, null=True, default="EPL"
+    )
     understat_season_year = models.CharField(
         max_length=8,
         blank=True,
@@ -233,7 +348,9 @@ class CompetitionSeason(models.Model):
     has_whoscored = models.BooleanField(default=False)
     whoscored_league = models.CharField(max_length=32, blank=True, default="")
     whoscored_season = models.CharField(max_length=32, blank=True, default="")
-    whoscored_expected_match_count = models.PositiveSmallIntegerField(null=True, blank=True)
+    whoscored_expected_match_count = models.PositiveSmallIntegerField(
+        null=True, blank=True
+    )
     expected_team_count = models.PositiveSmallIntegerField(default=20)
     min_merged_team_count = models.PositiveSmallIntegerField(default=18)
     min_team_stats_coverage_count = models.PositiveSmallIntegerField(default=18)
@@ -259,7 +376,9 @@ class CompetitionSeason(models.Model):
 
     @property
     def supports_understat(self) -> bool:
-        return self.has_understat and bool(self.understat_league and self.understat_season_year)
+        return self.has_understat and bool(
+            self.understat_league and self.understat_season_year
+        )
 
     @property
     def supports_sofascore(self) -> bool:
@@ -271,7 +390,9 @@ class CompetitionSeason(models.Model):
 
     @property
     def supports_whoscored(self) -> bool:
-        return self.has_whoscored and bool(self.whoscored_league and self.whoscored_season)
+        return self.has_whoscored and bool(
+            self.whoscored_league and self.whoscored_season
+        )
 
     @property
     def requires_dual_provider_merge(self) -> bool:
@@ -338,7 +459,9 @@ class IngestionBatch(models.Model):
         ]
         indexes = [
             models.Index(fields=["kind", "status"], name="ing_batch_kind_status_idx"),
-            models.Index(fields=["status", "planned_start_at"], name="ing_batch_status_start_idx"),
+            models.Index(
+                fields=["status", "planned_start_at"], name="ing_batch_status_start_idx"
+            ),
         ]
 
     def __str__(self) -> str:
@@ -383,7 +506,10 @@ class IngestionBatchItem(models.Model):
         ]
         indexes = [
             models.Index(fields=["batch", "status"], name="ing_item_batch_status_idx"),
-            models.Index(fields=["competition_season", "status"], name="ing_item_slice_status_idx"),
+            models.Index(
+                fields=["competition_season", "status"],
+                name="ing_item_slice_status_idx",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -403,7 +529,10 @@ class MaterializedApiPayload(models.Model):
 
     class Meta:
         indexes = [
-            models.Index(fields=["cache_key", "source_version"], name="ingestion_m_cache_k_9f2600_idx"),
+            models.Index(
+                fields=["cache_key", "source_version"],
+                name="ingestion_m_cache_k_9f2600_idx",
+            ),
             models.Index(fields=["updated_at"], name="ingestion_m_updated_9420a7_idx"),
         ]
 
@@ -418,8 +547,12 @@ class ReepPlayerRow(models.Model):
     full_name = models.CharField(max_length=200)
     position = models.CharField(max_length=64, blank=True)
     position_detail = models.CharField(max_length=128, blank=True)
-    understat_player_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
-    sofascore_player_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
+    understat_player_id = models.CharField(
+        max_length=64, null=True, blank=True, db_index=True
+    )
+    sofascore_player_id = models.CharField(
+        max_length=64, null=True, blank=True, db_index=True
+    )
     synced_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -443,8 +576,12 @@ class ReepPlayerRow(models.Model):
 class ReepTeamRow(models.Model):
     reep_id = models.CharField(max_length=128, unique=True, db_index=True)
     name = models.CharField(max_length=200)
-    understat_team_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
-    sofascore_team_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
+    understat_team_id = models.CharField(
+        max_length=64, null=True, blank=True, db_index=True
+    )
+    sofascore_team_id = models.CharField(
+        max_length=64, null=True, blank=True, db_index=True
+    )
     synced_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -466,7 +603,9 @@ class ReepTeamRow(models.Model):
 
 
 class CanonicalPlayer(models.Model):
-    reep_id = models.CharField(max_length=128, null=True, blank=True, unique=True, db_index=True)
+    reep_id = models.CharField(
+        max_length=128, null=True, blank=True, unique=True, db_index=True
+    )
     display_name = models.CharField(max_length=200)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -478,7 +617,9 @@ class CanonicalPlayer(models.Model):
 
 
 class CanonicalTeam(models.Model):
-    reep_id = models.CharField(max_length=128, null=True, blank=True, unique=True, db_index=True)
+    reep_id = models.CharField(
+        max_length=128, null=True, blank=True, unique=True, db_index=True
+    )
     name = models.CharField(max_length=200)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -514,7 +655,9 @@ class ProviderPlayerMapping(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.provider} {self.provider_player_id} -> {self.canonical_player_id}"
+        return (
+            f"{self.provider} {self.provider_player_id} -> {self.canonical_player_id}"
+        )
 
 
 class ProviderTeamMapping(models.Model):
@@ -783,6 +926,100 @@ class ProviderMatchPayload(models.Model):
         return f"payload for {self.provider_match}"
 
 
+class ProviderMatchGameState(models.Model):
+    """Audit record for the rebuildable score replay attached to a match."""
+
+    provider_match = models.OneToOneField(
+        ProviderMatch,
+        on_delete=models.CASCADE,
+        related_name="game_state",
+    )
+    status = models.CharField(
+        max_length=32,
+        choices=MatchGameStateStatus.choices,
+        default=MatchGameStateStatus.UNVERIFIED,
+    )
+    eligible = models.BooleanField(default=False)
+    exclusion_reason = models.CharField(
+        max_length=40,
+        choices=MatchGameStateExclusionReason.choices,
+        null=True,
+        blank=True,
+    )
+    calculation_version = models.CharField(max_length=64)
+    source_checksum = models.CharField(max_length=64, blank=True, default="")
+    event_count = models.PositiveIntegerField(default=0)
+    goal_event_count = models.PositiveIntegerField(default=0)
+    ignored_goal_event_count = models.PositiveIntegerField(default=0)
+    shootout_goal_event_count = models.PositiveIntegerField(default=0)
+    replayed_home_score = models.PositiveSmallIntegerField(null=True, blank=True)
+    replayed_away_score = models.PositiveSmallIntegerField(null=True, blank=True)
+    replayed_shootout_home_score = models.PositiveSmallIntegerField(
+        null=True, blank=True
+    )
+    replayed_shootout_away_score = models.PositiveSmallIntegerField(
+        null=True, blank=True
+    )
+    supported_start_second = models.PositiveIntegerField(null=True, blank=True)
+    supported_end_second = models.PositiveIntegerField(null=True, blank=True)
+    exposure_seconds = models.PositiveIntegerField(default=0)
+    period_count = models.PositiveSmallIntegerField(default=0)
+    episode_count = models.PositiveIntegerField(default=0)
+    focal_team_count = models.PositiveSmallIntegerField(default=0)
+    diagnostics = models.JSONField(default=dict, blank=True)
+    calculated_at = models.DateTimeField()
+
+    class Meta:
+        indexes = [
+            models.Index(
+                fields=["status", "calculated_at"],
+                name="prov_match_game_state_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"game state for {self.provider_match} ({self.status})"
+
+
+class ProviderMatchPlayedPeriod(models.Model):
+    provider_match = models.ForeignKey(
+        ProviderMatch,
+        on_delete=models.CASCADE,
+        related_name="played_periods",
+    )
+    period = models.PositiveSmallIntegerField(choices=MatchEventPeriod.choices)
+    period_index = models.PositiveSmallIntegerField()
+    start_second = models.PositiveIntegerField()
+    end_second = models.PositiveIntegerField()
+    duration_seconds = models.PositiveIntegerField()
+    calculation_version = models.CharField(max_length=64)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["provider_match", "period"],
+                name="uniq_match_played_period",
+            ),
+            models.UniqueConstraint(
+                fields=["provider_match", "period_index"],
+                name="uniq_match_period_index",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(end_second__gt=models.F("start_second")),
+                name="played_period_positive",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["provider_match", "period_index"],
+                name="played_period_order_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.provider_match_id}:{self.period} [{self.start_second},{self.end_second})"
+
+
 class ProviderMatchEvent(models.Model):
     provider_match = models.ForeignKey(
         ProviderMatch,
@@ -792,6 +1029,10 @@ class ProviderMatchEvent(models.Model):
     )
     event_index = models.PositiveIntegerField()
     provider_event_id = models.CharField(max_length=64, null=True, blank=True)
+    provider_event_sequence_id = models.CharField(max_length=64, null=True, blank=True)
+    related_provider_event_sequence_id = models.CharField(
+        max_length=64, null=True, blank=True
+    )
     provider_team_id = models.CharField(max_length=64)
     team = models.ForeignKey(
         CanonicalTeam,
@@ -802,6 +1043,7 @@ class ProviderMatchEvent(models.Model):
         db_index=False,
     )
     provider_player_id = models.CharField(max_length=64, null=True, blank=True)
+    related_provider_player_id = models.CharField(max_length=64, null=True, blank=True)
     player = models.ForeignKey(
         CanonicalPlayer,
         on_delete=models.SET_NULL,
@@ -820,11 +1062,24 @@ class ProviderMatchEvent(models.Model):
     )
     expanded_minute = models.PositiveSmallIntegerField(null=True, blank=True)
     match_seconds = models.PositiveIntegerField(null=True, blank=True)
+    timeline_seconds = models.PositiveIntegerField(null=True, blank=True)
     event_type = models.PositiveSmallIntegerField(
         choices=MatchEventType.choices,
         default=MatchEventType.UNKNOWN,
     )
     source_event_type_id = models.PositiveSmallIntegerField(null=True, blank=True)
+    is_goal_disallowed = models.BooleanField(default=False)
+    is_deleted_event = models.BooleanField(default=False)
+    participation_action = models.CharField(
+        max_length=24,
+        choices=MatchParticipationAction.choices,
+        default=MatchParticipationAction.NONE,
+    )
+    dismissal_type = models.CharField(
+        max_length=20,
+        choices=MatchDismissalType.choices,
+        default=MatchDismissalType.NONE,
+    )
     outcome_successful = models.BooleanField(null=True, blank=True)
     x = _scaled_coordinate_field()
     y = _scaled_coordinate_field()
@@ -864,6 +1119,21 @@ class ProviderMatchEvent(models.Model):
         choices=MatchEventShotOutcome.choices,
         default=MatchEventShotOutcome.UNKNOWN,
     )
+    scoring_provider_team_id = models.CharField(max_length=64, null=True, blank=True)
+    home_score_before = models.PositiveSmallIntegerField(null=True, blank=True)
+    away_score_before = models.PositiveSmallIntegerField(null=True, blank=True)
+    home_score_after = models.PositiveSmallIntegerField(null=True, blank=True)
+    away_score_after = models.PositiveSmallIntegerField(null=True, blank=True)
+    game_state_before = models.PositiveSmallIntegerField(
+        choices=MatchEventGameState.choices,
+        null=True,
+        blank=True,
+    )
+    game_state_after = models.PositiveSmallIntegerField(
+        choices=MatchEventGameState.choices,
+        null=True,
+        blank=True,
+    )
     is_progressive_pass = models.BooleanField(default=False)
     is_final_third_entry = models.BooleanField(default=False)
     is_box_entry = models.BooleanField(default=False)
@@ -882,8 +1152,14 @@ class ProviderMatchEvent(models.Model):
                 condition=(
                     (models.Q(x__isnull=True) | models.Q(x__gte=0, x__lte=10000))
                     & (models.Q(y__isnull=True) | models.Q(y__gte=0, y__lte=10000))
-                    & (models.Q(end_x__isnull=True) | models.Q(end_x__gte=0, end_x__lte=10000))
-                    & (models.Q(end_y__isnull=True) | models.Q(end_y__gte=0, end_y__lte=10000))
+                    & (
+                        models.Q(end_x__isnull=True)
+                        | models.Q(end_x__gte=0, end_x__lte=10000)
+                    )
+                    & (
+                        models.Q(end_y__isnull=True)
+                        | models.Q(end_y__gte=0, end_y__lte=10000)
+                    )
                     & (
                         models.Q(goal_mouth_y__isnull=True)
                         | models.Q(goal_mouth_y__gte=0, goal_mouth_y__lte=10000)
@@ -917,6 +1193,309 @@ class ProviderMatchEvent(models.Model):
 
     def __str__(self) -> str:
         return f"{self.provider_match_id}:{self.event_index}"
+
+
+class ProviderMatchTeamGameStateEpisode(models.Model):
+    provider_match = models.ForeignKey(
+        ProviderMatch,
+        on_delete=models.CASCADE,
+        related_name="team_game_state_episodes",
+    )
+    focal_team = models.ForeignKey(
+        CanonicalTeam,
+        on_delete=models.PROTECT,
+        related_name="game_state_episodes",
+    )
+    focal_is_home = models.BooleanField()
+    episode_index = models.PositiveSmallIntegerField()
+    period = models.PositiveSmallIntegerField(choices=MatchEventPeriod.choices)
+    phase = models.CharField(max_length=24, choices=MatchStatePhase.choices)
+    start_second = models.PositiveIntegerField()
+    end_second = models.PositiveIntegerField()
+    duration_seconds = models.PositiveIntegerField()
+    is_added_time = models.BooleanField(default=False)
+    focal_score = models.PositiveSmallIntegerField()
+    opponent_score = models.PositiveSmallIntegerField()
+    goal_difference = models.SmallIntegerField()
+    state = models.PositiveSmallIntegerField(choices=MatchEventGameState.choices)
+    previous_state = models.PositiveSmallIntegerField(
+        choices=MatchEventGameState.choices,
+        null=True,
+        blank=True,
+    )
+    draw_provenance = models.CharField(
+        max_length=16,
+        choices=MatchStateDrawProvenance.choices,
+        default=MatchStateDrawProvenance.NONE,
+    )
+    state_entry_second = models.PositiveIntegerField()
+    state_age_seconds_at_start = models.PositiveIntegerField()
+    entry_event = models.ForeignKey(
+        ProviderMatchEvent,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="entered_game_state_episodes",
+    )
+    entry_event_index = models.PositiveIntegerField(null=True, blank=True)
+    calculation_version = models.CharField(max_length=64)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["provider_match", "focal_team", "episode_index"],
+                name="uniq_match_team_state_episode",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(end_second__gt=models.F("start_second")),
+                name="state_episode_positive",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(state_entry_second__lte=models.F("start_second")),
+                name="state_entry_before_episode",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["provider_match", "focal_team", "start_second", "end_second"],
+                name="team_state_episode_time_idx",
+            ),
+            models.Index(
+                fields=["focal_team", "state", "phase"],
+                name="team_state_scope_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.provider_match_id}:{self.focal_team_id}:{self.episode_index}"
+
+
+class ProviderMatchTeamGameStateExposure(models.Model):
+    provider_match = models.ForeignKey(
+        ProviderMatch,
+        on_delete=models.CASCADE,
+        related_name="team_game_state_exposures",
+    )
+    focal_team = models.ForeignKey(
+        CanonicalTeam,
+        on_delete=models.PROTECT,
+        related_name="game_state_exposures",
+    )
+    state = models.PositiveSmallIntegerField(choices=MatchEventGameState.choices)
+    goal_difference = models.SmallIntegerField()
+    phase = models.CharField(max_length=24, choices=MatchStatePhase.choices)
+    draw_provenance = models.CharField(
+        max_length=16,
+        choices=MatchStateDrawProvenance.choices,
+        default=MatchStateDrawProvenance.NONE,
+    )
+    exposure_seconds = models.PositiveIntegerField()
+    episode_count = models.PositiveSmallIntegerField()
+    calculation_version = models.CharField(max_length=64)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "provider_match",
+                    "focal_team",
+                    "state",
+                    "goal_difference",
+                    "phase",
+                    "draw_provenance",
+                ],
+                name="uniq_match_team_state_exposure",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(exposure_seconds__gt=0),
+                name="team_state_exposure_positive",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["focal_team", "state", "phase"],
+                name="team_state_exposure_idx",
+            ),
+        ]
+
+
+class ProviderMatchPlayerParticipationBuild(models.Model):
+    provider_match = models.OneToOneField(
+        ProviderMatch,
+        on_delete=models.CASCADE,
+        related_name="player_participation_build",
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=MatchPlayerParticipationBuildStatus.choices,
+        default=MatchPlayerParticipationBuildStatus.EXCLUDED,
+    )
+    formula_version = models.CharField(max_length=64)
+    source_payload_sha256 = models.CharField(max_length=64, blank=True, default="")
+    match_clock_version = models.CharField(max_length=64, blank=True, default="")
+    team_episode_version = models.CharField(max_length=64, blank=True, default="")
+    participant_count = models.PositiveSmallIntegerField(default=0)
+    verified_participant_count = models.PositiveSmallIntegerField(default=0)
+    excluded_participant_count = models.PositiveSmallIntegerField(default=0)
+    unused_player_count = models.PositiveSmallIntegerField(default=0)
+    interval_count = models.PositiveSmallIntegerField(default=0)
+    verified_seconds = models.PositiveIntegerField(default=0)
+    diagnostics = models.JSONField(default=dict, blank=True)
+    calculated_at = models.DateTimeField()
+
+
+class ProviderMatchPlayerParticipation(models.Model):
+    build = models.ForeignKey(
+        ProviderMatchPlayerParticipationBuild,
+        on_delete=models.CASCADE,
+        related_name="participants",
+    )
+    provider_match = models.ForeignKey(
+        ProviderMatch,
+        on_delete=models.CASCADE,
+        related_name="player_participations",
+    )
+    provider_team_id = models.CharField(max_length=64)
+    team = models.ForeignKey(
+        CanonicalTeam,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="provider_match_participations",
+    )
+    provider_player_id = models.CharField(max_length=64)
+    player = models.ForeignKey(
+        CanonicalPlayer,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="provider_match_participations",
+    )
+    roster_role = models.CharField(max_length=16, choices=MatchPlayerRosterRole.choices)
+    position_role = models.CharField(
+        max_length=16,
+        choices=MatchPlayerPositionRole.choices,
+        default=MatchPlayerPositionRole.UNKNOWN,
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=MatchPlayerParticipationStatus.choices,
+    )
+    confidence = models.CharField(
+        max_length=16,
+        choices=MatchPlayerIntervalConfidence.choices,
+    )
+    exclusion_reason = models.CharField(max_length=64, null=True, blank=True)
+    on_pitch_seconds = models.PositiveIntegerField(default=0)
+    excluded_seconds = models.PositiveIntegerField(default=0)
+    interval_count = models.PositiveSmallIntegerField(default=0)
+    diagnostics = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["build", "provider_team_id", "provider_player_id"],
+                name="uniq_match_player_participation",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["player", "team", "status"],
+                name="player_participation_scope_idx",
+            ),
+        ]
+
+
+class ProviderMatchPlayerInterval(models.Model):
+    participation = models.ForeignKey(
+        ProviderMatchPlayerParticipation,
+        on_delete=models.CASCADE,
+        related_name="intervals",
+    )
+    sequence = models.PositiveSmallIntegerField()
+    start_second = models.PositiveIntegerField()
+    end_second = models.PositiveIntegerField()
+    duration_seconds = models.PositiveIntegerField()
+    start_evidence = models.CharField(
+        max_length=24,
+        choices=MatchPlayerIntervalStartEvidence.choices,
+    )
+    end_evidence = models.CharField(
+        max_length=32,
+        choices=MatchPlayerIntervalEndEvidence.choices,
+    )
+    start_event_index = models.PositiveIntegerField(null=True, blank=True)
+    end_event_index = models.PositiveIntegerField(null=True, blank=True)
+    start_event_sequence_id = models.CharField(max_length=64, null=True, blank=True)
+    end_event_sequence_id = models.CharField(max_length=64, null=True, blank=True)
+    confidence = models.CharField(
+        max_length=16,
+        choices=MatchPlayerIntervalConfidence.choices,
+    )
+    exclusion_reason = models.CharField(max_length=64, null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["participation", "sequence"],
+                name="uniq_player_interval_sequence",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(end_second__gt=models.F("start_second")),
+                name="player_interval_positive",
+            ),
+        ]
+
+
+class ProviderMatchPlayerStateExposure(models.Model):
+    player_interval = models.ForeignKey(
+        ProviderMatchPlayerInterval,
+        on_delete=models.CASCADE,
+        related_name="state_exposures",
+    )
+    team_episode = models.ForeignKey(
+        ProviderMatchTeamGameStateEpisode,
+        on_delete=models.CASCADE,
+        related_name="player_state_exposures",
+    )
+    start_second = models.PositiveIntegerField()
+    end_second = models.PositiveIntegerField()
+    duration_seconds = models.PositiveIntegerField()
+    coarse_state = models.PositiveSmallIntegerField(choices=MatchEventGameState.choices)
+    goal_difference = models.SmallIntegerField()
+    phase = models.CharField(max_length=24, choices=MatchStatePhase.choices)
+    provenance = models.CharField(
+        max_length=16,
+        choices=MatchStateDrawProvenance.choices,
+        default=MatchStateDrawProvenance.NONE,
+    )
+    state_age_bucket = models.CharField(max_length=24)
+    state_age_start_seconds = models.PositiveIntegerField()
+    state_age_end_seconds = models.PositiveIntegerField()
+    formula_version = models.CharField(max_length=64)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "player_interval",
+                    "team_episode",
+                    "start_second",
+                    "end_second",
+                ],
+                name="uniq_player_state_exposure",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(end_second__gt=models.F("start_second")),
+                name="player_state_exposure_positive",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["coarse_state", "phase", "provenance"],
+                name="player_state_scope_idx",
+            ),
+        ]
 
 
 class ProviderMatchCarry(models.Model):
@@ -982,8 +1561,14 @@ class ProviderMatchCarry(models.Model):
                 condition=(
                     (models.Q(x__isnull=True) | models.Q(x__gte=0, x__lte=10000))
                     & (models.Q(y__isnull=True) | models.Q(y__gte=0, y__lte=10000))
-                    & (models.Q(end_x__isnull=True) | models.Q(end_x__gte=0, end_x__lte=10000))
-                    & (models.Q(end_y__isnull=True) | models.Q(end_y__gte=0, end_y__lte=10000))
+                    & (
+                        models.Q(end_x__isnull=True)
+                        | models.Q(end_x__gte=0, end_x__lte=10000)
+                    )
+                    & (
+                        models.Q(end_y__isnull=True)
+                        | models.Q(end_y__gte=0, end_y__lte=10000)
+                    )
                     & models.Q(second__gte=0, second__lte=59)
                 ),
                 name="provider_carry_coords_range",
@@ -1070,8 +1655,12 @@ class PlayerSeasonEventProfile(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=(
-                    models.Q(split_type=EventProfileSplitType.SEASON_TOTAL, team__isnull=True)
-                    | models.Q(split_type=EventProfileSplitType.TEAM, team__isnull=False)
+                    models.Q(
+                        split_type=EventProfileSplitType.SEASON_TOTAL, team__isnull=True
+                    )
+                    | models.Q(
+                        split_type=EventProfileSplitType.TEAM, team__isnull=False
+                    )
                 ),
                 name="player_event_profile_scope",
             ),
@@ -1376,9 +1965,13 @@ class SofascoreTeamSeasonSource(models.Model):
     shots_against = models.PositiveIntegerField(null=True, blank=True)
     shots_on_target_against = models.PositiveIntegerField(null=True, blank=True)
     shots_from_inside_the_box = models.PositiveIntegerField(null=True, blank=True)
-    shots_from_inside_the_box_against = models.PositiveIntegerField(null=True, blank=True)
+    shots_from_inside_the_box_against = models.PositiveIntegerField(
+        null=True, blank=True
+    )
     shots_from_outside_the_box = models.PositiveIntegerField(null=True, blank=True)
-    shots_from_outside_the_box_against = models.PositiveIntegerField(null=True, blank=True)
+    shots_from_outside_the_box_against = models.PositiveIntegerField(
+        null=True, blank=True
+    )
     big_chances = models.PositiveIntegerField(null=True, blank=True)
     big_chances_against = models.PositiveIntegerField(null=True, blank=True)
     big_chances_created = models.PositiveIntegerField(null=True, blank=True)
@@ -1622,7 +2215,9 @@ class MergedPlayerSeason(models.Model):
     ss_appearances = models.PositiveIntegerField(null=True, blank=True)
     ss_big_chances_created = models.PositiveIntegerField(null=True, blank=True)
     ss_accurate_passes_percentage = models.FloatField(null=True, blank=True)
-    ss_saved_shots_from_inside_the_box = models.PositiveIntegerField(null=True, blank=True)
+    ss_saved_shots_from_inside_the_box = models.PositiveIntegerField(
+        null=True, blank=True
+    )
     ss_runs_out = models.PositiveIntegerField(null=True, blank=True)
 
     understat_ingestion_run = models.ForeignKey(
@@ -1718,9 +2313,13 @@ class MergedTeamSeason(models.Model):
     shots_against = models.PositiveIntegerField(null=True, blank=True)
     shots_on_target_against = models.PositiveIntegerField(null=True, blank=True)
     shots_from_inside_the_box = models.PositiveIntegerField(null=True, blank=True)
-    shots_from_inside_the_box_against = models.PositiveIntegerField(null=True, blank=True)
+    shots_from_inside_the_box_against = models.PositiveIntegerField(
+        null=True, blank=True
+    )
     shots_from_outside_the_box = models.PositiveIntegerField(null=True, blank=True)
-    shots_from_outside_the_box_against = models.PositiveIntegerField(null=True, blank=True)
+    shots_from_outside_the_box_against = models.PositiveIntegerField(
+        null=True, blank=True
+    )
     big_chances = models.PositiveIntegerField(null=True, blank=True)
     big_chances_against = models.PositiveIntegerField(null=True, blank=True)
     big_chances_created = models.PositiveIntegerField(null=True, blank=True)
@@ -1963,7 +2562,9 @@ class PlayerSeasonDerivedStats(models.Model):
     inaccurate_pass_rate_percentile = models.FloatField(null=True, blank=True)
 
     finishing_shrunk_delta_per_shot = models.FloatField(null=True, blank=True)
-    finishing_shrunk_delta_per_shot_percentile = models.FloatField(null=True, blank=True)
+    finishing_shrunk_delta_per_shot_percentile = models.FloatField(
+        null=True, blank=True
+    )
     sot_rate = models.FloatField(null=True, blank=True)
     sot_rate_percentile = models.FloatField(null=True, blank=True)
 

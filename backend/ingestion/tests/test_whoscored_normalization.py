@@ -26,6 +26,7 @@ from ingestion.models import (
 from ingestion.services.whoscored_normalization import (
     NORMALIZATION_SCHEMA_VERSION,
     RAW_PAYLOAD_SCHEMA_VERSION,
+    NormalizationDiagnostics,
     NormalizationPolicy,
     WhoScoredNormalizationError,
     action_grid_assignment,
@@ -36,6 +37,8 @@ from ingestion.services.whoscored_normalization import (
     final_third_entry,
     is_action_event,
     is_defensive_event,
+    normalize_match_clock,
+    normalized_timeline_seconds,
     parse_match_payload,
     progressive_pass,
     replace_match_events,
@@ -54,7 +57,93 @@ def load_fixture(name: str) -> dict:
         return json.load(handle)
 
 
+def add_exact_test_clock(payload: dict) -> None:
+    payload["periodEndMinutes"] = {"1": 45, "2": 90}
+    payload["expandedMaxMinute"] = 90
+    payload["expandedMinutes"] = {
+        "1": {str(minute): minute for minute in range(46)},
+        "2": {str(minute): minute for minute in range(45, 91)},
+    }
+    for source_event in payload["events"]:
+        source_event["expandedMinute"] = source_event["minute"]
+    team_id = payload["home"]["teamId"]
+    payload["events"].extend(
+        [
+            {
+                "id": 99001 + index,
+                "eventId": 99001 + index,
+                "minute": minute,
+                "second": 0,
+                "expandedMinute": expanded_minute,
+                "teamId": team_id,
+                "period": {"value": period, "displayName": period_name},
+                "type": {"value": 30, "displayName": event_name},
+                "outcomeType": {"value": 1, "displayName": "Successful"},
+                "qualifiers": [],
+            }
+            for index, (
+                event_name,
+                period,
+                period_name,
+                minute,
+                expanded_minute,
+            ) in enumerate(
+                (
+                    ("Start", 1, "FirstHalf", 0, 0),
+                    ("End", 1, "FirstHalf", 45, 45),
+                    ("Start", 2, "SecondHalf", 45, 45),
+                    ("End", 2, "SecondHalf", 90, 90),
+                )
+            )
+        ]
+    )
+
+
 class WhoScoredNormalizationHelperTests(SimpleTestCase):
+    def test_exact_period_boundaries_compress_breaks_out_of_played_time(self):
+        payload = {
+            "periodEndMinutes": {"1": 45, "2": 90},
+            "expandedMaxMinute": 91,
+            "expandedMinutes": {"1": {"45": 45}, "2": {"90": 91}},
+            "events": [
+                {
+                    "type": {"displayName": event_name},
+                    "period": {"value": period},
+                    "expandedMinute": minute,
+                    "second": second,
+                }
+                for event_name, period, minute, second in (
+                    ("Start", 1, 0, 0),
+                    ("End", 1, 45, 59),
+                    ("Start", 2, 46, 0),
+                    ("End", 2, 91, 17),
+                )
+            ],
+        }
+
+        clock = normalize_match_clock(payload, NormalizationDiagnostics())
+
+        self.assertTrue(clock["valid"])
+        self.assertEqual(
+            [
+                (period["start_second"], period["end_second"])
+                for period in clock["periods"]
+            ],
+            [(0, 45 * 60 + 59), (45 * 60 + 59, 91 * 60 + 16)],
+        )
+        self.assertEqual(clock["supported_end_second"], 91 * 60 + 16)
+        self.assertEqual(
+            normalized_timeline_seconds(
+                {
+                    "period": {"value": 2},
+                    "expandedMinute": 46,
+                    "second": 0,
+                },
+                clock,
+            ),
+            45 * 60 + 59,
+        )
+
     def test_coordinate_encode_decode_boundaries_and_rounding(self):
         self.assertEqual(encode_coordinate(0), 0)
         self.assertEqual(encode_coordinate("12.345"), 1235)
@@ -168,7 +257,9 @@ class WhoScoredParserTests(SimpleTestCase):
         self.assertEqual(first.period, MatchEventPeriod.FIRST_HALF)
         self.assertEqual(first.match_seconds, 65)
         self.assertEqual(first.event_type, MatchEventType.PASS)
-        self.assertEqual((first.x, first.y, first.end_x, first.end_y), (2250, 5000, 7100, 4800))
+        self.assertEqual(
+            (first.x, first.y, first.end_x, first.end_y), (2250, 5000, 7100, 4800)
+        )
         self.assertTrue(first.outcome_successful)
         self.assertTrue(first.is_touch)
         self.assertTrue(first.is_cross)
@@ -224,18 +315,94 @@ class WhoScoredParserTests(SimpleTestCase):
         )
         self.assertIsNone(missing_player.provider_player_id)
         substitutions = [
-            event for event in result.events
+            event
+            for event in result.events
             if event.event_type == MatchEventType.SUBSTITUTION
         ]
         self.assertEqual(len(substitutions), 2)
-        aerial = next(event for event in result.events if event.provider_event_id == "93016")
-        challenge = next(event for event in result.events if event.provider_event_id == "93017")
-        self.assertTrue(
-            is_defensive_event(aerial.event_type, defensive_qualifier=True)
+        aerial = next(
+            event for event in result.events if event.provider_event_id == "93016"
         )
+        challenge = next(
+            event for event in result.events if event.provider_event_id == "93017"
+        )
+        self.assertTrue(is_defensive_event(aerial.event_type, defensive_qualifier=True))
         self.assertTrue(
             is_defensive_event(challenge.event_type, defensive_qualifier=True)
         )
+
+    def test_state_clock_lineups_relations_and_dismissals_are_normalized(self):
+        payload = copy.deepcopy(self.payload)
+        add_exact_test_clock(payload)
+        payload["home"]["players"] = [
+            {
+                "playerId": 1000 + index,
+                "isFirstEleven": index < 11,
+                "position": "GK" if index in {0, 11} else "MC",
+            }
+            for index in range(12)
+        ]
+        payload["away"]["players"] = [
+            {
+                "playerId": 2000 + index,
+                "isFirstEleven": index < 11,
+                "position": "GK" if index in {0, 11} else "DC",
+            }
+            for index in range(12)
+        ]
+        substitutions = [
+            source_event
+            for source_event in payload["events"]
+            if source_event["type"]["displayName"]
+            in {"SubstitutionOff", "SubstitutionOn"}
+        ]
+        substitutions[0]["relatedEventId"] = substitutions[1]["eventId"]
+        substitutions[0]["relatedPlayerId"] = substitutions[1]["playerId"]
+        substitutions[1]["relatedEventId"] = substitutions[0]["eventId"]
+        substitutions[1]["relatedPlayerId"] = substitutions[0]["playerId"]
+        card = next(
+            source_event
+            for source_event in payload["events"]
+            if source_event["type"]["displayName"] == "Card"
+        )
+        card["cardType"] = {"value": 33, "displayName": "Red"}
+
+        result = parse_match_payload(payload, policy=FIXTURE_POLICY)
+
+        self.assertTrue(result.clock["valid"])
+        self.assertEqual(result.clock["supported_end_second"], 90 * 60)
+        first_pass = next(
+            event for event in result.events if event.provider_event_id == "93001"
+        )
+        self.assertEqual(first_pass.timeline_seconds, 65)
+        self.assertEqual(len(result.players), 24)
+        self.assertEqual(
+            sum(player.roster_role == "starter" for player in result.players),
+            22,
+        )
+        normalized_substitutions = [
+            event
+            for event in result.events
+            if event.event_type == MatchEventType.SUBSTITUTION
+        ]
+        self.assertNotEqual(
+            normalized_substitutions[0].provider_event_id,
+            normalized_substitutions[0].provider_event_sequence_id,
+        )
+        self.assertEqual(
+            normalized_substitutions[0].related_provider_event_sequence_id,
+            normalized_substitutions[1].provider_event_sequence_id,
+        )
+        self.assertEqual(
+            normalized_substitutions[0].related_provider_player_id,
+            normalized_substitutions[1].provider_player_id,
+        )
+        normalized_card = next(
+            event
+            for event in result.events
+            if event.provider_event_id == str(card["id"])
+        )
+        self.assertEqual(normalized_card.dismissal_type, "red")
 
     def test_own_goal_is_not_normalized_as_a_shot(self):
         own_goal = copy.deepcopy(
@@ -247,16 +414,27 @@ class WhoScoredParserTests(SimpleTestCase):
         )
         own_goal["id"] = 99901
         own_goal["eventId"] = 99901
+        own_goal["qualifiers"].append({"type": {"value": 28, "displayName": "OwnGoal"}})
         own_goal["qualifiers"].append(
-            {"type": {"value": 28, "displayName": "OwnGoal"}}
+            {"type": {"value": 999, "displayName": "GoalDisallowed"}}
+        )
+        own_goal["qualifiers"].append(
+            {
+                "type": {"value": 55, "displayName": "RelatedEventId"},
+                "value": "93003",
+            }
         )
         self.payload["events"].append(own_goal)
 
         result = parse_match_payload(self.payload, policy=FIXTURE_POLICY)
-        normalized = next(event for event in result.events if event.provider_event_id == "99901")
+        normalized = next(
+            event for event in result.events if event.provider_event_id == "99901"
+        )
 
         self.assertEqual(normalized.event_type, MatchEventType.OWN_GOAL)
         self.assertFalse(is_action_event(normalized.event_type))
+        self.assertTrue(normalized.is_goal_disallowed)
+        self.assertEqual(normalized.related_provider_event_sequence_id, "93001")
 
     def test_current_match_centre_omissions_and_known_qualifiers_are_accepted(self):
         payload = copy.deepcopy(self.payload)
@@ -512,7 +690,9 @@ class WhoScoredEventReplacementTests(TestCase):
             with self.assertRaises(DatabaseError):
                 replace_match_events(self.provider_match, self.normalized)
 
-        rows = list(self.provider_match.events.values_list("provider_team_id", flat=True))
+        rows = list(
+            self.provider_match.events.values_list("provider_team_id", flat=True)
+        )
         self.assertEqual(rows, ["old"])
 
     def test_parser_failure_never_touches_existing_events(self):
@@ -522,5 +702,7 @@ class WhoScoredEventReplacementTests(TestCase):
             parsed = parse_match_payload(malformed, policy=FIXTURE_POLICY)
             replace_match_events(self.provider_match, parsed)
 
-        rows = list(self.provider_match.events.values_list("provider_team_id", flat=True))
+        rows = list(
+            self.provider_match.events.values_list("provider_team_id", flat=True)
+        )
         self.assertEqual(rows, ["old"])
