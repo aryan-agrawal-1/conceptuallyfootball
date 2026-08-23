@@ -16,6 +16,9 @@ import type {
   ShotSituation,
   ShotZoneVariant,
   TeamEventProfilePayload,
+  TeamDefensiveTerritoryPayload,
+  DefensiveTerritoryEvidence,
+  DefensiveTerritoryGroup,
   TeamPassFlow,
   StateLensMetadata,
   TeamPassStateEvidence,
@@ -324,6 +327,78 @@ type ApiTeamPassState = {
     baseline: ApiPassStateEvidence
     delta: Record<string, number | null>
   }
+}
+
+type ApiDefensiveHeight = {
+  sample_size: number
+  median: number | null
+  mean: number | null
+  spread: {
+    p10: number | null
+    p90: number | null
+    p10_p90: number | null
+    standard_deviation: number | null
+  }
+}
+
+type ApiDefensiveTerritory = {
+  contract_version: string
+  disclaimer: string
+  counts: {
+    included: number
+    with_location: number
+    without_location: number
+    non_clearance: number
+    clearance: number
+    recovery: number
+  }
+  family_composition: Array<{
+    family: string
+    count: number
+    with_location: number
+    without_location: number
+    share: number
+  }>
+  heights: {
+    recovery: ApiDefensiveHeight
+    non_clearance_action: ApiDefensiveHeight
+    clearance: ApiDefensiveHeight
+    all: ApiDefensiveHeight
+  }
+  distribution: Array<{ band: string; count: number; share: number }>
+  rates_per_state_minute: {
+    all: number | null
+    non_clearance: number | null
+    clearance: number | null
+    recovery: number | null
+  }
+  grid: {
+    columns: number
+    rows: number
+    cells: Array<{
+      column: number
+      row: number
+      all: { count: number; share: number; per_state_minute: number | null }
+      non_clearance: { count: number; share: number; per_state_minute: number | null }
+      clearance: { count: number; share: number; per_state_minute: number | null }
+    }>
+  }
+  evidence: {
+    located_sample_size: number
+    sparse: boolean
+    sparse_threshold: number
+    exclusions: Record<string, number>
+  }
+}
+
+type ApiTeamDefensiveTerritory = {
+  canonical_team_id: number
+  canonical_team_name: string
+  competition_code: string
+  season_label: string
+  state_lens: ApiStateLens
+  selected: ApiDefensiveTerritory
+  baseline: ApiDefensiveTerritory | null
 }
 
 async function readJson<T>(url: string): Promise<T> {
@@ -846,6 +921,77 @@ function mapPassStateEvidence(raw: ApiPassStateEvidence): TeamPassStateEvidence 
   }
 }
 
+function mapDefensiveHeight(value: ApiDefensiveHeight) {
+  return {
+    sampleSize: value.sample_size,
+    median: value.median,
+    mean: value.mean,
+    spread: {
+      p10: value.spread.p10,
+      p90: value.spread.p90,
+      p10P90: value.spread.p10_p90,
+      standardDeviation: value.spread.standard_deviation,
+    },
+  }
+}
+
+function mapDefensiveTerritory(value: ApiDefensiveTerritory): DefensiveTerritoryEvidence {
+  const groups: Array<[DefensiveTerritoryGroup, 'all' | 'non_clearance' | 'clearance']> = [
+    ['all', 'all'],
+    ['nonClearance', 'non_clearance'],
+    ['clearance', 'clearance'],
+  ]
+  const grids = Object.fromEntries(groups.map(([target, source]) => [
+    target,
+    value.grid.cells.map(cell => ({
+      column: cell.column,
+      row: invertRow(cell.row, value.grid.rows),
+      rawCount: cell[source].count,
+      per90Count: cell[source].per_state_minute ?? 0,
+      share: cell[source].share,
+    })),
+  ])) as Record<DefensiveTerritoryGroup, ActionGridCell[]>
+  return {
+    contractVersion: value.contract_version,
+    disclaimer: value.disclaimer,
+    counts: {
+      included: value.counts.included,
+      withLocation: value.counts.with_location,
+      withoutLocation: value.counts.without_location,
+      nonClearance: value.counts.non_clearance,
+      clearance: value.counts.clearance,
+      recovery: value.counts.recovery,
+    },
+    familyComposition: value.family_composition.map(row => ({
+      family: row.family,
+      count: row.count,
+      withLocation: row.with_location,
+      withoutLocation: row.without_location,
+      share: row.share,
+    })),
+    heights: {
+      recovery: mapDefensiveHeight(value.heights.recovery),
+      nonClearanceAction: mapDefensiveHeight(value.heights.non_clearance_action),
+      clearance: mapDefensiveHeight(value.heights.clearance),
+      all: mapDefensiveHeight(value.heights.all),
+    },
+    distribution: value.distribution,
+    ratesPerStateMinute: {
+      all: value.rates_per_state_minute.all,
+      nonClearance: value.rates_per_state_minute.non_clearance,
+      clearance: value.rates_per_state_minute.clearance,
+      recovery: value.rates_per_state_minute.recovery,
+    },
+    grids,
+    evidence: {
+      locatedSampleSize: value.evidence.located_sample_size,
+      sparse: value.evidence.sparse,
+      sparseThreshold: value.evidence.sparse_threshold,
+      exclusions: value.evidence.exclusions,
+    },
+  }
+}
+
 export async function fetchTeamPassState(
   teamId: number,
   competition: string,
@@ -864,5 +1010,28 @@ export async function fetchTeamPassState(
     selected: mapPassStateEvidence(raw.selected),
     baseline: raw.comparison ? mapPassStateEvidence(raw.comparison.baseline) : null,
     delta: raw.comparison?.delta ?? null,
+  }
+}
+
+export async function fetchTeamDefensiveTerritory(
+  teamId: number,
+  competition: string,
+  season: string,
+  matchRef?: string | null,
+  stateLens?: StateLensRequest,
+): Promise<TeamDefensiveTerritoryPayload> {
+  const params = requestParams(competition, season, null, matchRef)
+  appendStateLens(params, stateLens)
+  const raw = await readJson<ApiTeamDefensiveTerritory>(
+    `${BASE}/team-seasons/event-profile/${teamId}/defensive-territory?${params}`,
+  )
+  return {
+    teamId: raw.canonical_team_id,
+    teamName: raw.canonical_team_name,
+    competition: raw.competition_code,
+    season: raw.season_label,
+    stateLens: mapStateLens(raw.state_lens),
+    selected: mapDefensiveTerritory(raw.selected),
+    baseline: raw.baseline ? mapDefensiveTerritory(raw.baseline) : null,
   }
 }

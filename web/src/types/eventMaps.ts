@@ -343,3 +343,67 @@ export type TeamEventProfilePayload = {
   matches: EventMatchLookup
   stateLens: StateLensMetadata
 }
+
+export type DefensiveTerritoryGroup = 'all' | 'nonClearance' | 'clearance'
+
+export type DefensiveHeightEvidence = {
+  sampleSize: number
+  median: number | null
+  mean: number | null
+  spread: {
+    p10: number | null
+    p90: number | null
+    p10P90: number | null
+    standardDeviation: number | null
+  }
+}
+
+export type DefensiveTerritoryEvidence = {
+  contractVersion: string
+  disclaimer: string
+  counts: {
+    included: number
+    withLocation: number
+    withoutLocation: number
+    nonClearance: number
+    clearance: number
+    recovery: number
+  }
+  familyComposition: Array<{
+    family: string
+    count: number
+    withLocation: number
+    withoutLocation: number
+    share: number
+  }>
+  heights: {
+    recovery: DefensiveHeightEvidence
+    nonClearanceAction: DefensiveHeightEvidence
+    clearance: DefensiveHeightEvidence
+    all: DefensiveHeightEvidence
+  }
+  distribution: Array<{ band: string; count: number; share: number }>
+  ratesPerStateMinute: {
+    all: number | null
+    nonClearance: number | null
+    clearance: number | null
+    recovery: number | null
+  }
+  grids: Record<DefensiveTerritoryGroup, ActionGridCell[]>
+  evidence: {
+    locatedSampleSize: number
+    sparse: boolean
+    sparseThreshold: number
+    exclusions: Record<string, number>
+  }
+}
+
+export type TeamDefensiveTerritoryPayload = {
+  teamId: number
+  teamName: string
+  competition: string
+  season: string
+  stateLens: StateLensMetadata
+  selected: DefensiveTerritoryEvidence
+  baseline: DefensiveTerritoryEvidence | null
+}

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { fetchTeamEventProfile } from '../../lib/eventMaps/api'
+import { fetchTeamDefensiveTerritory, fetchTeamEventProfile } from '../../lib/eventMaps/api'
 import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
 import type { EventShot } from '../../types/eventMaps'
 import { PortraitPitch } from './PortraitPitch'
@@ -12,8 +12,9 @@ import {
 import { StateLensControls } from './StateLensControls'
 import { TeamPassStateFlow } from './TeamPassStateFlow'
 import { stateLensRequest } from '../../lib/eventMaps/stateLensUrl'
+import { DefensiveTerritoryMap } from './DefensiveTerritoryMap'
 
-type TeamMap = 'flow' | 'shots-for' | 'shots-against'
+type TeamMap = 'flow' | 'defensive-territory' | 'shots-for' | 'shots-against'
 
 function MapStage({ map, expanded, setExpanded, children }: {
   map: TeamMap
@@ -45,6 +46,11 @@ export function TeamEventMaps({ teamId, competition, season }: {
   const profileQuery = useQuery({
     queryKey: ['team-event-profile', teamId, competition, season, matchRef, lensRequest],
     queryFn: () => fetchTeamEventProfile(teamId, competition, season, matchRef, lensRequest),
+    staleTime: 10 * 60 * 1000,
+  })
+  const defensiveQuery = useQuery({
+    queryKey: ['team-defensive-territory', teamId, competition, season, matchRef, lensRequest],
+    queryFn: () => fetchTeamDefensiveTerritory(teamId, competition, season, matchRef, lensRequest),
     staleTime: 10 * 60 * 1000,
   })
   const profile = profileQuery.data
@@ -108,6 +114,15 @@ export function TeamEventMaps({ teamId, competition, season }: {
           stateLens={lensRequest}
           expanded={expanded === 'flow'}
           onExpandedChange={next => setExpanded(next ? 'flow' : null)}
+        />
+
+        <DefensiveTerritoryMap
+          payload={defensiveQuery.data}
+          loading={defensiveQuery.isLoading}
+          error={defensiveQuery.error?.message}
+          retry={() => defensiveQuery.refetch()}
+          expanded={expanded === 'defensive-territory'}
+          onExpandedChange={next => setExpanded(next ? 'defensive-territory' : null)}
         />
 
         <div className="grid items-start gap-3 lg:grid-cols-2">
