@@ -1248,6 +1248,14 @@ def replace_match_events(
         from ingestion.services.game_state import materialize_match_game_state
 
         materialize_match_game_state(locked_match, clock=normalized_match.clock)
+        from ingestion.services.player_participation import (
+            materialize_match_player_participation,
+        )
+
+        materialize_match_player_participation(
+            locked_match,
+            lineup_players=normalized_match.players,
+        )
         from ingestion.services.carry_derivation import replace_match_carries
 
         replace_match_carries(locked_match)

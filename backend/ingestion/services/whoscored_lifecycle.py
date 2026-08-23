@@ -401,10 +401,17 @@ class WhoScoredLifecycleService:
                     from ingestion.services.game_state import (
                         materialize_match_game_state,
                     )
+                    from ingestion.services.player_participation import (
+                        materialize_match_player_participation,
+                    )
 
                     materialize_match_game_state(
                         locked_match,
                         clock=normalized_match.clock,
+                    )
+                    materialize_match_player_participation(
+                        locked_match,
+                        lineup_players=normalized_match.players,
                     )
                     return lifecycle_result(
                         locked_match,

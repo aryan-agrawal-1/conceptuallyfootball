@@ -1,7 +1,7 @@
 # Provider-neutral game-state foundation
 
-Status: implemented foundation  
-Formula version: `team_game_state_v1`  
+Status: implemented foundation
+Formula version: `team_game_state_v1`
 Clock version: `match_clock_v1`
 
 ## Contract
