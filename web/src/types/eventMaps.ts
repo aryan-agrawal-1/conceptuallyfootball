@@ -104,6 +104,55 @@ export type TeamPassFlow = {
   completedCount: number
   share: number
   meanLength: number
+  attemptedCount?: number
+  incompleteCount?: number
+  attemptsPerStateMinute?: number | null
+  completionRate?: number | null
+}
+
+export type PassStateCategory = {
+  category: string
+  attempts: number
+  completions: number
+  incompletions: number
+  attemptShare: number | null
+  completionRate: number | null
+}
+
+export type TeamPassStateEvidence = {
+  exposureSeconds: number
+  exposureMinutes: number
+  summary: {
+    attempts: number
+    completions: number
+    incompletions: number
+    attemptsPerStateMinute: number | null
+    completionsPerStateMinute: number | null
+    completionRate: number | null
+    progressiveAttemptRate: number | null
+    meanLengthMetres: number | null
+    meanForwardMetres: number | null
+    meanOriginHeight: number | null
+    meanDestinationHeight: number | null
+  }
+  directions: PassStateCategory[]
+  lengthBands: PassStateCategory[]
+  flows: TeamPassFlow[]
+  evidence: {
+    sourcePassEvents: number
+    excludedMissingCoordinates: number
+    truncated: boolean
+    sparse: boolean
+    empty: boolean
+  }
+}
+
+export type TeamPassStatePayload = {
+  teamId: number
+  teamName: string
+  selected: TeamPassStateEvidence
+  baseline: TeamPassStateEvidence | null
+  delta: Record<string, number | null> | null
 }
 
 export type EventProfileCoverage = {

@@ -18,6 +18,8 @@ import type {
   TeamEventProfilePayload,
   TeamPassFlow,
   StateLensMetadata,
+  TeamPassStateEvidence,
+  TeamPassStatePayload,
 } from '../../types/eventMaps'
 
 const BASE = '/api/v1'
@@ -260,6 +262,67 @@ type ApiStateLens = {
     baseline_evidence: ApiStateLensEvidence | null
     comparison: ApiStateLensScope
     comparison_evidence: ApiStateLensEvidence
+  }
+}
+
+type ApiPassStateCategory = {
+  category: string
+  attempts: number
+  completions: number
+  incompletions: number
+  attempt_share: number | null
+  completion_rate: number | null
+}
+
+type ApiPassStateEvidence = {
+  exposure_seconds: number
+  exposure_minutes: number
+  summary: {
+    attempts: number
+    completions: number
+    incompletions: number
+    attempts_per_state_minute: number | null
+    completions_per_state_minute: number | null
+    completion_rate: number | null
+    progressive_attempt_rate: number | null
+    mean_length_metres: number | null
+    mean_forward_metres: number | null
+    mean_origin_height: number | null
+    mean_destination_height: number | null
+  }
+  directions: ApiPassStateCategory[]
+  length_bands: ApiPassStateCategory[]
+  flow: Array<{
+    column: number
+    row: number
+    attempts: number
+    completions: number
+    incompletions: number
+    attempts_per_state_minute: number | null
+    completion_rate: number | null
+    attempt_share: number | null
+    mean_origin_x: number
+    mean_origin_y: number
+    mean_destination_x: number
+    mean_destination_y: number
+    mean_length_metres: number
+  }>
+  evidence: {
+    source_pass_events: number
+    excluded_missing_coordinates: number
+    truncated: boolean
+    sparse: boolean
+    empty: boolean
+  }
+}
+
+type ApiTeamPassState = {
+  canonical_team_id: number
+  canonical_team_name: string
+  selected: ApiPassStateEvidence
+  comparison: null | {
+    baseline: ApiPassStateEvidence
+    delta: Record<string, number | null>
   }
 }
 
@@ -727,5 +790,79 @@ export async function fetchTeamEventProfile(
     opponentActionTerritory: mapGrid(raw.opponent_touch_grid ?? []),
     matches: mapMatches(raw.matches, matchTeamIds(allShots), raw.canonical_team_id),
     stateLens: mapStateLens(raw.state_lens),
+  }
+}
+
+function mapPassStateCategory(row: ApiPassStateCategory) {
+  return {
+    category: row.category,
+    attempts: row.attempts,
+    completions: row.completions,
+    incompletions: row.incompletions,
+    attemptShare: row.attempt_share,
+    completionRate: row.completion_rate,
+  }
+}
+
+function mapPassStateEvidence(raw: ApiPassStateEvidence): TeamPassStateEvidence {
+  return {
+    exposureSeconds: raw.exposure_seconds,
+    exposureMinutes: raw.exposure_minutes,
+    summary: {
+      attempts: raw.summary.attempts,
+      completions: raw.summary.completions,
+      incompletions: raw.summary.incompletions,
+      attemptsPerStateMinute: raw.summary.attempts_per_state_minute,
+      completionsPerStateMinute: raw.summary.completions_per_state_minute,
+      completionRate: raw.summary.completion_rate,
+      progressiveAttemptRate: raw.summary.progressive_attempt_rate,
+      meanLengthMetres: raw.summary.mean_length_metres,
+      meanForwardMetres: raw.summary.mean_forward_metres,
+      meanOriginHeight: raw.summary.mean_origin_height,
+      meanDestinationHeight: raw.summary.mean_destination_height,
+    },
+    directions: raw.directions.map(mapPassStateCategory),
+    lengthBands: raw.length_bands.map(mapPassStateCategory),
+    flows: raw.flow.map(row => ({
+      id: `state-flow-${row.column}-${row.row}`,
+      bin: { column: row.column, row: invertRow(row.row, FLOW_GRID_ROWS) },
+      origin: toDisplay({ x: row.mean_origin_x, y: row.mean_origin_y }),
+      destination: toDisplay({ x: row.mean_destination_x, y: row.mean_destination_y }),
+      attemptedCount: row.attempts,
+      completedCount: row.completions,
+      incompleteCount: row.incompletions,
+      attemptsPerStateMinute: row.attempts_per_state_minute,
+      completionRate: row.completion_rate,
+      share: row.attempt_share ?? 0,
+      meanLength: row.mean_length_metres,
+    })),
+    evidence: {
+      sourcePassEvents: raw.evidence.source_pass_events,
+      excludedMissingCoordinates: raw.evidence.excluded_missing_coordinates,
+      truncated: raw.evidence.truncated,
+      sparse: raw.evidence.sparse,
+      empty: raw.evidence.empty,
+    },
+  }
+}
+
+export async function fetchTeamPassState(
+  teamId: number,
+  competition: string,
+  season: string,
+  matchRef: string | null,
+  stateLens: StateLensRequest,
+): Promise<TeamPassStatePayload> {
+  const params = requestParams(competition, season, null, matchRef)
+  for (const [key, value] of Object.entries(stateLens)) params.set(key, value)
+  const raw = await readJson<ApiTeamPassState>(
+    `${BASE}/team-seasons/event-profile/${teamId}/pass-state?${params}`,
+  )
+  return {
+    teamId: raw.canonical_team_id,
+    teamName: raw.canonical_team_name,
+    selected: mapPassStateEvidence(raw.selected),
+    baseline: raw.comparison ? mapPassStateEvidence(raw.comparison.baseline) : null,
+    delta: raw.comparison?.delta ?? null,
   }
 }

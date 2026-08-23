@@ -189,7 +189,7 @@ export function drawFlowLayer(
 ) {
   const color = options.flowColor ?? defaultLayerOptions.flowColor
   let maximumCount = 0
-  for (const flow of flows) maximumCount = Math.max(maximumCount, flow.completedCount)
+  for (const flow of flows) maximumCount = Math.max(maximumCount, flow.attemptedCount ?? flow.completedCount)
   if (maximumCount === 0) return
 
   context.save()
@@ -197,14 +197,15 @@ export function drawFlowLayer(
   context.lineJoin = 'round'
 
   for (const flow of flows) {
-    if (flow.completedCount === 0) continue
+    const volumeCount = flow.attemptedCount ?? flow.completedCount
+    if (volumeCount === 0) continue
     const xMin = (flow.bin.column / 6) * 100
     const xMax = ((flow.bin.column + 1) / 6) * 100
     const yMin = (flow.bin.row / 4) * 100
     const yMax = ((flow.bin.row + 1) / 4) * 100
     const topLeft = transform.toScreen({ x: xMin, y: yMin })
     const bottomRight = transform.toScreen({ x: xMax, y: yMax })
-    const volume = Math.sqrt(flow.completedCount / maximumCount)
+    const volume = Math.sqrt(volumeCount / maximumCount)
     const selected = flow.id === options.selectedFlowId
     const hasSelection = Boolean(options.selectedFlowId)
 

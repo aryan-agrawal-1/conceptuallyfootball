@@ -147,7 +147,10 @@ function shotAriaLabel(shot: EventShot) {
 }
 
 function flowAriaLabel(flow: TeamPassFlow) {
-  return `${flow.completedCount} completed passes from this area, mean length ${flow.meanLength.toFixed(1)} metres`
+  const attempts = flow.attemptedCount
+  return attempts == null
+    ? `${flow.completedCount} completed passes from this area, mean length ${flow.meanLength.toFixed(1)} metres`
+    : `${attempts} attempted passes from this area, ${flow.completedCount} completed, mean length ${flow.meanLength.toFixed(1)} metres`
 }
 
 function createSelectableEvents(passes: EventPass[], carries: EventCarry[], shots: EventShot[]) {
@@ -444,7 +447,11 @@ export const PortraitPitch = memo(function PortraitPitch({
             }}
             role="status"
           >
-            <span className="font-bold text-ink">{selectedFlow.completedCount.toLocaleString()} completed</span>
+            <span className="font-bold text-ink">
+              {selectedFlow.attemptedCount == null
+                ? `${selectedFlow.completedCount.toLocaleString()} completed`
+                : `${selectedFlow.attemptedCount.toLocaleString()} attempted · ${selectedFlow.completedCount.toLocaleString()} completed`}
+            </span>
             <span className="mx-1.5 text-gold/70">·</span>
             {selectedFlow.meanLength.toFixed(1)}m mean
             <span className="mx-1.5 text-gold/70">·</span>
