@@ -5,6 +5,7 @@ from ingestion.derived_api import (
     DerivedPlayerSeasonDetailApi,
     DerivedPlayerSeasonListApi,
 )
+from ingestion.defensive_territory_api import TeamDefensiveTerritoryApi
 from ingestion.event_profile_api import (
     PlayerEventProfileApi,
     PlayerEventProfilePassesApi,
@@ -68,6 +69,10 @@ urlpatterns = [
     path(
         "team-seasons/event-profile/<int:canonical_team_id>/pass-state",
         TeamPassStateApi.as_view(),
+    ),
+    path(
+        "team-seasons/event-profile/<int:canonical_team_id>/defensive-territory",
+        TeamDefensiveTerritoryApi.as_view(),
     ),
     path("team-seasons/squad/<int:canonical_team_id>", TeamSquadApi.as_view()),
     path(
