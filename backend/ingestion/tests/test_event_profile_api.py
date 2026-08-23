@@ -13,7 +13,12 @@ from ingestion.models import (
     IngestionRun,
     MaterializedApiPayload,
     MatchEventShotOutcome,
+    MatchEventGameState,
+    MatchEventPeriod,
     MatchEventType,
+    MatchGameStateStatus,
+    MatchStateDrawProvenance,
+    MatchStatePhase,
     MergedTeamSeason,
     PlayerSeasonDerivedStats,
     PlayerSeasonEventProfile,
@@ -22,7 +27,9 @@ from ingestion.models import (
     ProviderMatch,
     ProviderMatchCarry,
     ProviderMatchEvent,
+    ProviderMatchGameState,
     ProviderMatchStatus,
+    ProviderMatchTeamGameStateEpisode,
     Season,
     TeamSeasonEventProfile,
 )
@@ -423,6 +430,115 @@ class EventProfileApiTests(TestCase):
         self.assertEqual(payload["shots_against"][0]["match_ref"], 0)
         self.assertEqual(payload["shots_for"][0]["team_id"], self.home.id)
         self.assertEqual(payload["shots_against"][0]["team_id"], self.away.id)
+
+    def create_state_lens_evidence(self):
+        ProviderMatchEvent.objects.filter(provider_match=self.match).update(
+            timeline_seconds=1200
+        )
+        ProviderMatchGameState.objects.create(
+            provider_match=self.match,
+            status=MatchGameStateStatus.VERIFIED,
+            eligible=True,
+            calculation_version="team_game_state_v1",
+            exposure_seconds=5400,
+            episode_count=2,
+            focal_team_count=2,
+            calculated_at=datetime.now(timezone.utc),
+        )
+        ProviderMatchTeamGameStateEpisode.objects.create(
+            provider_match=self.match,
+            focal_team=self.home,
+            focal_is_home=True,
+            episode_index=0,
+            period=MatchEventPeriod.FIRST_HALF,
+            phase=MatchStatePhase.FIRST_HALF,
+            start_second=0,
+            end_second=1800,
+            duration_seconds=1800,
+            focal_score=0,
+            opponent_score=0,
+            goal_difference=0,
+            state=MatchEventGameState.DRAWING,
+            draw_provenance=MatchStateDrawProvenance.NEUTRAL,
+            state_entry_second=0,
+            state_age_seconds_at_start=0,
+            calculation_version="team_game_state_v1",
+        )
+        ProviderMatchTeamGameStateEpisode.objects.create(
+            provider_match=self.match,
+            focal_team=self.home,
+            focal_is_home=True,
+            episode_index=1,
+            period=MatchEventPeriod.SECOND_HALF,
+            phase=MatchStatePhase.SECOND_HALF,
+            start_second=1800,
+            end_second=5400,
+            duration_seconds=3600,
+            focal_score=1,
+            opponent_score=0,
+            goal_difference=1,
+            state=MatchEventGameState.WINNING,
+            draw_provenance=MatchStateDrawProvenance.NONE,
+            state_entry_second=1800,
+            state_age_seconds_at_start=0,
+            calculation_version="team_game_state_v1",
+        )
+
+    def test_team_state_lens_scopes_maps_and_exposes_evidence(self):
+        self.create_state_lens_evidence()
+
+        response = self.client.get(
+            self.team_url,
+            {**self.scope, "state": "drawing", "draw_provenance": "neutral"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["summary"]["pass_attempts"], 2)
+        self.assertEqual(len(payload["shots_for"]), 1)
+        self.assertEqual(payload["state_lens"]["selected"]["state"], "drawing")
+        self.assertEqual(payload["state_lens"]["evidence"]["exposure_seconds"], 1800)
+        self.assertEqual(payload["state_lens"]["evidence"]["episode_count"], 1)
+        self.assertEqual(payload["state_lens"]["evidence"]["match_count"], 1)
+        self.assertIn(1, payload["state_lens"]["eligible_refinements"]["goal_differences"])
+
+    def test_team_state_lens_validation_empty_comparison_and_cache_separation(self):
+        self.create_state_lens_evidence()
+        invalid = self.client.get(
+            self.team_url,
+            {**self.scope, "state": "winning", "goal_difference": -1},
+        )
+        self.assertEqual(invalid.status_code, 400)
+        self.assertIn("Invalid State Lens parameter", invalid.json()["detail"])
+
+        empty = self.client.get(
+            self.team_url,
+            {
+                **self.scope,
+                "state": "winning",
+                "goal_difference": 2,
+                "baseline_state": "drawing",
+                "baseline_draw_provenance": "neutral",
+            },
+        )
+        self.assertEqual(empty.status_code, 200)
+        payload = empty.json()
+        self.assertTrue(payload["state_lens"]["evidence"]["empty"])
+        self.assertEqual(payload["summary"]["pass_attempts"], 0)
+        self.assertTrue(payload["state_lens"]["comparison"]["enabled"])
+        self.assertEqual(
+            payload["state_lens"]["comparison"]["baseline_evidence"]["exposure_seconds"],
+            1800,
+        )
+
+        self.client.get(self.team_url, {**self.scope, "state": "drawing"})
+        self.client.get(self.team_url, {**self.scope, "state": "winning"})
+        keys = list(
+            MaterializedApiPayload.objects.filter(
+                cache_key__startswith=f"event-profile:{self.competition_season.id}:team:"
+            ).values_list("cache_key", flat=True)
+        )
+        self.assertGreaterEqual(len(set(keys)), 3)
 
     def test_cache_hits_are_stable_and_profile_version_invalidates(self):
         first = self.client.get(self.player_url, self.scope)

@@ -34,6 +34,11 @@ from ingestion.services.event_profiles import (
     _summary,
     event_profile_availability,
 )
+from ingestion.state_lens import (
+    parse_state_lens,
+    scope_team_events,
+    state_lens_metadata,
+)
 
 
 PASS_RESPONSE_LIMIT = 5_000
@@ -629,6 +634,7 @@ class TeamEventProfileApi(APIView):
                 is_current=True,
             )
             match_ref = parse_optional_match(request)
+            state_lens = parse_state_lens(request)
             cache_key = stable_cache_key(
                 f"event-profile:{profile.competition_season_id}:team",
                 {
@@ -640,12 +646,15 @@ class TeamEventProfileApi(APIView):
                     "materialization_run": profile.materialized_ingestion_run_id,
                     "profile_version": profile.id,
                     "match": match_ref,
+                    "state_lens": state_lens.cache_scope(),
                 },
             )
             response, _ = get_or_build_payload_response(
                 cache_key=cache_key,
-                source_version=profile_source_version("team", profile, match_ref),
-                builder=lambda: self.build_payload(profile, match_ref),
+                source_version=profile_source_version(
+                    "team", profile, match_ref, state_lens.source_token()
+                ),
+                builder=lambda: self.build_payload(profile, match_ref, state_lens),
             )
             return response
         except DjangoValidationError as exc:
@@ -656,7 +665,7 @@ class TeamEventProfileApi(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-    def build_payload(self, profile: TeamSeasonEventProfile, match_ref: int | None) -> dict:
+    def build_payload(self, profile: TeamSeasonEventProfile, match_ref: int | None, state_lens) -> dict:
         match_ids = event_queryset(profile.competition_season).filter(
             team_id=profile.team_id
         ).values("provider_match_id")
@@ -665,6 +674,12 @@ class TeamEventProfileApi(APIView):
             match_ref,
             profile.team_id,
         )
+        evidence_match_ids = list(
+            scoped_queryset.values_list("provider_match_id", flat=True).distinct()
+        )
+        scoped_queryset = scope_team_events(
+            scoped_queryset, profile.team_id, state_lens.selected
+        )
         shots = list(
             scoped_queryset.filter(event_type=MatchEventType.SHOT).order_by(
                 "provider_match__kickoff_at", "provider_match_id", "event_index"
@@ -672,7 +687,7 @@ class TeamEventProfileApi(APIView):
         )
         shots_for = [event for event in shots if event.team_id == profile.team_id]
         shots_against = [event for event in shots if event.team_id != profile.team_id]
-        if match_ref is None:
+        if match_ref is None and state_lens.selected.is_default:
             summary = {field: getattr(profile, field) for field in TEAM_SUMMARY_FIELDS}
             pass_flow = profile.pass_flow if profile.formula_version == FORMULA_VERSION else []
             touch_grid = profile.action_grid if profile.formula_version == FORMULA_VERSION else []
@@ -731,4 +746,7 @@ class TeamEventProfileApi(APIView):
             "shots_against": [compact_shot(event, references) for event in shots_against],
             "matches": matches,
             "selected_match_ref": match_ref,
+            "state_lens": state_lens_metadata(
+                profile.team_id, evidence_match_ids, state_lens
+            ),
         }
