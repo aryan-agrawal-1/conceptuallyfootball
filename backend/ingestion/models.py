@@ -1592,6 +1592,147 @@ class ProviderMatchCarry(models.Model):
         )
 
 
+class ProviderMatchPossessionBuild(models.Model):
+    """Audit record for one deterministic possession-context rebuild."""
+
+    provider_match = models.OneToOneField(
+        ProviderMatch, on_delete=models.CASCADE, related_name="possession_build"
+    )
+    calculation_version = models.CharField(max_length=64)
+    source_checksum = models.CharField(max_length=64, blank=True, default="")
+    possession_count = models.PositiveIntegerField(default=0)
+    included_event_count = models.PositiveIntegerField(default=0)
+    excluded_event_count = models.PositiveIntegerField(default=0)
+    ambiguous_event_count = models.PositiveIntegerField(default=0)
+    diagnostics = models.JSONField(default=dict, blank=True)
+    calculated_at = models.DateTimeField()
+
+
+class ProviderMatchPossession(models.Model):
+    """Provider-neutral continuous team control derived from normalized events."""
+
+    build = models.ForeignKey(
+        ProviderMatchPossessionBuild,
+        on_delete=models.CASCADE,
+        related_name="possessions",
+    )
+    provider_match = models.ForeignKey(
+        ProviderMatch, on_delete=models.CASCADE, related_name="possessions"
+    )
+    possession_index = models.PositiveIntegerField()
+    identity = models.CharField(max_length=160)
+    provider_team_id = models.CharField(max_length=64)
+    team = models.ForeignKey(
+        CanonicalTeam,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="provider_match_possessions",
+    )
+    period = models.PositiveSmallIntegerField(choices=MatchEventPeriod.choices)
+    start_second = models.PositiveIntegerField()
+    end_second = models.PositiveIntegerField()
+    duration_seconds = models.PositiveIntegerField()
+    start_x = _scaled_coordinate_field()
+    start_y = _scaled_coordinate_field()
+    end_x = _scaled_coordinate_field()
+    end_y = _scaled_coordinate_field()
+    action_count = models.PositiveIntegerField()
+    termination_reason = models.CharField(max_length=32)
+    launch_type = models.CharField(max_length=32)
+    is_ambiguous = models.BooleanField(default=False)
+    exclusion_reason = models.CharField(max_length=64, null=True, blank=True)
+    establishment_second = models.PositiveIntegerField(null=True, blank=True)
+    establishment_event_index = models.PositiveIntegerField(null=True, blank=True)
+    is_settled = models.BooleanField(default=False)
+    is_counter_launch = models.BooleanField(default=False)
+    counter_final_third_arrival = models.BooleanField(default=False)
+    counter_box_arrival = models.BooleanField(default=False)
+    counter_shot = models.BooleanField(default=False)
+    counter_outcome = models.CharField(max_length=24, null=True, blank=True)
+    counter_elapsed_seconds = models.PositiveIntegerField(null=True, blank=True)
+    counter_forward_metres = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True
+    )
+    counter_speed_mps = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True
+    )
+    provider_fast_break_shot_count = models.PositiveSmallIntegerField(default=0)
+    settled_defensive_action_count = models.PositiveSmallIntegerField(default=0)
+    settled_defensive_average_x = _scaled_coordinate_field()
+    settled_block_height = models.CharField(max_length=8, null=True, blank=True)
+    state_segments = models.JSONField(default=list, blank=True)
+    diagnostics = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["provider_match", "possession_index"],
+                name="uniq_match_possession_index",
+            ),
+            models.UniqueConstraint(
+                fields=["provider_match", "identity"],
+                name="uniq_match_possession_identity",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["team", "is_counter_launch"],
+                name="possession_team_counter_idx",
+            ),
+            models.Index(
+                fields=["provider_match", "period", "start_second"],
+                name="possession_match_time_idx",
+            ),
+        ]
+
+
+class ProviderMatchPossessionEvent(models.Model):
+    possession = models.ForeignKey(
+        ProviderMatchPossession, on_delete=models.CASCADE, related_name="event_links"
+    )
+    event = models.OneToOneField(
+        ProviderMatchEvent,
+        on_delete=models.CASCADE,
+        related_name="possession_link",
+    )
+    sequence = models.PositiveSmallIntegerField()
+    is_control_action = models.BooleanField(default=False)
+    is_settled_defensive_action = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["possession", "sequence"],
+                name="uniq_possession_event_sequence",
+            )
+        ]
+
+
+class ProviderMatchPossessionParticipant(models.Model):
+    possession = models.ForeignKey(
+        ProviderMatchPossession, on_delete=models.CASCADE, related_name="participants"
+    )
+    provider_player_id = models.CharField(max_length=64)
+    player = models.ForeignKey(
+        CanonicalPlayer,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="provider_match_possessions",
+    )
+    first_event_index = models.PositiveIntegerField()
+    action_count = models.PositiveSmallIntegerField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["possession", "provider_player_id"],
+                name="uniq_possession_participant",
+            )
+        ]
+
+
 class PlayerSeasonEventProfile(models.Model):
     competition_season = models.ForeignKey(
         CompetitionSeason,
