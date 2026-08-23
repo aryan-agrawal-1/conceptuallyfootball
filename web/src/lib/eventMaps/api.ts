@@ -17,6 +17,7 @@ import type {
   ShotZoneVariant,
   TeamEventProfilePayload,
   TeamPassFlow,
+  StateLensMetadata,
 } from '../../types/eventMaps'
 
 const BASE = '/api/v1'
@@ -218,6 +219,48 @@ type ApiTeamProfile = {
   shots_for: ApiShot[]
   shots_against: ApiShot[]
   matches: ApiMatch[]
+  state_lens: ApiStateLens
+}
+
+type ApiStateLensScope = {
+  state: StateLensMetadata['selected']['state']
+  goal_difference: number | null
+  phase: StateLensMetadata['selected']['phase']
+  draw_provenance: StateLensMetadata['selected']['drawProvenance']
+  minimum_state_age_seconds: number | null
+  maximum_state_age_seconds: number | null
+}
+
+type ApiStateLensEvidence = {
+  exposure_seconds: number
+  exposure_minutes: number
+  episode_count: number
+  match_count: number
+  matches_included: number
+  matches_excluded: number
+  exclusion_reasons: Record<string, number>
+  formula_version: string
+  empty: boolean
+}
+
+type ApiStateLens = {
+  contract_version: string
+  selected: ApiStateLensScope
+  evidence: ApiStateLensEvidence
+  eligible_refinements: {
+    states: StateLensMetadata['eligibleRefinements']['states']
+    goal_differences: number[]
+    phases: StateLensMetadata['eligibleRefinements']['phases']
+    draw_provenances: StateLensMetadata['eligibleRefinements']['drawProvenances']
+    state_age_seconds: { minimum: number | null; maximum: number | null }
+  }
+  comparison: {
+    enabled: boolean
+    baseline: ApiStateLensScope | null
+    baseline_evidence: ApiStateLensEvidence | null
+    comparison: ApiStateLensScope
+    comparison_evidence: ApiStateLensEvidence
+  }
 }
 
 async function readJson<T>(url: string): Promise<T> {
@@ -239,6 +282,62 @@ function requestParams(
   if (teamId != null) params.set('team', String(teamId))
   if (matchRef != null) params.set('match', matchRef)
   return params
+}
+
+export type StateLensRequest = Record<string, string>
+
+function appendStateLens(params: URLSearchParams, stateLens?: StateLensRequest) {
+  if (!stateLens) return
+  Object.entries(stateLens).forEach(([key, value]) => {
+    if (value !== '') params.set(key, value)
+  })
+}
+
+function mapStateLensScope(value: ApiStateLensScope): StateLensMetadata['selected'] {
+  return {
+    state: value.state,
+    goalDifference: value.goal_difference,
+    phase: value.phase,
+    drawProvenance: value.draw_provenance,
+    minimumStateAgeSeconds: value.minimum_state_age_seconds,
+    maximumStateAgeSeconds: value.maximum_state_age_seconds,
+  }
+}
+
+function mapStateLensEvidence(value: ApiStateLensEvidence): StateLensMetadata['evidence'] {
+  return {
+    exposureSeconds: value.exposure_seconds,
+    exposureMinutes: value.exposure_minutes,
+    episodeCount: value.episode_count,
+    matchCount: value.match_count,
+    matchesIncluded: value.matches_included,
+    matchesExcluded: value.matches_excluded,
+    exclusionReasons: value.exclusion_reasons,
+    formulaVersion: value.formula_version,
+    empty: value.empty,
+  }
+}
+
+function mapStateLens(value: ApiStateLens): StateLensMetadata {
+  return {
+    contractVersion: value.contract_version,
+    selected: mapStateLensScope(value.selected),
+    evidence: mapStateLensEvidence(value.evidence),
+    eligibleRefinements: {
+      states: value.eligible_refinements.states,
+      goalDifferences: value.eligible_refinements.goal_differences,
+      phases: value.eligible_refinements.phases,
+      drawProvenances: value.eligible_refinements.draw_provenances,
+      stateAgeSeconds: value.eligible_refinements.state_age_seconds,
+    },
+    comparison: {
+      enabled: value.comparison.enabled,
+      baseline: value.comparison.baseline ? mapStateLensScope(value.comparison.baseline) : null,
+      baselineEvidence: value.comparison.baseline_evidence ? mapStateLensEvidence(value.comparison.baseline_evidence) : null,
+      comparison: mapStateLensScope(value.comparison.comparison),
+      comparisonEvidence: mapStateLensEvidence(value.comparison.comparison_evidence),
+    },
+  }
 }
 
 function eventMinute(matchSeconds: number | null) {
@@ -596,8 +695,10 @@ export async function fetchTeamEventProfile(
   competition: string,
   season: string,
   matchRef?: string | null,
+  stateLens?: StateLensRequest,
 ): Promise<TeamEventProfilePayload> {
   const params = requestParams(competition, season, null, matchRef)
+  appendStateLens(params, stateLens)
   const raw = await readJson<ApiTeamProfile>(
     `${BASE}/team-seasons/event-profile/${teamId}?${params}`,
   )
@@ -625,5 +726,6 @@ export async function fetchTeamEventProfile(
     actionTerritory: mapGrid(raw.touch_grid ?? []),
     opponentActionTerritory: mapGrid(raw.opponent_touch_grid ?? []),
     matches: mapMatches(raw.matches, matchTeamIds(allShots), raw.canonical_team_id),
+    stateLens: mapStateLens(raw.state_lens),
   }
 }

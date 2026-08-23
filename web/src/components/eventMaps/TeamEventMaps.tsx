@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { fetchTeamEventProfile } from '../../lib/eventMaps/api'
 import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
 import type { EventShot, TeamPassFlow } from '../../types/eventMaps'
@@ -8,6 +9,8 @@ import {
   EventCoverage, EventMapCard, EventMapNotice, EventMatchFilter, EventMetricStrip,
   EventPitchStage, EventSelectionDetails, ShotMapLegend,
 } from './EventMapUi'
+import { StateLensControls } from './StateLensControls'
+import { stateLensRequest } from '../../lib/eventMaps/stateLensUrl'
 
 type TeamMap = 'flow' | 'shots-for' | 'shots-against'
 
@@ -46,19 +49,26 @@ export function TeamEventMaps({ teamId, competition, season }: {
 }) {
   const [selection, setSelection] = useState<SelectablePitchEvent | null>(null)
   const [selectedFlow, setSelectedFlow] = useState<TeamPassFlow | null>(null)
-  const [matchRef, setMatchRef] = useState<string | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const matchRef = searchParams.get('match')
+  const lensRequest = stateLensRequest(searchParams)
   const [expanded, setExpanded] = useState<TeamMap | null>(null)
   const profileQuery = useQuery({
-    queryKey: ['team-event-profile', teamId, competition, season, matchRef],
-    queryFn: () => fetchTeamEventProfile(teamId, competition, season, matchRef),
+    queryKey: ['team-event-profile', teamId, competition, season, matchRef, lensRequest],
+    queryFn: () => fetchTeamEventProfile(teamId, competition, season, matchRef, lensRequest),
     staleTime: 10 * 60 * 1000,
   })
   const profile = profileQuery.data
-  if (profileQuery.isLoading) return <EventMapNotice kind="loading" title="Loading team event profile" />
+  const setLensParams = (next: URLSearchParams) => {
+    setSelection(null)
+    setSelectedFlow(null)
+    setSearchParams(next)
+  }
+  if (profileQuery.isLoading) return <div className="space-y-3"><StateLensControls searchParams={searchParams} onChange={setLensParams} /><EventMapNotice kind="loading" title="Loading team event profile" /></div>
   if (profileQuery.isError || !profile) {
-    return <EventMapNotice kind="error" title="Team event profile failed to load" onRetry={() => profileQuery.refetch()}>
+    return <div className="space-y-3"><StateLensControls searchParams={searchParams} onChange={setLensParams} /><EventMapNotice kind="error" title="Team event profile failed to load" onRetry={() => profileQuery.refetch()}>
       {profileQuery.error?.message ?? 'The event-profile service returned no data.'}
-    </EventMapNotice>
+    </EventMapNotice></div>
   }
 
   const shotsFor = profile.shots.filter(shot => shot.perspective === 'for')
@@ -83,6 +93,8 @@ export function TeamEventMaps({ teamId, competition, season }: {
 
   return (
     <section aria-label="Team event maps">
+      <div className="mb-3"><StateLensControls metadata={profile.stateLens} searchParams={searchParams} onChange={setLensParams} /></div>
+      {expanded ? <div className="fixed left-3 right-16 top-3 z-[95] max-h-[45svh] overflow-y-auto sm:left-8 sm:right-20"><StateLensControls compact metadata={profile.stateLens} searchParams={searchParams} onChange={setLensParams} /></div> : null}
       <div className="mb-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(220px,0.55fr)_auto]">
         <EventMetricStrip metrics={[
           { label: 'Passes', value: profile.summary.pass_attempts?.toLocaleString() ?? '—' },
@@ -90,7 +102,12 @@ export function TeamEventMaps({ teamId, competition, season }: {
           { label: 'Shots against', value: profile.summary.shots_against?.toLocaleString() ?? '—' },
         ]} />
         <EventCoverage coverage={profile.coverage} />
-        <EventMatchFilter matches={profile.matches} value={matchRef} onChange={value => { setSelection(null); setSelectedFlow(null); setMatchRef(value) }} />
+        <EventMatchFilter matches={profile.matches} value={matchRef} onChange={value => {
+          const next = new URLSearchParams(searchParams)
+          if (value == null) next.delete('match')
+          else next.set('match', value)
+          setLensParams(next)
+        }} />
       </div>
 
       <div className="space-y-3">

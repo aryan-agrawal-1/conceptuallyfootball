@@ -124,6 +124,51 @@ export type EventProfileMetadata = {
   updatedAt: string
 }
 
+export type StateLensState = 'all' | 'drawing' | 'winning' | 'losing'
+export type StateLensPhase = 'first_half' | 'second_half' | 'first_extra_time' | 'second_extra_time'
+export type StateLensProvenance = 'none' | 'neutral' | 'restored' | 'surrendered'
+
+export type StateLensScope = {
+  state: StateLensState
+  goalDifference: number | null
+  phase: StateLensPhase | null
+  drawProvenance: StateLensProvenance | null
+  minimumStateAgeSeconds: number | null
+  maximumStateAgeSeconds: number | null
+}
+
+export type StateLensEvidence = {
+  exposureSeconds: number
+  exposureMinutes: number
+  episodeCount: number
+  matchCount: number
+  matchesIncluded: number
+  matchesExcluded: number
+  exclusionReasons: Record<string, number>
+  formulaVersion: string
+  empty: boolean
+}
+
+export type StateLensMetadata = {
+  contractVersion: string
+  selected: StateLensScope
+  evidence: StateLensEvidence
+  eligibleRefinements: {
+    states: Exclude<StateLensState, 'all'>[]
+    goalDifferences: number[]
+    phases: StateLensPhase[]
+    drawProvenances: StateLensProvenance[]
+    stateAgeSeconds: { minimum: number | null; maximum: number | null }
+  }
+  comparison: {
+    enabled: boolean
+    baseline: StateLensScope | null
+    baselineEvidence: StateLensEvidence | null
+    comparison: StateLensScope
+    comparisonEvidence: StateLensEvidence
+  }
+}
+
 export type PlayerPassFilter =
   | 'all'
   | 'progressive'
@@ -247,4 +292,5 @@ export type TeamEventProfilePayload = {
   actionTerritory: ActionGridCell[]
   opponentActionTerritory: ActionGridCell[]
   matches: EventMatchLookup
+  stateLens: StateLensMetadata
 }
