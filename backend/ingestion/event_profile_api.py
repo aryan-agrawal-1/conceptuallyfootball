@@ -25,6 +25,8 @@ from ingestion.models import (
     ProviderMatch,
     ProviderMatchCarry,
     ProviderMatchEvent,
+    ProviderMatchGameState,
+    ProviderMatchTeamGameStateEpisode,
     TeamSeasonEventProfile,
 )
 from ingestion.services.event_profiles import (
@@ -652,7 +654,18 @@ class TeamEventProfileApi(APIView):
             response, _ = get_or_build_payload_response(
                 cache_key=cache_key,
                 source_version=profile_source_version(
-                    "team", profile, match_ref, state_lens.source_token()
+                    "team",
+                    profile,
+                    match_ref,
+                    state_lens.source_token(),
+                    model_version(
+                        ProviderMatchGameState,
+                        {"provider_match__competition_season": competition_season},
+                    ),
+                    model_version(
+                        ProviderMatchTeamGameStateEpisode,
+                        {"provider_match__competition_season": competition_season},
+                    ),
                 ),
                 builder=lambda: self.build_payload(profile, match_ref, state_lens),
             )

@@ -540,6 +540,38 @@ class EventProfileApiTests(TestCase):
         )
         self.assertGreaterEqual(len(set(keys)), 3)
 
+    def test_team_state_lens_cache_invalidates_when_episodes_are_rebuilt(self):
+        self.create_state_lens_evidence()
+        query = {**self.scope, "state": "drawing"}
+        first = self.client.get(self.team_url, query)
+
+        ProviderMatchTeamGameStateEpisode.objects.create(
+            provider_match=self.match,
+            focal_team=self.home,
+            focal_is_home=True,
+            episode_index=2,
+            period=MatchEventPeriod.SECOND_HALF,
+            phase=MatchStatePhase.SECOND_HALF,
+            start_second=5400,
+            end_second=6000,
+            duration_seconds=600,
+            focal_score=0,
+            opponent_score=1,
+            goal_difference=-1,
+            state=MatchEventGameState.LOSING,
+            draw_provenance=MatchStateDrawProvenance.NONE,
+            state_entry_second=5400,
+            state_age_seconds_at_start=0,
+            calculation_version="team_game_state_v1",
+        )
+
+        second = self.client.get(self.team_url, query)
+        self.assertNotEqual(first["ETag"], second["ETag"])
+        self.assertIn(
+            "losing",
+            second.json()["state_lens"]["eligible_refinements"]["states"],
+        )
+
     def test_cache_hits_are_stable_and_profile_version_invalidates(self):
         first = self.client.get(self.player_url, self.scope)
         second = self.client.get(self.player_url, self.scope)
