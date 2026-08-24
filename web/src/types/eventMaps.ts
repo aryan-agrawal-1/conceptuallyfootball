@@ -407,3 +407,79 @@ export type TeamDefensiveTerritoryPayload = {
   selected: DefensiveTerritoryEvidence
   baseline: DefensiveTerritoryEvidence | null
 }
+
+export type ShotPressurePenaltyMode = 'exclude' | 'include' | 'only'
+
+export type ShotPressureMetric = {
+  count: number
+  perMinute: number | null
+  per90: number | null
+}
+
+export type ShotPressureSurfaceCell = {
+  column: number
+  row: number
+  shotCount: number
+  shotsPer90: number | null
+  locationShare: number | null
+  observedConversion: number | null
+}
+
+export type ShotPressureCohort = {
+  evidence: StateLensEvidence & {
+    zeroShotEpisodesFor: number
+    zeroShotEpisodesAgainst: number
+  }
+  frequency: {
+    for: Record<string, ShotPressureMetric>
+    against: Record<string, ShotPressureMetric>
+    openness: { shotCount: number; shotsPerMinute: number | null; shotsPer90: number | null }
+  }
+  outcomes: {
+    for: Record<string, ShotPressureMetric>
+    against: Record<string, ShotPressureMetric>
+    observedConversionFor: number | null
+    observedConversionAgainst: number | null
+  }
+  firstShot: Record<'for' | 'against', {
+    episodeCount: number
+    episodesWithShot: number
+    zeroShotEpisodes: number
+    meanSecondsFromStateEntry: number | null
+    medianSecondsFromStateEntry: number | null
+  }>
+  location: Record<'for' | 'against', {
+    columns: number
+    rows: number
+    locatedShots: number
+    unlocatedShots: number
+    cells: ShotPressureSurfaceCell[]
+  }>
+}
+
+export type ShotPressureDeltaCell = {
+  column: number
+  row: number
+  shotsPer90Delta: number | null
+  locationShareDelta: number | null
+  observedConversionDelta: number | null
+}
+
+export type TeamShotPressurePayload = {
+  teamId: number
+  teamName: string
+  competition: string
+  season: string
+  stateLens: StateLensMetadata
+  formulaVersion: string
+  penaltyMode: ShotPressurePenaltyMode
+  penaltyNote: string
+  fastBreakNote: string
+  measurementNote: string
+  selected: ShotPressureCohort
+  comparison: {
+    enabled: boolean
+    baseline: ShotPressureCohort | null
+    locationDelta: Record<'for' | 'against', ShotPressureDeltaCell[]> | null
+  }
+}

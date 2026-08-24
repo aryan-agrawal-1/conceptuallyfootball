@@ -29,6 +29,26 @@ The result is deterministic for a given event set, performs in a single canvas p
 
 Future work can add possession/value weighting, or recipient-aware networks, if those fields are introduced to the provider-neutral contract. The frontend should continue to render only materialized evidence rather than infer either concept.
 
+## State-conditioned shot pressure
+
+Team Event Maps requests `/api/v1/team-seasons/shot-pressure/:teamId` with the
+shared State Lens parameters. The cached provider-neutral response divides shot
+counts by canonical half-open episode exposure, not by match count or an assumed
+90 minutes. It reports evidence minutes, episodes, matches, zero-shot episodes,
+and exclusions beside every view.
+
+The tactical default is `penalty_mode=exclude`; `include` and `only` are explicit
+controls. WhoScored/Opta normalization stores `FAST_BREAK` as a mutually exclusive
+shot situation, so those shots contribute to the broad open-play count and also
+appear in the narrower **provider-tagged fast break** row. That row is never
+described as a complete counter-attack count.
+
+The 6×4 pitch surface publishes shot frequency per 90 minutes of state exposure,
+location share, and observed conversion separately. Comparison mode subtracts
+aligned zone rates and never subtracts individual shot dots. Existing single-state
+shot maps retain individual inspection. No event-level xG, pseudo-xG, or blended
+quality score is created.
+
 ## Coordinate orientation
 
 Opta/WhoScored event coordinates use a bottom-left origin: `x` increases toward

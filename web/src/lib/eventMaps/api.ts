@@ -23,6 +23,9 @@ import type {
   StateLensMetadata,
   TeamPassStateEvidence,
   TeamPassStatePayload,
+  ShotPressureCohort,
+  ShotPressurePenaltyMode,
+  TeamShotPressurePayload,
 } from '../../types/eventMaps'
 
 const BASE = '/api/v1'
@@ -135,6 +138,73 @@ type ApiGkShotZones = {
   shots_faced: number
   variants: ApiShotZoneVariants
   matches: ApiMatch[]
+}
+
+type ApiShotPressureMetric = { count: number; per_minute: number | null; per_90: number | null }
+type ApiShotPressureCohort = {
+  evidence: ApiStateLensEvidence & {
+    zero_shot_episodes_for: number
+    zero_shot_episodes_against: number
+  }
+  frequency: {
+    for: Record<string, ApiShotPressureMetric>
+    against: Record<string, ApiShotPressureMetric>
+    openness: { shot_count: number; shots_per_minute: number | null; shots_per_90: number | null }
+  }
+  outcomes: {
+    for: Record<string, ApiShotPressureMetric>
+    against: Record<string, ApiShotPressureMetric>
+    observed_conversion_for: number | null
+    observed_conversion_against: number | null
+  }
+  first_shot: Record<'for' | 'against', {
+    episode_count: number
+    episodes_with_shot: number
+    zero_shot_episodes: number
+    mean_seconds_from_state_entry: number | null
+    median_seconds_from_state_entry: number | null
+  }>
+  location: Record<'for' | 'against', {
+    columns: number
+    rows: number
+    located_shots: number
+    unlocated_shots: number
+    cells: Array<{
+      column: number
+      row: number
+      shot_count: number
+      shots_per_90: number | null
+      location_share: number | null
+      observed_conversion: number | null
+    }>
+  }>
+}
+
+type ApiTeamShotPressure = {
+  formula_version: string
+  canonical_team_id: number
+  canonical_team_name: string
+  competition_code: string
+  season_label: string
+  penalty_mode: ShotPressurePenaltyMode
+  penalty_note: string
+  fast_break_note: string
+  measurement_note: string
+  state_lens: ApiStateLens
+  selected: ApiShotPressureCohort
+  comparison: {
+    enabled: boolean
+    baseline: ApiShotPressureCohort | null
+    selected_minus_baseline: null | {
+      location: Record<'for' | 'against', Array<{
+        column: number
+        row: number
+        shots_per_90_delta: number | null
+        location_share_delta: number | null
+        observed_conversion_delta: number | null
+      }>>
+    }
+  }
 }
 
 type ApiGridCell = {
@@ -992,6 +1062,60 @@ function mapDefensiveTerritory(value: ApiDefensiveTerritory): DefensiveTerritory
   }
 }
 
+function mapShotPressureMetric(value: ApiShotPressureMetric) {
+  return { count: value.count, perMinute: value.per_minute, per90: value.per_90 }
+}
+
+function mapShotPressureCohort(value: ApiShotPressureCohort): ShotPressureCohort {
+  const mapMetrics = (metrics: Record<string, ApiShotPressureMetric>) =>
+    Object.fromEntries(Object.entries(metrics).map(([key, metric]) => [key, mapShotPressureMetric(metric)]))
+  const mapFirst = (perspective: 'for' | 'against') => ({
+    episodeCount: value.first_shot[perspective].episode_count,
+    episodesWithShot: value.first_shot[perspective].episodes_with_shot,
+    zeroShotEpisodes: value.first_shot[perspective].zero_shot_episodes,
+    meanSecondsFromStateEntry: value.first_shot[perspective].mean_seconds_from_state_entry,
+    medianSecondsFromStateEntry: value.first_shot[perspective].median_seconds_from_state_entry,
+  })
+  const mapLocation = (perspective: 'for' | 'against') => ({
+    columns: value.location[perspective].columns,
+    rows: value.location[perspective].rows,
+    locatedShots: value.location[perspective].located_shots,
+    unlocatedShots: value.location[perspective].unlocated_shots,
+    cells: value.location[perspective].cells.map(cell => ({
+      column: cell.column,
+      row: cell.row,
+      shotCount: cell.shot_count,
+      shotsPer90: cell.shots_per_90,
+      locationShare: cell.location_share,
+      observedConversion: cell.observed_conversion,
+    })),
+  })
+  return {
+    evidence: {
+      ...mapStateLensEvidence(value.evidence),
+      zeroShotEpisodesFor: value.evidence.zero_shot_episodes_for,
+      zeroShotEpisodesAgainst: value.evidence.zero_shot_episodes_against,
+    },
+    frequency: {
+      for: mapMetrics(value.frequency.for),
+      against: mapMetrics(value.frequency.against),
+      openness: {
+        shotCount: value.frequency.openness.shot_count,
+        shotsPerMinute: value.frequency.openness.shots_per_minute,
+        shotsPer90: value.frequency.openness.shots_per_90,
+      },
+    },
+    outcomes: {
+      for: mapMetrics(value.outcomes.for),
+      against: mapMetrics(value.outcomes.against),
+      observedConversionFor: value.outcomes.observed_conversion_for,
+      observedConversionAgainst: value.outcomes.observed_conversion_against,
+    },
+    firstShot: { for: mapFirst('for'), against: mapFirst('against') },
+    location: { for: mapLocation('for'), against: mapLocation('against') },
+  }
+}
+
 export async function fetchTeamPassState(
   teamId: number,
   competition: string,
@@ -1033,5 +1157,55 @@ export async function fetchTeamDefensiveTerritory(
     stateLens: mapStateLens(raw.state_lens),
     selected: mapDefensiveTerritory(raw.selected),
     baseline: raw.baseline ? mapDefensiveTerritory(raw.baseline) : null,
+  }
+}
+
+export async function fetchTeamShotPressure(
+  teamId: number,
+  competition: string,
+  season: string,
+  matchRef: string | null,
+  stateLens: StateLensRequest,
+  penaltyMode: ShotPressurePenaltyMode,
+): Promise<TeamShotPressurePayload> {
+  const params = requestParams(competition, season, null, matchRef)
+  appendStateLens(params, stateLens)
+  params.set('penalty_mode', penaltyMode)
+  const raw = await readJson<ApiTeamShotPressure>(
+    `${BASE}/team-seasons/shot-pressure/${teamId}?${params}`,
+  )
+  const delta = raw.comparison.selected_minus_baseline?.location
+  return {
+    teamId: raw.canonical_team_id,
+    teamName: raw.canonical_team_name,
+    competition: raw.competition_code,
+    season: raw.season_label,
+    stateLens: mapStateLens(raw.state_lens),
+    formulaVersion: raw.formula_version,
+    penaltyMode: raw.penalty_mode,
+    penaltyNote: raw.penalty_note,
+    fastBreakNote: raw.fast_break_note,
+    measurementNote: raw.measurement_note,
+    selected: mapShotPressureCohort(raw.selected),
+    comparison: {
+      enabled: raw.comparison.enabled,
+      baseline: raw.comparison.baseline ? mapShotPressureCohort(raw.comparison.baseline) : null,
+      locationDelta: delta ? {
+        for: delta.for.map(cell => ({
+          column: cell.column,
+          row: cell.row,
+          shotsPer90Delta: cell.shots_per_90_delta,
+          locationShareDelta: cell.location_share_delta,
+          observedConversionDelta: cell.observed_conversion_delta,
+        })),
+        against: delta.against.map(cell => ({
+          column: cell.column,
+          row: cell.row,
+          shotsPer90Delta: cell.shots_per_90_delta,
+          locationShareDelta: cell.location_share_delta,
+          observedConversionDelta: cell.observed_conversion_delta,
+        })),
+      } : null,
+    },
   }
 }

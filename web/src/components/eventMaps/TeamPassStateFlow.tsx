@@ -37,6 +37,8 @@ export function TeamPassStateFlow({
   season,
   matchRef,
   stateLens,
+  expanded,
+  onExpandedChange,
 }: {
   teamId: number
   teamName: string
@@ -44,8 +46,9 @@ export function TeamPassStateFlow({
   season: string
   matchRef: string | null
   stateLens: StateLensRequest
+  expanded: boolean
+  onExpandedChange: (expanded: boolean) => void
 }) {
-  const [expanded, setExpanded] = useState(false)
   const [selectedFlow, setSelectedFlow] = useState<TeamPassFlow | null>(null)
   const query = useQuery({
     queryKey: ['team-pass-state', teamId, competition, season, matchRef, stateLens],
@@ -73,7 +76,7 @@ export function TeamPassStateFlow({
   return (
     <EventMapCard
       expanded={expanded}
-      onExpandedChange={setExpanded}
+      onExpandedChange={onExpandedChange}
       title="Pass flow by game state"
       description="Attempt volume and mean pass shape in each origin zone; completion is shown separately."
       footer={(
@@ -92,7 +95,7 @@ export function TeamPassStateFlow({
         </div>
       )}
     >
-      <EventPitchStage expanded={expanded} onExpandedChange={setExpanded}>
+      <EventPitchStage expanded={expanded} onExpandedChange={onExpandedChange}>
         {evidence.flows.length ? (
           <PortraitPitch
             flows={evidence.flows}

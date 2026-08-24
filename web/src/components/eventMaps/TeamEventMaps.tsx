@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { fetchTeamDefensiveTerritory, fetchTeamEventProfile } from '../../lib/eventMaps/api'
+import { fetchTeamDefensiveTerritory, fetchTeamEventProfile, fetchTeamShotPressure } from '../../lib/eventMaps/api'
 import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
-import type { EventShot } from '../../types/eventMaps'
+import type { EventShot, ShotPressurePenaltyMode } from '../../types/eventMaps'
 import { PortraitPitch } from './PortraitPitch'
 import {
   EventCoverage, EventMapCard, EventMapNotice, EventMatchFilter, EventMetricStrip,
@@ -13,6 +13,7 @@ import { StateLensControls } from './StateLensControls'
 import { TeamPassStateFlow } from './TeamPassStateFlow'
 import { stateLensRequest } from '../../lib/eventMaps/stateLensUrl'
 import { DefensiveTerritoryMap } from './DefensiveTerritoryMap'
+import { ShotPressurePanel } from './ShotPressurePanel'
 
 type TeamMap = 'flow' | 'defensive-territory' | 'shots-for' | 'shots-against'
 
@@ -43,6 +44,7 @@ export function TeamEventMaps({ teamId, competition, season }: {
   const matchRef = searchParams.get('match')
   const lensRequest = stateLensRequest(searchParams)
   const [expanded, setExpanded] = useState<TeamMap | null>(null)
+  const [penaltyMode, setPenaltyMode] = useState<ShotPressurePenaltyMode>('exclude')
   const profileQuery = useQuery({
     queryKey: ['team-event-profile', teamId, competition, season, matchRef, lensRequest],
     queryFn: () => fetchTeamEventProfile(teamId, competition, season, matchRef, lensRequest),
@@ -54,6 +56,11 @@ export function TeamEventMaps({ teamId, competition, season }: {
     staleTime: 10 * 60 * 1000,
   })
   const profile = profileQuery.data
+  const shotPressureQuery = useQuery({
+    queryKey: ['team-shot-pressure', teamId, competition, season, matchRef, lensRequest, penaltyMode],
+    queryFn: () => fetchTeamShotPressure(teamId, competition, season, matchRef, lensRequest, penaltyMode),
+    staleTime: 10 * 60 * 1000,
+  })
   const setLensParams = (next: URLSearchParams) => {
     setSelection(null)
     setSearchParams(next)
@@ -105,6 +112,15 @@ export function TeamEventMaps({ teamId, competition, season }: {
       </div>
 
       <div className="space-y-3">
+        <ShotPressurePanel
+          payload={shotPressureQuery.data}
+          loading={shotPressureQuery.isLoading}
+          error={shotPressureQuery.isError ? shotPressureQuery.error.message : undefined}
+          penaltyMode={penaltyMode}
+          onPenaltyModeChange={setPenaltyMode}
+          onRetry={() => shotPressureQuery.refetch()}
+        />
+
         <TeamPassStateFlow
           teamId={teamId}
           teamName={profile.teamName}
