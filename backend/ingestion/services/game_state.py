@@ -629,7 +629,10 @@ def materialize_match_game_state(
         for field in fields:
             setattr(event, field, getattr(context, field))
     if rows:
-        ProviderMatchEvent.objects.bulk_update(rows, fields, batch_size=1000)
+        # Keep CASE expressions bounded. Large WhoScored matches can contain
+        # thousands of events and Django's expression compiler becomes the
+        # dominant cost with a 1,000-row, seven-field update.
+        ProviderMatchEvent.objects.bulk_update(rows, fields, batch_size=200)
     ProviderMatchTeamGameStateEpisode.objects.bulk_create(
         [
             ProviderMatchTeamGameStateEpisode(
