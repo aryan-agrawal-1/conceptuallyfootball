@@ -79,32 +79,32 @@ export function TeamPassStateFlow({
       onExpandedChange={onExpandedChange}
       title="Pass flow by game state"
       description="Attempt volume and mean pass shape in each origin zone; completion is shown separately."
-      footer={(
-        <div className="space-y-2">
-          <EvidenceBands title="Attempted direction · execution within direction" rows={evidence.directions} />
-          <EvidenceBands title="Attempted length · execution within length" rows={evidence.lengthBands} />
-          <p className="text-[9px] text-ink-muted">
-            {summary.attempts.toLocaleString()} attempted · {summary.completions.toLocaleString()} completed · {evidence.exposureMinutes.toFixed(1)} eligible state minutes
-            {disclosure ? ` · ${disclosure}` : ''}
-          </p>
-        </div>
-      )}
     >
       <EventPitchStage expanded={expanded} onExpandedChange={onExpandedChange}>
-        <div className="w-full max-w-[760px]">
-          <div className="mb-2 grid grid-cols-3 gap-4 border-b border-line-bright pb-2 text-[9px]">
-            <p><span className="block text-[8px] uppercase text-ink-dim">Tempo</span>{summary.attemptsPerStateMinute?.toFixed(2) ?? '—'} / state min</p>
-            <p><span className="block text-[8px] uppercase text-ink-dim">Completion</span>{percent(summary.completionRate)}</p>
-            <p><span className="block text-[8px] uppercase text-ink-dim">Mean pass</span>{metres(summary.meanLengthMetres)}</p>
+        <div className="grid w-full max-w-[1120px] items-start gap-4 lg:grid-cols-[minmax(0,760px)_minmax(280px,1fr)]">
+          <div>
+            {evidence.flows.length ? (
+              <PortraitPitch
+                flows={evidence.flows}
+                selectedFlowId={selectedFlow?.id ?? null}
+                onSelectedFlowChange={setSelectedFlow}
+                ariaLabel={`${teamName} state-conditioned pass flow. Origin shade shows attempts; arrows show attempted mean direction and length; completion is disclosed separately.`}
+              />
+            ) : <EventMapNotice kind="empty" title="No located passes in this state scope" />}
           </div>
-          {evidence.flows.length ? (
-          <PortraitPitch
-            flows={evidence.flows}
-            selectedFlowId={selectedFlow?.id ?? null}
-            onSelectedFlowChange={setSelectedFlow}
-            ariaLabel={`${teamName} state-conditioned pass flow. Origin shade shows attempts; arrows show attempted mean direction and length; completion is disclosed separately.`}
-          />
-          ) : <EventMapNotice kind="empty" title="No located passes in this state scope" />}
+          <aside className="space-y-3 border-t border-line-bright pt-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0" aria-label="Passing evidence">
+            <div className="grid grid-cols-3 gap-3 text-[9px] lg:grid-cols-1">
+              <p><span className="block text-[8px] uppercase text-ink-dim">Tempo</span>{summary.attemptsPerStateMinute?.toFixed(2) ?? '—'} / state min</p>
+              <p><span className="block text-[8px] uppercase text-ink-dim">Completion</span>{percent(summary.completionRate)}</p>
+              <p><span className="block text-[8px] uppercase text-ink-dim">Mean pass</span>{metres(summary.meanLengthMetres)}</p>
+            </div>
+            <EvidenceBands title="Direction" rows={evidence.directions} />
+            <EvidenceBands title="Length" rows={evidence.lengthBands} />
+            <p className="text-[9px] leading-relaxed text-ink-muted">
+              {summary.attempts.toLocaleString()} attempted · {summary.completions.toLocaleString()} completed · {evidence.exposureMinutes.toFixed(1)} eligible state minutes
+              {disclosure ? ` · ${disclosure}` : ''}
+            </p>
+          </aside>
         </div>
       </EventPitchStage>
     </EventMapCard>

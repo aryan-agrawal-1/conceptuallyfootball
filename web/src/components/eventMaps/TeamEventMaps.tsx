@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { fetchTeamDefensiveTerritory, fetchTeamEventProfile, fetchTeamShotPressure } from '../../lib/eventMaps/api'
 import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
-import type { EventShot, ShotPressurePenaltyMode } from '../../types/eventMaps'
+import type { ActionGridCell, EventShot, ShotPressurePenaltyMode } from '../../types/eventMaps'
 import { PortraitPitch } from './PortraitPitch'
 import {
   EventMapCard, EventMapNotice, EventMatchFilter,
@@ -85,6 +85,16 @@ export function TeamEventMaps({ teamId, competition, season }: {
   const shotsFor = profile.shots.filter(shot => shot.perspective === 'for')
   const shotsAgainst = profile.shots.filter(shot => shot.perspective === 'against')
 
+  const shotDensity = (kind: 'for' | 'against'): ActionGridCell[] => (
+    shotPressureQuery.data?.selected.location[kind].cells.map(cell => ({
+      column: cell.column,
+      row: cell.row,
+      rawCount: cell.shotCount,
+      per90Count: cell.shotsPer90 ?? 0,
+      share: cell.locationShare ?? 0,
+    })) ?? []
+  )
+
   const shotCard = (kind: 'for' | 'against', shots: EventShot[], map: TeamMap) => {
     const pitchView = shotPitchView(shots)
     const title = kind === 'for' ? 'Shots for' : 'Shots against'
@@ -92,11 +102,12 @@ export function TeamEventMaps({ teamId, competition, season }: {
       <EventMapCard key={map} expanded={expanded === map} onExpandedChange={next => setExpanded(next ? map : null)} title={title} description={pitchView === 'attacking-half' ? 'Attacking half shown; every shot originates beyond halfway.' : 'Full pitch shown because at least one shot originates behind halfway.'} footer={(
         <div className="space-y-2">
           <ShotMapLegend />
+          <p className="text-[8px] text-ink-muted">Blue heat = relative shot-location density for this state scope.</p>
           {selection?.kind === 'shot' && shots.some(shot => shot.id === selection.id) ? <EventSelectionDetails selection={selection} matches={profile.matches} /> : <p className="text-[9px] text-ink-dim">Click, tap or focus a shot to inspect it.</p>}
         </div>
       )}>
         <MapStage map={map} expanded={expanded} setExpanded={setExpanded}>
-          {shots.length ? <PortraitPitch shots={shots} pitchView={pitchView} eventSelectionMode="click" selectedEventId={selection?.kind === 'shot' ? selection.id : null} onSelectedEventChange={setSelection} ariaLabel={`${profile.teamName} ${title.toLowerCase()} map. ${pitchView === 'attacking-half' ? 'Attacking half' : 'Full pitch'}; acting team attacks left to right.`} /> : <EventMapNotice kind="empty" title={`No ${title.toLowerCase()} recorded`} />}
+          {shots.length ? <PortraitPitch shots={shots} densityCells={shotDensity(kind)} densityStyle="smooth" pitchView={pitchView} eventSelectionMode="click" selectedEventId={selection?.kind === 'shot' ? selection.id : null} onSelectedEventChange={setSelection} ariaLabel={`${profile.teamName} ${title.toLowerCase()} map with shot-location density. ${pitchView === 'attacking-half' ? 'Attacking half' : 'Full pitch'}; acting team attacks left to right.`} /> : <EventMapNotice kind="empty" title={`No ${title.toLowerCase()} recorded`} />}
         </MapStage>
       </EventMapCard>
     )

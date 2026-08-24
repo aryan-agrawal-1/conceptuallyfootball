@@ -77,43 +77,42 @@ export function DefensiveTerritoryMap({
       controls={<EventMapViewTabs value={view} options={viewOptions} onChange={setView} label="Defensive action family" />}
       expanded={expanded}
       onExpandedChange={onExpandedChange}
-      footer={(
-        <div className="space-y-2">
-          {evidence.evidence.sparse ? (
-            <EventMapNotice kind="sparse" title="Sparse location sample">
-              {evidence.evidence.locatedSampleSize} located actions; interpret the territory pattern cautiously below {evidence.evidence.sparseThreshold}.
-            </EventMapNotice>
-          ) : null}
-          {baselineHeight ? (
-            <p className="text-[9px] text-ink-dim">
-              Baseline median {pitchHeight(baselineHeight.median)} · comparison median {pitchHeight(selectedHeight.median)}. The API supplies identical 12×8 bins for both scopes for State Delta Map comparison.
-            </p>
-          ) : null}
-          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[8px] uppercase tracking-[0.1em] text-ink-dim" aria-label="Defensive event family composition">
-            {evidence.familyComposition.filter(row => row.count > 0).map(row => (
-              <span key={row.family}>{familyLabel(row.family)} {row.count}</span>
-            ))}
-          </div>
-          <p className="text-[9px] leading-relaxed text-gold">{evidence.disclaimer}</p>
-        </div>
-      )}
     >
       <EventPitchStage expanded={expanded} onExpandedChange={onExpandedChange}>
-        <div className="w-full max-w-[760px]">
-          <div className="mb-2 flex flex-wrap items-baseline gap-x-5 gap-y-1 border-b border-line-bright pb-2 text-[8px] uppercase tracking-[0.1em] text-ink-dim">
-            <p>{selectedHeightLabel} <strong className="ml-1 font-mono text-[12px] font-normal text-ink">{pitchHeight(selectedHeight.median)}</strong></p>
-            <p>Recoveries <strong className="ml-1 font-mono text-[12px] font-normal text-ink">{pitchHeight(evidence.heights.recovery.median)}</strong></p>
-            <p>Actions / min <strong className="ml-1 font-mono text-[12px] font-normal text-ink">{rate(selectedRate)}</strong></p>
-            <p className="ml-auto normal-case tracking-normal">Brighter cells = more actions · {evidence.counts.withLocation} located</p>
+        <div className="grid w-full max-w-[1120px] items-start gap-4 lg:grid-cols-[minmax(0,760px)_minmax(280px,1fr)]">
+          <div>
+            {selectedLocated ? (
+              <PortraitPitch
+                densityCells={evidence.grids[view]}
+                densityStyle="cells"
+                ariaLabel={`${payload.teamName} ${view === 'clearance' ? 'clearance' : 'defensive action'} territory. Own goal at zero, opponent goal at one hundred.`}
+              />
+            ) : <EventMapNotice kind="empty" title="No located defensive actions in this state" />}
           </div>
-          {selectedLocated ? (
-          <PortraitPitch
-            densityCells={evidence.grids[view]}
-            densityStyle="cells"
-            layerOptions={{ densityColor: view === 'clearance' ? '#F0A832' : '#4A9EF5' }}
-            ariaLabel={`${payload.teamName} ${view === 'clearance' ? 'clearance' : 'defensive action'} territory. Own goal at zero, opponent goal at one hundred.`}
-          />
-          ) : <EventMapNotice kind="empty" title="No located defensive actions in this state" />}
+          <aside className="space-y-3 border-t border-line-bright pt-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0" aria-label="Defensive territory evidence">
+            <div className="grid grid-cols-3 gap-3 text-[9px] lg:grid-cols-1">
+              <p><span className="block text-[8px] uppercase text-ink-dim">{selectedHeightLabel}</span>{pitchHeight(selectedHeight.median)}</p>
+              <p><span className="block text-[8px] uppercase text-ink-dim">Recovery height</span>{pitchHeight(evidence.heights.recovery.median)}</p>
+              <p><span className="block text-[8px] uppercase text-ink-dim">Actions / state min</span>{rate(selectedRate)}</p>
+            </div>
+            <p className="text-[9px] text-ink-dim">Brighter blue cells mean more actions · {evidence.counts.withLocation} located · {evidence.counts.withoutLocation} unlocated.</p>
+            {evidence.evidence.sparse ? (
+              <EventMapNotice kind="sparse" title="Sparse location sample">
+                {evidence.evidence.locatedSampleSize} located actions; interpret the territory pattern cautiously below {evidence.evidence.sparseThreshold}.
+              </EventMapNotice>
+            ) : null}
+            {baselineHeight ? (
+              <p className="text-[9px] text-ink-dim">
+                Baseline median {pitchHeight(baselineHeight.median)} · comparison median {pitchHeight(selectedHeight.median)}. The API supplies identical 12×8 bins for both scopes for State Delta Map comparison.
+              </p>
+            ) : null}
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[8px] uppercase tracking-[0.1em] text-ink-dim" aria-label="Defensive event family composition">
+              {evidence.familyComposition.filter(row => row.count > 0).map(row => (
+                <span key={row.family}>{familyLabel(row.family)} {row.count}</span>
+              ))}
+            </div>
+            <p className="text-[9px] leading-relaxed text-gold">{evidence.disclaimer}</p>
+          </aside>
         </div>
       </EventPitchStage>
     </EventMapCard>

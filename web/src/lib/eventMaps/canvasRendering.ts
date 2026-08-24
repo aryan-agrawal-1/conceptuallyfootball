@@ -17,16 +17,20 @@ export type DenseLayerOptions = {
   unsuccessfulColor?: string
   densityColor?: string
   flowColor?: string
+  flowDensityColor?: string
   carryColor?: string
   densityStyle?: 'cells' | 'smooth'
   selectedFlowId?: string | null
 }
 
+export const EVENT_HEATMAP_COLOR = '#4A9EF5'
+
 const defaultLayerOptions = {
   successfulColor: '#4A9EF5',
   unsuccessfulColor: '#EF5C66',
-  densityColor: '#1FD17C',
+  densityColor: EVENT_HEATMAP_COLOR,
   flowColor: '#F0A832',
+  flowDensityColor: EVENT_HEATMAP_COLOR,
 }
 
 export function configureHiDPICanvas(
@@ -185,9 +189,10 @@ export function drawFlowLayer(
   context: CanvasRenderingContext2D,
   flows: TeamPassFlow[],
   transform: PitchTransform,
-  options: Pick<DenseLayerOptions, 'flowColor' | 'selectedFlowId'> = {},
+  options: Pick<DenseLayerOptions, 'flowColor' | 'flowDensityColor' | 'selectedFlowId'> = {},
 ) {
   const color = options.flowColor ?? defaultLayerOptions.flowColor
+  const densityColor = options.flowDensityColor ?? defaultLayerOptions.flowDensityColor
   let maximumCount = 0
   for (const flow of flows) maximumCount = Math.max(maximumCount, flow.attemptedCount ?? flow.completedCount)
   if (maximumCount === 0) return
@@ -209,7 +214,7 @@ export function drawFlowLayer(
     const selected = flow.id === options.selectedFlowId
     const hasSelection = Boolean(options.selectedFlowId)
 
-    context.fillStyle = color
+    context.fillStyle = densityColor
     context.globalAlpha = selected ? 0.28 : hasSelection ? 0.035 : 0.035 + volume * 0.12
     context.fillRect(
       topLeft.x + 1,
