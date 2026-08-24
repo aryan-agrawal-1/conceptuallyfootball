@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { StateLensMetadata } from '../../types/eventMaps'
 
 const STATE_FIELDS = [
@@ -16,6 +16,7 @@ export function StateLensControls({ metadata, searchParams, onChange, compact = 
   onChange: (next: URLSearchParams) => void
   compact?: boolean
 }) {
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const refinements = metadata?.eligibleRefinements
   const selectedState = searchParams.get('state') ?? 'all'
   const selectedDifference = searchParams.get('goal_difference') ?? ''
@@ -38,7 +39,8 @@ export function StateLensControls({ metadata, searchParams, onChange, compact = 
   return (
     <fieldset className={`border border-line-bright bg-panel/95 p-3 backdrop-blur ${compact ? 'shadow-2xl' : ''}`}>
       <legend className="px-1 text-[9px] font-bold uppercase tracking-[0.18em] text-electric">State Lens</legend>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+      <div>
+        <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(220px,0.8fr)_minmax(360px,1.2fr)] lg:items-end">
         <Control text="State">
           <select aria-label="Game state" value={selectedState} onChange={event => update('state', event.target.value)} className="event-lens-control">
             <option value="all">All states</option>
@@ -47,6 +49,20 @@ export function StateLensControls({ metadata, searchParams, onChange, compact = 
             ))}
           </select>
         </Control>
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+          {metadata ? (
+            <div className="min-w-0 flex-1 border-l-2 border-electric/60 pl-3 text-[9px] leading-relaxed text-ink-dim" aria-live="polite">
+              <strong className="block text-[10px] text-ink">{metadata.evidence.exposureMinutes.toLocaleString()} minutes · {metadata.evidence.matchCount.toLocaleString()} matches</strong>
+              {metadata.evidence.empty ? <span className="text-amber-300">No eligible state data. Rebuild the match state foundations.</span> : <span>{metadata.evidence.episodeCount.toLocaleString()} state episodes in this view</span>}
+            </div>
+          ) : <span className="text-[9px] text-ink-dim">Loading state evidence…</span>}
+          <button type="button" aria-expanded={advancedOpen} onClick={() => setAdvancedOpen(open => !open)} className="event-lens-control w-auto shrink-0 whitespace-nowrap">
+            {advancedOpen ? 'Hide refinements' : 'Refine state'}
+          </button>
+        </div>
+        </div>
+      </div>
+      {advancedOpen ? <div className="mt-3 grid gap-2 border-t border-line-bright pt-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Control text="Exact goal difference">
           <select aria-label="Exact goal difference" value={selectedDifference} onChange={event => update('goal_difference', event.target.value)} className="event-lens-control">
             <option value="">Any</option>
@@ -86,17 +102,7 @@ export function StateLensControls({ metadata, searchParams, onChange, compact = 
             ) : null}
           </div>
         </Control>
-      </div>
-      {metadata ? (
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-line-bright pt-2 font-mono text-[9px] text-ink-dim" aria-live="polite">
-          <span>{metadata.evidence.exposureMinutes.toLocaleString()} exposure min</span>
-          <span>{metadata.evidence.episodeCount.toLocaleString()} episodes</span>
-          <span>{metadata.evidence.matchCount.toLocaleString()} matches</span>
-          <span>{metadata.evidence.matchesExcluded.toLocaleString()} excluded matches</span>
-          <span>{metadata.evidence.formulaVersion}</span>
-          {metadata.evidence.empty ? <strong className="text-amber-300">Valid cohort, no eligible exposure</strong> : null}
-        </div>
-      ) : null}
+      </div> : null}
     </fieldset>
   )
 }
