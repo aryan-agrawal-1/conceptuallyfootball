@@ -18,7 +18,7 @@ const viewOptions = [
   { value: 'clearance', label: 'Clearances' },
 ] satisfies Array<{ value: DefensiveTerritoryGroup; label: string }>
 
-function metres(value: number | null) {
+function pitchHeight(value: number | null) {
   return value == null ? '—' : `${value.toFixed(1)}%`
 }
 
@@ -56,6 +56,11 @@ export function DefensiveTerritoryMap({
     : view === 'nonClearance'
       ? evidence.heights.nonClearanceAction
       : evidence.heights.all
+  const selectedHeightLabel = view === 'clearance'
+    ? 'Clearance depth'
+    : view === 'nonClearance'
+      ? 'Non-clearance median'
+      : 'All-action median'
   const selectedRate = evidence.ratesPerStateMinute[view]
   const selectedLocated = evidence.grids[view].reduce((sum, cell) => sum + cell.rawCount, 0)
   const baselineHeight = payload.baseline
@@ -81,14 +86,15 @@ export function DefensiveTerritoryMap({
             </EventMapNotice>
           ) : null}
           <EventMetricStrip metrics={[
-            { label: 'Median height', value: metres(selectedHeight.median) },
+            { label: selectedHeightLabel, value: pitchHeight(selectedHeight.median) },
+            { label: 'Recovery height', value: pitchHeight(evidence.heights.recovery.median) },
             { label: 'Per state min', value: rate(selectedRate) },
             { label: 'Located', value: evidence.counts.withLocation },
             { label: 'No location', value: evidence.counts.withoutLocation },
           ]} />
           {baselineHeight ? (
             <p className="text-[9px] text-ink-dim">
-              Baseline median {metres(baselineHeight.median)} · comparison median {metres(selectedHeight.median)}. The API supplies identical 12×8 bins for both scopes for State Delta Map comparison.
+              Baseline median {pitchHeight(baselineHeight.median)} · comparison median {pitchHeight(selectedHeight.median)}. The API supplies identical 12×8 bins for both scopes for State Delta Map comparison.
             </p>
           ) : null}
           <div className="flex flex-wrap gap-x-3 gap-y-1 text-[8px] uppercase tracking-[0.1em] text-ink-dim" aria-label="Defensive event family composition">
