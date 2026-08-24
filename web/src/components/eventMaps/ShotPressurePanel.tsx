@@ -4,7 +4,7 @@ import type {
   ShotPressureSurfaceCell,
   TeamShotPressurePayload,
 } from '../../types/eventMaps'
-import { EventMapNotice, EventMetricStrip } from './EventMapUi'
+import { EventMapNotice } from './EventMapUi'
 
 const BREAKDOWNS = [
   ['open_play', 'Open play'],
@@ -27,13 +27,11 @@ function rate(value: number | null) {
 function Evidence({ payload }: { payload: TeamShotPressurePayload }) {
   const evidence = payload.selected.evidence
   return (
-    <div className="flex flex-wrap gap-x-4 gap-y-1 border-y border-line-bright py-2 font-mono text-[9px] text-ink-dim">
+    <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-[8px] text-ink-dim">
       <span>{evidence.exposureMinutes.toLocaleString()} evidence min</span>
       <span>{evidence.episodeCount.toLocaleString()} episodes</span>
       <span>{evidence.matchCount.toLocaleString()} matches</span>
-      <span>{evidence.zeroShotEpisodesFor.toLocaleString()} zero-shot-for episodes</span>
-      <span>{evidence.zeroShotEpisodesAgainst.toLocaleString()} zero-shot-against episodes</span>
-      <span>{evidence.matchesExcluded.toLocaleString()} excluded matches</span>
+      {evidence.matchesExcluded ? <span className="text-gold">{evidence.matchesExcluded.toLocaleString()} excluded</span> : null}
       {Object.entries(evidence.exclusionReasons).map(([reason, count]) => (
         <span key={reason}>{reason.replaceAll('_', ' ')}: {count}</span>
       ))}
@@ -59,7 +57,7 @@ function RateSurface({ cells, delta = false }: {
           const value = cellValue(cell)
           const intensity = value == null ? 0 : Math.min(0.85, 0.12 + Math.abs(value) / maximum * 0.73)
           const colour = delta && (value ?? 0) < 0 ? `rgba(56, 189, 248, ${intensity})` : `rgba(250, 204, 21, ${intensity})`
-          return <div key={`${cell.column}-${cell.row}`} title={value == null ? 'No exposure' : `${value.toFixed(2)} shots/90${delta ? ' delta' : ''}`} style={{ backgroundColor: colour }} />
+          return <div key={`${cell.column}-${cell.row}`} className="flex items-center justify-center font-mono text-[8px] text-white/80" title={value == null ? 'No exposure' : `${value.toFixed(2)} shots/90${delta ? ' delta' : ''}`} style={{ backgroundColor: colour }}>{value == null ? '—' : Math.abs(value) >= 0.05 ? value.toFixed(1) : ''}</div>
         })}
       </div>
     </div>
@@ -95,21 +93,19 @@ export function ShotPressurePanel({ payload, loading, error, penaltyMode, onPena
   const cohort = payload.selected
   const first = cohort.firstShot[perspective]
   return (
-    <article className="border border-line-bright bg-panel p-3" aria-label="State-conditioned shot pressure">
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-        <div><h3 className="text-xs font-bold uppercase tracking-[0.14em] text-ink">Shot pressure</h3><p className="mt-1 max-w-3xl text-[9px] leading-relaxed text-ink-dim">Shots per state minute, with frequency, location and observed outcome kept separate.</p></div>
-        <label className="text-[8px] font-bold uppercase tracking-[0.12em] text-ink-dim">Penalties<select className="event-lens-control mt-1 block" aria-label="Shot pressure penalty treatment" value={penaltyMode} onChange={event => onPenaltyModeChange(event.target.value as ShotPressurePenaltyMode)}><option value="exclude">Exclude (tactical default)</option><option value="include">Include</option><option value="only">Penalties only</option></select></label>
+    <article className="border-y border-line-bright py-3" aria-label="State-conditioned shot pressure">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+        <div><h3 className="text-xs font-bold uppercase tracking-[0.14em] text-ink">Shot tempo & territory</h3><p className="mt-1 max-w-3xl text-[9px] leading-relaxed text-ink-dim">How often shots happen in this state, where they originate, and what happened to them.</p></div>
+        <select className="event-lens-control w-auto min-w-44" aria-label="Shot pressure penalty treatment" value={penaltyMode} onChange={event => onPenaltyModeChange(event.target.value as ShotPressurePenaltyMode)}><option value="exclude">Excluding penalties</option><option value="include">Including penalties</option><option value="only">Penalties only</option></select>
       </div>
-      <EventMetricStrip metrics={[
-        { label: 'Shots for / min', value: rate(cohort.frequency.for.shots.perMinute) },
-        { label: 'Shots against / min', value: rate(cohort.frequency.against.shots.perMinute) },
-        { label: 'Match openness / 90', value: rate(cohort.frequency.openness.shotsPer90) },
-      ]} />
-      <div className="my-3"><Evidence payload={payload} /></div>
-      <div className="mb-3 flex gap-1" role="group" aria-label="Shot pressure perspective">{(['for', 'against'] as const).map(value => <button key={value} type="button" aria-pressed={perspective === value} onClick={() => setPerspective(value)} className={`event-lens-control ${perspective === value ? 'border-electric text-electric' : ''}`}>Shots {value}</button>)}</div>
+      <div className="mb-2 flex flex-wrap items-baseline gap-x-6 gap-y-1 border-y border-line-bright py-2">
+        {[['Shots for / 90', cohort.frequency.for.shots.per90], ['Shots against / 90', cohort.frequency.against.shots.per90], ['Combined shots / 90', cohort.frequency.openness.shotsPer90]].map(([label, value]) => <p key={label as string} className="text-[8px] uppercase tracking-[0.1em] text-ink-dim">{label} <strong className="ml-1 font-mono text-[13px] font-normal text-ink">{rate(value as number | null)}</strong></p>)}
+        <div className="ml-auto"><Evidence payload={payload} /></div>
+      </div>
+      <div className="mb-2 flex gap-4 border-b border-line-bright" role="group" aria-label="Shot pressure perspective">{(['for', 'against'] as const).map(value => <button key={value} type="button" aria-pressed={perspective === value} onClick={() => setPerspective(value)} className={`border-b-2 px-1 py-2 text-[9px] uppercase tracking-[0.12em] ${perspective === value ? 'border-electric text-electric' : 'border-transparent text-ink-dim hover:text-ink'}`}>Shots {value}</button>)}</div>
       <div className="grid gap-3 lg:grid-cols-[minmax(260px,0.8fr)_minmax(300px,1.2fr)]">
-        <div><RateSurface cells={cohort.location[perspective].cells} /><p className="mt-1 font-mono text-[8px] text-ink-dim">Gold = shots/90 in fixed 6×4 zones · {cohort.location[perspective].unlocatedShots} unlocated</p>{payload.comparison.locationDelta ? <div className="mt-3"><RateSurface cells={payload.comparison.locationDelta[perspective]} delta /><p className="mt-1 font-mono text-[8px] text-ink-dim">State Delta Map: gold higher, blue lower than baseline. Zone-rate subtraction only.</p></div> : null}</div>
-        <div className="space-y-3"><BreakdownTable payload={payload} perspective={perspective} /><div className="border-t border-line-bright pt-2 text-[9px] text-ink-dim"><strong className="text-ink">First shot from state entry:</strong> mean {first.meanSecondsFromStateEntry == null ? '—' : `${first.meanSecondsFromStateEntry}s`}, median {first.medianSecondsFromStateEntry == null ? '—' : `${first.medianSecondsFromStateEntry}s`} · {first.zeroShotEpisodes} zero-shot episodes.</div><div className="space-y-1 border-t border-line-bright pt-2 text-[8px] leading-relaxed text-ink-dim"><p>{payload.penaltyNote}</p><p>{payload.fastBreakNote}</p><p>{payload.measurementNote}</p></div></div>
+        <div><RateSurface cells={cohort.location[perspective].cells} /><p className="mt-1 font-mono text-[8px] text-ink-dim">Each cell shows shots per 90 state minutes · brighter gold means more frequent · {cohort.location[perspective].unlocatedShots} unlocated</p>{payload.comparison.locationDelta ? <div className="mt-3"><RateSurface cells={payload.comparison.locationDelta[perspective]} delta /><p className="mt-1 font-mono text-[8px] text-ink-dim">State Delta Map: gold higher, blue lower than baseline. Zone-rate subtraction only.</p></div> : null}</div>
+        <div className="space-y-3"><BreakdownTable payload={payload} perspective={perspective} /><div className="border-t border-line-bright pt-2 text-[9px] text-ink-dim"><strong className="text-ink">Time to first shot:</strong> mean {first.meanSecondsFromStateEntry == null ? '—' : `${first.meanSecondsFromStateEntry}s`}, median {first.medianSecondsFromStateEntry == null ? '—' : `${first.medianSecondsFromStateEntry}s`} · {first.zeroShotEpisodes} state episodes had no shot.</div><details className="border-t border-line-bright pt-2 text-[8px] leading-relaxed text-ink-dim"><summary className="text-control-fg hover:text-ink">Method & evidence notes</summary><div className="mt-2 space-y-1"><p>{payload.penaltyNote}</p><p>{payload.fastBreakNote}</p><p>{payload.measurementNote}</p><p>{cohort.evidence.zeroShotEpisodesFor} zero-shot-for episodes · {cohort.evidence.zeroShotEpisodesAgainst} zero-shot-against episodes</p></div></details></div>
       </div>
     </article>
   )

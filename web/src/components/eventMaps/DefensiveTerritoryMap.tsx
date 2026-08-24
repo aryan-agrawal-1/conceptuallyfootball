@@ -8,7 +8,6 @@ import {
   EventMapCard,
   EventMapNotice,
   EventMapViewTabs,
-  EventMetricStrip,
   EventPitchStage,
 } from './EventMapUi'
 
@@ -74,7 +73,7 @@ export function DefensiveTerritoryMap({
   return (
     <EventMapCard
       title="Defensive action territory"
-      description="Observed action locations from the focal team's own goal (0) toward the opponent's goal (100)."
+      description="Where the team makes defensive actions; 0 is its own goal and 100 is the opponent's goal."
       controls={<EventMapViewTabs value={view} options={viewOptions} onChange={setView} label="Defensive action family" />}
       expanded={expanded}
       onExpandedChange={onExpandedChange}
@@ -85,13 +84,6 @@ export function DefensiveTerritoryMap({
               {evidence.evidence.locatedSampleSize} located actions; interpret the territory pattern cautiously below {evidence.evidence.sparseThreshold}.
             </EventMapNotice>
           ) : null}
-          <EventMetricStrip metrics={[
-            { label: selectedHeightLabel, value: pitchHeight(selectedHeight.median) },
-            { label: 'Recovery height', value: pitchHeight(evidence.heights.recovery.median) },
-            { label: 'Per state min', value: rate(selectedRate) },
-            { label: 'Located', value: evidence.counts.withLocation },
-            { label: 'No location', value: evidence.counts.withoutLocation },
-          ]} />
           {baselineHeight ? (
             <p className="text-[9px] text-ink-dim">
               Baseline median {pitchHeight(baselineHeight.median)} · comparison median {pitchHeight(selectedHeight.median)}. The API supplies identical 12×8 bins for both scopes for State Delta Map comparison.
@@ -107,14 +99,22 @@ export function DefensiveTerritoryMap({
       )}
     >
       <EventPitchStage expanded={expanded} onExpandedChange={onExpandedChange}>
-        {selectedLocated ? (
+        <div className="w-full max-w-[760px]">
+          <div className="mb-2 flex flex-wrap items-baseline gap-x-5 gap-y-1 border-b border-line-bright pb-2 text-[8px] uppercase tracking-[0.1em] text-ink-dim">
+            <p>{selectedHeightLabel} <strong className="ml-1 font-mono text-[12px] font-normal text-ink">{pitchHeight(selectedHeight.median)}</strong></p>
+            <p>Recoveries <strong className="ml-1 font-mono text-[12px] font-normal text-ink">{pitchHeight(evidence.heights.recovery.median)}</strong></p>
+            <p>Actions / min <strong className="ml-1 font-mono text-[12px] font-normal text-ink">{rate(selectedRate)}</strong></p>
+            <p className="ml-auto normal-case tracking-normal">Brighter cells = more actions · {evidence.counts.withLocation} located</p>
+          </div>
+          {selectedLocated ? (
           <PortraitPitch
             densityCells={evidence.grids[view]}
             densityStyle="cells"
             layerOptions={{ densityColor: view === 'clearance' ? '#F0A832' : '#4A9EF5' }}
             ariaLabel={`${payload.teamName} ${view === 'clearance' ? 'clearance' : 'defensive action'} territory. Own goal at zero, opponent goal at one hundred.`}
           />
-        ) : <EventMapNotice kind="empty" title="No located defensive actions in this state" />}
+          ) : <EventMapNotice kind="empty" title="No located defensive actions in this state" />}
+        </div>
       </EventPitchStage>
     </EventMapCard>
   )

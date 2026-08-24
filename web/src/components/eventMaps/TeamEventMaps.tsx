@@ -6,7 +6,7 @@ import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
 import type { EventShot, ShotPressurePenaltyMode } from '../../types/eventMaps'
 import { PortraitPitch } from './PortraitPitch'
 import {
-  EventCoverage, EventMapCard, EventMapNotice, EventMatchFilter, EventMetricStrip,
+  EventMapCard, EventMapNotice, EventMatchFilter,
   EventPitchStage, EventSelectionDetails, ShotMapLegend,
 } from './EventMapUi'
 import { StateLensControls } from './StateLensControls'
@@ -104,9 +104,9 @@ export function TeamEventMaps({ teamId, competition, season }: {
 
   return (
     <section aria-label="Team event maps">
-      <div className="mb-3 border border-line-bright bg-panel/50 p-3">
-        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-          <div><p className="text-[8px] font-bold uppercase tracking-[0.18em] text-electric">Analysis scope</p><h2 className="mt-1 text-sm font-bold text-ink">Choose the match context once, then explore one phase of play.</h2></div>
+      <div className="mb-2">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <p className="text-[9px] text-ink-dim">Analysis scope</p>
           <EventMatchFilter matches={profile.matches} value={matchRef} onChange={value => {
             const next = new URLSearchParams(searchParams)
             if (value == null) next.delete('match')
@@ -117,17 +117,13 @@ export function TeamEventMaps({ teamId, competition, season }: {
         <StateLensControls metadata={profile.stateLens} searchParams={searchParams} onChange={setLensParams} />
       </div>
       {expanded ? <div className="fixed left-3 right-16 top-3 z-[95] max-h-[45svh] overflow-y-auto sm:left-8 sm:right-20"><StateLensControls compact metadata={profile.stateLens} searchParams={searchParams} onChange={setLensParams} /></div> : null}
-      <div className="mb-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(220px,0.55fr)]">
-        <EventMetricStrip metrics={[
-          { label: 'Passes', value: profile.summary.pass_attempts?.toLocaleString() ?? '—' },
-          { label: 'Shots for', value: profile.summary.shots_for?.toLocaleString() ?? '—' },
-          { label: 'Shots against', value: profile.summary.shots_against?.toLocaleString() ?? '—' },
-        ]} />
-        <EventCoverage coverage={profile.coverage} />
+      <div className="mb-2 flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-line-bright py-2">
+        {[['Passes', profile.summary.pass_attempts], ['Shots for', profile.summary.shots_for], ['Shots against', profile.summary.shots_against]].map(([label, value]) => <p key={label as string} className="text-[9px] text-ink-dim"><span className="mr-1.5 uppercase tracking-[0.1em]">{label}</span><strong className="font-mono text-[11px] font-normal text-ink">{value?.toLocaleString() ?? '—'}</strong></p>)}
+        <p className="ml-auto text-[9px] text-ink-dim">Coverage <span className={profile.coverage.complete ? 'text-mint' : 'text-gold'}>{profile.coverage.matchesIncluded}/{profile.coverage.matchesExpected || '—'} matches</span></p>
       </div>
 
-      <nav className="mb-3 grid gap-px border border-line-bright bg-line-bright sm:grid-cols-3" aria-label="Event map analysis">
-        {ANALYSIS_MODES.map(mode => <button key={mode.value} type="button" aria-pressed={analysisMode === mode.value} onClick={() => { setAnalysisMode(mode.value); setSelection(null) }} className={`bg-panel px-4 py-3 text-left transition-colors hover:bg-panel-raised ${analysisMode === mode.value ? 'border-b-2 border-electric text-electric' : 'text-ink'}`}><strong className="block text-[10px] uppercase tracking-[0.14em]">{mode.label}</strong><span className="mt-1 block text-[9px] text-ink-dim">{mode.description}</span></button>)}
+      <nav className="mb-2 grid grid-cols-3 border-b border-line-bright" aria-label="Event map analysis">
+        {ANALYSIS_MODES.map(mode => <button key={mode.value} type="button" aria-pressed={analysisMode === mode.value} onClick={() => { setAnalysisMode(mode.value); setSelection(null) }} className={`border-b-2 px-2 py-2 text-left transition-colors hover:bg-raised/50 sm:px-3 ${analysisMode === mode.value ? 'border-electric text-electric' : 'border-transparent text-ink'}`}><strong className="block text-[9px] uppercase tracking-[0.1em] sm:text-[10px] sm:tracking-[0.14em]">{mode.label}</strong><span className="mt-0.5 hidden text-[8px] text-ink-dim sm:block">{mode.description}</span></button>)}
       </nav>
 
       <div className="space-y-3">

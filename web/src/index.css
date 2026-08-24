@@ -123,6 +123,10 @@
     cursor: not-allowed;
   }
 
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+
   #root {
     min-height: 100svh;
     display: flex;

@@ -37,7 +37,7 @@ export function StateLensControls({ metadata, searchParams, onChange, compact = 
   }
 
   return (
-    <fieldset className={`border border-line-bright bg-panel/95 p-3 backdrop-blur ${compact ? 'shadow-2xl' : ''}`}>
+    <fieldset className={`border-y border-line-bright bg-panel/40 px-0 py-2 backdrop-blur ${compact ? 'border-x px-3 shadow-2xl' : ''}`}>
       <legend className="px-1 text-[9px] font-bold uppercase tracking-[0.18em] text-electric">State Lens</legend>
       <div>
         <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(220px,0.8fr)_minmax(360px,1.2fr)] lg:items-end">

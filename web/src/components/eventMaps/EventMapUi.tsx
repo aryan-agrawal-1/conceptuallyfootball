@@ -30,13 +30,13 @@ export function EventMatchFilter({
     left.matchDate.localeCompare(right.matchDate) || left.matchId.localeCompare(right.matchId),
   )
   return (
-    <label className="flex min-w-0 items-center justify-between gap-2 border border-line-bright bg-panel px-3 text-[9px] font-bold uppercase tracking-[0.14em] text-ink-dim sm:justify-start">
-      Match
+    <label className="min-w-0">
+      <span className="sr-only">Match</span>
       <select
         aria-label="Match"
         value={value ?? ''}
         onChange={event => onChange(event.target.value || null)}
-        className="h-9 min-w-48 max-w-full border border-control-border bg-panel px-3 text-[10px] normal-case tracking-normal text-control-fg outline-none hover:border-electric focus:border-electric"
+        className="h-9 min-w-48 max-w-full border border-control-border bg-raised px-3 text-[10px] normal-case tracking-normal text-control-fg outline-none hover:border-electric focus:border-electric"
       >
         <option value="">All season matches</option>
         {rows.map(match => (
@@ -70,7 +70,7 @@ export function EventMapCard({
 }) {
   return (
     <article className={cn('flex min-w-0 flex-col border border-line-bright bg-panel', className)}>
-      <header className="flex min-h-16 flex-col gap-2 border-b border-line-bright px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3">
+      <header className="flex flex-col gap-2 border-b border-line-bright px-3 py-2 sm:flex-row sm:items-center sm:gap-3">
         <div className="min-w-0 sm:max-w-[42%] sm:shrink-0">
           <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-ink">{title}</h3>
           <p className="mt-1 text-[9px] leading-relaxed text-ink-dim">{description}</p>

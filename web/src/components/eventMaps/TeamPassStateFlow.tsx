@@ -81,11 +81,6 @@ export function TeamPassStateFlow({
       description="Attempt volume and mean pass shape in each origin zone; completion is shown separately."
       footer={(
         <div className="space-y-2">
-          <div className="grid grid-cols-3 gap-2 text-[9px]">
-            <p><span className="block font-bold uppercase text-ink-dim">Tempo</span>{summary.attemptsPerStateMinute?.toFixed(2) ?? '—'} / state min</p>
-            <p><span className="block font-bold uppercase text-ink-dim">Completion</span>{percent(summary.completionRate)}</p>
-            <p><span className="block font-bold uppercase text-ink-dim">Mean pass</span>{metres(summary.meanLengthMetres)}</p>
-          </div>
           <EvidenceBands title="Attempted direction · execution within direction" rows={evidence.directions} />
           <EvidenceBands title="Attempted length · execution within length" rows={evidence.lengthBands} />
           <p className="text-[9px] text-ink-muted">
@@ -96,14 +91,21 @@ export function TeamPassStateFlow({
       )}
     >
       <EventPitchStage expanded={expanded} onExpandedChange={onExpandedChange}>
-        {evidence.flows.length ? (
+        <div className="w-full max-w-[760px]">
+          <div className="mb-2 grid grid-cols-3 gap-4 border-b border-line-bright pb-2 text-[9px]">
+            <p><span className="block text-[8px] uppercase text-ink-dim">Tempo</span>{summary.attemptsPerStateMinute?.toFixed(2) ?? '—'} / state min</p>
+            <p><span className="block text-[8px] uppercase text-ink-dim">Completion</span>{percent(summary.completionRate)}</p>
+            <p><span className="block text-[8px] uppercase text-ink-dim">Mean pass</span>{metres(summary.meanLengthMetres)}</p>
+          </div>
+          {evidence.flows.length ? (
           <PortraitPitch
             flows={evidence.flows}
             selectedFlowId={selectedFlow?.id ?? null}
             onSelectedFlowChange={setSelectedFlow}
             ariaLabel={`${teamName} state-conditioned pass flow. Origin shade shows attempts; arrows show attempted mean direction and length; completion is disclosed separately.`}
           />
-        ) : <EventMapNotice kind="empty" title="No located passes in this state scope" />}
+          ) : <EventMapNotice kind="empty" title="No located passes in this state scope" />}
+        </div>
       </EventPitchStage>
     </EventMapCard>
   )
