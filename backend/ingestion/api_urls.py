@@ -23,6 +23,7 @@ from ingestion.team_api import TeamSeasonDetailApi, TeamSeasonListApi, TeamSquad
 from ingestion.regression_api import RegressionLabFitApi
 from ingestion.search_api import SearchEntitiesApi
 from ingestion.shot_zones_api import PlayerGkShotZonesApi, PlayerShotZonesApi
+from ingestion.shot_pressure_api import TeamShotPressureApi
 
 
 urlpatterns = [
@@ -73,6 +74,10 @@ urlpatterns = [
     path(
         "team-seasons/event-profile/<int:canonical_team_id>/defensive-territory",
         TeamDefensiveTerritoryApi.as_view(),
+    ),
+    path(
+        "team-seasons/shot-pressure/<int:canonical_team_id>",
+        TeamShotPressureApi.as_view(),
     ),
     path("team-seasons/squad/<int:canonical_team_id>", TeamSquadApi.as_view()),
     path(
