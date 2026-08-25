@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from unittest.mock import patch
 
 from django.core.management import call_command
@@ -72,6 +74,15 @@ def _succeed_stage(cs, *, run):
 def _fail_stage(cs, *, run):
     run.status = IngestionRunStatus.FAILED
     run.error_detail = "boom"
+    run.save(update_fields=["status", "error_detail"])
+
+
+def _fail_early_season_galaxy(cs, *, run):
+    run.status = IngestionRunStatus.FAILED
+    run.error_detail = (
+        "At least 3 eligible outfield players are required to materialize Galaxy "
+        f"after quality gates: {cs.competition.short_code}: insufficient_eligible_players (0 eligible players)."
+    )
     run.save(update_fields=["status", "error_detail"])
 
 
@@ -238,6 +249,24 @@ class DailyRefreshExecutionTests(TestCase):
         self.assertEqual(self.item.current_stage, "sofascore_team")
         self.assertEqual(self.batch.status, IngestionBatchStatus.FAILED)
 
+    @patch("ingestion.services.orchestration.invalidate_materialized_api_payloads", return_value=0)
+    @patch("ingestion.services.galaxy.materialize_galaxy_scope", side_effect=_succeed_aggregate)
+    @patch("ingestion.services.galaxy.materialize_galaxy_embeddings", side_effect=_fail_early_season_galaxy)
+    @patch("ingestion.services.derived.materialize_derived_stats", side_effect=_succeed_stage)
+    @patch("ingestion.services.orchestration.run_merge_job", side_effect=_succeed_stage)
+    @patch("ingestion.services.orchestration.run_team_merge_job", side_effect=_succeed_stage)
+    @patch("ingestion.services.orchestration.ingest_understat_slice", side_effect=_succeed_stage)
+    @patch("ingestion.services.orchestration.ingest_sofascore_team_slice", side_effect=_succeed_stage)
+    @patch("ingestion.services.orchestration.ingest_sofascore_slice", side_effect=_succeed_stage)
+    def test_execute_item_succeeds_when_early_season_galaxy_is_unavailable(self, *_mocks):
+        result = execute_batch_item(self.item.id)
+
+        self.assertTrue(result["ok"])
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.status, IngestionBatchItemStatus.SUCCESS)
+        galaxy_run = IngestionRun.objects.get(pk=self.item.stage_run_ids["galaxy"])
+        self.assertEqual(galaxy_run.status, IngestionRunStatus.FAILED)
+
 
 class AggregateBatchTests(TestCase):
     @patch("ingestion.services.galaxy.materialize_galaxy_scope", side_effect=_succeed_aggregate)
@@ -330,6 +359,35 @@ class BackfillHistoryCommandTests(TestCase):
         self.assertEqual(mock_merge.call_count, 1)
         self.assertEqual(mock_derived.call_count, 1)
         self.assertEqual(mock_galaxy.call_count, 1)
+
+    @patch("ingestion.services.galaxy.materialize_galaxy_embeddings", side_effect=_fail_early_season_galaxy)
+    @patch("ingestion.services.derived.materialize_derived_stats", side_effect=_succeed_stage)
+    @patch("ingestion.management.commands.backfill_history.run_merge_job", side_effect=_succeed_stage)
+    @patch("ingestion.management.commands.backfill_history.run_team_merge_job", side_effect=_succeed_stage)
+    @patch("ingestion.management.commands.backfill_history.ingest_understat_slice", side_effect=_succeed_stage)
+    @patch("ingestion.management.commands.backfill_history.ingest_sofascore_team_slice", side_effect=_succeed_stage)
+    @patch("ingestion.management.commands.backfill_history.ingest_sofascore_slice", side_effect=_succeed_stage)
+    def test_full_merge_backfill_succeeds_when_early_season_galaxy_is_unavailable(self, *_mocks):
+        cs = _slice("ENG1", player_data_mode=PlayerDataMode.FULL_MERGE, has_understat=True)
+        output_path = Path("/tmp/statballer-backfill-early-season-test.json")
+
+        call_command(
+            "backfill_history",
+            "--skip-seed",
+            "--no-sleep",
+            "--competitions",
+            "ENG1",
+            "--seasons",
+            cs.season.label,
+            "--output",
+            str(output_path),
+        )
+
+        report = json.loads(output_path.read_text())
+        self.assertEqual(report["summary"]["successful_slices"], 1)
+        galaxy_step = report["slices"][0]["steps"][-1]
+        self.assertEqual(galaxy_step["status"], IngestionRunStatus.FAILED)
+        self.assertTrue(galaxy_step["nonfatal"])
 
     @patch("ingestion.management.commands.backfill_history.run_team_merge_job", side_effect=_succeed_stage)
     @patch("ingestion.management.commands.backfill_history.ingest_sofascore_team_slice", side_effect=_succeed_stage)

@@ -403,16 +403,25 @@ def execute_batch_item(item_id: int) -> dict[str, Any]:
         set_request_cap(None)
 
         from ingestion.services.derived import materialize_derived_stats
-        from ingestion.services.galaxy import materialize_galaxy_embeddings
+        from ingestion.services.galaxy import (
+            galaxy_failure_is_insufficient_eligible_players,
+            materialize_galaxy_embeddings,
+        )
 
         _run_stage(item, "derived", IngestionKind.DERIVED, materialize_derived_stats)
-        _run_stage(
+        galaxy_run = _run_stage(
             item,
             "galaxy",
             IngestionKind.GALAXY,
             materialize_galaxy_embeddings,
-            required=cs.player_data_mode != PlayerDataMode.SOFASCORE_ONLY,
+            required=False,
         )
+        if (
+            galaxy_run.status != IngestionRunStatus.SUCCESS
+            and cs.player_data_mode != PlayerDataMode.SOFASCORE_ONLY
+            and not galaxy_failure_is_insufficient_eligible_players(galaxy_run)
+        ):
+            raise RuntimeError(galaxy_run.error_detail or "galaxy failed")
         item.current_stage = "api_cache"
         item.save(update_fields=["current_stage", "updated_at"])
         cache_deleted = invalidate_materialized_api_payloads()
@@ -532,7 +541,10 @@ def materialize_aggregate_scopes(batch_id: int) -> dict[str, Any]:
     for item in domestic_items:
         label = aggregate_season_label(item.competition_season.season.label)
         items_by_season.setdefault(label, []).append(item)
-    from ingestion.services.galaxy import materialize_galaxy_scope
+    from ingestion.services.galaxy import (
+        galaxy_failure_is_insufficient_eligible_players,
+        materialize_galaxy_scope,
+    )
 
     aggregate_run_ids = dict(batch.aggregate_run_ids or {})
     try:
@@ -554,6 +566,8 @@ def materialize_aggregate_scopes(batch_id: int) -> dict[str, Any]:
                 run.refresh_from_db()
                 aggregate_run_ids[f"{scope}:{season_label}"] = run.id
                 if run.status != IngestionRunStatus.SUCCESS:
+                    if galaxy_failure_is_insufficient_eligible_players(run):
+                        continue
                     raise RuntimeError(run.error_detail or f"{scope} {season_label} aggregate galaxy failed")
                 if len(items_by_season) == 1:
                     # Preserve the singular keys consumed by older operators

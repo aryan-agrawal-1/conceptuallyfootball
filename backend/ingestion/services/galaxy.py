@@ -1188,6 +1188,7 @@ def materialize_galaxy_scope(
     *,
     run: IngestionRun,
     min_minutes: int | None = None,
+    competition_seasons: list[CompetitionSeason] | None = None,
 ) -> GalaxySnapshot | None:
     _mark_run_start(run)
     scope = scope_code.strip().upper()
@@ -1197,7 +1198,8 @@ def materialize_galaxy_scope(
         else canonical_season_label(scope, season_label)
     )
     try:
-        competition_seasons = resolve_galaxy_competition_seasons(scope, season_label)
+        if competition_seasons is None:
+            competition_seasons = resolve_galaxy_competition_seasons(scope, season_label)
         if scope not in {"ALL", "BIG5"}:
             # During a rolling deploy, the compatibility resolver may still
             # return the legacy-labelled row before the seed reconciliation
@@ -1423,4 +1425,13 @@ def materialize_galaxy_embeddings(
         competition_season.season.label,
         run=run,
         min_minutes=None,
+        competition_seasons=[competition_season],
+    )
+
+
+def galaxy_failure_is_insufficient_eligible_players(run: IngestionRun) -> bool:
+    return (
+        run.status == IngestionRunStatus.FAILED
+        and "At least 3 eligible outfield players are required to materialize Galaxy"
+        in (run.error_detail or "")
     )

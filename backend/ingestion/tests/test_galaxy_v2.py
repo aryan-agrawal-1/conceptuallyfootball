@@ -19,7 +19,11 @@ from ingestion.models import (
     Season,
     SofascorePlayerSeasonSource,
 )
-from ingestion.services.galaxy import materialize_galaxy_scope, prune_galaxy_snapshots
+from ingestion.services.galaxy import (
+    materialize_galaxy_embeddings,
+    materialize_galaxy_scope,
+    prune_galaxy_snapshots,
+)
 
 
 class GalaxyV2Tests(TestCase):
@@ -205,6 +209,27 @@ class GalaxyV2Tests(TestCase):
         self.assertEqual(
             GalaxySimilarity.objects.filter(snapshot=snapshot).values("source_embedding").distinct().count(),
             GalaxyPlayerEmbedding.objects.filter(snapshot=snapshot).count(),
+        )
+
+    def test_single_slice_materializes_before_publication(self):
+        self.eng.is_published = False
+        self.eng.save(update_fields=["is_published"])
+        run = IngestionRun.objects.create(
+            kind=IngestionKind.GALAXY,
+            competition_season=self.eng,
+            status=IngestionRunStatus.PENDING,
+        )
+
+        materialize_galaxy_embeddings(self.eng, run=run)
+
+        run.refresh_from_db()
+        self.assertEqual(run.status, IngestionRunStatus.SUCCESS, run.error_detail)
+        self.assertTrue(
+            GalaxySnapshot.objects.filter(
+                scope_code="ENG1",
+                season_label="2025-26",
+                is_current=True,
+            ).exists()
         )
 
     def test_all_snapshot_includes_same_start_year_calendar_league(self):

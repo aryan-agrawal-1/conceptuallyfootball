@@ -203,7 +203,10 @@ class Command(BaseCommand):
                     self._raise_if_failed(report["steps"][-1])
 
                 from ingestion.services.derived import materialize_derived_stats
-                from ingestion.services.galaxy import materialize_galaxy_embeddings
+                from ingestion.services.galaxy import (
+                    galaxy_failure_is_insufficient_eligible_players,
+                    materialize_galaxy_embeddings,
+                )
 
                 report["steps"].append(
                     self._run_required_step(
@@ -223,11 +226,15 @@ class Command(BaseCommand):
                 )
                 galaxy_step = report["steps"][-1]
                 if galaxy_step["status"] != IngestionRunStatus.SUCCESS:
-                    if competition_season.player_data_mode == PlayerDataMode.SOFASCORE_ONLY:
+                    galaxy_run = IngestionRun.objects.get(pk=galaxy_step["run_id"])
+                    if (
+                        competition_season.player_data_mode == PlayerDataMode.SOFASCORE_ONLY
+                        or galaxy_failure_is_insufficient_eligible_players(galaxy_run)
+                    ):
                         galaxy_step["nonfatal"] = True
                         self.stderr.write(
                             self.style.WARNING(
-                                "Galaxy materialization failed for Sofascore-only slice; "
+                                "Galaxy materialization is unavailable for this slice; "
                                 "continuing after derived stats."
                             )
                         )
