@@ -18,6 +18,7 @@ interface ChartShareCardProps {
   aspect?: ExportAspect
   copyUrl?: string
   compact?: boolean
+  contextDetails?: Array<{ label: string; value: string }>
   renderContent: (opts: { exportMode: boolean }) => ReactNode
   renderExportLegend?: () => ReactNode
 }
@@ -34,6 +35,7 @@ export function ChartShareCard({
   aspect = 'landscape',
   copyUrl,
   compact = true,
+  contextDetails,
   renderContent,
   renderExportLegend,
 }: ChartShareCardProps) {
@@ -130,6 +132,17 @@ export function ChartShareCard({
                 </div>
               </div>
             </div>
+
+            {contextDetails?.length ? (
+              <div className="flex flex-wrap items-stretch gap-px border border-electric/20 bg-electric/15" aria-label="Export scope and filters">
+                {contextDetails.map(detail => (
+                  <div key={`${detail.label}-${detail.value}`} className="min-w-[128px] flex-1 bg-[#0b111d] px-4 py-3">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-electric/75">{detail.label}</p>
+                    <p className="mt-1 text-[13px] font-medium leading-snug text-ink">{detail.value}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
 
             <div className="relative flex-1 overflow-hidden border border-electric/20 bg-panel/70 px-4 py-4 shadow-[inset_0_0_0_1px_rgba(74,158,245,0.06)]">
               <div className="absolute left-2 top-2 size-3 border-l border-t border-electric/60" />

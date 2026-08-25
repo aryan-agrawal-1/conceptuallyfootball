@@ -277,4 +277,17 @@ export const teamEventProfileFixture: TeamEventProfilePayload = {
   actionTerritory: eventActionGridFixture,
   opponentActionTerritory: eventActionGridFixture,
   matches: eventMapMatchFixture,
+  stateLens: {
+    contractVersion: 'state_lens_v1',
+    selected: { state: 'all', goalDifference: null, phase: null, drawProvenance: null, minimumStateAgeSeconds: null, maximumStateAgeSeconds: null },
+    evidence: { exposureSeconds: 205200, exposureMinutes: 3420, episodeCount: 96, matchCount: 38, matchesIncluded: 38, matchesExcluded: 0, exclusionReasons: {}, formulaVersion: 'team_game_state_v1', empty: false },
+    eligibleRefinements: {
+      states: ['drawing', 'winning', 'losing'],
+      goalDifferences: [-2, -1, 0, 1, 2],
+      phases: ['first_half', 'second_half'],
+      drawProvenances: ['none', 'neutral', 'restored', 'surrendered'],
+      stateAgeSeconds: { minimum: 0, maximum: 2700 },
+    },
+    comparison: { enabled: false, baseline: null, baselineEvidence: null, comparison: { state: 'all', goalDifference: null, phase: null, drawProvenance: null, minimumStateAgeSeconds: null, maximumStateAgeSeconds: null }, comparisonEvidence: { exposureSeconds: 205200, exposureMinutes: 3420, episodeCount: 96, matchCount: 38, matchesIncluded: 38, matchesExcluded: 0, exclusionReasons: {}, formulaVersion: 'team_game_state_v1', empty: false } },
+  },
 }

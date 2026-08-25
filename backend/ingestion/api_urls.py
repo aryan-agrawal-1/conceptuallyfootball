@@ -5,6 +5,7 @@ from ingestion.derived_api import (
     DerivedPlayerSeasonDetailApi,
     DerivedPlayerSeasonListApi,
 )
+from ingestion.defensive_territory_api import TeamDefensiveTerritoryApi
 from ingestion.event_profile_api import (
     PlayerEventProfileApi,
     PlayerEventProfilePassesApi,
@@ -16,10 +17,13 @@ from ingestion.gk_api import (
     GkDerivedPlayerSeasonListApi,
 )
 from ingestion.player_state_api import PlayerStateExposureApi
+from ingestion.possession_context_api import TeamPossessionContextApi
+from ingestion.pass_state_api import TeamPassStateApi
 from ingestion.team_api import TeamSeasonDetailApi, TeamSeasonListApi, TeamSquadApi
 from ingestion.regression_api import RegressionLabFitApi
 from ingestion.search_api import SearchEntitiesApi
 from ingestion.shot_zones_api import PlayerGkShotZonesApi, PlayerShotZonesApi
+from ingestion.shot_pressure_api import TeamShotPressureApi
 
 
 urlpatterns = [
@@ -63,6 +67,22 @@ urlpatterns = [
         "team-seasons/event-profile/<int:canonical_team_id>",
         TeamEventProfileApi.as_view(),
     ),
+    path(
+        "team-seasons/event-profile/<int:canonical_team_id>/pass-state",
+        TeamPassStateApi.as_view(),
+    ),
+    path(
+        "team-seasons/event-profile/<int:canonical_team_id>/defensive-territory",
+        TeamDefensiveTerritoryApi.as_view(),
+    ),
+    path(
+        "team-seasons/shot-pressure/<int:canonical_team_id>",
+        TeamShotPressureApi.as_view(),
+    ),
     path("team-seasons/squad/<int:canonical_team_id>", TeamSquadApi.as_view()),
+    path(
+        "team-seasons/possession-context/<int:canonical_team_id>",
+        TeamPossessionContextApi.as_view(),
+    ),
     path("labs/regression/fit", RegressionLabFitApi.as_view()),
 ]

@@ -7,20 +7,10 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("ingestion", "0033_carry_confidence"),
+        ("ingestion", "0034_match_game_state"),
     ]
 
     operations = [
-        migrations.AddField(
-            model_name="providermatchevent",
-            name="away_score_after",
-            field=models.PositiveSmallIntegerField(blank=True, null=True),
-        ),
-        migrations.AddField(
-            model_name="providermatchevent",
-            name="away_score_before",
-            field=models.PositiveSmallIntegerField(blank=True, null=True),
-        ),
         migrations.AddField(
             model_name="providermatchevent",
             name="dismissal_type",
@@ -33,44 +23,6 @@ class Migration(migrations.Migration):
                 default="none",
                 max_length=20,
             ),
-        ),
-        migrations.AddField(
-            model_name="providermatchevent",
-            name="game_state_after",
-            field=models.PositiveSmallIntegerField(
-                blank=True,
-                choices=[(0, "Unknown"), (1, "Drawing"), (2, "Winning"), (3, "Losing")],
-                null=True,
-            ),
-        ),
-        migrations.AddField(
-            model_name="providermatchevent",
-            name="game_state_before",
-            field=models.PositiveSmallIntegerField(
-                blank=True,
-                choices=[(0, "Unknown"), (1, "Drawing"), (2, "Winning"), (3, "Losing")],
-                null=True,
-            ),
-        ),
-        migrations.AddField(
-            model_name="providermatchevent",
-            name="home_score_after",
-            field=models.PositiveSmallIntegerField(blank=True, null=True),
-        ),
-        migrations.AddField(
-            model_name="providermatchevent",
-            name="home_score_before",
-            field=models.PositiveSmallIntegerField(blank=True, null=True),
-        ),
-        migrations.AddField(
-            model_name="providermatchevent",
-            name="is_deleted_event",
-            field=models.BooleanField(default=False),
-        ),
-        migrations.AddField(
-            model_name="providermatchevent",
-            name="is_goal_disallowed",
-            field=models.BooleanField(default=False),
         ),
         migrations.AddField(
             model_name="providermatchevent",
@@ -102,11 +54,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="providermatchevent",
             name="related_provider_player_id",
-            field=models.CharField(blank=True, max_length=64, null=True),
-        ),
-        migrations.AddField(
-            model_name="providermatchevent",
-            name="scoring_provider_team_id",
             field=models.CharField(blank=True, max_length=64, null=True),
         ),
         migrations.AddField(
@@ -627,111 +574,67 @@ class Migration(migrations.Migration):
                 ),
             ],
         ),
-        migrations.CreateModel(
-            name="ProviderMatchGameState",
-            fields=[
-                (
-                    "id",
-                    models.BigAutoField(
-                        auto_created=True,
-                        primary_key=True,
-                        serialize=False,
-                        verbose_name="ID",
-                    ),
-                ),
-                (
-                    "status",
-                    models.CharField(
-                        choices=[
-                            ("verified", "Verified"),
-                            ("verified_with_shootout", "Verified with shootout"),
-                            ("unverified", "Unverified"),
-                            ("no_events", "No events"),
-                            ("score_mismatch", "Score mismatch"),
-                            ("invalid", "Invalid"),
-                        ],
-                        default="unverified",
-                        max_length=32,
-                    ),
-                ),
-                ("eligible", models.BooleanField(default=False)),
-                (
-                    "exclusion_reason",
-                    models.CharField(
-                        blank=True,
-                        choices=[
-                            ("not_completed", "Match is not completed"),
-                            ("non_final_payload", "Payload is not final"),
-                            ("team_identity_unresolved", "Team identity unresolved"),
-                            ("score_unavailable", "Score unavailable"),
-                            ("score_mismatch", "Score mismatch"),
-                            ("invalid_score_replay", "Invalid score replay"),
-                            ("clock_metadata_missing", "Clock metadata missing"),
-                            ("clock_metadata_invalid", "Clock metadata invalid"),
-                            ("event_timestamp_invalid", "Event timestamp invalid"),
-                            ("no_supported_play", "No supported play"),
-                            ("abandoned_or_incomplete", "Abandoned or incomplete"),
-                        ],
-                        max_length=40,
-                        null=True,
-                    ),
-                ),
-                ("calculation_version", models.CharField(max_length=64)),
-                (
-                    "source_checksum",
-                    models.CharField(blank=True, default="", max_length=64),
-                ),
-                ("event_count", models.PositiveIntegerField(default=0)),
-                ("goal_event_count", models.PositiveIntegerField(default=0)),
-                ("ignored_goal_event_count", models.PositiveIntegerField(default=0)),
-                ("shootout_goal_event_count", models.PositiveIntegerField(default=0)),
-                (
-                    "replayed_home_score",
-                    models.PositiveSmallIntegerField(blank=True, null=True),
-                ),
-                (
-                    "replayed_away_score",
-                    models.PositiveSmallIntegerField(blank=True, null=True),
-                ),
-                (
-                    "replayed_shootout_home_score",
-                    models.PositiveSmallIntegerField(blank=True, null=True),
-                ),
-                (
-                    "replayed_shootout_away_score",
-                    models.PositiveSmallIntegerField(blank=True, null=True),
-                ),
-                (
-                    "supported_start_second",
-                    models.PositiveIntegerField(blank=True, null=True),
-                ),
-                (
-                    "supported_end_second",
-                    models.PositiveIntegerField(blank=True, null=True),
-                ),
-                ("exposure_seconds", models.PositiveIntegerField(default=0)),
-                ("period_count", models.PositiveSmallIntegerField(default=0)),
-                ("episode_count", models.PositiveIntegerField(default=0)),
-                ("focal_team_count", models.PositiveSmallIntegerField(default=0)),
-                ("diagnostics", models.JSONField(blank=True, default=dict)),
-                ("calculated_at", models.DateTimeField()),
-                (
-                    "provider_match",
-                    models.OneToOneField(
-                        on_delete=django.db.models.deletion.CASCADE,
-                        related_name="game_state",
-                        to="ingestion.providermatch",
-                    ),
-                ),
-            ],
-            options={
-                "indexes": [
-                    models.Index(
-                        fields=["status", "calculated_at"],
-                        name="prov_match_game_state_idx",
-                    )
+        migrations.AddField(
+            model_name="providermatchgamestate",
+            name="eligible",
+            field=models.BooleanField(default=False),
+        ),
+        migrations.AddField(
+            model_name="providermatchgamestate",
+            name="exclusion_reason",
+            field=models.CharField(
+                blank=True,
+                choices=[
+                    ("not_completed", "Match is not completed"),
+                    ("non_final_payload", "Payload is not final"),
+                    ("team_identity_unresolved", "Team identity unresolved"),
+                    ("score_unavailable", "Score unavailable"),
+                    ("score_mismatch", "Score mismatch"),
+                    ("invalid_score_replay", "Invalid score replay"),
+                    ("clock_metadata_missing", "Clock metadata missing"),
+                    ("clock_metadata_invalid", "Clock metadata invalid"),
+                    ("event_timestamp_invalid", "Event timestamp invalid"),
+                    ("no_supported_play", "No supported play"),
+                    ("abandoned_or_incomplete", "Abandoned or incomplete"),
                 ],
-            },
+                max_length=40,
+                null=True,
+            ),
+        ),
+        migrations.AddField(
+            model_name="providermatchgamestate",
+            name="source_checksum",
+            field=models.CharField(blank=True, default="", max_length=64),
+        ),
+        migrations.AddField(
+            model_name="providermatchgamestate",
+            name="supported_start_second",
+            field=models.PositiveIntegerField(blank=True, null=True),
+        ),
+        migrations.AddField(
+            model_name="providermatchgamestate",
+            name="supported_end_second",
+            field=models.PositiveIntegerField(blank=True, null=True),
+        ),
+        migrations.AddField(
+            model_name="providermatchgamestate",
+            name="exposure_seconds",
+            field=models.PositiveIntegerField(default=0),
+        ),
+        migrations.AddField(
+            model_name="providermatchgamestate",
+            name="period_count",
+            field=models.PositiveSmallIntegerField(default=0),
+        ),
+        migrations.AddField(
+            model_name="providermatchgamestate",
+            name="episode_count",
+            field=models.PositiveIntegerField(default=0),
+        ),
+        migrations.AddField(
+            model_name="providermatchgamestate",
+            name="focal_team_count",
+            field=models.PositiveSmallIntegerField(default=0),
         ),
         migrations.CreateModel(
             name="ProviderMatchPlayedPeriod",

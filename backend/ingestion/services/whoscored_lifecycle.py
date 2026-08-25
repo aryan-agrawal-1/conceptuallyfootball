@@ -413,6 +413,11 @@ class WhoScoredLifecycleService:
                         locked_match,
                         lineup_players=normalized_match.players,
                     )
+                    from ingestion.services.possession_context import (
+                        replace_match_possessions,
+                    )
+
+                    replace_match_possessions(locked_match)
                     return lifecycle_result(
                         locked_match,
                         current_payload,

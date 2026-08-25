@@ -147,7 +147,11 @@ function shotAriaLabel(shot: EventShot) {
 }
 
 function flowAriaLabel(flow: TeamPassFlow) {
-  return `${flow.completedCount} completed passes from this area, mean length ${flow.meanLength.toFixed(1)} metres`
+  const attempts = flow.attemptedCount
+  const state = flow.gameState ? `${flow.gameState}, ` : ''
+  return attempts == null
+    ? `${state}${flow.completedCount} completed passes from this area, mean length ${flow.meanLength.toFixed(1)} metres`
+    : `${state}${attempts} attempted passes from this area, ${flow.completedCount} completed, mean length ${flow.meanLength.toFixed(1)} metres`
 }
 
 function createSelectableEvents(passes: EventPass[], carries: EventCarry[], shots: EventShot[]) {
@@ -444,7 +448,14 @@ export const PortraitPitch = memo(function PortraitPitch({
             }}
             role="status"
           >
-            <span className="font-bold text-ink">{selectedFlow.completedCount.toLocaleString()} completed</span>
+            {selectedFlow.gameState ? (
+              <><span className="font-bold uppercase" style={{ color: selectedFlow.color }}>{selectedFlow.gameState}</span><span className="mx-1.5 text-gold/70">·</span></>
+            ) : null}
+            <span className="font-bold text-ink">
+              {selectedFlow.attemptedCount == null
+                ? `${selectedFlow.completedCount.toLocaleString()} completed`
+                : `${selectedFlow.attemptedCount.toLocaleString()} attempted · ${selectedFlow.completedCount.toLocaleString()} completed`}
+            </span>
             <span className="mx-1.5 text-gold/70">·</span>
             {selectedFlow.meanLength.toFixed(1)}m mean
             <span className="mx-1.5 text-gold/70">·</span>
@@ -475,6 +486,10 @@ export const PortraitPitch = memo(function PortraitPitch({
               x: ((flow.bin.column + 1) / 6) * 100,
               y: ((flow.bin.row + 1) / 4) * 100,
             })
+            const laneHeight = (bottomRight.y - topLeft.y) / 3
+            const laneY = flow.gameState
+              ? topLeft.y + ((flow.comparisonLane ?? 0) + 1) * laneHeight
+              : topLeft.y
             return (
               <g
                 key={flow.id}
@@ -495,9 +510,9 @@ export const PortraitPitch = memo(function PortraitPitch({
               >
                 <rect
                   x={topLeft.x}
-                  y={topLeft.y}
+                  y={laneY}
                   width={bottomRight.x - topLeft.x}
-                  height={bottomRight.y - topLeft.y}
+                  height={flow.gameState ? laneHeight : bottomRight.y - topLeft.y}
                   fill="transparent"
                   stroke="transparent"
                 />

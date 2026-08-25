@@ -18,8 +18,34 @@ import type {
   TeamEventProfilePayload,
   TeamPassFlow,
 } from '../../types/eventMaps'
+import { appendStateLens, mapStateLens, type ApiStateLens, type StateLensRequest } from './stateLensApi'
 
-const BASE = '/api/v1'
+export const BASE = '/api/v1'
+export const FLOW_GRID_ROWS = 4
+
+export async function readJson<T>(url: string): Promise<T> {
+  const response = await fetch(url)
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(body.detail ?? `API error ${response.status}`)
+  }
+  return response.json()
+}
+
+export function requestParams(competition: string, season: string, teamId?: number | null, matchRef?: string | null) {
+  const params = new URLSearchParams({ competition, season })
+  if (teamId != null) params.set('team', String(teamId))
+  if (matchRef != null) params.set('match', matchRef)
+  return params
+}
+
+export function toDisplay(coordinate: PitchCoordinate): PitchCoordinate {
+  return { x: coordinate.x, y: 100 - coordinate.y }
+}
+
+export function invertRow(row: number, rowCount: number) {
+  return rowCount - 1 - row
+}
 
 type ApiMatch = {
   ref: number
@@ -218,50 +244,14 @@ type ApiTeamProfile = {
   shots_for: ApiShot[]
   shots_against: ApiShot[]
   matches: ApiMatch[]
-}
-
-async function readJson<T>(url: string): Promise<T> {
-  const response = await fetch(url)
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}))
-    throw new Error(body.detail ?? `API error ${response.status}`)
-  }
-  return response.json()
-}
-
-function requestParams(
-  competition: string,
-  season: string,
-  teamId?: number | null,
-  matchRef?: string | null,
-) {
-  const params = new URLSearchParams({ competition, season })
-  if (teamId != null) params.set('team', String(teamId))
-  if (matchRef != null) params.set('match', matchRef)
-  return params
+  state_lens: ApiStateLens
 }
 
 function eventMinute(matchSeconds: number | null) {
   return matchSeconds == null ? 0 : Math.floor(matchSeconds / 60)
 }
 
-/**
- * Opta coordinates have their origin at the BOTTOM-left corner (y increases
- * toward the far touchline), but our components render y top-down. Flip once
- * here so every event-map consumer works in display space; grid row indices
- * are inverted to match.
- */
-function toDisplay(coordinate: PitchCoordinate): PitchCoordinate {
-  return { x: coordinate.x, y: 100 - coordinate.y }
-}
-
-/** Action grids are 24x16, flow bins 6x4 — row 0 sits at the bottom in Opta space. */
 const ACTION_GRID_ROWS = 16
-const FLOW_GRID_ROWS = 4
-
-function invertRow(row: number, rowCount: number) {
-  return rowCount - 1 - row
-}
 
 function slug(value: string) {
   return value.trim().toLowerCase().replaceAll(' ', '_').replaceAll('-', '_')
@@ -596,8 +586,10 @@ export async function fetchTeamEventProfile(
   competition: string,
   season: string,
   matchRef?: string | null,
+  stateLens?: StateLensRequest,
 ): Promise<TeamEventProfilePayload> {
   const params = requestParams(competition, season, null, matchRef)
+  appendStateLens(params, stateLens)
   const raw = await readJson<ApiTeamProfile>(
     `${BASE}/team-seasons/event-profile/${teamId}?${params}`,
   )
@@ -625,5 +617,6 @@ export async function fetchTeamEventProfile(
     actionTerritory: mapGrid(raw.touch_grid ?? []),
     opponentActionTerritory: mapGrid(raw.opponent_touch_grid ?? []),
     matches: mapMatches(raw.matches, matchTeamIds(allShots), raw.canonical_team_id),
+    stateLens: mapStateLens(raw.state_lens),
   }
 }

@@ -17,16 +17,20 @@ export type DenseLayerOptions = {
   unsuccessfulColor?: string
   densityColor?: string
   flowColor?: string
+  flowDensityColor?: string
   carryColor?: string
   densityStyle?: 'cells' | 'smooth'
   selectedFlowId?: string | null
 }
 
+export const EVENT_HEATMAP_COLOR = '#4A9EF5'
+
 const defaultLayerOptions = {
   successfulColor: '#4A9EF5',
   unsuccessfulColor: '#EF5C66',
-  densityColor: '#1FD17C',
+  densityColor: EVENT_HEATMAP_COLOR,
   flowColor: '#F0A832',
+  flowDensityColor: EVENT_HEATMAP_COLOR,
 }
 
 export function configureHiDPICanvas(
@@ -185,30 +189,42 @@ export function drawFlowLayer(
   context: CanvasRenderingContext2D,
   flows: TeamPassFlow[],
   transform: PitchTransform,
-  options: Pick<DenseLayerOptions, 'flowColor' | 'selectedFlowId'> = {},
+  options: Pick<DenseLayerOptions, 'flowColor' | 'flowDensityColor' | 'selectedFlowId'> = {},
 ) {
-  const color = options.flowColor ?? defaultLayerOptions.flowColor
-  let maximumCount = 0
-  for (const flow of flows) maximumCount = Math.max(maximumCount, flow.completedCount)
-  if (maximumCount === 0) return
+  const densityColor = options.flowDensityColor ?? defaultLayerOptions.flowDensityColor
+  const bins = new Map<string, { flows: TeamPassFlow[]; volume: number }>()
+
+  for (const flow of flows) {
+    const key = `${flow.bin.column}-${flow.bin.row}`
+    const bin = bins.get(key) ?? { flows: [], volume: 0 }
+    bin.flows.push(flow)
+    bin.volume += flow.gameState
+      ? flow.attemptsPerStateMinute ?? 0
+      : flow.attemptedCount ?? flow.completedCount
+    bins.set(key, bin)
+  }
+
+  const maximumVolume = Math.max(0, ...Array.from(bins.values(), bin => bin.volume))
+  if (maximumVolume === 0) return
 
   context.save()
   context.lineCap = 'round'
   context.lineJoin = 'round'
 
-  for (const flow of flows) {
-    if (flow.completedCount === 0) continue
+  for (const bin of bins.values()) {
+    if (bin.volume === 0) continue
+    const flow = bin.flows[0]
     const xMin = (flow.bin.column / 6) * 100
     const xMax = ((flow.bin.column + 1) / 6) * 100
     const yMin = (flow.bin.row / 4) * 100
     const yMax = ((flow.bin.row + 1) / 4) * 100
     const topLeft = transform.toScreen({ x: xMin, y: yMin })
     const bottomRight = transform.toScreen({ x: xMax, y: yMax })
-    const volume = Math.sqrt(flow.completedCount / maximumCount)
-    const selected = flow.id === options.selectedFlowId
+    const volume = Math.sqrt(bin.volume / maximumVolume)
+    const selected = bin.flows.some(candidate => candidate.id === options.selectedFlowId)
     const hasSelection = Boolean(options.selectedFlowId)
 
-    context.fillStyle = color
+    context.fillStyle = densityColor
     context.globalAlpha = selected ? 0.28 : hasSelection ? 0.035 : 0.035 + volume * 0.12
     context.fillRect(
       topLeft.x + 1,
@@ -227,11 +243,26 @@ export function drawFlowLayer(
         Math.max(0, bottomRight.y - topLeft.y - 3),
       )
     }
+  }
 
-    const start = transform.toScreen(flow.origin)
+  for (const flow of flows) {
+    const volumeCount = flow.attemptedCount ?? flow.completedCount
+    if (volumeCount === 0) continue
+
+    const color = flow.color ?? options.flowColor ?? defaultLayerOptions.flowColor
+    const selected = flow.id === options.selectedFlowId
+    const hasSelection = Boolean(options.selectedFlowId)
+    const laneOffset = (flow.comparisonLane ?? 0) * (transform.bounds.height / 4) * 0.2
+    const origin = transform.toScreen(flow.origin)
+    const binTop = transform.toScreen({ x: 0, y: (flow.bin.row / 4) * 100 }).y
+    const binBottom = transform.toScreen({ x: 0, y: ((flow.bin.row + 1) / 4) * 100 }).y
+    const start = {
+      x: origin.x,
+      y: Math.min(binBottom - 5, Math.max(binTop + 5, origin.y + laneOffset)),
+    }
     const destination = transform.toScreen(flow.destination)
-    const rawDeltaX = destination.x - start.x
-    const rawDeltaY = destination.y - start.y
+    const rawDeltaX = destination.x - origin.x
+    const rawDeltaY = destination.y - origin.y
     const rawDistance = Math.hypot(rawDeltaX, rawDeltaY)
     if (rawDistance < 1) continue
     const maximumArrowLength = Math.min(transform.bounds.width / 6, transform.bounds.height / 3.2)
@@ -251,8 +282,8 @@ export function drawFlowLayer(
     context.moveTo(fromX, fromY)
     context.lineTo(shaftEndX, shaftEndY)
     context.strokeStyle = color
-    context.globalAlpha = selected ? 1 : hasSelection ? 0.2 : 0.9
-    context.lineWidth = selected ? 3.25 : 2.25
+    context.globalAlpha = selected ? 1 : hasSelection ? 0.2 : 0.94
+    context.lineWidth = selected ? 3.25 : flow.gameState ? 1.8 : 2.25
     context.stroke()
 
     context.beginPath()

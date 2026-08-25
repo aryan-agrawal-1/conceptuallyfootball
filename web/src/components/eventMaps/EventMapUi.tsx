@@ -8,8 +8,10 @@ import type {
   EventShot,
 } from '../../types/eventMaps'
 import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
+import type { EventMapExportContext } from '../../lib/eventMaps/exportContext'
 import { goalZone, goalZoneLabel } from '../../lib/eventMaps/goalMouth'
 import { cn } from '../../lib/utils'
+import { ChartShareCard } from '../visualizer/ChartShareCard'
 
 export type EventMapViewOption<T extends string> = {
   value: T
@@ -30,13 +32,13 @@ export function EventMatchFilter({
     left.matchDate.localeCompare(right.matchDate) || left.matchId.localeCompare(right.matchId),
   )
   return (
-    <label className="flex min-w-0 items-center justify-between gap-2 border border-line-bright bg-panel px-3 text-[9px] font-bold uppercase tracking-[0.14em] text-ink-dim sm:justify-start">
-      Match
+    <label className="min-w-0">
+      <span className="sr-only">Match</span>
       <select
         aria-label="Match"
         value={value ?? ''}
         onChange={event => onChange(event.target.value || null)}
-        className="h-9 min-w-48 max-w-full border border-control-border bg-panel px-3 text-[10px] normal-case tracking-normal text-control-fg outline-none hover:border-electric focus:border-electric"
+        className="h-9 min-w-48 max-w-full border border-control-border bg-raised px-3 text-[10px] normal-case tracking-normal text-control-fg outline-none hover:border-electric focus:border-electric"
       >
         <option value="">All season matches</option>
         {rows.map(match => (
@@ -58,6 +60,7 @@ export function EventMapCard({
   expanded,
   onExpandedChange,
   className,
+  exportContext,
 }: {
   title: string
   description: string
@@ -67,13 +70,14 @@ export function EventMapCard({
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
   className?: string
+  exportContext: EventMapExportContext
 }) {
   return (
     <article className={cn('flex min-w-0 flex-col border border-line-bright bg-panel', className)}>
-      <header className="flex min-h-16 flex-col gap-2 border-b border-line-bright px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3">
+      <header className="flex flex-col gap-2 border-b border-line-bright px-3 py-2 sm:flex-row sm:items-center sm:gap-3">
         <div className="min-w-0 sm:max-w-[42%] sm:shrink-0">
           <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-ink">{title}</h3>
-          <p className="mt-1 text-[9px] leading-relaxed text-ink-dim">{description}</p>
+          <p className="mt-1 text-[10px] leading-relaxed text-ink-dim">{description}</p>
         </div>
         <div className="flex w-full min-w-24 flex-1 flex-col items-center justify-center px-2 text-electric sm:px-4" aria-label="Attacking direction is left to right">
           <span className="font-mono text-[8px] font-bold uppercase tracking-[0.2em]">Attack</span>
@@ -92,7 +96,19 @@ export function EventMapCard({
       <div className="flex min-h-0 flex-1 items-center justify-center bg-mat p-2 sm:p-2.5">
         {children}
       </div>
-      {footer ? <footer className="border-t border-line-bright px-3 py-2.5">{footer}</footer> : null}
+      <footer className="border-t border-line-bright px-3 py-2.5">
+        {footer ? <div className="mb-3">{footer}</div> : null}
+        <ChartShareCard
+          title={`${exportContext.subjectName} · ${title}`}
+          subtitle={description}
+          contextLabel={`${exportContext.subjectType} Event Map · ${exportContext.competition} · ${exportContext.season}`}
+          fileName={`${exportContext.subjectName}-${title}-${exportContext.competition}-${exportContext.season}`}
+          contextDetails={exportContext.filters}
+          copyUrl={typeof window === 'undefined' ? undefined : window.location.href}
+          renderContent={() => <div className="w-full">{children}</div>}
+          renderExportLegend={footer ? () => <div className="px-2">{footer}</div> : undefined}
+        />
+      </footer>
     </article>
   )
 }
@@ -107,7 +123,7 @@ const SHOT_OUTCOMES = [
 
 export function ShotMapLegend() {
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[8px] font-bold uppercase tracking-[0.1em] text-ink-dim" aria-label="Shot map legend">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-dim" aria-label="Shot map legend">
       {SHOT_OUTCOMES.map(item => (
         <span key={item.label} className="inline-flex items-center gap-1.5">
           <span className="size-2.5 rounded-full border border-ink/35" style={{ backgroundColor: item.color }} aria-hidden />
