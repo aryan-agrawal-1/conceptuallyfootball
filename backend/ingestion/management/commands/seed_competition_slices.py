@@ -193,6 +193,10 @@ class Command(BaseCommand):
 
                 changed_fields: list[str] = []
                 for field_name, value in defaults.items():
+                    # Refresh selection is operational state controlled by the
+                    # cutover commands, not manifest metadata to reapply on seed.
+                    if field_name == "refresh_enabled":
+                        continue
                     # Threshold metadata can be pinned per season.  If a row
                     # has no explicit override, leave its existing historical
                     # value alone so changing a competition default cannot

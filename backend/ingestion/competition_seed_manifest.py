@@ -656,5 +656,27 @@ COMPETITION_SEED_MANIFEST.extend(
                 ("2026", 87925, 16),
             ],
         ),
+        _domestic_config(
+            "FIN1",
+            "Veikkausliiga",
+            "Finland",
+            41,
+            [
+                ("2024", 57896, 12),
+                ("2025", 70853, 12),
+                ("2026", 87930, 12),
+            ],
+        ),
+        _domestic_config(
+            "FRO1",
+            "Faroe Islands Premier League",
+            "Faroe Islands",
+            673,
+            [
+                ("2024", 58099, 10),
+                ("2025", 70831, 10),
+                ("2026", 88706, 10),
+            ],
+        ),
     ]
 )

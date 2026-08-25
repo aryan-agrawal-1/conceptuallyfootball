@@ -34,7 +34,7 @@ from ingestion.services.season_refresh_activation import (
 class CompetitionSeedBatch2Tests(TestCase):
     def test_manifest_has_expected_classifications_and_calendar_labels(self):
         by_code = {config["code"]: config for config in COMPETITION_SEED_MANIFEST}
-        self.assertEqual(len(by_code), 28)
+        self.assertEqual(len(by_code), 30)
         unavailable = {
             ("BEL2", "2022-23", 42422),
             ("FRA3", "2022-23", 42921),
@@ -86,6 +86,25 @@ class CompetitionSeedBatch2Tests(TestCase):
             ["2022", "2023", "2024", "2025", "2026"],
         )
         self.assertEqual(by_code["SWE1"]["seasons"][-1]["sofascore_season_id"], 87925)
+        for code, tournament_id, season_ids, expected_team_count in (
+            ("FIN1", 41, [57896, 70853, 87930], 12),
+            ("FRO1", 673, [58099, 70831, 88706], 10),
+        ):
+            self.assertEqual(
+                [row["label"] for row in by_code[code]["seasons"]],
+                ["2024", "2025", "2026"],
+            )
+            self.assertEqual(
+                [row["sofascore_season_id"] for row in by_code[code]["seasons"]],
+                season_ids,
+            )
+            self.assertTrue(
+                all(
+                    row["sofascore_unique_tournament_id"] == tournament_id
+                    and row["expected_team_count"] == expected_team_count
+                    for row in by_code[code]["seasons"]
+                )
+            )
         self.assertEqual(by_code["UCL"]["competition_type"], "continental_cup")
         self.assertFalse(by_code["UCL"]["include_in_domestic_aggregates"])
         self.assertEqual(by_code["UCL"]["minimum_eligible_minutes"], 270)
@@ -95,7 +114,7 @@ class CompetitionSeedBatch2Tests(TestCase):
         call_command("seed_competition_slices")
         call_command("seed_competition_slices")
 
-        self.assertEqual(Competition.objects.count(), 28)
+        self.assertEqual(Competition.objects.count(), 30)
         expected_slice_count = sum(len(config["seasons"]) for config in COMPETITION_SEED_MANIFEST)
         self.assertEqual(CompetitionSeason.objects.count(), expected_slice_count)
         for code, label, provider_season_id in (
@@ -164,6 +183,27 @@ class CompetitionSeedBatch2Tests(TestCase):
         self.assertEqual(slice_obj.expected_team_count, 32)
         self.assertEqual(slice_obj.min_merged_team_count, 30)
         self.assertEqual(slice_obj.min_team_stats_coverage_count, 0)
+
+    def test_seed_preserves_existing_refresh_cutovers(self):
+        call_command("seed_competition_slices")
+
+        previous_slice = CompetitionSeason.objects.get(
+            competition__short_code="ENG1",
+            season__label="2025-26",
+        )
+        current_slice = CompetitionSeason.objects.get(
+            competition__short_code="ENG1",
+            season__label="2026-27",
+        )
+        CompetitionSeason.objects.filter(pk=previous_slice.pk).update(refresh_enabled=False)
+        CompetitionSeason.objects.filter(pk=current_slice.pk).update(refresh_enabled=True)
+
+        call_command("seed_competition_slices")
+
+        previous_slice.refresh_from_db()
+        current_slice.refresh_from_db()
+        self.assertFalse(previous_slice.refresh_enabled)
+        self.assertTrue(current_slice.refresh_enabled)
 
     def test_seed_preserves_unpinned_historical_thresholds(self):
         call_command("seed_competition_slices")
