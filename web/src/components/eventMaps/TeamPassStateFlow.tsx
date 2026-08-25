@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { fetchTeamPassState, type StateLensRequest } from '../../lib/eventMaps/api'
+import { fetchTeamPassState } from '../../lib/eventMaps/stateAnalysisApi'
+import type { StateLensRequest } from '../../lib/eventMaps/stateLensApi'
 import type { EventMapExportContext } from '../../lib/eventMaps/exportContext'
 import type { PassStateCategory, TeamPassFlow } from '../../types/eventMaps'
 import { PortraitPitch } from './PortraitPitch'

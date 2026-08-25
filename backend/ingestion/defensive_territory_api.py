@@ -8,8 +8,9 @@ from rest_framework.views import APIView
 from ingestion.api_cache import get_or_build_payload_response, model_version, stable_cache_key
 from ingestion.event_profile_api import (
     event_queryset,
+    parse_optional_match,
     profile_source_version,
-    resolve_event_profile_competition_season,
+    resolve_team_event_profile,
     scope_queryset_to_match,
 )
 from ingestion.models import (
@@ -27,16 +28,9 @@ class TeamDefensiveTerritoryApi(APIView):
 
     def get(self, request, canonical_team_id: int):
         try:
-            competition_season = resolve_event_profile_competition_season(request)
-            profile = TeamSeasonEventProfile.objects.select_related(
-                "team", "competition_season__competition", "competition_season__season",
-                "materialized_ingestion_run",
-            ).get(
-                competition_season=competition_season,
-                team_id=canonical_team_id,
-                is_current=True,
-            )
-            match_ref = self.parse_match(request)
+            profile = resolve_team_event_profile(request, canonical_team_id)
+            competition_season = profile.competition_season
+            match_ref = parse_optional_match(request)
             lens = parse_state_lens(request)
             event_version = model_version(
                 ProviderMatchEvent,
@@ -81,12 +75,6 @@ class TeamDefensiveTerritoryApi(APIView):
                 {"detail": "Public team event profile not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
-
-    @staticmethod
-    def parse_match(request) -> int | None:
-        from ingestion.event_profile_api import parse_optional_match
-
-        return parse_optional_match(request)
 
     def build_payload(self, profile, match_ref, lens) -> dict:
         focal_events = event_queryset(profile.competition_season).filter(team_id=profile.team_id)

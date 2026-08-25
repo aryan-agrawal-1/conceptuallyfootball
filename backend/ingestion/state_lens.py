@@ -7,7 +7,7 @@ import hashlib
 import json
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db.models import Count, QuerySet
+from django.db.models import Count, Q, QuerySet
 
 from ingestion.models import (
     MatchEventGameState,
@@ -244,13 +244,17 @@ def scope_evidence(focal_team_id: int, match_ids: list[int], scope: StateLensSco
         included_matches.add(row.provider_match_id)
 
     audits = ProviderMatchGameState.objects.filter(provider_match_id__in=match_ids)
+    audit_counts = audits.aggregate(
+        total=Count("id"),
+        eligible=Count("id", filter=Q(eligible=True)),
+    )
     reasons = {
         str(row["exclusion_reason"] or MatchGameStateExclusionReason.INVALID_SCORE_REPLAY): row["count"]
         for row in audits.filter(eligible=False)
         .values("exclusion_reason")
         .annotate(count=Count("id"))
     }
-    missing = len(match_ids) - audits.count()
+    missing = len(match_ids) - audit_counts["total"]
     if missing:
         key = str(MatchGameStateExclusionReason.INVALID_SCORE_REPLAY)
         reasons[key] = reasons.get(key, 0) + missing
@@ -259,8 +263,8 @@ def scope_evidence(focal_team_id: int, match_ids: list[int], scope: StateLensSco
         "exposure_minutes": round(exposure_seconds / 60, 2),
         "episode_count": len(episodes),
         "match_count": len(included_matches),
-        "matches_included": audits.filter(eligible=True).count(),
-        "matches_excluded": len(match_ids) - audits.filter(eligible=True).count(),
+        "matches_included": audit_counts["eligible"],
+        "matches_excluded": len(match_ids) - audit_counts["eligible"],
         "exclusion_reasons": dict(sorted(reasons.items())),
         "formula_version": GAME_STATE_CALCULATION_VERSION,
         "empty": exposure_seconds == 0,
@@ -287,9 +291,19 @@ def episode_rows(focal_team_id: int, match_ids: list[int], scope: StateLensScope
 
 
 def eligible_refinements(focal_team_id: int, match_ids: list[int]) -> dict:
-    rows = ProviderMatchTeamGameStateEpisode.objects.filter(
-        provider_match_id__in=match_ids,
-        focal_team_id=focal_team_id,
+    rows = list(
+        ProviderMatchTeamGameStateEpisode.objects.filter(
+            provider_match_id__in=match_ids,
+            focal_team_id=focal_team_id,
+        ).values_list(
+            "state",
+            "goal_difference",
+            "phase",
+            "draw_provenance",
+            "state_entry_second",
+            "end_second",
+            named=True,
+        )
     )
     states = {
         MatchEventGameState.DRAWING: "drawing",
@@ -298,13 +312,13 @@ def eligible_refinements(focal_team_id: int, match_ids: list[int]) -> dict:
     }
     return {
         "states": sorted(
-            {states[value] for value in rows.values_list("state", flat=True) if value in states}
+            {states[row.state] for row in rows if row.state in states}
         ),
-        "goal_differences": sorted(set(rows.values_list("goal_difference", flat=True))),
-        "phases": sorted(set(rows.values_list("phase", flat=True))),
-        "draw_provenances": sorted(set(rows.values_list("draw_provenance", flat=True))),
+        "goal_differences": sorted({row.goal_difference for row in rows}),
+        "phases": sorted({row.phase for row in rows}),
+        "draw_provenances": sorted({row.draw_provenance for row in rows}),
         "state_age_seconds": {
-            "minimum": 0 if rows.exists() else None,
+            "minimum": 0 if rows else None,
             "maximum": max(
                 (row.end_second - row.state_entry_second for row in rows),
                 default=None,

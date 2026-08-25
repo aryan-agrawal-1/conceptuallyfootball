@@ -13,7 +13,7 @@ from ingestion.event_profile_api import (
     event_queryset,
     parse_optional_match,
     profile_source_version,
-    resolve_event_profile_competition_season,
+    resolve_team_event_profile,
     scope_queryset_to_match,
 )
 from ingestion.models import (
@@ -40,17 +40,8 @@ PASS_STATE_API_VERSION = "v1"
 class TeamPassStateApi(APIView):
     def get(self, request, canonical_team_id: int):
         try:
-            competition_season = resolve_event_profile_competition_season(request)
-            profile = TeamSeasonEventProfile.objects.select_related(
-                "team",
-                "competition_season__competition",
-                "competition_season__season",
-                "materialized_ingestion_run",
-            ).get(
-                competition_season=competition_season,
-                team_id=canonical_team_id,
-                is_current=True,
-            )
+            profile = resolve_team_event_profile(request, canonical_team_id)
+            competition_season = profile.competition_season
             match_ref = parse_optional_match(request)
             lens = parse_state_lens(request)
             cache_key = stable_cache_key(

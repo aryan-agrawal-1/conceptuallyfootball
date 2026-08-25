@@ -16,7 +16,7 @@ from ingestion.api_cache import (
 from ingestion.event_profile_api import (
     event_queryset,
     parse_optional_match,
-    resolve_event_profile_competition_season,
+    resolve_team_event_profile,
     scope_queryset_to_match,
 )
 from ingestion.models import (
@@ -50,14 +50,8 @@ def parse_penalty_mode(request) -> str:
 class TeamShotPressureApi(APIView):
     def get(self, request, canonical_team_id: int):
         try:
-            competition_season = resolve_event_profile_competition_season(request)
-            profile = TeamSeasonEventProfile.objects.select_related(
-                "team", "competition_season__competition", "competition_season__season"
-            ).get(
-                competition_season=competition_season,
-                team_id=canonical_team_id,
-                is_current=True,
-            )
+            profile = resolve_team_event_profile(request, canonical_team_id)
+            competition_season = profile.competition_season
             match_ref = parse_optional_match(request)
             lens = parse_state_lens(request)
             penalty_mode = parse_penalty_mode(request)

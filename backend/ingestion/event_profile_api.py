@@ -100,6 +100,21 @@ def resolve_event_profile_competition_season(request):
     return _resolve_competition_season(request)
 
 
+def resolve_team_event_profile(request, canonical_team_id: int) -> TeamSeasonEventProfile:
+    """Resolve the canonical public profile shared by team event-analysis APIs."""
+    competition_season = resolve_event_profile_competition_season(request)
+    return TeamSeasonEventProfile.objects.select_related(
+        "team",
+        "competition_season__competition",
+        "competition_season__season",
+        "materialized_ingestion_run",
+    ).get(
+        competition_season=competition_season,
+        team_id=canonical_team_id,
+        is_current=True,
+    )
+
+
 def player_profile_queryset(competition_season, canonical_player_id: int, team_id: int | None):
     queryset = PlayerSeasonEventProfile.objects.filter(
         competition_season=competition_season,
@@ -626,15 +641,8 @@ class PlayerEventProfilePassesApi(PlayerEventProfileMixin, APIView):
 class TeamEventProfileApi(APIView):
     def get(self, request, canonical_team_id: int):
         try:
-            competition_season = resolve_event_profile_competition_season(request)
-            profile = TeamSeasonEventProfile.objects.select_related(
-                "team", "competition_season__competition", "competition_season__season",
-                "materialized_ingestion_run",
-            ).get(
-                competition_season=competition_season,
-                team_id=canonical_team_id,
-                is_current=True,
-            )
+            profile = resolve_team_event_profile(request, canonical_team_id)
+            competition_season = profile.competition_season
             match_ref = parse_optional_match(request)
             state_lens = parse_state_lens(request)
             cache_key = stable_cache_key(
