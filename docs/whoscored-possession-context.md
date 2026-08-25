@@ -52,10 +52,17 @@ zero-duration boundary case; it cannot inherit the post-goal state.
 ## Public endpoint and performance gate
 
 `GET /api/v1/team-seasons/possession-context/{team_id}` accepts the standard
-`competition_season` or `competition` plus `season` scope. It returns derived
-aggregates, capped evidence, thresholds, settled block distribution, and the
-separately provider-tagged observed count. Provider IDs, qualifiers, and source
-payload details are not returned.
+`competition_season` or `competition` plus `season` scope, the shared compact
+`match` reference, and every canonical State Lens selected/baseline parameter.
+Counter launches are attributed to the state of their first possession event;
+settled defending and provider-tagged fast-break shots are attributed to their
+individual observed event. Only matches with verified state timelines contribute
+to any selected or baseline cohort. The response includes shared State Lens
+exposure/exclusion metadata, match references, derived aggregates, capped
+evidence, thresholds, settled block distribution, and the separately
+provider-tagged observed count. When a baseline is requested, its complete
+independently scoped evidence is returned under `comparison.baseline`. Provider
+IDs, qualifiers, and source payload details are not returned.
 
 The test suite includes a 20-match pilot-shaped derivation benchmark (30,000
 events) with a one-second local ceiling. Production backfill should record the

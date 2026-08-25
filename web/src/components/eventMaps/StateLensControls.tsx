@@ -55,7 +55,8 @@ export function StateLensControls({ metadata, searchParams, onChange, compact = 
           </button>
           {metadata ? (
             <div className="min-w-0 flex-1 text-right text-[10px] leading-relaxed text-ink-dim" aria-live="polite">
-              <span className="block text-[11px] font-normal text-ink">{metadata.evidence.exposureMinutes.toLocaleString()} minutes · {metadata.evidence.matchCount.toLocaleString()} matches</span>
+              <span className="block text-[11px] font-normal text-ink">{metadata.evidence.exposureMinutes.toLocaleString()} minutes · {metadata.evidence.episodeCount.toLocaleString()} episodes · {metadata.evidence.matchCount.toLocaleString()} matches</span>
+              <span className={`block ${metadata.evidence.matchesExcluded ? 'text-gold' : ''}`}>{metadata.evidence.matchesExcluded.toLocaleString()} excluded · {metadata.evidence.formulaVersion}</span>
               {metadata.evidence.empty ? <span className="text-amber-300">No eligible state data. Rebuild the match state foundations.</span> : null}
             </div>
           ) : <span className="text-[10px] text-ink-dim">Loading state evidence…</span>}
