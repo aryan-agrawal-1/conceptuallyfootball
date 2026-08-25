@@ -41,6 +41,18 @@ function shotPitchView(shots: EventShot[]) {
   return shots.some(shot => shot.location.x < 50) ? 'full' as const : 'attacking-half' as const
 }
 
+function includesShotForPenaltyMode(shot: EventShot, mode: ShotPressurePenaltyMode) {
+  const isPenalty = shot.situation === 'penalty'
+  if (mode === 'only') return isPenalty
+  if (mode === 'exclude') return !isPenalty
+  return true
+}
+
+function percentage(numerator: number | undefined, denominator: number | undefined) {
+  if (!numerator || !denominator) return denominator === 0 ? '0.0%' : '—'
+  return `${((numerator / denominator) * 100).toFixed(1)}%`
+}
+
 export function TeamEventMaps({ teamId, competition, season }: {
   teamId: number
   competition: string
@@ -82,8 +94,9 @@ export function TeamEventMaps({ teamId, competition, season }: {
     </EventMapNotice></div>
   }
 
-  const shotsFor = profile.shots.filter(shot => shot.perspective === 'for')
-  const shotsAgainst = profile.shots.filter(shot => shot.perspective === 'against')
+  const shotsFor = profile.shots.filter(shot => shot.perspective === 'for' && includesShotForPenaltyMode(shot, penaltyMode))
+  const shotsAgainst = profile.shots.filter(shot => shot.perspective === 'against' && includesShotForPenaltyMode(shot, penaltyMode))
+  const sharedShotPitchView = shotPitchView([...shotsFor, ...shotsAgainst])
 
   const shotDensity = (kind: 'for' | 'against'): ActionGridCell[] => (
     shotPressureQuery.data?.selected.location[kind].cells.map(cell => ({
@@ -96,28 +109,44 @@ export function TeamEventMaps({ teamId, competition, season }: {
   )
 
   const shotCard = (kind: 'for' | 'against', shots: EventShot[], map: TeamMap) => {
-    const pitchView = shotPitchView(shots)
     const title = kind === 'for' ? 'Shots for' : 'Shots against'
     return (
-      <EventMapCard key={map} expanded={expanded === map} onExpandedChange={next => setExpanded(next ? map : null)} title={title} description={pitchView === 'attacking-half' ? 'Attacking half shown; every shot originates beyond halfway.' : 'Full pitch shown because at least one shot originates behind halfway.'} footer={(
+      <EventMapCard key={map} expanded={expanded === map} onExpandedChange={next => setExpanded(next ? map : null)} title={title} description={sharedShotPitchView === 'attacking-half' ? 'Attacking half shown for both maps; all selected shots originate beyond halfway.' : 'Both maps use the full pitch so their territories stay directly comparable.'} footer={(
         <div className="space-y-2">
           <ShotMapLegend />
-          <p className="text-[8px] text-ink-muted">Blue heat = relative shot-location density for this state scope.</p>
-          {selection?.kind === 'shot' && shots.some(shot => shot.id === selection.id) ? <EventSelectionDetails selection={selection} matches={profile.matches} /> : <p className="text-[9px] text-ink-dim">Click, tap or focus a shot to inspect it.</p>}
+          <p className="text-[10px] text-ink-dim">Blue heat = relative shot-location density for this state scope.</p>
+          {selection?.kind === 'shot' && shots.some(shot => shot.id === selection.id) ? <EventSelectionDetails selection={selection} matches={profile.matches} /> : <p className="text-[11px] text-ink-dim">Click, tap or focus a shot to inspect it.</p>}
         </div>
       )}>
         <MapStage map={map} expanded={expanded} setExpanded={setExpanded}>
-          {shots.length ? <PortraitPitch shots={shots} densityCells={shotDensity(kind)} densityStyle="smooth" pitchView={pitchView} eventSelectionMode="click" selectedEventId={selection?.kind === 'shot' ? selection.id : null} onSelectedEventChange={setSelection} ariaLabel={`${profile.teamName} ${title.toLowerCase()} map with shot-location density. ${pitchView === 'attacking-half' ? 'Attacking half' : 'Full pitch'}; acting team attacks left to right.`} /> : <EventMapNotice kind="empty" title={`No ${title.toLowerCase()} recorded`} />}
+          {shots.length ? <PortraitPitch className={sharedShotPitchView === 'attacking-half' ? 'mx-auto max-w-[360px]' : ''} shots={shots} densityCells={shotDensity(kind)} densityStyle="smooth" pitchView={sharedShotPitchView} eventSelectionMode="click" selectedEventId={selection?.kind === 'shot' ? selection.id : null} onSelectedEventChange={setSelection} ariaLabel={`${profile.teamName} ${title.toLowerCase()} map with shot-location density. ${sharedShotPitchView === 'attacking-half' ? 'Attacking half' : 'Full pitch'}; acting team attacks left to right.`} /> : <EventMapNotice kind="empty" title={`No ${title.toLowerCase()} recorded`} />}
         </MapStage>
       </EventMapCard>
     )
   }
 
+  const headlineStats = analysisMode === 'shooting'
+    ? [
+        ['Shots for', shotsFor.length],
+        ['Shots against', shotsAgainst.length],
+        ['Goals for', shotsFor.filter(shot => shot.outcome === 'goal').length],
+      ]
+    : analysisMode === 'passing'
+      ? [
+          ['Pass attempts', profile.summary.pass_attempts],
+          ['Pass completion', percentage(profile.summary.pass_completions, profile.summary.pass_attempts)],
+          ['Progressive attempts', profile.summary.progressive_pass_attempts],
+        ]
+      : [
+          ['Defensive actions', defensiveQuery.data?.selected.counts.included],
+          ['Located actions', defensiveQuery.data?.selected.counts.withLocation],
+          ['Average position', defensiveQuery.data?.selected.heights.all.mean == null ? '—' : `${defensiveQuery.data.selected.heights.all.mean.toFixed(1)}%`],
+        ]
+
   return (
     <section aria-label="Team event maps">
       <div className="mb-2">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <p className="text-[9px] text-ink-dim">Analysis scope</p>
+        <div className="mb-2 flex items-center justify-end gap-3">
           <EventMatchFilter matches={profile.matches} value={matchRef} onChange={value => {
             const next = new URLSearchParams(searchParams)
             if (value == null) next.delete('match')
@@ -128,14 +157,21 @@ export function TeamEventMaps({ teamId, competition, season }: {
         <StateLensControls metadata={profile.stateLens} searchParams={searchParams} onChange={setLensParams} />
       </div>
       {expanded ? <div className="fixed left-3 right-16 top-3 z-[95] max-h-[45svh] overflow-y-auto sm:left-8 sm:right-20"><StateLensControls compact metadata={profile.stateLens} searchParams={searchParams} onChange={setLensParams} /></div> : null}
-      <div className="mb-2 flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-line-bright py-2">
-        {[['Passes', profile.summary.pass_attempts], ['Shots for', profile.summary.shots_for], ['Shots against', profile.summary.shots_against]].map(([label, value]) => <p key={label as string} className="text-[9px] text-ink-dim"><span className="mr-1.5 uppercase tracking-[0.1em]">{label}</span><strong className="font-mono text-[11px] font-normal text-ink">{value?.toLocaleString() ?? '—'}</strong></p>)}
-        <p className="ml-auto text-[9px] text-ink-dim">Coverage <span className={profile.coverage.complete ? 'text-mint' : 'text-gold'}>{profile.coverage.matchesIncluded}/{profile.coverage.matchesExpected || '—'} matches</span></p>
-      </div>
-
       <nav className="mb-2 grid grid-cols-3 border-b border-line-bright" aria-label="Event map analysis">
-        {ANALYSIS_MODES.map(mode => <button key={mode.value} type="button" aria-pressed={analysisMode === mode.value} onClick={() => { setAnalysisMode(mode.value); setSelection(null) }} className={`border-b-2 px-2 py-2 text-left transition-colors hover:bg-raised/50 sm:px-3 ${analysisMode === mode.value ? 'border-electric text-electric' : 'border-transparent text-ink'}`}><strong className="block text-[9px] uppercase tracking-[0.1em] sm:text-[10px] sm:tracking-[0.14em]">{mode.label}</strong><span className="mt-0.5 hidden text-[8px] text-ink-dim sm:block">{mode.description}</span></button>)}
+        {ANALYSIS_MODES.map(mode => <button key={mode.value} type="button" aria-pressed={analysisMode === mode.value} onClick={() => { setAnalysisMode(mode.value); setSelection(null) }} className={`border-b-2 px-2 py-2 text-left transition-colors hover:bg-raised sm:px-3 ${analysisMode === mode.value ? 'border-electric text-electric' : 'border-transparent text-ink'}`}><strong className="block text-[9px] uppercase tracking-[0.1em] sm:text-[10px] sm:tracking-[0.14em]">{mode.label}</strong><span className="mt-0.5 hidden text-[8px] text-ink-dim sm:block">{mode.description}</span></button>)}
       </nav>
+
+      {analysisMode === 'shooting' ? (
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 border-b border-line-bright pb-2">
+          <p className="text-[10px] leading-relaxed text-ink-dim">Penalty treatment applies to both shot maps and all supporting shooting statistics.</p>
+          <select className="event-lens-control w-auto min-w-48" aria-label="Shooting penalty treatment" value={penaltyMode} onChange={event => { setPenaltyMode(event.target.value as ShotPressurePenaltyMode); setSelection(null) }}><option value="exclude">Excluding penalties</option><option value="include">Including penalties</option><option value="only">Penalties only</option></select>
+        </div>
+      ) : null}
+
+      <div className="mb-2 flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-line-bright py-2">
+        {headlineStats.map(([label, value]) => <p key={label as string} className="text-[10px] text-ink-dim"><span className="mr-1.5 uppercase tracking-[0.1em]">{label}</span><strong className="font-mono text-[13px] font-normal text-ink">{typeof value === 'number' ? value.toLocaleString() : value ?? '—'}</strong></p>)}
+        <p className="ml-auto text-[10px] text-ink-dim">Coverage <span className={profile.coverage.complete ? 'text-mint' : 'text-gold'}>{profile.coverage.matchesIncluded}/{profile.coverage.matchesExpected || '—'} matches</span></p>
+      </div>
 
       <div className="space-y-3">
         {analysisMode === 'shooting' ? <>
@@ -147,8 +183,6 @@ export function TeamEventMaps({ teamId, competition, season }: {
           payload={shotPressureQuery.data}
           loading={shotPressureQuery.isLoading}
           error={shotPressureQuery.isError ? shotPressureQuery.error.message : undefined}
-          penaltyMode={penaltyMode}
-          onPenaltyModeChange={setPenaltyMode}
           onRetry={() => shotPressureQuery.refetch()}
           />
         </> : null}

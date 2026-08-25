@@ -345,6 +345,14 @@ export type TeamEventProfilePayload = {
 }
 
 export type DefensiveTerritoryGroup = 'all' | 'nonClearance' | 'clearance'
+export type DefensiveActionFamily =
+  | 'recovery'
+  | 'tackle'
+  | 'interception'
+  | 'blocked_pass'
+  | 'defensive_aerial'
+  | 'defensive_challenge'
+  | 'clearance'
 
 export type DefensiveHeightEvidence = {
   sampleSize: number
@@ -370,11 +378,15 @@ export type DefensiveTerritoryEvidence = {
     recovery: number
   }
   familyComposition: Array<{
-    family: string
+    family: DefensiveActionFamily
     count: number
     withLocation: number
     withoutLocation: number
     share: number
+  }>
+  familyEvidence: Record<DefensiveActionFamily, {
+    height: DefensiveHeightEvidence
+    ratePerStateMinute: number | null
   }>
   heights: {
     recovery: DefensiveHeightEvidence
@@ -390,6 +402,7 @@ export type DefensiveTerritoryEvidence = {
     recovery: number | null
   }
   grids: Record<DefensiveTerritoryGroup, ActionGridCell[]>
+  gridsByFamily: Record<DefensiveActionFamily, ActionGridCell[]>
   evidence: {
     locatedSampleSize: number
     sparse: boolean

@@ -16,13 +16,13 @@ function metres(value: number | null) {
 function EvidenceBands({ title, rows }: { title: string; rows: PassStateCategory[] }) {
   return (
     <div>
-      <p className="mb-1 text-[8px] font-bold uppercase tracking-[0.12em] text-ink-muted">{title}</p>
-      <div className="grid grid-cols-3 gap-1">
+      <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-dim">{title}</p>
+      <div className="grid grid-cols-3 gap-2">
         {rows.map(row => (
           <div key={row.category} className="rounded border border-line/60 bg-paper/40 px-2 py-1.5">
-            <p className="text-[8px] font-bold uppercase text-ink-dim">{row.category}</p>
-            <p className="font-mono text-[10px] text-ink">{percent(row.attemptShare)} choice</p>
-            <p className="font-mono text-[9px] text-ink-muted">{percent(row.completionRate)} complete</p>
+            <p className="text-[10px] font-bold uppercase text-ink-dim">{row.category}</p>
+            <p className="font-mono text-[12px] text-ink">{percent(row.attemptShare)} choice</p>
+            <p className="whitespace-nowrap font-mono text-[11px] text-ink-dim">{percent(row.completionRate)} completion</p>
           </div>
         ))}
       </div>
@@ -81,7 +81,7 @@ export function TeamPassStateFlow({
       description="Attempt volume and mean pass shape in each origin zone; completion is shown separately."
     >
       <EventPitchStage expanded={expanded} onExpandedChange={onExpandedChange}>
-        <div className="grid w-full max-w-[1120px] items-start gap-4 lg:grid-cols-[minmax(0,760px)_minmax(280px,1fr)]">
+        <div className="grid w-full items-start gap-8 lg:grid-cols-[minmax(0,1.45fr)_minmax(400px,0.75fr)]">
           <div>
             {evidence.flows.length ? (
               <PortraitPitch
@@ -92,16 +92,16 @@ export function TeamPassStateFlow({
               />
             ) : <EventMapNotice kind="empty" title="No located passes in this state scope" />}
           </div>
-          <aside className="space-y-3 border-t border-line-bright pt-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0" aria-label="Passing evidence">
-            <div className="grid grid-cols-3 gap-3 text-[9px] lg:grid-cols-1">
-              <p><span className="block text-[8px] uppercase text-ink-dim">Tempo</span>{summary.attemptsPerStateMinute?.toFixed(2) ?? '—'} / state min</p>
-              <p><span className="block text-[8px] uppercase text-ink-dim">Completion</span>{percent(summary.completionRate)}</p>
-              <p><span className="block text-[8px] uppercase text-ink-dim">Mean pass</span>{metres(summary.meanLengthMetres)}</p>
+          <aside className="space-y-4 border-t border-line-bright pt-5 lg:border-t-0 lg:pt-0" aria-label="Passing evidence">
+            <div className="grid grid-cols-3 gap-3 text-[12px] leading-relaxed lg:grid-cols-1">
+              <p><span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-ink-dim">Passes per minute</span>{summary.attemptsPerStateMinute?.toFixed(2) ?? '—'}</p>
+              <p><span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-ink-dim">Pass completion</span>{percent(summary.completionRate)}</p>
+              <p><span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-ink-dim">Mean pass length</span>{metres(summary.meanLengthMetres)}</p>
             </div>
             <EvidenceBands title="Direction" rows={evidence.directions} />
             <EvidenceBands title="Length" rows={evidence.lengthBands} />
-            <p className="text-[9px] leading-relaxed text-ink-muted">
-              {summary.attempts.toLocaleString()} attempted · {summary.completions.toLocaleString()} completed · {evidence.exposureMinutes.toFixed(1)} eligible state minutes
+            <p className="text-[11px] leading-relaxed text-ink-dim">
+              Passes per minute uses only the eligible minutes in the selected game state. {summary.attempts.toLocaleString()} attempted · {summary.completions.toLocaleString()} completed · {evidence.exposureMinutes.toFixed(1)} eligible minutes
               {disclosure ? ` · ${disclosure}` : ''}
             </p>
           </aside>

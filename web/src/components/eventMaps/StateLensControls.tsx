@@ -37,10 +37,10 @@ export function StateLensControls({ metadata, searchParams, onChange, compact = 
   }
 
   return (
-    <fieldset className={`border-y border-line-bright bg-panel/40 px-0 py-2 backdrop-blur ${compact ? 'border-x px-3 shadow-2xl' : ''}`}>
+    <fieldset className={`border border-line-bright bg-panel px-3 pb-3 pt-2 shadow-[0_12px_32px_rgba(0,0,0,0.18)] ${compact ? 'shadow-2xl' : ''}`}>
       <legend className="px-1 text-[9px] font-bold uppercase tracking-[0.18em] text-electric">State Lens</legend>
       <div>
-        <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(220px,0.8fr)_minmax(360px,1.2fr)] lg:items-end">
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(260px,0.9fr)_minmax(360px,1.1fr)] lg:items-end">
         <Control text="State">
           <select aria-label="Game state" value={selectedState} onChange={event => update('state', event.target.value)} className="event-lens-control">
             <option value="all">All states</option>
@@ -49,20 +49,21 @@ export function StateLensControls({ metadata, searchParams, onChange, compact = 
             ))}
           </select>
         </Control>
-        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
-          {metadata ? (
-            <div className="min-w-0 flex-1 border-l-2 border-electric/60 pl-3 text-[9px] leading-relaxed text-ink-dim" aria-live="polite">
-              <strong className="block text-[10px] text-ink">{metadata.evidence.exposureMinutes.toLocaleString()} minutes · {metadata.evidence.matchCount.toLocaleString()} matches</strong>
-              {metadata.evidence.empty ? <span className="text-amber-300">No eligible state data. Rebuild the match state foundations.</span> : <span>{metadata.evidence.episodeCount.toLocaleString()} state episodes in this view</span>}
-            </div>
-          ) : <span className="text-[9px] text-ink-dim">Loading state evidence…</span>}
+        <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
           <button type="button" aria-expanded={advancedOpen} onClick={() => setAdvancedOpen(open => !open)} className="event-lens-control w-auto shrink-0 whitespace-nowrap">
             {advancedOpen ? 'Hide refinements' : 'Refine state'}
           </button>
+          {metadata ? (
+            <div className="min-w-0 flex-1 text-right text-[10px] leading-relaxed text-ink-dim" aria-live="polite">
+              <span className="block text-[11px] font-normal text-ink">{metadata.evidence.exposureMinutes.toLocaleString()} minutes · {metadata.evidence.matchCount.toLocaleString()} matches</span>
+              {metadata.evidence.empty ? <span className="text-amber-300">No eligible state data. Rebuild the match state foundations.</span> : null}
+            </div>
+          ) : <span className="text-[10px] text-ink-dim">Loading state evidence…</span>}
         </div>
         </div>
       </div>
-      {advancedOpen ? <div className="mt-3 grid gap-2 border-t border-line-bright pt-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      {advancedOpen ? <div className="mt-3 grid gap-3 bg-raised/45 p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <p className="text-[10px] leading-relaxed text-ink-dim sm:col-span-2 lg:col-span-3 xl:col-span-6">Time in state limits events to a window after the score last changed.</p>
         <Control text="Exact goal difference">
           <select aria-label="Exact goal difference" value={selectedDifference} onChange={event => update('goal_difference', event.target.value)} className="event-lens-control">
             <option value="">Any</option>
@@ -81,11 +82,11 @@ export function StateLensControls({ metadata, searchParams, onChange, compact = 
             {withCurrent(refinements?.drawProvenances, selectedProvenance).map(value => <option key={value} value={value}>{displayLabel(String(value))}</option>)}
           </select>
         </Control>
-        <Control text="Age from (seconds)">
-          <input aria-label="Minimum state age in seconds" inputMode="numeric" type="number" min={0} value={searchParams.get('minimum_state_age_seconds') ?? ''} onChange={event => update('minimum_state_age_seconds', event.target.value)} className="event-lens-control" placeholder="0" />
+        <Control text="At least this long (seconds)">
+          <input aria-label="At least this many seconds in the state" inputMode="numeric" type="number" min={0} value={searchParams.get('minimum_state_age_seconds') ?? ''} onChange={event => update('minimum_state_age_seconds', event.target.value)} className="event-lens-control" placeholder="From state change" />
         </Control>
-        <Control text="Age before (seconds)">
-          <input aria-label="Maximum state age in seconds" inputMode="numeric" type="number" min={0} value={searchParams.get('maximum_state_age_seconds') ?? ''} onChange={event => update('maximum_state_age_seconds', event.target.value)} className="event-lens-control" placeholder={refinements?.stateAgeSeconds.maximum?.toString() ?? 'Any'} />
+        <Control text="At most this long (seconds)">
+          <input aria-label="At most this many seconds in the state" inputMode="numeric" type="number" min={0} value={searchParams.get('maximum_state_age_seconds') ?? ''} onChange={event => update('maximum_state_age_seconds', event.target.value)} className="event-lens-control" placeholder={refinements?.stateAgeSeconds.maximum?.toString() ?? 'No limit'} />
         </Control>
         <Control text="Comparison baseline">
           <div className="flex gap-1">

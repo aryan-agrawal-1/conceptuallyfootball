@@ -18,6 +18,7 @@ import type {
   TeamEventProfilePayload,
   TeamDefensiveTerritoryPayload,
   DefensiveTerritoryEvidence,
+  DefensiveActionFamily,
   DefensiveTerritoryGroup,
   TeamPassFlow,
   StateLensMetadata,
@@ -423,11 +424,15 @@ type ApiDefensiveTerritory = {
     recovery: number
   }
   family_composition: Array<{
-    family: string
+    family: DefensiveActionFamily
     count: number
     with_location: number
     without_location: number
     share: number
+  }>
+  family_evidence: Record<DefensiveActionFamily, {
+    height: ApiDefensiveHeight
+    rate_per_state_minute: number | null
   }>
   heights: {
     recovery: ApiDefensiveHeight
@@ -451,6 +456,11 @@ type ApiDefensiveTerritory = {
       all: { count: number; share: number; per_state_minute: number | null }
       non_clearance: { count: number; share: number; per_state_minute: number | null }
       clearance: { count: number; share: number; per_state_minute: number | null }
+      families: Record<DefensiveActionFamily, {
+        count: number
+        share: number
+        per_state_minute: number | null
+      }>
     }>
   }
   evidence: {
@@ -1021,6 +1031,17 @@ function mapDefensiveTerritory(value: ApiDefensiveTerritory): DefensiveTerritory
       share: cell[source].share,
     })),
   ])) as Record<DefensiveTerritoryGroup, ActionGridCell[]>
+  const families = Object.keys(value.family_evidence) as DefensiveActionFamily[]
+  const gridsByFamily = Object.fromEntries(families.map(family => [
+    family,
+    value.grid.cells.map(cell => ({
+      column: cell.column,
+      row: invertRow(cell.row, value.grid.rows),
+      rawCount: cell.families[family].count,
+      per90Count: cell.families[family].per_state_minute ?? 0,
+      share: cell.families[family].share,
+    })),
+  ])) as Record<DefensiveActionFamily, ActionGridCell[]>
   return {
     contractVersion: value.contract_version,
     disclaimer: value.disclaimer,
@@ -1039,6 +1060,10 @@ function mapDefensiveTerritory(value: ApiDefensiveTerritory): DefensiveTerritory
       withoutLocation: row.without_location,
       share: row.share,
     })),
+    familyEvidence: Object.fromEntries(families.map(family => [family, {
+      height: mapDefensiveHeight(value.family_evidence[family].height),
+      ratePerStateMinute: value.family_evidence[family].rate_per_state_minute,
+    }])) as DefensiveTerritoryEvidence['familyEvidence'],
     heights: {
       recovery: mapDefensiveHeight(value.heights.recovery),
       nonClearanceAction: mapDefensiveHeight(value.heights.non_clearance_action),
@@ -1053,6 +1078,7 @@ function mapDefensiveTerritory(value: ApiDefensiveTerritory): DefensiveTerritory
       recovery: value.rates_per_state_minute.recovery,
     },
     grids,
+    gridsByFamily,
     evidence: {
       locatedSampleSize: value.evidence.located_sample_size,
       sparse: value.evidence.sparse,

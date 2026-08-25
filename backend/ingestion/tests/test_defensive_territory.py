@@ -165,6 +165,22 @@ class DefensiveTerritoryApiTests(TestCase):
             sum(cell["all"]["count"] for cell in evidence["grid"]["cells"]), 5
         )
         self.assertEqual(
+            sum(
+                cell["families"]["recovery"]["count"]
+                for cell in evidence["grid"]["cells"]
+            ),
+            2,
+        )
+        self.assertEqual(
+            sum(
+                cell["families"]["tackle"]["count"]
+                for cell in evidence["grid"]["cells"]
+            ),
+            0,
+        )
+        self.assertEqual(evidence["family_evidence"]["recovery"]["height"]["mean"], 20.0)
+        self.assertEqual(evidence["family_evidence"]["clearance"]["rate_per_state_minute"], 0.025)
+        self.assertEqual(
             evidence["evidence"]["exclusions"]["attacking_or_unqualified_aerial_challenge"], 1
         )
         self.assertTrue(evidence["evidence"]["sparse"])

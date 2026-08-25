@@ -13,7 +13,7 @@ from typing import Iterable
 from ingestion.models import MatchEventType, ProviderMatchEvent
 
 
-DEFENSIVE_TERRITORY_VERSION = "defensive_territory_v1"
+DEFENSIVE_TERRITORY_VERSION = "defensive_territory_v2"
 DEFENSIVE_GRID_COLUMNS = 12
 DEFENSIVE_GRID_ROWS = 8
 SPARSE_LOCATED_SAMPLE = 20
@@ -127,8 +127,10 @@ def density_bins(rows: list[tuple[ProviderMatchEvent, str]], exposure_minutes: f
         group = "clearance" if family == "clearance" else "non_clearance"
         counts[(column, row, "all")] += 1
         counts[(column, row, group)] += 1
+        counts[(column, row, family)] += 1
         totals["all"] += 1
         totals[group] += 1
+        totals[family] += 1
     result = []
     for column in range(DEFENSIVE_GRID_COLUMNS):
         for row in range(DEFENSIVE_GRID_ROWS):
@@ -138,6 +140,14 @@ def density_bins(rows: list[tuple[ProviderMatchEvent, str]], exposure_minutes: f
                 item[group] = {
                     "count": count,
                     "share": round(count / totals[group], 6) if totals[group] else 0.0,
+                    "per_state_minute": round(count / exposure_minutes, 6) if exposure_minutes else None,
+                }
+            item["families"] = {}
+            for family in FAMILY_BY_TYPE.values():
+                count = counts[(column, row, family)]
+                item["families"][family] = {
+                    "count": count,
+                    "share": round(count / totals[family], 6) if totals[family] else 0.0,
                     "per_state_minute": round(count / exposure_minutes, 6) if exposure_minutes else None,
                 }
             result.append(item)
@@ -171,6 +181,10 @@ def defensive_territory_payload(
     recovery_x = [focal_defensive_location(event)[0] for event, family in located if family == "recovery"]
     non_clearance_x = [focal_defensive_location(event)[0] for event, family in located if family != "clearance"]
     clearance_x = [focal_defensive_location(event)[0] for event, family in located if family == "clearance"]
+    family_x = {
+        family: [focal_defensive_location(event)[0] for event, row_family in located if row_family == family]
+        for family in FAMILY_BY_TYPE.values()
+    }
     exposure_minutes = exposure_seconds / 60
 
     def rate(count: int) -> float | None:
@@ -203,6 +217,13 @@ def defensive_territory_payload(
             }
             for family in FAMILY_BY_TYPE.values()
         ],
+        "family_evidence": {
+            family: {
+                "height": height_summary(family_x[family]),
+                "rate_per_state_minute": rate(family_counts[family]),
+            }
+            for family in FAMILY_BY_TYPE.values()
+        },
         "heights": {
             "recovery": height_summary(recovery_x),
             "non_clearance_action": height_summary(non_clearance_x),

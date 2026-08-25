@@ -1,21 +1,27 @@
 import { useState } from 'react'
 import type {
-  DefensiveTerritoryGroup,
+  ActionGridCell,
+  DefensiveActionFamily,
+  DefensiveTerritoryEvidence,
   TeamDefensiveTerritoryPayload,
 } from '../../types/eventMaps'
 import { PortraitPitch } from './PortraitPitch'
 import {
   EventMapCard,
   EventMapNotice,
-  EventMapViewTabs,
   EventPitchStage,
 } from './EventMapUi'
 
-const viewOptions = [
-  { value: 'all', label: 'All actions' },
-  { value: 'nonClearance', label: 'Without clearances' },
+const ACTION_FAMILIES: Array<{ value: DefensiveActionFamily; label: string }> = [
+  { value: 'recovery', label: 'Recoveries' },
+  { value: 'tackle', label: 'Tackles' },
+  { value: 'interception', label: 'Interceptions' },
+  { value: 'blocked_pass', label: 'Blocked passes' },
+  { value: 'defensive_aerial', label: 'Defensive aerials' },
+  { value: 'defensive_challenge', label: 'Defensive challenges' },
   { value: 'clearance', label: 'Clearances' },
-] satisfies Array<{ value: DefensiveTerritoryGroup; label: string }>
+]
+const ALL_FAMILIES = ACTION_FAMILIES.map(option => option.value)
 
 function pitchHeight(value: number | null) {
   return value == null ? '—' : `${value.toFixed(1)}%`
@@ -25,8 +31,84 @@ function rate(value: number | null) {
   return value == null ? '—' : value.toFixed(2)
 }
 
-function familyLabel(value: string) {
-  return value.replaceAll('_', ' ')
+function combineGrid(evidence: DefensiveTerritoryEvidence, selected: DefensiveActionFamily[]) {
+  const total = selected.reduce((sum, family) => (
+    sum + evidence.familyComposition.find(row => row.family === family)!.withLocation
+  ), 0)
+  return evidence.gridsByFamily[selected[0]].map((cell, index): ActionGridCell => {
+    const values = selected.map(family => evidence.gridsByFamily[family][index])
+    const rawCount = values.reduce((sum, value) => sum + value.rawCount, 0)
+    return {
+      column: cell.column,
+      row: cell.row,
+      rawCount,
+      per90Count: values.reduce((sum, value) => sum + value.per90Count, 0),
+      share: total ? rawCount / total : 0,
+    }
+  })
+}
+
+function combinedSummary(evidence: DefensiveTerritoryEvidence, selected: DefensiveActionFamily[]) {
+  let located = 0
+  let unlocated = 0
+  let rate = 0
+  let heightWeight = 0
+  let weightedHeight = 0
+  selected.forEach(family => {
+    const composition = evidence.familyComposition.find(row => row.family === family)!
+    const familyEvidence = evidence.familyEvidence[family]
+    located += composition.withLocation
+    unlocated += composition.withoutLocation
+    rate += familyEvidence.ratePerStateMinute ?? 0
+    if (familyEvidence.height.mean != null) {
+      heightWeight += familyEvidence.height.sampleSize
+      weightedHeight += familyEvidence.height.mean * familyEvidence.height.sampleSize
+    }
+  })
+  return {
+    located,
+    unlocated,
+    rate: evidence.counts.included ? rate : null,
+    meanHeight: heightWeight ? weightedHeight / heightWeight : null,
+  }
+}
+
+function DefensiveActionSelect({ selected, onChange }: {
+  selected: DefensiveActionFamily[]
+  onChange: (selected: DefensiveActionFamily[]) => void
+}) {
+  const allSelected = selected.length === ACTION_FAMILIES.length
+  const label = allSelected
+    ? 'All defensive actions'
+    : selected.length === 1
+      ? ACTION_FAMILIES.find(option => option.value === selected[0])!.label
+      : `${selected.length} action types`
+  const toggle = (family: DefensiveActionFamily) => {
+    if (selected.includes(family)) {
+      if (selected.length > 1) onChange(selected.filter(value => value !== family))
+    } else {
+      onChange(ALL_FAMILIES.filter(value => selected.includes(value) || value === family))
+    }
+  }
+  return (
+    <details className="relative">
+      <summary className="event-lens-control flex min-w-48 list-none items-center justify-between gap-3 whitespace-nowrap text-left marker:hidden">
+        <span>{label}</span><span aria-hidden className="text-electric">▾</span>
+      </summary>
+      <div className="absolute right-0 z-30 mt-1 min-w-60 border border-control-border bg-overlay p-2 shadow-2xl">
+        <label className="flex min-h-9 items-center gap-2 border-b border-line-bright px-2 text-[10px] font-bold text-ink">
+          <input type="checkbox" checked={allSelected} onChange={() => onChange(ALL_FAMILIES)} />
+          All defensive actions
+        </label>
+        {ACTION_FAMILIES.map(option => (
+          <label key={option.value} className="flex min-h-9 items-center gap-2 px-2 text-[10px] text-control-fg hover:bg-raised hover:text-ink">
+            <input type="checkbox" checked={selected.includes(option.value)} onChange={() => toggle(option.value)} />
+            {option.label}
+          </label>
+        ))}
+      </div>
+    </details>
+  )
 }
 
 export function DefensiveTerritoryMap({
@@ -44,74 +126,60 @@ export function DefensiveTerritoryMap({
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
 }) {
-  const [view, setView] = useState<DefensiveTerritoryGroup>('all')
+  const [selectedFamilies, setSelectedFamilies] = useState<DefensiveActionFamily[]>(ALL_FAMILIES)
   if (loading) return <EventMapNotice kind="loading" title="Loading defensive territory" />
   if (error || !payload) {
     return <EventMapNotice kind="error" title="Defensive territory failed to load" onRetry={retry}>{error}</EventMapNotice>
   }
   const evidence = payload.selected
-  const selectedHeight = view === 'clearance'
-    ? evidence.heights.clearance
-    : view === 'nonClearance'
-      ? evidence.heights.nonClearanceAction
-      : evidence.heights.all
-  const selectedHeightLabel = view === 'clearance'
-    ? 'Clearance depth'
-    : view === 'nonClearance'
-      ? 'Non-clearance median'
-      : 'All-action median'
-  const selectedRate = evidence.ratesPerStateMinute[view]
-  const selectedLocated = evidence.grids[view].reduce((sum, cell) => sum + cell.rawCount, 0)
-  const baselineHeight = payload.baseline
-    ? view === 'clearance'
-      ? payload.baseline.heights.clearance
-      : view === 'nonClearance'
-        ? payload.baseline.heights.nonClearanceAction
-        : payload.baseline.heights.all
+  const selectedGrid = combineGrid(evidence, selectedFamilies)
+  const selectedSummary = combinedSummary(evidence, selectedFamilies)
+  const baselineSummary = payload.baseline
+    ? combinedSummary(payload.baseline, selectedFamilies)
     : null
 
   return (
     <EventMapCard
       title="Defensive action territory"
-      description="Where the team makes defensive actions; 0 is its own goal and 100 is the opponent's goal."
-      controls={<EventMapViewTabs value={view} options={viewOptions} onChange={setView} label="Defensive action family" />}
+      description="Choose the action types to map. Positions run from the team's own goal (0) to the opponent's goal (100)."
+      controls={<DefensiveActionSelect selected={selectedFamilies} onChange={setSelectedFamilies} />}
       expanded={expanded}
       onExpandedChange={onExpandedChange}
     >
       <EventPitchStage expanded={expanded} onExpandedChange={onExpandedChange}>
         <div className="grid w-full max-w-[1120px] items-start gap-4 lg:grid-cols-[minmax(0,760px)_minmax(280px,1fr)]">
           <div>
-            {selectedLocated ? (
+            {selectedSummary.located ? (
               <PortraitPitch
-                densityCells={evidence.grids[view]}
+                densityCells={selectedGrid}
                 densityStyle="cells"
-                ariaLabel={`${payload.teamName} ${view === 'clearance' ? 'clearance' : 'defensive action'} territory. Own goal at zero, opponent goal at one hundred.`}
+                ariaLabel={`${payload.teamName} selected defensive action territory. Own goal at zero, opponent goal at one hundred.`}
               />
             ) : <EventMapNotice kind="empty" title="No located defensive actions in this state" />}
           </div>
           <aside className="space-y-3 border-t border-line-bright pt-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0" aria-label="Defensive territory evidence">
-            <div className="grid grid-cols-3 gap-3 text-[9px] lg:grid-cols-1">
-              <p><span className="block text-[8px] uppercase text-ink-dim">{selectedHeightLabel}</span>{pitchHeight(selectedHeight.median)}</p>
-              <p><span className="block text-[8px] uppercase text-ink-dim">Recovery height</span>{pitchHeight(evidence.heights.recovery.median)}</p>
-              <p><span className="block text-[8px] uppercase text-ink-dim">Actions / state min</span>{rate(selectedRate)}</p>
+            <div className="grid grid-cols-2 gap-3 text-[12px] leading-relaxed lg:grid-cols-1">
+              <p><span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-ink-dim">Average action position</span>{pitchHeight(selectedSummary.meanHeight)}</p>
+              <p><span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-ink-dim">Actions per minute</span>{rate(selectedSummary.rate)}</p>
+              <p className="col-span-2 text-[11px] text-ink-dim lg:col-span-1">Average distance from the team's own goal for the selected actions.</p>
             </div>
-            <p className="text-[9px] text-ink-dim">Brighter blue cells mean more actions · {evidence.counts.withLocation} located · {evidence.counts.withoutLocation} unlocated.</p>
-            {evidence.evidence.sparse ? (
+            <p className="text-[11px] leading-relaxed text-ink-dim">Brighter blue cells mean more actions · {selectedSummary.located} located · {selectedSummary.unlocated} unlocated.</p>
+            {selectedSummary.located < evidence.evidence.sparseThreshold ? (
               <EventMapNotice kind="sparse" title="Sparse location sample">
-                {evidence.evidence.locatedSampleSize} located actions; interpret the territory pattern cautiously below {evidence.evidence.sparseThreshold}.
+                {selectedSummary.located} located actions; interpret the territory pattern cautiously below {evidence.evidence.sparseThreshold}.
               </EventMapNotice>
             ) : null}
-            {baselineHeight ? (
-              <p className="text-[9px] text-ink-dim">
-                Baseline median {pitchHeight(baselineHeight.median)} · comparison median {pitchHeight(selectedHeight.median)}. The API supplies identical 12×8 bins for both scopes for State Delta Map comparison.
+            {baselineSummary ? (
+              <p className="text-[11px] leading-relaxed text-ink-dim">
+                Baseline average position {pitchHeight(baselineSummary.meanHeight)} · comparison average {pitchHeight(selectedSummary.meanHeight)}. Both scopes use identical 12×8 bins for State Delta Map comparison.
               </p>
             ) : null}
-            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[8px] uppercase tracking-[0.1em] text-ink-dim" aria-label="Defensive event family composition">
-              {evidence.familyComposition.filter(row => row.count > 0).map(row => (
-                <span key={row.family}>{familyLabel(row.family)} {row.count}</span>
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] uppercase tracking-[0.08em] text-ink-dim" aria-label="Defensive event family composition">
+              {evidence.familyComposition.filter(row => selectedFamilies.includes(row.family) && row.count > 0).map(row => (
+                <span key={row.family}>{ACTION_FAMILIES.find(option => option.value === row.family)!.label} {row.count}</span>
               ))}
             </div>
-            <p className="text-[9px] leading-relaxed text-gold">{evidence.disclaimer}</p>
+            <p className="text-[11px] leading-relaxed text-gold">{evidence.disclaimer}</p>
           </aside>
         </div>
       </EventPitchStage>
