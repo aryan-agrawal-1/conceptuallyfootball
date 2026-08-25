@@ -5,6 +5,7 @@ import type {
   DefensiveTerritoryEvidence,
   TeamDefensiveTerritoryPayload,
 } from '../../types/eventMaps'
+import type { EventMapExportContext } from '../../lib/eventMaps/exportContext'
 import { PortraitPitch } from './PortraitPitch'
 import {
   EventMapCard,
@@ -116,6 +117,7 @@ export function DefensiveTerritoryMap({
   loading,
   error,
   retry,
+  exportContext,
   expanded,
   onExpandedChange,
 }: {
@@ -123,6 +125,7 @@ export function DefensiveTerritoryMap({
   loading: boolean
   error?: string
   retry: () => void
+  exportContext: EventMapExportContext
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
 }) {
@@ -143,6 +146,15 @@ export function DefensiveTerritoryMap({
       title="Defensive action territory"
       description="Choose the action types to map. Positions run from the team's own goal (0) to the opponent's goal (100)."
       controls={<DefensiveActionSelect selected={selectedFamilies} onChange={setSelectedFamilies} />}
+      exportContext={{
+        ...exportContext,
+        filters: [...exportContext.filters, {
+          label: 'Defensive actions',
+          value: selectedFamilies.length === ACTION_FAMILIES.length
+            ? 'All action types'
+            : selectedFamilies.map(family => ACTION_FAMILIES.find(option => option.value === family)!.label).join(' · '),
+        }],
+      }}
       expanded={expanded}
       onExpandedChange={onExpandedChange}
     >

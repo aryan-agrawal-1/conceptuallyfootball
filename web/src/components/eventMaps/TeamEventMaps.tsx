@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { fetchTeamDefensiveTerritory, fetchTeamEventProfile, fetchTeamShotPressure } from '../../lib/eventMaps/api'
+import { eventMatchExportLabel, type EventMapExportContext } from '../../lib/eventMaps/exportContext'
 import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
-import type { ActionGridCell, EventShot, ShotPressurePenaltyMode } from '../../types/eventMaps'
+import type { ActionGridCell, EventShot, ShotPressurePenaltyMode, StateLensMetadata } from '../../types/eventMaps'
 import { PortraitPitch } from './PortraitPitch'
 import {
   EventMapCard, EventMapNotice, EventMatchFilter,
@@ -53,6 +54,35 @@ function percentage(numerator: number | undefined, denominator: number | undefin
   return `${((numerator / denominator) * 100).toFixed(1)}%`
 }
 
+function scopeLabel(value: string) {
+  return value.replaceAll('_', ' ').replace(/^./, character => character.toUpperCase())
+}
+
+function stateExportFilters(metadata: StateLensMetadata): EventMapExportContext['filters'] {
+  const selected = metadata.selected
+  const filters: EventMapExportContext['filters'] = [
+    { label: 'Game state', value: selected.state === 'all' ? 'All states' : scopeLabel(selected.state) },
+  ]
+
+  if (selected.goalDifference != null) {
+    filters.push({ label: 'Goal difference', value: selected.goalDifference > 0 ? `+${selected.goalDifference}` : String(selected.goalDifference) })
+  }
+  if (selected.phase) filters.push({ label: 'Match phase', value: scopeLabel(selected.phase) })
+  if (selected.drawProvenance) filters.push({ label: 'State provenance', value: scopeLabel(selected.drawProvenance) })
+  if (selected.minimumStateAgeSeconds != null || selected.maximumStateAgeSeconds != null) {
+    const minimum = selected.minimumStateAgeSeconds ?? 0
+    const maximum = selected.maximumStateAgeSeconds == null ? 'No limit' : `${selected.maximumStateAgeSeconds}s`
+    filters.push({ label: 'Time in state', value: `${minimum}s – ${maximum}` })
+  }
+  if (metadata.comparison.enabled && metadata.comparison.baseline) {
+    const baseline = metadata.comparison.baseline.state
+    filters.push({ label: 'Baseline', value: baseline === 'all' ? 'All states' : scopeLabel(baseline) })
+  }
+  filters.push({ label: 'State exposure', value: `${metadata.evidence.exposureMinutes.toLocaleString()} min · ${metadata.evidence.matchCount.toLocaleString()} matches` })
+
+  return filters
+}
+
 export function TeamEventMaps({ teamId, competition, season }: {
   teamId: number
   competition: string
@@ -97,6 +127,16 @@ export function TeamEventMaps({ teamId, competition, season }: {
   const shotsFor = profile.shots.filter(shot => shot.perspective === 'for' && includesShotForPenaltyMode(shot, penaltyMode))
   const shotsAgainst = profile.shots.filter(shot => shot.perspective === 'against' && includesShotForPenaltyMode(shot, penaltyMode))
   const sharedShotPitchView = shotPitchView([...shotsFor, ...shotsAgainst])
+  const exportContext: EventMapExportContext = {
+    subjectName: profile.teamName,
+    subjectType: 'Team',
+    competition,
+    season,
+    filters: [
+      { label: 'Match', value: eventMatchExportLabel(profile.matches, matchRef) },
+      ...stateExportFilters(profile.stateLens),
+    ],
+  }
 
   const shotDensity = (kind: 'for' | 'against'): ActionGridCell[] => (
     shotPressureQuery.data?.selected.location[kind].cells.map(cell => ({
@@ -111,7 +151,10 @@ export function TeamEventMaps({ teamId, competition, season }: {
   const shotCard = (kind: 'for' | 'against', shots: EventShot[], map: TeamMap) => {
     const title = kind === 'for' ? 'Shots for' : 'Shots against'
     return (
-      <EventMapCard key={map} expanded={expanded === map} onExpandedChange={next => setExpanded(next ? map : null)} title={title} description={sharedShotPitchView === 'attacking-half' ? 'Attacking half shown for both maps; all selected shots originate beyond halfway.' : 'Both maps use the full pitch so their territories stay directly comparable.'} footer={(
+      <EventMapCard key={map} expanded={expanded === map} onExpandedChange={next => setExpanded(next ? map : null)} title={title} description={sharedShotPitchView === 'attacking-half' ? 'Attacking half shown for both maps; all selected shots originate beyond halfway.' : 'Both maps use the full pitch so their territories stay directly comparable.'} exportContext={{
+        ...exportContext,
+        filters: [...exportContext.filters, { label: 'Penalties', value: penaltyMode === 'exclude' ? 'Excluded' : penaltyMode === 'include' ? 'Included' : 'Penalties only' }],
+      }} footer={(
         <div className="space-y-2">
           <ShotMapLegend />
           <p className="text-[10px] text-ink-dim">Blue heat = relative shot-location density for this state scope.</p>
@@ -168,7 +211,7 @@ export function TeamEventMaps({ teamId, competition, season }: {
         </div>
       ) : null}
 
-      <div className="mb-2 flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-line-bright py-2">
+      <div className="mb-2 flex flex-wrap items-center gap-x-6 gap-y-2 py-2">
         {headlineStats.map(([label, value]) => <p key={label as string} className="text-[10px] text-ink-dim"><span className="mr-1.5 uppercase tracking-[0.1em]">{label}</span><strong className="font-mono text-[13px] font-normal text-ink">{typeof value === 'number' ? value.toLocaleString() : value ?? '—'}</strong></p>)}
         <p className="ml-auto text-[10px] text-ink-dim">Coverage <span className={profile.coverage.complete ? 'text-mint' : 'text-gold'}>{profile.coverage.matchesIncluded}/{profile.coverage.matchesExpected || '—'} matches</span></p>
       </div>
@@ -194,6 +237,7 @@ export function TeamEventMaps({ teamId, competition, season }: {
           season={season}
           matchRef={matchRef}
           stateLens={lensRequest}
+          exportContext={exportContext}
           expanded={expanded === 'flow'}
           onExpandedChange={next => setExpanded(next ? 'flow' : null)}
         /> : null}
@@ -203,6 +247,7 @@ export function TeamEventMaps({ teamId, competition, season }: {
           loading={defensiveQuery.isLoading}
           error={defensiveQuery.error?.message}
           retry={() => defensiveQuery.refetch()}
+          exportContext={exportContext}
           expanded={expanded === 'defensive-territory'}
           onExpandedChange={next => setExpanded(next ? 'defensive-territory' : null)}
         /> : null}

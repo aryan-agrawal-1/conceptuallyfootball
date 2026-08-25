@@ -8,8 +8,10 @@ import type {
   EventShot,
 } from '../../types/eventMaps'
 import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
+import type { EventMapExportContext } from '../../lib/eventMaps/exportContext'
 import { goalZone, goalZoneLabel } from '../../lib/eventMaps/goalMouth'
 import { cn } from '../../lib/utils'
+import { ChartShareCard } from '../visualizer/ChartShareCard'
 
 export type EventMapViewOption<T extends string> = {
   value: T
@@ -58,6 +60,7 @@ export function EventMapCard({
   expanded,
   onExpandedChange,
   className,
+  exportContext,
 }: {
   title: string
   description: string
@@ -67,6 +70,7 @@ export function EventMapCard({
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
   className?: string
+  exportContext: EventMapExportContext
 }) {
   return (
     <article className={cn('flex min-w-0 flex-col border border-line-bright bg-panel', className)}>
@@ -92,7 +96,19 @@ export function EventMapCard({
       <div className="flex min-h-0 flex-1 items-center justify-center bg-mat p-2 sm:p-2.5">
         {children}
       </div>
-      {footer ? <footer className="border-t border-line-bright px-3 py-2.5">{footer}</footer> : null}
+      <footer className="border-t border-line-bright px-3 py-2.5">
+        {footer ? <div className="mb-3">{footer}</div> : null}
+        <ChartShareCard
+          title={`${exportContext.subjectName} · ${title}`}
+          subtitle={description}
+          contextLabel={`${exportContext.subjectType} Event Map · ${exportContext.competition} · ${exportContext.season}`}
+          fileName={`${exportContext.subjectName}-${title}-${exportContext.competition}-${exportContext.season}`}
+          contextDetails={exportContext.filters}
+          copyUrl={typeof window === 'undefined' ? undefined : window.location.href}
+          renderContent={() => <div className="w-full">{children}</div>}
+          renderExportLegend={footer ? () => <div className="px-2">{footer}</div> : undefined}
+        />
+      </footer>
     </article>
   )
 }

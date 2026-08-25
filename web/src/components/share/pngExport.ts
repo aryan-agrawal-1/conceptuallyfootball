@@ -1,3 +1,5 @@
+import { getFontEmbedCSS, toBlob } from 'html-to-image'
+
 export const PNG_MIME_TYPE = 'image/png'
 export const PNG_TARGET_BYTES = 1_000_000
 
@@ -181,13 +183,11 @@ async function browserCapture(
   node: HTMLElement,
   options: PngCaptureOptions,
 ): Promise<Blob | null> {
-  const { toBlob } = await import('html-to-image')
   return toBlob(node, options)
 }
 
 async function reusableFontCss(node: HTMLElement): Promise<string | undefined> {
   try {
-    const { getFontEmbedCSS } = await import('html-to-image')
     return await getFontEmbedCSS(node)
   } catch {
     // html-to-image can still embed fonts during capture if precomputation is

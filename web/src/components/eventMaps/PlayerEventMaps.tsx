@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ChevronDown } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { fetchGkShotZones, fetchPlayerEventProfile, fetchPlayerPassMap, fetchPlayerShotZones } from '../../lib/eventMaps/api'
+import { eventMatchExportLabel, type EventMapExportContext } from '../../lib/eventMaps/exportContext'
 import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
 import type { PlayerPassFilter, PlayerPassOutcome, ShotOutcome, ShotZoneVariantKey } from '../../types/eventMaps'
 import { PortraitPitch } from './PortraitPitch'
@@ -218,6 +219,21 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
     </EventMapNotice>
   }
 
+  const exportContext: EventMapExportContext = {
+    subjectName: profile.playerName,
+    subjectType: 'Player',
+    competition,
+    season,
+    filters: [
+      { label: 'Match', value: eventMatchExportLabel(profile.matches, matchRef) },
+      { label: 'Team', value: profile.teamName ?? (teams.length === 1 ? teams[0].name : 'All teams') },
+    ],
+  }
+  const mapExportContext = (filters: EventMapExportContext['filters'] = []): EventMapExportContext => ({
+    ...exportContext,
+    filters: [...exportContext.filters, ...filters],
+  })
+
   return (
     <section aria-label="Player event maps" className="relative">
       <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-stretch">
@@ -244,7 +260,11 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
 
       <div className="grid gap-3 lg:grid-cols-12">
         {profile.modules.passMap.available ? (
-          <EventMapCard className={isGoalkeeper ? 'lg:col-span-12' : 'lg:col-span-6'} expanded={expanded === 'passes'} onExpandedChange={next => setExpanded(next ? 'passes' : null)} title="Pass & carry map" description={passMapDescription} controls={(
+          <EventMapCard className={isGoalkeeper ? 'lg:col-span-12' : 'lg:col-span-6'} expanded={expanded === 'passes'} onExpandedChange={next => setExpanded(next ? 'passes' : null)} title="Pass & carry map" description={passMapDescription} exportContext={mapExportContext([
+            { label: 'Layers', value: PASS_MAP_LAYERS.find(layer => layer.value === passMapLayer)?.label ?? passMapLayer },
+            { label: 'Category', value: PASS_FILTERS.find(filter => filter.value === passFilter)?.label ?? passFilter },
+            ...(passMapLayer === 'carries' ? [] : [{ label: 'Pass outcome', value: PASS_OUTCOMES.find(outcome => outcome.value === passOutcome)?.label ?? passOutcome }]),
+          ])} controls={(
             <EventMapViewTabs
               value={passMapLayer}
               options={PASS_MAP_LAYERS}
@@ -299,7 +319,10 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
         ) : null}
 
         {profile.modules.shotMap.available ? (
-          <EventMapCard className="lg:col-span-6" expanded={expanded === 'shots'} onExpandedChange={next => setExpanded(next ? 'shots' : null)} title="Shot map" description={shotMapDescription} controls={(
+          <EventMapCard className="lg:col-span-6" expanded={expanded === 'shots'} onExpandedChange={next => setExpanded(next ? 'shots' : null)} title="Shot map" description={shotMapDescription} exportContext={mapExportContext([
+            { label: 'Outcome', value: SHOT_OUTCOME_FILTERS.find(outcome => outcome.value === shotOutcome)?.label ?? shotOutcome },
+            { label: 'Chance', value: SHOT_CHANCE_FILTERS.find(chance => chance.value === shotChance)?.label ?? shotChance },
+          ])} controls={(
             <ShotMapFilters
               outcome={shotOutcome}
               chance={shotChance}
@@ -319,7 +342,9 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
         ) : null}
 
         {!isGoalkeeper && profile.modules.shotMap.available ? (
-          <EventMapCard className="lg:col-span-6" expanded={expanded === 'zones'} onExpandedChange={next => setExpanded(next ? 'zones' : null)} title="Shooting zones" description={`Where ${profile.playerName}'s on-target shots end up in the goal, split into a 3×2 grid. Blocked and off-target shots are excluded.`} controls={(
+          <EventMapCard className="lg:col-span-6" expanded={expanded === 'zones'} onExpandedChange={next => setExpanded(next ? 'zones' : null)} title="Shooting zones" description={`Where ${profile.playerName}'s on-target shots end up in the goal, split into a 3×2 grid. Blocked and off-target shots are excluded.`} exportContext={mapExportContext([
+            { label: 'Shot scope', value: PENALTY_OPTIONS.find(option => option.value === shotPenalties)?.label ?? shotPenalties },
+          ])} controls={(
             <PenaltyToggle value={shotPenalties} onChange={setShotPenalties} />
           )} footer={
             shotZonesQuery.data ? (
@@ -346,7 +371,9 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
         ) : null}
 
         {isGoalkeeper ? (
-          <EventMapCard className="lg:col-span-6" expanded={expanded === 'gk-zones'} onExpandedChange={next => setExpanded(next ? 'gk-zones' : null)} title="Shot-facing zones" description="Where opponents' on-target shots were aimed at this goalkeeper's goal, with save rates per zone." controls={(
+          <EventMapCard className="lg:col-span-6" expanded={expanded === 'gk-zones'} onExpandedChange={next => setExpanded(next ? 'gk-zones' : null)} title="Shot-facing zones" description="Where opponents' on-target shots were aimed at this goalkeeper's goal, with save rates per zone." exportContext={mapExportContext([
+            { label: 'Shot scope', value: PENALTY_OPTIONS.find(option => option.value === shotPenalties)?.label ?? shotPenalties },
+          ])} controls={(
             <PenaltyToggle value={shotPenalties} onChange={setShotPenalties} />
           )} footer={(
             <div className="space-y-2">
@@ -382,7 +409,7 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
         ) : null}
 
         {locatedTouchCount > 0 || matchRef !== null ? (
-          <EventMapCard className="lg:col-span-6" expanded={expanded === 'actions'} onExpandedChange={next => setExpanded(next ? 'actions' : null)} title="Touch heatmap" description="Smoothed density of located touches only, with the average touch position overlaid." footer={(
+          <EventMapCard className="lg:col-span-6" expanded={expanded === 'actions'} onExpandedChange={next => setExpanded(next ? 'actions' : null)} title="Touch heatmap" description="Smoothed density of located touches only, with the average touch position overlaid." exportContext={mapExportContext()} footer={(
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-3 text-[8px] font-bold uppercase tracking-[0.1em] text-ink-dim">
               <span className="inline-flex items-center gap-1.5"><span className="size-3 rounded-full bg-mint/55 blur-[2px]" aria-hidden /> Higher touch density</span>

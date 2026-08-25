@@ -108,6 +108,9 @@ export type TeamPassFlow = {
   incompleteCount?: number
   attemptsPerStateMinute?: number | null
   completionRate?: number | null
+  gameState?: 'winning' | 'drawing' | 'losing'
+  color?: string
+  comparisonLane?: number
 }
 
 export type PassStateCategory = {
