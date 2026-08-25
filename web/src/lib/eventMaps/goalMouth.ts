@@ -12,7 +12,6 @@ export const GOAL_CROSSBAR_Z = 38
 // Boundary between the low and high bands: the halfway height of the goal.
 export const GOAL_Z_LOW_MAX = GOAL_CROSSBAR_Z / 2
 export const GOAL_COLUMNS = 3
-export const GOAL_ROWS = 2
 
 export type GoalZone = {
   column: number

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections import Counter
 
-from django.apps import apps
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Sum
 from rest_framework import status
@@ -12,14 +11,17 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ingestion.derived_api import _resolve_competition_season
+from ingestion.models import (
+    CanonicalPlayer,
+    PlayerSeasonDerivedStats,
+    PlayerSeasonGkDerivedStats,
+    ProviderMatchPlayerParticipation,
+    ProviderMatchPlayerStateExposure,
+)
 from ingestion.services.player_participation import (
     PARTICIPATION_FORMULA_VERSION,
     PLAYER_STATE_EXPOSURE_FORMULA_VERSION,
 )
-
-
-def model(name: str):
-    return apps.get_model("ingestion", name)
 
 
 def optional_team_id(request) -> int | None:
@@ -56,8 +58,6 @@ def public_match(
 
 
 def player_has_public_season(competition_season, player_id: int) -> bool:
-    PlayerSeasonDerivedStats = model("PlayerSeasonDerivedStats")
-    PlayerSeasonGkDerivedStats = model("PlayerSeasonGkDerivedStats")
     filters = {
         "competition_season": competition_season,
         "canonical_player_id": player_id,
@@ -75,12 +75,8 @@ def build_player_state_exposure_payload(
     *,
     team_id: int | None = None,
 ) -> dict:
-    CanonicalPlayer = model("CanonicalPlayer")
-    Participation = model("ProviderMatchPlayerParticipation")
-    Exposure = model("ProviderMatchPlayerStateExposure")
-
     player = CanonicalPlayer.objects.get(pk=canonical_player_id)
-    participations = Participation.objects.filter(
+    participations = ProviderMatchPlayerParticipation.objects.filter(
         provider_match__competition_season=competition_season,
         player_id=canonical_player_id,
     ).select_related(
@@ -95,9 +91,9 @@ def build_player_state_exposure_payload(
         participations.order_by("provider_match__kickoff_at", "provider_match_id", "id")
     )
     if not participation_rows:
-        raise Participation.DoesNotExist
+        raise ProviderMatchPlayerParticipation.DoesNotExist
 
-    exposures = Exposure.objects.filter(
+    exposures = ProviderMatchPlayerStateExposure.objects.filter(
         player_interval__participation__in=participation_rows,
         player_interval__participation__status="verified",
         player_interval__confidence="verified",
@@ -221,13 +217,11 @@ def build_player_state_exposure_payload(
 
 class PlayerStateExposureApi(APIView):
     def get(self, request, canonical_player_id: int):
-        Participation = model("ProviderMatchPlayerParticipation")
-        CanonicalPlayer = model("CanonicalPlayer")
         try:
             competition_season = _resolve_competition_season(request)
             team_id = optional_team_id(request)
             if not player_has_public_season(competition_season, canonical_player_id):
-                raise Participation.DoesNotExist
+                raise ProviderMatchPlayerParticipation.DoesNotExist
             payload = build_player_state_exposure_payload(
                 competition_season,
                 canonical_player_id,
@@ -236,7 +230,10 @@ class PlayerStateExposureApi(APIView):
             return Response(payload)
         except DjangoValidationError as error:
             return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
-        except (Participation.DoesNotExist, CanonicalPlayer.DoesNotExist):
+        except (
+            ProviderMatchPlayerParticipation.DoesNotExist,
+            CanonicalPlayer.DoesNotExist,
+        ):
             return Response(
                 {"detail": "Public player state exposure not found."},
                 status=status.HTTP_404_NOT_FOUND,

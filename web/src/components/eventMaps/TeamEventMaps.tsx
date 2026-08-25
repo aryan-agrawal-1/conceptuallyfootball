@@ -240,8 +240,13 @@ export function TeamEventMaps({ teamId, competition, season }: {
           stateLens={lensRequest}
           onComparisonChange={enabled => {
             const next = new URLSearchParams(searchParams)
-            if (enabled) next.set('baseline_state', 'all')
-            else Array.from(next.keys()).filter(key => key.startsWith('baseline_')).forEach(key => next.delete(key))
+            if (enabled) {
+              next.set('baseline_state', 'all')
+            } else {
+              for (const key of Array.from(next.keys())) {
+                if (key.startsWith('baseline_')) next.delete(key)
+              }
+            }
             setLensParams(next)
           }}
           exportContext={exportContext}

@@ -74,12 +74,6 @@ def empty_cells() -> dict[tuple[int, int], dict]:
     }
 
 
-def _is_penalty(placement: ShotPlacement) -> bool:
-    return (
-        placement.situation == MatchEventShotSituation.PENALTY
-    )
-
-
 def shooter_variant(placements: Sequence[ShotPlacement]) -> dict:
     """Aggregate shots for one filter variant (all vs penalties excluded)."""
     cells = empty_cells()
@@ -187,10 +181,14 @@ def split_variants(
 ) -> dict[str, dict]:
     values = list(placements)
     open_play = [
-        placement for placement in values if not _is_penalty(placement)
+        placement
+        for placement in values
+        if placement.situation != MatchEventShotSituation.PENALTY
     ]
     penalties_only = [
-        placement for placement in values if _is_penalty(placement)
+        placement
+        for placement in values
+        if placement.situation == MatchEventShotSituation.PENALTY
     ]
     return {
         "all": aggregator(values),

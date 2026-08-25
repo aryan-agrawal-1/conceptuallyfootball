@@ -10,6 +10,12 @@ function displayLabel(value: string) {
   return value.replaceAll('_', ' ').replace(/^./, character => character.toUpperCase())
 }
 
+function withCurrent<T extends string | number>(values: T[] | undefined, current: string) {
+  const result: Array<string | number> = [...(values ?? [])]
+  if (current !== '' && !result.some(value => String(value) === current)) result.push(current)
+  return result
+}
+
 export function StateLensControls({ metadata, searchParams, onChange, compact = false }: {
   metadata?: StateLensMetadata
   searchParams: URLSearchParams
@@ -30,12 +36,6 @@ export function StateLensControls({ metadata, searchParams, onChange, compact = 
     else next.set(field, value)
     onChange(next)
   }
-  const withCurrent = <T extends string | number>(values: T[] | undefined, current: string) => {
-    const result: Array<string | number> = [...(values ?? [])]
-    if (current !== '' && !result.some(value => String(value) === current)) result.push(current)
-    return result
-  }
-
   return (
     <fieldset className={`border border-line-bright bg-panel px-3 pb-3 pt-2 shadow-[0_12px_32px_rgba(0,0,0,0.18)] ${compact ? 'shadow-2xl' : ''}`}>
       <legend className="px-1 text-[9px] font-bold uppercase tracking-[0.18em] text-electric">State Lens</legend>

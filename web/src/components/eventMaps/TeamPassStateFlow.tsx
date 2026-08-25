@@ -21,6 +21,12 @@ function comparisonGameState(value: string): TeamPassFlow['gameState'] {
     : undefined
 }
 
+function labelForState(value: string) {
+  return value === 'all'
+    ? 'All states'
+    : value.replace(/^./, character => character.toUpperCase())
+}
+
 function EvidenceBands({ title, rows }: { title: string; rows: PassStateCategory[] }) {
   return (
     <div>
@@ -81,9 +87,6 @@ export function TeamPassStateFlow({
   const summary = evidence.summary
   const selectedState = stateLens.state ?? 'all'
   const baselineState = stateLens.baseline_state ?? 'all'
-  const labelForState = (value: string) => value === 'all'
-    ? 'All states'
-    : value.replace(/^./, character => character.toUpperCase())
   const comparisons = [
     { key: 'selected', state: selectedState, label: labelForState(selectedState), color: '#4A9EF5', lane: -1, evidence },
     { key: 'baseline', state: baselineState, label: labelForState(baselineState), color: '#EF5C66', lane: 1, evidence: payload.baseline },

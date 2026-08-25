@@ -11,9 +11,22 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping, Sequence
 
-from django.apps import apps
 from django.db import transaction
 from django.utils import timezone
+
+from ingestion.models import (
+    ProviderMatch,
+    ProviderMatchEvent,
+    ProviderMatchPayload,
+    ProviderMatchPlayedPeriod,
+    ProviderMatchPlayerInterval,
+    ProviderMatchPlayerParticipation,
+    ProviderMatchPlayerParticipationBuild,
+    ProviderMatchPlayerStateExposure,
+    ProviderMatchTeamGameStateEpisode,
+    ProviderPlayerMapping,
+    ProviderTeamMapping,
+)
 
 
 PARTICIPATION_FORMULA_VERSION = "player_participation_v1"
@@ -576,18 +589,12 @@ def split_exposure_by_state_age(
     ]
 
 
-def model(name: str):
-    return apps.get_model("ingestion", name)
-
-
 def canonical_identity_maps(
     provider_match,
     *,
     provider_player_ids: Iterable[str],
     provider_team_ids: Iterable[str],
 ):
-    ProviderPlayerMapping = model("ProviderPlayerMapping")
-    ProviderTeamMapping = model("ProviderTeamMapping")
     player_ids = set(provider_player_ids)
     team_ids = set(provider_team_ids)
     player_map = dict(
@@ -614,30 +621,25 @@ def materialize_match_player_participation(
     calculated_at=None,
 ):
     """Transactionally replace one match's participation and exposure rows."""
-    ProviderMatch = model("ProviderMatch")
-    PlayedPeriod = model("ProviderMatchPlayedPeriod")
-    Event = model("ProviderMatchEvent")
-    Build = model("ProviderMatchPlayerParticipationBuild")
-    Participation = model("ProviderMatchPlayerParticipation")
-    Interval = model("ProviderMatchPlayerInterval")
-
     locked_match = ProviderMatch.objects.select_for_update().get(pk=provider_match.pk)
     normalized_lineup = [
         normalize_lineup_player(value, index)
         for index, value in enumerate(lineup_players)
     ]
     periods = list(
-        PlayedPeriod.objects.filter(provider_match=locked_match).order_by(
+        ProviderMatchPlayedPeriod.objects.filter(provider_match=locked_match).order_by(
             "period_index"
         )
     )
     if not periods:
-        Build.objects.filter(provider_match=locked_match).delete()
+        ProviderMatchPlayerParticipationBuild.objects.filter(
+            provider_match=locked_match
+        ).delete()
         try:
             payload = locked_match.payload
-        except model("ProviderMatchPayload").DoesNotExist:
+        except ProviderMatchPayload.DoesNotExist:
             payload = None
-        build = Build.objects.create(
+        build = ProviderMatchPlayerParticipationBuild.objects.create(
             provider_match=locked_match,
             status="excluded" if normalized_lineup else "no_lineup",
             formula_version=PARTICIPATION_FORMULA_VERSION,
@@ -658,9 +660,9 @@ def materialize_match_player_participation(
             provider_player_ids=(item.provider_player_id for item in normalized_lineup),
             provider_team_ids=(item.provider_team_id for item in normalized_lineup),
         )
-        Participation.objects.bulk_create(
+        ProviderMatchPlayerParticipation.objects.bulk_create(
             [
-                Participation(
+                ProviderMatchPlayerParticipation(
                     build=build,
                     provider_match=locked_match,
                     provider_team_id=item.provider_team_id,
@@ -693,7 +695,9 @@ def materialize_match_player_participation(
     event_rows = list(
         events
         if events is not None
-        else Event.objects.filter(provider_match=locked_match).order_by("event_index")
+        else ProviderMatchEvent.objects.filter(provider_match=locked_match).order_by(
+            "event_index"
+        )
     )
     reconstruction = reconstruct_player_intervals(
         lineup_players=normalized_lineup,
@@ -706,13 +710,15 @@ def materialize_match_player_participation(
         ),
     )
 
-    Build.objects.filter(provider_match=locked_match).delete()
+    ProviderMatchPlayerParticipationBuild.objects.filter(
+        provider_match=locked_match
+    ).delete()
     try:
         payload = locked_match.payload
-    except model("ProviderMatchPayload").DoesNotExist:
+    except ProviderMatchPayload.DoesNotExist:
         payload = None
     clock_version = "+".join(sorted({period.calculation_version for period in periods}))
-    build = Build.objects.create(
+    build = ProviderMatchPlayerParticipationBuild.objects.create(
         provider_match=locked_match,
         status=reconstruction.status,
         formula_version=PARTICIPATION_FORMULA_VERSION,
@@ -750,7 +756,7 @@ def materialize_match_player_participation(
     )
     stored_participants = []
     for draft in reconstruction.participants:
-        participant = Participation.objects.create(
+        participant = ProviderMatchPlayerParticipation.objects.create(
             build=build,
             provider_match=locked_match,
             provider_team_id=draft.provider_team_id,
@@ -772,7 +778,7 @@ def materialize_match_player_participation(
     interval_rows = []
     for participant, draft in stored_participants:
         interval_rows.extend(
-            Interval(
+            ProviderMatchPlayerInterval(
                 participation=participant,
                 sequence=sequence,
                 start_second=item.start_second,
@@ -792,23 +798,18 @@ def materialize_match_player_participation(
             for sequence, item in enumerate(draft.intervals)
         )
     if interval_rows:
-        Interval.objects.bulk_create(interval_rows, batch_size=1000)
+        ProviderMatchPlayerInterval.objects.bulk_create(interval_rows, batch_size=1000)
     rebuild_match_player_state_exposure(locked_match)
     return build
 
 
 def rebuild_match_player_state_exposure(provider_match) -> int:
     """Replace eligible player/episode intersections for one locked match."""
-    Interval = model("ProviderMatchPlayerInterval")
-    Exposure = model("ProviderMatchPlayerStateExposure")
-    Episode = model("ProviderMatchTeamGameStateEpisode")
-    Build = model("ProviderMatchPlayerParticipationBuild")
-
-    Exposure.objects.filter(
+    ProviderMatchPlayerStateExposure.objects.filter(
         player_interval__participation__provider_match=provider_match
     ).delete()
     intervals = list(
-        Interval.objects.filter(
+        ProviderMatchPlayerInterval.objects.filter(
             participation__provider_match=provider_match,
             participation__status="verified",
             participation__team__isnull=False,
@@ -818,7 +819,9 @@ def rebuild_match_player_state_exposure(provider_match) -> int:
     )
     episodes_by_team: dict[int, list[Any]] = defaultdict(list)
     episodes = list(
-        Episode.objects.filter(provider_match=provider_match).order_by(
+        ProviderMatchTeamGameStateEpisode.objects.filter(
+            provider_match=provider_match
+        ).order_by(
             "focal_team_id", "episode_index"
         )
     )
@@ -826,7 +829,9 @@ def rebuild_match_player_state_exposure(provider_match) -> int:
         episodes_by_team[episode.focal_team_id].append(episode)
 
     versions = sorted({episode.calculation_version for episode in episodes})
-    Build.objects.filter(provider_match=provider_match).update(
+    ProviderMatchPlayerParticipationBuild.objects.filter(
+        provider_match=provider_match
+    ).update(
         team_episode_version="+".join(versions)
     )
     rows = []
@@ -849,7 +854,7 @@ def rebuild_match_player_state_exposure(provider_match) -> int:
                 episode_state_age_at_start=episode.state_age_seconds_at_start,
             ):
                 rows.append(
-                    Exposure(
+                    ProviderMatchPlayerStateExposure(
                         player_interval=interval,
                         team_episode=episode,
                         start_second=segment_start,
@@ -866,5 +871,5 @@ def rebuild_match_player_state_exposure(provider_match) -> int:
                     )
                 )
     if rows:
-        Exposure.objects.bulk_create(rows, batch_size=1000)
+        ProviderMatchPlayerStateExposure.objects.bulk_create(rows, batch_size=1000)
     return len(rows)

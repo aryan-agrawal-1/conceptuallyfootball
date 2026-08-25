@@ -32,7 +32,12 @@ from ingestion.services.shot_pressure import (
     cohort_payload,
     penalty_mode_shots,
 )
-from ingestion.state_lens import parse_state_lens, scope_team_events, state_lens_metadata
+from ingestion.state_lens import (
+    build_state_lens_cohorts,
+    parse_state_lens,
+    scope_team_events,
+    state_lens_metadata,
+)
 
 
 SHOT_PRESSURE_API_VERSION = "v1"
@@ -126,14 +131,8 @@ class TeamShotPressureApi(APIView):
                 evidence=evidence,
             )
 
-        selected = build_cohort(lens.selected, lens_metadata["evidence"])
-        baseline = (
-            build_cohort(
-                lens.baseline,
-                lens_metadata["comparison"]["baseline_evidence"],
-            )
-            if lens.baseline is not None
-            else None
+        selected, baseline = build_state_lens_cohorts(
+            lens, lens_metadata, build_cohort
         )
         return {
             "contract_version": SHOT_PRESSURE_API_VERSION,

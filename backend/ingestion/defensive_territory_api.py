@@ -20,7 +20,12 @@ from ingestion.models import (
     TeamSeasonEventProfile,
 )
 from ingestion.services.defensive_territory import defensive_territory_payload
-from ingestion.state_lens import parse_state_lens, scope_team_events, state_lens_metadata
+from ingestion.state_lens import (
+    build_state_lens_cohorts,
+    parse_state_lens,
+    scope_team_events,
+    state_lens_metadata,
+)
 
 
 class TeamDefensiveTerritoryApi(APIView):
@@ -97,12 +102,7 @@ class TeamDefensiveTerritoryApi(APIView):
                 excluded_match_events=excluded_match_events,
             )
 
-        selected = build_scope(lens.selected, metadata["evidence"])
-        baseline = (
-            build_scope(lens.baseline, metadata["comparison"]["baseline_evidence"])
-            if lens.baseline is not None
-            else None
-        )
+        selected, baseline = build_state_lens_cohorts(lens, metadata, build_scope)
         return {
             "canonical_team_id": profile.team_id,
             "canonical_team_name": profile.team.name,

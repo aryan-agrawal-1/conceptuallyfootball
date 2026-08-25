@@ -305,18 +305,29 @@ def possession_values(provider_match: ProviderMatch, spec: PossessionSpec, index
         and sx is not None
         and sx <= COUNTER_MAX_START_X
     )
-    counter_events = [
-        event for event in controls
-        if event_second(event) - start_second <= COUNTER_WINDOW_SECONDS
-    ] if is_counter_launch else []
-    final_arrivals = [event for event in counter_events if (forward_location(event)[0] or 0) >= FINAL_THIRD_X]
+    counter_events = (
+        [
+            event
+            for event in controls
+            if event_second(event) - start_second <= COUNTER_WINDOW_SECONDS
+        ]
+        if is_counter_launch
+        else []
+    )
+    counter_locations = [
+        (event, *forward_location(event)) for event in counter_events
+    ]
+    final_arrivals = [
+        event for event, x, _ in counter_locations if (x or 0) >= FINAL_THIRD_X
+    ]
     box_arrivals = [
-        event for event in counter_events
-        if (forward_location(event)[0] or 0) >= BOX_X
-        and BOX_Y_MIN <= (forward_location(event)[1] if forward_location(event)[1] is not None else -1) <= BOX_Y_MAX
+        event
+        for event, x, y in counter_locations
+        if (x or 0) >= BOX_X
+        and BOX_Y_MIN <= (y if y is not None else -1) <= BOX_Y_MAX
     ]
     shots = [event for event in counter_events if event.event_type == MatchEventType.SHOT]
-    furthest_x = max([sx or 0] + [(forward_location(event)[0] or 0) for event in counter_events])
+    furthest_x = max([sx or 0] + [(x or 0) for _, x, _ in counter_locations])
     forward_units = max(0, furthest_x - (sx or furthest_x))
     qualifies = is_counter_launch and forward_units >= COUNTER_MIN_FORWARD_UNITS
     elapsed = max((event_second(event) - start_second for event in counter_events), default=0)
@@ -411,25 +422,34 @@ def replace_match_possessions(provider_match: ProviderMatch) -> int:
                     for sequence, event in enumerate(spec.events)
                 ]
             )
-            player_events = [
-                event for event in spec.events
-                if event.event_index in spec.control_event_indexes and event.provider_player_id
-            ]
-            counts = Counter(event.provider_player_id for event in player_events)
-            first = {event.provider_player_id: event for event in player_events}
+            participants = {}
+            for event in spec.events:
+                if (
+                    event.event_index not in spec.control_event_indexes
+                    or not event.provider_player_id
+                ):
+                    continue
+                participant = participants.setdefault(
+                    event.provider_player_id,
+                    {
+                        "player_id": event.player_id,
+                        "first_event_index": event.event_index,
+                        "action_count": 0,
+                    },
+                )
+                participant["player_id"] = event.player_id
+                participant["first_event_index"] = min(
+                    participant["first_event_index"], event.event_index
+                )
+                participant["action_count"] += 1
             ProviderMatchPossessionParticipant.objects.bulk_create(
                 [
                     ProviderMatchPossessionParticipant(
                         possession=possession,
                         provider_player_id=provider_player_id,
-                        player_id=first[provider_player_id].player_id,
-                        first_event_index=min(
-                            event.event_index for event in player_events
-                            if event.provider_player_id == provider_player_id
-                        ),
-                        action_count=count,
+                        **values,
                     )
-                    for provider_player_id, count in counts.items()
+                    for provider_player_id, values in participants.items()
                 ]
             )
     return len(result.possessions)

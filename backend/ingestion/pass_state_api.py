@@ -29,6 +29,7 @@ from ingestion.services.pass_state import (
     comparison_delta,
 )
 from ingestion.state_lens import (
+    build_state_lens_cohorts,
     parse_state_lens,
     scope_team_events,
     state_lens_metadata,
@@ -102,24 +103,24 @@ class TeamPassStateApi(APIView):
         # the State Lens default (`state=all`) scope.
         scoped = scoped.filter(provider_match__game_state__eligible=True)
         metadata = state_lens_metadata(profile.team_id, match_ids, lens)
-        selected = self.evidence(
-            scoped,
-            profile.team_id,
-            lens.selected,
-            metadata["evidence"]["exposure_seconds"],
-        )
-        comparison = None
-        if lens.comparison_enabled:
-            baseline = self.evidence(
+        selected, baseline = build_state_lens_cohorts(
+            lens,
+            metadata,
+            lambda scope, evidence: self.evidence(
                 scoped,
                 profile.team_id,
-                lens.baseline,
-                metadata["comparison"]["baseline_evidence"]["exposure_seconds"],
-            )
-            comparison = {
+                scope,
+                evidence["exposure_seconds"],
+            ),
+        )
+        comparison = (
+            {
                 "baseline": baseline,
                 "delta": comparison_delta(selected, baseline),
             }
+            if baseline is not None
+            else None
+        )
         return {
             "canonical_team_id": profile.team_id,
             "canonical_team_name": profile.team.name,

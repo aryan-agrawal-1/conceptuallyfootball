@@ -306,14 +306,22 @@ function markerClasses(tone: PitchMarker['tone']) {
   return 'fill-electric stroke-electric text-electric'
 }
 
+const EMPTY_PASSES: EventPass[] = []
+const EMPTY_CARRIES: EventCarry[] = []
+const EMPTY_SHOTS: EventShot[] = []
+const EMPTY_DENSITY_CELLS: ActionGridCell[] = []
+const EMPTY_FLOWS: TeamPassFlow[] = []
+const EMPTY_LABELS: PitchLabel[] = []
+const EMPTY_MARKERS: PitchMarker[] = []
+
 export const PortraitPitch = memo(function PortraitPitch({
-  passes = [],
-  carries = [],
-  shots = [],
-  densityCells = [],
-  flows = [],
-  labels = [],
-  markers = [],
+  passes = EMPTY_PASSES,
+  carries = EMPTY_CARRIES,
+  shots = EMPTY_SHOTS,
+  densityCells = EMPTY_DENSITY_CELLS,
+  flows = EMPTY_FLOWS,
+  labels = EMPTY_LABELS,
+  markers = EMPTY_MARKERS,
   selectedEventId: controlledSelectedEventId,
   onSelectedEventChange,
   ariaLabel = 'Portrait football pitch. The acting team attacks toward the top.',

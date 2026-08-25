@@ -321,12 +321,8 @@ class Season(models.Model):
 
 
 class CompetitionSeason(models.Model):
-    competition = models.ForeignKey(
-        Competition, on_delete=models.CASCADE, related_name="seasons"
-    )
-    season = models.ForeignKey(
-        Season, on_delete=models.CASCADE, related_name="competition_links"
-    )
+    competition = models.ForeignKey(Competition, on_delete=models.CASCADE, related_name="seasons")
+    season = models.ForeignKey(Season, on_delete=models.CASCADE, related_name="competition_links")
     player_data_mode = models.CharField(
         max_length=24,
         choices=PlayerDataMode.choices,
@@ -334,9 +330,7 @@ class CompetitionSeason(models.Model):
     )
     has_understat = models.BooleanField(default=True)
     has_sofascore = models.BooleanField(default=True)
-    understat_league = models.CharField(
-        max_length=32, blank=True, null=True, default="EPL"
-    )
+    understat_league = models.CharField(max_length=32, blank=True, null=True, default="EPL")
     understat_season_year = models.CharField(
         max_length=8,
         blank=True,
@@ -348,9 +342,7 @@ class CompetitionSeason(models.Model):
     has_whoscored = models.BooleanField(default=False)
     whoscored_league = models.CharField(max_length=32, blank=True, default="")
     whoscored_season = models.CharField(max_length=32, blank=True, default="")
-    whoscored_expected_match_count = models.PositiveSmallIntegerField(
-        null=True, blank=True
-    )
+    whoscored_expected_match_count = models.PositiveSmallIntegerField(null=True, blank=True)
     expected_team_count = models.PositiveSmallIntegerField(default=20)
     min_merged_team_count = models.PositiveSmallIntegerField(default=18)
     min_team_stats_coverage_count = models.PositiveSmallIntegerField(default=18)
@@ -376,9 +368,7 @@ class CompetitionSeason(models.Model):
 
     @property
     def supports_understat(self) -> bool:
-        return self.has_understat and bool(
-            self.understat_league and self.understat_season_year
-        )
+        return self.has_understat and bool(self.understat_league and self.understat_season_year)
 
     @property
     def supports_sofascore(self) -> bool:
@@ -390,9 +380,7 @@ class CompetitionSeason(models.Model):
 
     @property
     def supports_whoscored(self) -> bool:
-        return self.has_whoscored and bool(
-            self.whoscored_league and self.whoscored_season
-        )
+        return self.has_whoscored and bool(self.whoscored_league and self.whoscored_season)
 
     @property
     def requires_dual_provider_merge(self) -> bool:
@@ -459,9 +447,7 @@ class IngestionBatch(models.Model):
         ]
         indexes = [
             models.Index(fields=["kind", "status"], name="ing_batch_kind_status_idx"),
-            models.Index(
-                fields=["status", "planned_start_at"], name="ing_batch_status_start_idx"
-            ),
+            models.Index(fields=["status", "planned_start_at"], name="ing_batch_status_start_idx"),
         ]
 
     def __str__(self) -> str:
@@ -506,10 +492,7 @@ class IngestionBatchItem(models.Model):
         ]
         indexes = [
             models.Index(fields=["batch", "status"], name="ing_item_batch_status_idx"),
-            models.Index(
-                fields=["competition_season", "status"],
-                name="ing_item_slice_status_idx",
-            ),
+            models.Index(fields=["competition_season", "status"], name="ing_item_slice_status_idx"),
         ]
 
     def __str__(self) -> str:
@@ -529,10 +512,7 @@ class MaterializedApiPayload(models.Model):
 
     class Meta:
         indexes = [
-            models.Index(
-                fields=["cache_key", "source_version"],
-                name="ingestion_m_cache_k_9f2600_idx",
-            ),
+            models.Index(fields=["cache_key", "source_version"], name="ingestion_m_cache_k_9f2600_idx"),
             models.Index(fields=["updated_at"], name="ingestion_m_updated_9420a7_idx"),
         ]
 
@@ -547,12 +527,8 @@ class ReepPlayerRow(models.Model):
     full_name = models.CharField(max_length=200)
     position = models.CharField(max_length=64, blank=True)
     position_detail = models.CharField(max_length=128, blank=True)
-    understat_player_id = models.CharField(
-        max_length=64, null=True, blank=True, db_index=True
-    )
-    sofascore_player_id = models.CharField(
-        max_length=64, null=True, blank=True, db_index=True
-    )
+    understat_player_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
+    sofascore_player_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
     synced_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -576,12 +552,8 @@ class ReepPlayerRow(models.Model):
 class ReepTeamRow(models.Model):
     reep_id = models.CharField(max_length=128, unique=True, db_index=True)
     name = models.CharField(max_length=200)
-    understat_team_id = models.CharField(
-        max_length=64, null=True, blank=True, db_index=True
-    )
-    sofascore_team_id = models.CharField(
-        max_length=64, null=True, blank=True, db_index=True
-    )
+    understat_team_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
+    sofascore_team_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
     synced_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -603,9 +575,7 @@ class ReepTeamRow(models.Model):
 
 
 class CanonicalPlayer(models.Model):
-    reep_id = models.CharField(
-        max_length=128, null=True, blank=True, unique=True, db_index=True
-    )
+    reep_id = models.CharField(max_length=128, null=True, blank=True, unique=True, db_index=True)
     display_name = models.CharField(max_length=200)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -617,9 +587,7 @@ class CanonicalPlayer(models.Model):
 
 
 class CanonicalTeam(models.Model):
-    reep_id = models.CharField(
-        max_length=128, null=True, blank=True, unique=True, db_index=True
-    )
+    reep_id = models.CharField(max_length=128, null=True, blank=True, unique=True, db_index=True)
     name = models.CharField(max_length=200)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -655,9 +623,7 @@ class ProviderPlayerMapping(models.Model):
         ]
 
     def __str__(self) -> str:
-        return (
-            f"{self.provider} {self.provider_player_id} -> {self.canonical_player_id}"
-        )
+        return f"{self.provider} {self.provider_player_id} -> {self.canonical_player_id}"
 
 
 class ProviderTeamMapping(models.Model):
@@ -1152,14 +1118,8 @@ class ProviderMatchEvent(models.Model):
                 condition=(
                     (models.Q(x__isnull=True) | models.Q(x__gte=0, x__lte=10000))
                     & (models.Q(y__isnull=True) | models.Q(y__gte=0, y__lte=10000))
-                    & (
-                        models.Q(end_x__isnull=True)
-                        | models.Q(end_x__gte=0, end_x__lte=10000)
-                    )
-                    & (
-                        models.Q(end_y__isnull=True)
-                        | models.Q(end_y__gte=0, end_y__lte=10000)
-                    )
+                    & (models.Q(end_x__isnull=True) | models.Q(end_x__gte=0, end_x__lte=10000))
+                    & (models.Q(end_y__isnull=True) | models.Q(end_y__gte=0, end_y__lte=10000))
                     & (
                         models.Q(goal_mouth_y__isnull=True)
                         | models.Q(goal_mouth_y__gte=0, goal_mouth_y__lte=10000)
@@ -1796,12 +1756,8 @@ class PlayerSeasonEventProfile(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=(
-                    models.Q(
-                        split_type=EventProfileSplitType.SEASON_TOTAL, team__isnull=True
-                    )
-                    | models.Q(
-                        split_type=EventProfileSplitType.TEAM, team__isnull=False
-                    )
+                    models.Q(split_type=EventProfileSplitType.SEASON_TOTAL, team__isnull=True)
+                    | models.Q(split_type=EventProfileSplitType.TEAM, team__isnull=False)
                 ),
                 name="player_event_profile_scope",
             ),
@@ -2106,13 +2062,9 @@ class SofascoreTeamSeasonSource(models.Model):
     shots_against = models.PositiveIntegerField(null=True, blank=True)
     shots_on_target_against = models.PositiveIntegerField(null=True, blank=True)
     shots_from_inside_the_box = models.PositiveIntegerField(null=True, blank=True)
-    shots_from_inside_the_box_against = models.PositiveIntegerField(
-        null=True, blank=True
-    )
+    shots_from_inside_the_box_against = models.PositiveIntegerField(null=True, blank=True)
     shots_from_outside_the_box = models.PositiveIntegerField(null=True, blank=True)
-    shots_from_outside_the_box_against = models.PositiveIntegerField(
-        null=True, blank=True
-    )
+    shots_from_outside_the_box_against = models.PositiveIntegerField(null=True, blank=True)
     big_chances = models.PositiveIntegerField(null=True, blank=True)
     big_chances_against = models.PositiveIntegerField(null=True, blank=True)
     big_chances_created = models.PositiveIntegerField(null=True, blank=True)
@@ -2356,9 +2308,7 @@ class MergedPlayerSeason(models.Model):
     ss_appearances = models.PositiveIntegerField(null=True, blank=True)
     ss_big_chances_created = models.PositiveIntegerField(null=True, blank=True)
     ss_accurate_passes_percentage = models.FloatField(null=True, blank=True)
-    ss_saved_shots_from_inside_the_box = models.PositiveIntegerField(
-        null=True, blank=True
-    )
+    ss_saved_shots_from_inside_the_box = models.PositiveIntegerField(null=True, blank=True)
     ss_runs_out = models.PositiveIntegerField(null=True, blank=True)
 
     understat_ingestion_run = models.ForeignKey(
@@ -2454,13 +2404,9 @@ class MergedTeamSeason(models.Model):
     shots_against = models.PositiveIntegerField(null=True, blank=True)
     shots_on_target_against = models.PositiveIntegerField(null=True, blank=True)
     shots_from_inside_the_box = models.PositiveIntegerField(null=True, blank=True)
-    shots_from_inside_the_box_against = models.PositiveIntegerField(
-        null=True, blank=True
-    )
+    shots_from_inside_the_box_against = models.PositiveIntegerField(null=True, blank=True)
     shots_from_outside_the_box = models.PositiveIntegerField(null=True, blank=True)
-    shots_from_outside_the_box_against = models.PositiveIntegerField(
-        null=True, blank=True
-    )
+    shots_from_outside_the_box_against = models.PositiveIntegerField(null=True, blank=True)
     big_chances = models.PositiveIntegerField(null=True, blank=True)
     big_chances_against = models.PositiveIntegerField(null=True, blank=True)
     big_chances_created = models.PositiveIntegerField(null=True, blank=True)
@@ -2703,9 +2649,7 @@ class PlayerSeasonDerivedStats(models.Model):
     inaccurate_pass_rate_percentile = models.FloatField(null=True, blank=True)
 
     finishing_shrunk_delta_per_shot = models.FloatField(null=True, blank=True)
-    finishing_shrunk_delta_per_shot_percentile = models.FloatField(
-        null=True, blank=True
-    )
+    finishing_shrunk_delta_per_shot_percentile = models.FloatField(null=True, blank=True)
     sot_rate = models.FloatField(null=True, blank=True)
     sot_rate_percentile = models.FloatField(null=True, blank=True)
 

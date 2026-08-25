@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import hashlib
 import json
+from typing import TypeVar
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count, Q, QuerySet
@@ -39,6 +41,7 @@ SCOPE_FIELDS = (
     "minimum_state_age_seconds",
     "maximum_state_age_seconds",
 )
+Cohort = TypeVar("Cohort")
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,6 +226,20 @@ def state_lens_metadata(
             "comparison_evidence": selected_evidence,
         },
     }
+
+
+def build_state_lens_cohorts(
+    lens: StateLens,
+    metadata: dict,
+    builder: Callable[[StateLensScope, dict], Cohort],
+) -> tuple[Cohort, Cohort | None]:
+    selected = builder(lens.selected, metadata["evidence"])
+    baseline = (
+        builder(lens.baseline, metadata["comparison"]["baseline_evidence"])
+        if lens.baseline is not None
+        else None
+    )
+    return selected, baseline
 
 
 def scope_evidence(focal_team_id: int, match_ids: list[int], scope: StateLensScope) -> dict:

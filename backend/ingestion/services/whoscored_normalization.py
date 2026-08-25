@@ -11,17 +11,39 @@ from django.db import transaction
 
 from ingestion.models import (
     IngestionRun,
-    MatchDismissalType,
     MatchEventBodyPart,
-    MatchEventPeriod,
     MatchEventShotOutcome,
     MatchEventShotSituation,
     MatchEventType,
     MatchParticipationAction,
-    MatchPlayerPositionRole,
-    MatchPlayerRosterRole,
     ProviderMatch,
     ProviderMatchEvent,
+)
+from ingestion.services.whoscored_event_contract import (
+    ADMINISTRATIVE_EVENT_NAMES,
+    DELETED_EVENT_NAMES,
+    EVENT_TYPE_BY_NAME,
+    KNOWN_UNTYPED_QUALIFIER_NAMES,
+    OFFSIDE_EVENT_NAMES,
+    PARTICIPATION_ACTION_BY_EVENT_NAME,
+    SAVE_EVENT_NAMES,
+    SHOT_EVENT_NAMES,
+    SUBSTITUTION_EVENT_NAMES,
+    TYPED_QUALIFIER_NAMES,
+    normalized_dismissal_type,
+    related_event_sequence_id,
+)
+from ingestion.services.whoscored_match_metadata import (
+    NormalizedMatchPlayer,
+    display_name,
+    mapping_value,
+    normalize_match_clock,
+    normalize_match_players,
+    normalized_period,
+    normalized_timeline_seconds,
+    optional_int,
+    optional_string,
+    strict_nonnegative_int,
 )
 
 
@@ -31,232 +53,6 @@ ACTION_GRID_COLUMNS = 24
 ACTION_GRID_ROWS = 16
 TEAM_ZONE_COLUMNS = 5
 TEAM_ZONE_ROWS = 3
-
-SHOT_EVENT_NAMES = frozenset({"Goal", "MissedShots", "SavedShot", "ShotOnPost"})
-ADMINISTRATIVE_EVENT_NAMES = frozenset(
-    {
-        "Start",
-        "End",
-        "Out",
-        "CornerAwarded",
-        "Turnover",
-        "PlayerRetired",
-        "PlayerReturns",
-        "KeeperBecomesPlayer",
-        "PlayerBecomesGoalkeeper",
-        "ConditionChange",
-        "OfficialChange",
-        "StartDelay",
-        "EndDelay",
-        "TeamSetUp",
-        "FormationSet",
-        "FormationChange",
-        "PlayerOff",
-        "PlayerOn",
-        "PlayerChangedPosition",
-        "PlayerChangedJerseyNumber",
-        "DeletedEvent",
-        "FormationPosition",
-        "Error",
-        "ChanceMissed",
-        "Resume",
-        "ContentiousRefereeDecision",
-        "RefereeDropBall",
-        "InjuryTimeAnnouncement",
-        "CoachSetup",
-        "DelayedStart",
-        "EarlyEnd",
-        "CoverageInterruption",
-    }
-)
-DELETED_EVENT_NAMES = frozenset({"DeletedEvent"})
-SAVE_EVENT_NAMES = frozenset(
-    {
-        "KeeperPickup",
-        "Save",
-        "Claim",
-        "Smother",
-        "Punch",
-        "KeeperSweeper",
-        "CrossNotClaimed",
-        "PenaltyFaced",
-    }
-)
-OFFSIDE_EVENT_NAMES = frozenset({"OffsideGiven", "OffsideProvoked"})
-SUBSTITUTION_EVENT_NAMES = frozenset({"SubstitutionOff", "SubstitutionOn"})
-
-PARTICIPATION_ACTION_BY_EVENT_NAME = {
-    "SubstitutionOn": MatchParticipationAction.SUBSTITUTION_ON,
-    "SubstitutionOff": MatchParticipationAction.SUBSTITUTION_OFF,
-    "PlayerOn": MatchParticipationAction.PLAYER_ON,
-    "PlayerOff": MatchParticipationAction.PLAYER_OFF,
-    "PlayerRetired": MatchParticipationAction.PLAYER_RETIRED,
-    "PlayerReturns": MatchParticipationAction.PLAYER_RETURNS,
-}
-
-NOMINAL_PERIOD_MINUTES = {
-    MatchEventPeriod.FIRST_HALF: 45,
-    MatchEventPeriod.SECOND_HALF: 45,
-    MatchEventPeriod.FIRST_EXTRA_TIME: 15,
-    MatchEventPeriod.SECOND_EXTRA_TIME: 15,
-}
-
-EVENT_TYPE_BY_NAME = {
-    "Pass": MatchEventType.PASS,
-    "BallTouch": MatchEventType.BALL_TOUCH,
-    "TakeOn": MatchEventType.TAKE_ON,
-    "BallRecovery": MatchEventType.BALL_RECOVERY,
-    "Tackle": MatchEventType.TACKLE,
-    "Interception": MatchEventType.INTERCEPTION,
-    "Clearance": MatchEventType.CLEARANCE,
-    "BlockedPass": MatchEventType.BLOCKED_PASS,
-    "Aerial": MatchEventType.AERIAL,
-    "Challenge": MatchEventType.CHALLENGE,
-    "Dispossessed": MatchEventType.DISPOSSESSED,
-    "Foul": MatchEventType.FOUL,
-    "FoulThrowIn": MatchEventType.FOUL,
-    "Card": MatchEventType.CARD,
-    "RescindedCard": MatchEventType.CARD,
-    "OtherBallContact": MatchEventType.BALL_TOUCH,
-    "FiftyFifty": MatchEventType.CHALLENGE,
-    "FailedToBlock": MatchEventType.CHALLENGE,
-    "AttemptedTackle": MatchEventType.TACKLE,
-    "MissedChallenge": MatchEventType.CHALLENGE,
-    "GoodSkill": MatchEventType.TAKE_ON,
-    "ShieldBallOpp": MatchEventType.DISPOSSESSED,
-    "ShieldBallOutOfPlay": MatchEventType.DISPOSSESSED,
-}
-
-TYPED_QUALIFIER_NAMES = frozenset(
-    {
-        "Cross",
-        "Longball",
-        "Chipped",
-        "HeadPass",
-        "Throughball",
-        "ThrowIn",
-        "CornerTaken",
-        "FreekickTaken",
-        "SetPiece",
-        "RegularPlay",
-        "BigChance",
-        "KeyPass",
-        "ShotAssist",
-        "IntentionalGoalAssist",
-        "IntentionalAssist",
-        "RightFoot",
-        "LeftFoot",
-        "Head",
-        "OtherBodyPart",
-        "Blocked",
-        "OpenPlay",
-        "Penalty",
-        "FromCorner",
-        "DirectFreekick",
-        "FastBreak",
-        "Defensive",
-    }
-)
-KNOWN_UNTYPED_QUALIFIER_NAMES = frozenset(
-    {
-        "Length",
-        "Angle",
-        "RelatedEventId",
-        "PassEndX",
-        "PassEndY",
-        "GoalMouthY",
-        "GoalMouthZ",
-        "BlockedX",
-        "BlockedY",
-        "Assisted",
-        "LeadingToAttempt",
-        "LeadingToGoal",
-        "OppositeRelatedEvent",
-        "PlayerPosition",
-        "Zone",
-        "OutOfBox",
-        "PenaltyArea",
-        "SixYardBox",
-        "BoxLeft",
-        "BoxRight",
-        "BoxCentre",
-        "High",
-        "Low",
-        "Normal",
-        "Standing",
-        "Diving",
-        "NoTouch",
-        "PullBack",
-        # Current Opta/WhoScored match-centre qualifier vocabulary that v1
-        # deliberately preserves only in the private raw payload.
-        "AerialFoul",
-        "BigChanceCreated",
-        "BlockedCross",
-        "CaptainPlayerId",
-        "Collected",
-        "DeepBoxLeft",
-        "DeepBoxRight",
-        "DivingSave",
-        "Feet",
-        "FirstTouch",
-        "Foul",
-        "FromShotOffTarget",
-        "GoalDisallowed",
-        "GoalKick",
-        "Hands",
-        "HighCentre",
-        "HighClaim",
-        "HighLeft",
-        "HighRight",
-        "IndirectFreekickTaken",
-        "IndividualPlay",
-        "InvolvedPlayers",
-        "JerseyNumber",
-        "KeeperMissed",
-        "KeeperSaved",
-        "KeeperSaveInSixYard",
-        "KeeperSaveInTheBox",
-        "KeeperSaveObox",
-        "KeeperThrow",
-        "LastMan",
-        "LayOff",
-        "LowCentre",
-        "LowLeft",
-        "LowRight",
-        "MissHigh",
-        "MissLeft",
-        "MissRight",
-        "Offensive",
-        "OneOnOne",
-        "OutOfBoxCentre",
-        "OutOfBoxDeepLeft",
-        "OutOfBoxDeepRight",
-        "OutOfBoxLeft",
-        "OutOfBoxRight",
-        "OutfielderBlock",
-        "OverRun",
-        "OwnGoal",
-        "ParriedDanger",
-        "ParriedSafe",
-        "PlayerCaughtOffside",
-        "Red",
-        "SavedOffline",
-        "SecondYellow",
-        "SixYardBlock",
-        "SmallBoxCentre",
-        "SmallBoxLeft",
-        "SmallBoxRight",
-        "StandingSave",
-        "TeamFormation",
-        "TeamPlayerFormation",
-        "ThirtyFivePlusCentre",
-        "ThrowinSetPiece",
-        "VoidYellowCard",
-        "Volley",
-        "Yellow",
-        "FormationSlot",
-    }
-)
 
 ACTION_EVENT_TYPES = frozenset(
     {
@@ -373,15 +169,6 @@ class NormalizedMatchEvent:
 
     def model_values(self) -> dict[str, Any]:
         return asdict(self)
-
-
-@dataclass(frozen=True)
-class NormalizedMatchPlayer:
-    provider_team_id: str
-    provider_player_id: str
-    roster_index: int
-    roster_role: str
-    position_role: str
 
 
 @dataclass(frozen=True)
@@ -667,238 +454,6 @@ def validate_match_structure(
         diagnostics.errors.append(
             {"code": "invalid_events", "message": "events must be a list."}
         )
-
-
-def normalize_match_clock(
-    payload: Mapping[str, Any],
-    diagnostics: NormalizationDiagnostics,
-) -> dict[str, Any]:
-    """Build the private provider-neutral continuous clock used by state features."""
-    period_ends = payload.get("periodEndMinutes")
-    expanded_minutes = payload.get("expandedMinutes")
-    expanded_max_minute = optional_int(payload.get("expandedMaxMinute"))
-    source_events = payload.get("events")
-    if (
-        not isinstance(period_ends, Mapping)
-        or not isinstance(expanded_minutes, Mapping)
-        or expanded_max_minute is None
-        or not isinstance(source_events, list)
-    ):
-        diagnostics.warnings.append({"code": "clock_metadata_missing"})
-        return {
-            "calculation_version": "match_clock_v1",
-            "valid": False,
-            "exclusion_reason": "clock_metadata_missing",
-            "periods": [],
-            "supported_end_second": None,
-        }
-
-    supported_periods = [
-        int(period)
-        for period in NOMINAL_PERIOD_MINUTES
-        if str(int(period)) in period_ends or int(period) in period_ends
-    ]
-    if not supported_periods:
-        diagnostics.warnings.append({"code": "no_supported_play"})
-        return {
-            "calculation_version": "match_clock_v1",
-            "valid": False,
-            "exclusion_reason": "no_supported_play",
-            "periods": [],
-            "supported_end_second": None,
-        }
-
-    periods: list[dict[str, int]] = []
-    previous_end_second = 0
-    try:
-        for period_index, period in enumerate(supported_periods):
-            raw_end = mapping_lookup(period_ends, period)
-            raw_end_minute = strict_nonnegative_int(raw_end)
-            if raw_end_minute is None:
-                raise ValueError("period end is missing")
-            period_expansion = mapping_lookup(expanded_minutes, period)
-            if not isinstance(period_expansion, Mapping):
-                raise ValueError("expanded-minute period mapping is missing")
-            expanded_end_minute = optional_int(
-                mapping_lookup(period_expansion, raw_end_minute)
-            )
-            if expanded_end_minute is None:
-                raise ValueError("expanded period end is missing")
-            if (
-                period == supported_periods[-1]
-                and expanded_end_minute != expanded_max_minute
-            ):
-                raise ValueError("expanded match end does not reconcile")
-
-            source_starts = source_boundary_seconds(
-                source_events,
-                period=period,
-                event_name="Start",
-            )
-            source_ends = source_boundary_seconds(
-                source_events,
-                period=period,
-                event_name="End",
-            )
-            if len(source_starts) != 1 or len(source_ends) != 1:
-                raise ValueError(
-                    "exact period boundary evidence is missing or conflicting"
-                )
-            source_start_second = next(iter(source_starts))
-            source_end_second = next(iter(source_ends))
-            if source_end_second <= source_start_second:
-                raise ValueError("period duration is not positive")
-            if source_end_second // 60 != expanded_end_minute:
-                raise ValueError("exact period end does not reconcile")
-            duration_seconds = source_end_second - source_start_second
-            end_second = previous_end_second + duration_seconds
-            periods.append(
-                {
-                    "period": period,
-                    "period_index": period_index,
-                    "start_second": previous_end_second,
-                    "end_second": end_second,
-                    "duration_seconds": duration_seconds,
-                    "nominal_duration_seconds": NOMINAL_PERIOD_MINUTES[period] * 60,
-                    "source_start_second": source_start_second,
-                    "source_end_second": source_end_second,
-                }
-            )
-            previous_end_second = end_second
-    except (TypeError, ValueError) as error:
-        diagnostics.warnings.append(
-            {"code": "clock_metadata_invalid", "message": str(error)}
-        )
-        return {
-            "calculation_version": "match_clock_v1",
-            "valid": False,
-            "exclusion_reason": "clock_metadata_invalid",
-            "periods": [],
-            "supported_end_second": None,
-        }
-
-    return {
-        "calculation_version": "match_clock_v1",
-        "valid": True,
-        "exclusion_reason": None,
-        "periods": periods,
-        "supported_end_second": previous_end_second,
-    }
-
-
-def source_boundary_seconds(
-    source_events: Sequence[Any],
-    *,
-    period: int,
-    event_name: str,
-) -> set[int]:
-    boundaries: set[int] = set()
-    for source_event in source_events:
-        if not isinstance(source_event, Mapping):
-            continue
-        if display_name(source_event.get("type")) != event_name:
-            continue
-        if normalized_period(source_event.get("period")) != period:
-            continue
-        minute = optional_int(source_event.get("expandedMinute"))
-        second = strict_nonnegative_int(source_event.get("second"))
-        if minute is None or second is None or second > 59:
-            continue
-        boundaries.add(minute * 60 + second)
-    return boundaries
-
-
-def normalize_match_players(
-    payload: Mapping[str, Any],
-    diagnostics: NormalizationDiagnostics,
-) -> tuple[NormalizedMatchPlayer, ...]:
-    players: list[NormalizedMatchPlayer] = []
-    for side in ("home", "away"):
-        team = payload.get(side)
-        if not isinstance(team, Mapping):
-            continue
-        provider_team_id = optional_string(team.get("teamId"))
-        source_players = team.get("players")
-        if provider_team_id is None or not isinstance(source_players, list):
-            diagnostics.warnings.append(
-                {"code": "lineup_metadata_missing", "side": side}
-            )
-            continue
-        for roster_index, source_player in enumerate(source_players):
-            if not isinstance(source_player, Mapping):
-                diagnostics.warnings.append(
-                    {
-                        "code": "invalid_lineup_player",
-                        "side": side,
-                        "index": roster_index,
-                    }
-                )
-                continue
-            provider_player_id = optional_string(source_player.get("playerId"))
-            if provider_player_id is None or len(provider_player_id) > 64:
-                diagnostics.warnings.append(
-                    {
-                        "code": "invalid_lineup_player_id",
-                        "side": side,
-                        "index": roster_index,
-                    }
-                )
-                continue
-            roster_role = (
-                MatchPlayerRosterRole.STARTER
-                if source_player.get("isFirstEleven") is True
-                else MatchPlayerRosterRole.SUBSTITUTE
-            )
-            source_position = str(source_player.get("position") or "").strip().upper()
-            position_role = (
-                MatchPlayerPositionRole.GOALKEEPER
-                if source_position in {"GK", "GOALKEEPER"}
-                else (
-                    MatchPlayerPositionRole.OUTFIELD
-                    if source_position
-                    else MatchPlayerPositionRole.UNKNOWN
-                )
-            )
-            players.append(
-                NormalizedMatchPlayer(
-                    provider_team_id=provider_team_id,
-                    provider_player_id=provider_player_id,
-                    roster_index=roster_index,
-                    roster_role=roster_role,
-                    position_role=position_role,
-                )
-            )
-    return tuple(players)
-
-
-def mapping_lookup(value: Mapping[Any, Any], key: int) -> Any:
-    if key in value:
-        return value[key]
-    return value.get(str(key))
-
-
-def normalized_timeline_seconds(
-    event: Mapping[str, Any],
-    clock: Mapping[str, Any],
-) -> int | None:
-    if not clock.get("valid"):
-        return None
-    expanded_minute = optional_int(event.get("expandedMinute"))
-    second = strict_nonnegative_int(event.get("second"))
-    if expanded_minute is None or second is None or second > 59:
-        return None
-    source_second = expanded_minute * 60 + second
-    period = normalized_period(event.get("period"))
-    for boundary in clock.get("periods", []):
-        if boundary["period"] != period:
-            continue
-        timeline_seconds = (
-            boundary["start_second"] + source_second - boundary["source_start_second"]
-        )
-        if boundary["start_second"] <= timeline_seconds < boundary["end_second"]:
-            return timeline_seconds
-        return None
-    return None
 
 
 def event_sort_key(
@@ -1284,21 +839,6 @@ def normalized_event_type(event_name: str) -> int:
     return EVENT_TYPE_BY_NAME.get(event_name, MatchEventType.UNKNOWN)
 
 
-def normalized_period(value: Any) -> int:
-    raw = optional_int(mapping_value(value, "value"))
-    if raw in MatchEventPeriod.values:
-        return raw
-    names = {
-        "FirstHalf": MatchEventPeriod.FIRST_HALF,
-        "SecondHalf": MatchEventPeriod.SECOND_HALF,
-        "FirstPeriodOfExtraTime": MatchEventPeriod.FIRST_EXTRA_TIME,
-        "SecondPeriodOfExtraTime": MatchEventPeriod.SECOND_EXTRA_TIME,
-        "PenaltyShootout": MatchEventPeriod.PENALTY_SHOOTOUT,
-        "PostGame": MatchEventPeriod.POST_GAME,
-    }
-    return names.get(display_name(value), MatchEventPeriod.UNKNOWN)
-
-
 def normalized_outcome(value: Any) -> bool | None:
     raw = optional_int(mapping_value(value, "value"))
     name = display_name(value).lower()
@@ -1386,65 +926,6 @@ def qualifier_name_set(
             key = f"{qualifier_id if qualifier_id is not None else '?'}:{name or '?'}"
             increment(diagnostics.unknown_qualifiers, key)
     return names
-
-
-def related_event_sequence_id(qualifiers: Any) -> str | None:
-    if not isinstance(qualifiers, list):
-        return None
-    for qualifier in qualifiers:
-        if not isinstance(qualifier, Mapping):
-            continue
-        if display_name(qualifier.get("type")) != "RelatedEventId":
-            continue
-        value = qualifier.get("value")
-        if isinstance(value, Mapping):
-            value = value.get("value") or value.get("displayName")
-        return optional_string(value)
-    return None
-
-
-def normalized_dismissal_type(event_name: str, card_type: Any) -> str:
-    if event_name != "Card":
-        return MatchDismissalType.NONE
-    card_name = display_name(card_type)
-    if card_name == "Red":
-        return MatchDismissalType.RED
-    if card_name == "SecondYellow":
-        return MatchDismissalType.SECOND_YELLOW
-    return MatchDismissalType.NONE
-
-
-def display_name(value: Any) -> str:
-    if isinstance(value, Mapping):
-        return str(value.get("displayName") or "")
-    return str(value or "")
-
-
-def mapping_value(value: Any, key: str) -> Any:
-    return value.get(key) if isinstance(value, Mapping) else None
-
-
-def optional_int(value: Any) -> int | None:
-    if value in (None, "") or isinstance(value, bool):
-        return None
-    try:
-        converted = int(value)
-    except (TypeError, ValueError, OverflowError):
-        return None
-    return converted
-
-
-def strict_nonnegative_int(value: Any) -> int | None:
-    converted = optional_int(value)
-    if converted is None or converted < 0:
-        return None
-    return converted
-
-
-def optional_string(value: Any) -> str | None:
-    if value in (None, ""):
-        return None
-    return str(value)
 
 
 def increment(values: dict[str, int], key: str) -> None:

@@ -23,6 +23,9 @@ const ACTION_FAMILIES: Array<{ value: DefensiveActionFamily; label: string }> = 
   { value: 'clearance', label: 'Clearances' },
 ]
 const ALL_FAMILIES = ACTION_FAMILIES.map(option => option.value)
+const ACTION_FAMILY_LABELS = new Map(
+  ACTION_FAMILIES.map(({ value, label }) => [value, label]),
+)
 
 function pitchHeight(value: number | null) {
   return value == null ? '—' : `${value.toFixed(1)}%`
@@ -33,8 +36,9 @@ function rate(value: number | null) {
 }
 
 function combineGrid(evidence: DefensiveTerritoryEvidence, selected: DefensiveActionFamily[]) {
+  const composition = new Map(evidence.familyComposition.map(row => [row.family, row]))
   const total = selected.reduce((sum, family) => (
-    sum + evidence.familyComposition.find(row => row.family === family)!.withLocation
+    sum + (composition.get(family)?.withLocation ?? 0)
   ), 0)
   return evidence.gridsByFamily[selected[0]].map((cell, index): ActionGridCell => {
     const values = selected.map(family => evidence.gridsByFamily[family][index])
@@ -50,16 +54,18 @@ function combineGrid(evidence: DefensiveTerritoryEvidence, selected: DefensiveAc
 }
 
 function combinedSummary(evidence: DefensiveTerritoryEvidence, selected: DefensiveActionFamily[]) {
+  const composition = new Map(evidence.familyComposition.map(row => [row.family, row]))
   let located = 0
   let unlocated = 0
   let rate = 0
   let heightWeight = 0
   let weightedHeight = 0
   selected.forEach(family => {
-    const composition = evidence.familyComposition.find(row => row.family === family)!
+    const familyComposition = composition.get(family)
+    if (!familyComposition) return
     const familyEvidence = evidence.familyEvidence[family]
-    located += composition.withLocation
-    unlocated += composition.withoutLocation
+    located += familyComposition.withLocation
+    unlocated += familyComposition.withoutLocation
     rate += familyEvidence.ratePerStateMinute ?? 0
     if (familyEvidence.height.mean != null) {
       heightWeight += familyEvidence.height.sampleSize
@@ -82,7 +88,7 @@ function DefensiveActionSelect({ selected, onChange }: {
   const label = allSelected
     ? 'All defensive actions'
     : selected.length === 1
-      ? ACTION_FAMILIES.find(option => option.value === selected[0])!.label
+      ? ACTION_FAMILY_LABELS.get(selected[0]) ?? selected[0]
       : `${selected.length} action types`
   const toggle = (family: DefensiveActionFamily) => {
     if (selected.includes(family)) {
@@ -135,6 +141,7 @@ export function DefensiveTerritoryMap({
     return <EventMapNotice kind="error" title="Defensive territory failed to load" onRetry={retry}>{error}</EventMapNotice>
   }
   const evidence = payload.selected
+  const selectedFamilySet = new Set(selectedFamilies)
   const selectedGrid = combineGrid(evidence, selectedFamilies)
   const selectedSummary = combinedSummary(evidence, selectedFamilies)
   const baselineSummary = payload.baseline
@@ -152,7 +159,7 @@ export function DefensiveTerritoryMap({
           label: 'Defensive actions',
           value: selectedFamilies.length === ACTION_FAMILIES.length
             ? 'All action types'
-            : selectedFamilies.map(family => ACTION_FAMILIES.find(option => option.value === family)!.label).join(' · '),
+            : selectedFamilies.map(family => ACTION_FAMILY_LABELS.get(family) ?? family).join(' · '),
         }],
       }}
       expanded={expanded}
@@ -187,8 +194,10 @@ export function DefensiveTerritoryMap({
               </p>
             ) : null}
             <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] uppercase tracking-[0.08em] text-ink-dim" aria-label="Defensive event family composition">
-              {evidence.familyComposition.filter(row => selectedFamilies.includes(row.family) && row.count > 0).map(row => (
-                <span key={row.family}>{ACTION_FAMILIES.find(option => option.value === row.family)!.label} {row.count}</span>
+              {evidence.familyComposition.flatMap(row => (
+                selectedFamilySet.has(row.family) && row.count > 0
+                  ? [<span key={row.family}>{ACTION_FAMILY_LABELS.get(row.family) ?? row.family} {row.count}</span>]
+                  : []
               ))}
             </div>
             <p className="text-[11px] leading-relaxed text-gold">{evidence.disclaimer}</p>

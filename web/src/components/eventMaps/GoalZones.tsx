@@ -83,7 +83,7 @@ export function GoalZoneGridView({ grid, variant, mode }: {
   }
 
   return (
-    <div className="w-full space-y-2" role="table" aria-label={`Goal-mouth zones, ${mode} view`}>
+    <figure className="m-0 w-full space-y-2" aria-label={`Goal-mouth zones, ${mode} view`}>
       <div className="flex items-center justify-between px-1 text-[8px] font-bold uppercase tracking-[0.12em] text-ink-dim">
         <span>Shooter&rsquo;s left</span>
         <span aria-hidden>· Goal mouth ·</span>
@@ -166,6 +166,6 @@ export function GoalZoneGridView({ grid, variant, mode }: {
           {mode === 'keeper' ? 'On-target shots faced · save rate' : 'On-target shots · conversion'}
         </text>
       </svg>
-    </div>
+    </figure>
   )
 }
