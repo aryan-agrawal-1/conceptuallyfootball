@@ -3,9 +3,21 @@ import { useState } from 'react'
 import { fetchTeamPassState } from '../../lib/eventMaps/stateAnalysisApi'
 import type { StateLensRequest } from '../../lib/eventMaps/stateLensApi'
 import type { EventMapExportContext } from '../../lib/eventMaps/exportContext'
-import type { PassStateCategory, TeamPassFlow } from '../../types/eventMaps'
+import {
+  buildDeltaCell,
+  buildDeltaGrid,
+  type StateDeltaMapContract,
+} from '../../lib/eventMaps/deltaMap'
+import type {
+  PassStateCategory,
+  StateLensEvidence,
+  StateLensMetadata,
+  TeamPassFlow,
+  TeamPassStateEvidence,
+} from '../../types/eventMaps'
 import { PortraitPitch } from './PortraitPitch'
 import { EventMapCard, EventMapNotice, EventPitchStage } from './EventMapUi'
+import { StateDeltaMap } from './StateDeltaMap'
 
 function percent(value: number | null) {
   return value == null ? '—' : `${(value * 100).toFixed(1)}%`
@@ -25,6 +37,123 @@ function labelForState(value: string) {
   return value === 'all'
     ? 'All states'
     : value.replace(/^./, character => character.toUpperCase())
+}
+
+function lensScopeLabel(scope: StateLensMetadata['selected'] | null | undefined) {
+  if (!scope) return null
+  const label = labelForState(scope.state)
+  const qualifiers = [
+    scope.goalDifference == null ? null : `GD ${scope.goalDifference > 0 ? '+' : ''}${scope.goalDifference}`,
+    scope.phase?.replaceAll('_', ' '),
+    scope.drawProvenance && scope.drawProvenance !== 'none' ? scope.drawProvenance : null,
+  ].filter(Boolean)
+  return qualifiers.length ? `${label} · ${qualifiers.join(' · ')}` : label
+}
+
+function passReliability(evidence: TeamPassStateEvidence, lensEvidence?: StateLensEvidence) {
+  if (evidence.evidence.empty || lensEvidence?.empty) return 'unavailable' as const
+  if (evidence.evidence.sparse) return 'sparse' as const
+  if (lensEvidence?.matchesExcluded) return 'partial' as const
+  return 'verified' as const
+}
+
+function passCohortEvidence(
+  label: string,
+  evidence: TeamPassStateEvidence,
+  lensEvidence?: StateLensEvidence,
+) {
+  const excludedCoordinates = evidence.evidence.excludedMissingCoordinates
+  return {
+    label,
+    exposureMinutes: lensEvidence?.exposureMinutes ?? evidence.exposureMinutes,
+    matchCount: lensEvidence?.matchCount ?? null,
+    episodeCount: lensEvidence?.episodeCount ?? null,
+    eventCount: evidence.evidence.sourcePassEvents,
+    locatedEventCount: Math.max(0, evidence.evidence.sourcePassEvents - excludedCoordinates),
+    excludedEventCount: excludedCoordinates,
+    excludedMatchCount: lensEvidence?.matchesExcluded ?? null,
+    exclusions: {
+      missing_coordinates: excludedCoordinates,
+      ...(lensEvidence?.exclusionReasons ?? {}),
+    },
+    reliability: passReliability(evidence, lensEvidence),
+  }
+}
+
+function passDeltaContract(
+  teamId: number,
+  teamName: string,
+  selected: TeamPassStateEvidence,
+  baseline: TeamPassStateEvidence,
+  stateLens: StateLensRequest,
+  stateLensMetadata?: StateLensMetadata,
+): StateDeltaMapContract {
+  const selectedFlows = new Map(selected.flows.map(flow => [`${flow.bin.column}:${flow.bin.row}`, flow]))
+  const baselineFlows = new Map(baseline.flows.map(flow => [`${flow.bin.column}:${flow.bin.row}`, flow]))
+  const selectedLabel = lensScopeLabel(stateLensMetadata?.selected) ?? labelForState(stateLens.state ?? 'all')
+  const baselineLabel = lensScopeLabel(stateLensMetadata?.comparison.baseline) ?? labelForState(stateLens.baseline_state ?? 'all')
+  const cells = []
+  const rates: number[] = []
+  for (let row = 0; row < 4; row += 1) {
+    for (let column = 0; column < 6; column += 1) {
+      const key = `${column}:${row}`
+      const selectedFlow = selectedFlows.get(key)
+      const baselineFlow = baselineFlows.get(key)
+      const selectedValue = selectedFlow
+        ? selectedFlow.attemptsPerStateMinute ?? null
+        : selected.exposureMinutes > 0 ? 0 : null
+      const baselineValue = baselineFlow
+        ? baselineFlow.attemptsPerStateMinute ?? null
+        : baseline.exposureMinutes > 0 ? 0 : null
+      if (selectedValue != null) rates.push(selectedValue)
+      if (baselineValue != null) rates.push(baselineValue)
+      cells.push(buildDeltaCell({
+        column,
+        row,
+        selectedValue,
+        baselineValue,
+        selectedRawCount: selectedFlow?.attemptedCount ?? 0,
+        baselineRawCount: baselineFlow?.attemptedCount ?? 0,
+        selectedSupported: selectedValue != null,
+        baselineSupported: baselineValue != null,
+        selectedSparse: selected.evidence.sparse,
+        baselineSparse: baseline.evidence.sparse,
+        selectedVector: selectedFlow ? {
+          origin: selectedFlow.origin,
+          destination: selectedFlow.destination,
+          meanLengthMetres: selectedFlow.meanLength,
+          eventCount: selectedFlow.attemptedCount,
+        } : undefined,
+        baselineVector: baselineFlow ? {
+          origin: baselineFlow.origin,
+          destination: baselineFlow.destination,
+          meanLengthMetres: baselineFlow.meanLength,
+          eventCount: baselineFlow.attemptedCount,
+        } : undefined,
+      }))
+    }
+  }
+  const selectedLensEvidence = stateLensMetadata?.evidence
+  const baselineLensEvidence = stateLensMetadata?.comparison.baselineEvidence ?? undefined
+  return {
+    contractVersion: 'state-delta-map/team-pass-flow/v1',
+    subject: { type: 'team', id: teamId, name: teamName },
+    metric: {
+      label: 'Pass origin-volume delta',
+      unit: 'passes / state min',
+      mode: 'absolute-rate',
+      smoothing: 'none',
+      description: 'Origin volume is compared per eligible State Lens minute. Arrows retain each cohort’s own mean direction and length; vectors are never subtracted.',
+      domain: Math.max(0.01, ...rates),
+    },
+    selected: passCohortEvidence(selectedLabel, selected, selectedLensEvidence),
+    baseline: passCohortEvidence(baselineLabel, baseline, baselineLensEvidence),
+    grid: buildDeltaGrid({ columns: 6, rows: 4, cells }),
+    notes: [
+      'A missing origin bin is a zero-rate bin when the cohort has supplied exposure; it is not a missing event total.',
+      'Raw attempted and located event counts stay visible beside the normalised rate.',
+    ],
+  }
 }
 
 function EvidenceBands({ title, rows }: { title: string; rows: PassStateCategory[] }) {
@@ -51,6 +180,7 @@ export function TeamPassStateFlow({
   season,
   matchRef,
   stateLens,
+  stateLensMetadata,
   onComparisonChange,
   exportContext,
   expanded,
@@ -62,6 +192,7 @@ export function TeamPassStateFlow({
   season: string
   matchRef: string | null
   stateLens: StateLensRequest
+  stateLensMetadata?: StateLensMetadata
   onComparisonChange: (enabled: boolean) => void
   exportContext: EventMapExportContext
   expanded: boolean
@@ -102,6 +233,9 @@ export function TeamPassStateFlow({
   ))
   const hasComparison = comparisonEnabled && comparisonFlows.length > 0
   const visibleFlows = hasComparison ? comparisonFlows : evidence.flows
+  const deltaContract = comparisonEnabled && payload.baseline
+    ? passDeltaContract(teamId, teamName, evidence, payload.baseline, stateLens, stateLensMetadata)
+    : null
   const disclosure = [
     evidence.evidence.sparse ? 'Sparse cohort' : null,
     evidence.evidence.truncated ? `Capped at ${summary.attempts.toLocaleString()} located passes` : null,
@@ -144,7 +278,13 @@ export function TeamPassStateFlow({
       <EventPitchStage expanded={expanded} onExpandedChange={onExpandedChange}>
         <div className="grid w-full items-start gap-8 lg:grid-cols-[minmax(0,1.45fr)_minmax(400px,0.75fr)]">
           <div>
-            {visibleFlows.length ? (
+            {comparisonEnabled && !payload.baseline ? (
+              <EventMapNotice kind="unavailable" title="Baseline evidence unavailable">
+                Select a valid baseline cohort with verified State Lens exposure before interpreting pass movement.
+              </EventMapNotice>
+            ) : deltaContract ? (
+              <StateDeltaMap contract={deltaContract} compact />
+            ) : visibleFlows.length ? (
               <PortraitPitch
                 flows={visibleFlows}
                 selectedFlowId={selectedFlow?.id ?? null}

@@ -29,6 +29,38 @@ The result is deterministic for a given event set, performs in a single canvas p
 
 Future work can add possession/value weighting, or recipient-aware networks, if those fields are introduced to the provider-neutral contract. The frontend should continue to render only materialized evidence rather than infer either concept.
 
+## Reusable State Delta Map contract
+
+`lib/eventMaps/deltaMap.ts` and `components/eventMaps/StateDeltaMap.tsx` define the
+comparison surface shared by team maps and the player State Shift map. A consumer
+passes a versioned `StateDeltaMapContract` with:
+
+- a `subject` (`team` or `player`),
+- explicit `selected` and `baseline` cohort evidence (exposure minutes, matches,
+  episodes, raw event counts, located counts, excluded events/matches,
+  exclusions, and reliability),
+- a fixed `grid` of already-normalised selected and baseline values plus raw cell
+  counts, and
+- optional average markers, per-cell vectors, movement arrows, and matched-team
+  references.
+
+`StateDeltaMap` never derives a denominator or normalises event rows. Player
+consumers must therefore pass verified on-pitch minutes and player-prepared or
+team-relative values from the player comparison API. The `metric.mode` label is
+explicitly one of `absolute-rate`, `distribution`, or `within-team-relative`;
+the UI describes these differently so a rate delta cannot be mistaken for a
+within-subject distribution change.
+
+Cells use a symmetric domain around a stable zero. Missing values are
+`unsupported`, zero in both cohorts is `absent`, and supplied sparse flags are
+shown with a hatch treatment. Values beyond the supplied/calculated domain are
+clipped only for display and remain visible in the cell tooltip. The common
+legend, evidence disclosure, tooltip, and keyboard model are part of the
+primitive, while single-state maps continue to use their existing event
+inspection surfaces. Client-side smoothing is never introduced; a producer may
+mark a cell surface as `metric.smoothing: 'supplied'` when its published values
+already include a documented smoothing step.
+
 ## State-conditioned shot pressure
 
 Team Event Maps requests `/api/v1/team-seasons/shot-pressure/:teamId` with the

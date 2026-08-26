@@ -6,12 +6,14 @@ import type {
   TeamDefensiveTerritoryPayload,
 } from '../../types/eventMaps'
 import type { EventMapExportContext } from '../../lib/eventMaps/exportContext'
+import { buildDeltaCell, buildDeltaGrid, type StateDeltaMapContract } from '../../lib/eventMaps/deltaMap'
 import { PortraitPitch } from './PortraitPitch'
 import {
   EventMapCard,
   EventMapNotice,
   EventPitchStage,
 } from './EventMapUi'
+import { StateDeltaMap } from './StateDeltaMap'
 
 const ACTION_FAMILIES: Array<{ value: DefensiveActionFamily; label: string }> = [
   { value: 'recovery', label: 'Recoveries' },
@@ -73,10 +75,155 @@ function combinedSummary(evidence: DefensiveTerritoryEvidence, selected: Defensi
     }
   })
   return {
+    included: located + unlocated,
     located,
     unlocated,
     rate: evidence.counts.included ? rate : null,
     meanHeight: heightWeight ? weightedHeight / heightWeight : null,
+    medianHeight: selected.length === 1
+      ? composition.get(selected[0])
+        ? evidence.familyEvidence[selected[0]].height.median
+        : null
+      : selected.length === ACTION_FAMILIES.length
+        ? evidence.heights.all.median
+        : null,
+  }
+}
+
+function defensiveReliability(
+  evidence: DefensiveTerritoryEvidence,
+  lensEvidence: TeamDefensiveTerritoryPayload['stateLens']['evidence'] | null | undefined,
+) {
+  if (lensEvidence?.empty || !lensEvidence?.exposureMinutes) return 'unavailable' as const
+  if (evidence.evidence.sparse) return 'sparse' as const
+  if (lensEvidence.matchesExcluded) return 'partial' as const
+  return 'verified' as const
+}
+
+function stateLabel(value: string | undefined) {
+  if (!value || value === 'all') return 'All states'
+  return value.replaceAll('_', ' ').replace(/^./, character => character.toUpperCase())
+}
+
+function scopeLabel(scope: TeamDefensiveTerritoryPayload['stateLens']['selected'] | null | undefined) {
+  if (!scope) return 'All states'
+  const qualifiers = [
+    scope.goalDifference == null ? null : `GD ${scope.goalDifference > 0 ? '+' : ''}${scope.goalDifference}`,
+    scope.phase?.replaceAll('_', ' '),
+    scope.drawProvenance && scope.drawProvenance !== 'none' ? scope.drawProvenance : null,
+  ].filter(Boolean)
+  const label = stateLabel(scope.state)
+  return qualifiers.length ? `${label} · ${qualifiers.join(' · ')}` : label
+}
+
+function defensiveDeltaContract(
+  payload: TeamDefensiveTerritoryPayload,
+  selectedGrid: ActionGridCell[],
+  baselineGrid: ActionGridCell[],
+  selectedFamilies: DefensiveActionFamily[],
+): StateDeltaMapContract {
+  const selectedByCoordinate = new Map(selectedGrid.map(cell => [`${cell.column}:${cell.row}`, cell]))
+  const baselineByCoordinate = new Map(baselineGrid.map(cell => [`${cell.column}:${cell.row}`, cell]))
+  const selectedLensEvidence = payload.stateLens.evidence
+  const baselineLensEvidence = payload.stateLens.comparison.baselineEvidence
+  const cells = []
+  const rates: number[] = []
+  for (let row = 0; row < 8; row += 1) {
+    for (let column = 0; column < 12; column += 1) {
+      const selectedCell = selectedByCoordinate.get(`${column}:${row}`)
+      const baselineCell = baselineByCoordinate.get(`${column}:${row}`)
+      const selectedValue = selectedCell?.per90Count ?? (selectedLensEvidence.exposureMinutes > 0 ? 0 : null)
+      const baselineValue = baselineCell?.per90Count ?? (baselineLensEvidence && baselineLensEvidence.exposureMinutes > 0 ? 0 : null)
+      if (selectedValue != null) rates.push(selectedValue)
+      if (baselineValue != null) rates.push(baselineValue)
+      cells.push(buildDeltaCell({
+        column,
+        row,
+        selectedValue,
+        baselineValue,
+        selectedRawCount: selectedCell?.rawCount ?? 0,
+        baselineRawCount: baselineCell?.rawCount ?? 0,
+        selectedSupported: selectedValue != null,
+        baselineSupported: baselineValue != null,
+        selectedSparse: payload.selected.evidence.sparse,
+        baselineSparse: payload.baseline?.evidence.sparse ?? false,
+      }))
+    }
+  }
+  const selectedSummary = combinedSummary(payload.selected, selectedFamilies)
+  const baselineSummary = payload.baseline ? combinedSummary(payload.baseline, selectedFamilies) : null
+  const selectedHeightSampleSize = selectedFamilies.length === 1
+    ? payload.selected.familyEvidence[selectedFamilies[0]].height.sampleSize
+    : payload.selected.heights.all.sampleSize
+  const baselineHeightSampleSize = payload.baseline && selectedFamilies.length === 1
+    ? payload.baseline.familyEvidence[selectedFamilies[0]].height.sampleSize
+    : payload.baseline?.heights.all.sampleSize ?? null
+  return {
+    contractVersion: 'state-delta-map/team-defensive-territory/v1',
+    subject: { type: 'team', id: payload.teamId, name: payload.teamName },
+    metric: {
+      label: 'Defensive territory delta',
+      unit: 'actions / state min',
+      mode: 'absolute-rate',
+      smoothing: 'none',
+      description: 'Cell colour compares per-minute defensive-action density. Median-height markers remain separate from the density delta.',
+      domain: Math.max(0.01, ...rates),
+    },
+    selected: {
+      label: scopeLabel(payload.stateLens.selected),
+      exposureMinutes: selectedLensEvidence.exposureMinutes,
+      matchCount: selectedLensEvidence.matchCount,
+      episodeCount: selectedLensEvidence.episodeCount,
+      eventCount: selectedSummary.included,
+      locatedEventCount: selectedSummary.located,
+      excludedEventCount: selectedSummary.unlocated,
+      excludedMatchCount: selectedLensEvidence.matchesExcluded,
+      exclusions: {
+        ...selectedLensEvidence.exclusionReasons,
+        ...payload.selected.evidence.exclusions,
+      },
+      reliability: defensiveReliability(payload.selected, selectedLensEvidence),
+    },
+    baseline: {
+      label: scopeLabel(payload.stateLens.comparison.baseline),
+      exposureMinutes: baselineLensEvidence?.exposureMinutes ?? null,
+      matchCount: baselineLensEvidence?.matchCount ?? null,
+      episodeCount: baselineLensEvidence?.episodeCount ?? null,
+      eventCount: baselineSummary?.included ?? null,
+      locatedEventCount: baselineSummary?.located ?? null,
+      excludedEventCount: baselineSummary?.unlocated ?? null,
+      excludedMatchCount: baselineLensEvidence?.matchesExcluded ?? null,
+      exclusions: {
+        ...(baselineLensEvidence?.exclusionReasons ?? {}),
+        ...(payload.baseline?.evidence.exclusions ?? {}),
+      },
+      reliability: payload.baseline
+        ? defensiveReliability(payload.baseline, baselineLensEvidence)
+        : 'unavailable',
+    },
+    grid: buildDeltaGrid({ columns: 12, rows: 8, cells }),
+    markers: {
+      selected: selectedSummary.medianHeight == null ? null : {
+        id: 'selected-median-height',
+        label: 'Selected median',
+        coordinate: { x: selectedSummary.medianHeight, y: 50 },
+        sampleSize: selectedHeightSampleSize,
+        tone: 'selected',
+        description: 'Median defensive-action height from the selected action scope.',
+      },
+      baseline: baselineSummary?.medianHeight == null ? null : {
+        id: 'baseline-median-height',
+        label: 'Baseline median',
+        coordinate: { x: baselineSummary.medianHeight, y: 50 },
+        sampleSize: baselineHeightSampleSize,
+        tone: 'baseline',
+        description: 'Median defensive-action height from the baseline action scope.',
+      },
+    },
+    notes: [
+      'Own goal is 0 and opponent goal is 100. Density uses supplied per-state-minute values; raw event totals are disclosed separately.',
+      payload.selected.disclaimer,
+    ],
   }
 }
 
@@ -147,6 +294,9 @@ export function DefensiveTerritoryMap({
   const baselineSummary = payload.baseline
     ? combinedSummary(payload.baseline, selectedFamilies)
     : null
+  const deltaContract = payload.baseline
+    ? defensiveDeltaContract(payload, selectedGrid, combineGrid(payload.baseline, selectedFamilies), selectedFamilies)
+    : null
 
   return (
     <EventMapCard
@@ -168,7 +318,9 @@ export function DefensiveTerritoryMap({
       <EventPitchStage expanded={expanded} onExpandedChange={onExpandedChange}>
         <div className="grid w-full max-w-[1120px] items-start gap-4 lg:grid-cols-[minmax(0,760px)_minmax(280px,1fr)]">
           <div>
-            {selectedSummary.located ? (
+            {deltaContract ? (
+              <StateDeltaMap contract={deltaContract} compact />
+            ) : selectedSummary.located ? (
               <PortraitPitch
                 densityCells={selectedGrid}
                 densityStyle="cells"

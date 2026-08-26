@@ -17,7 +17,7 @@ import { stateLensRequest } from '../../lib/eventMaps/stateLensUrl'
 import { DefensiveTerritoryMap } from './DefensiveTerritoryMap'
 import { ShotPressurePanel } from './ShotPressurePanel'
 
-type TeamMap = 'flow' | 'defensive-territory' | 'shots-for' | 'shots-against'
+type TeamMap = 'flow' | 'defensive-territory' | 'shots-for' | 'shots-against' | 'shot-pressure'
 type AnalysisMode = 'shooting' | 'passing' | 'defending'
 
 const ANALYSIS_MODES: Array<{ value: AnalysisMode; label: string; description: string }> = [
@@ -228,6 +228,9 @@ export function TeamEventMaps({ teamId, competition, season }: {
           loading={shotPressureQuery.isLoading}
           error={shotPressureQuery.isError ? shotPressureQuery.error.message : undefined}
           onRetry={() => shotPressureQuery.refetch()}
+          exportContext={exportContext}
+          expanded={expanded === 'shot-pressure'}
+          onExpandedChange={next => setExpanded(next ? 'shot-pressure' : null)}
           />
         </> : null}
 
@@ -238,6 +241,7 @@ export function TeamEventMaps({ teamId, competition, season }: {
           season={season}
           matchRef={matchRef}
           stateLens={lensRequest}
+          stateLensMetadata={profile.stateLens}
           onComparisonChange={enabled => {
             const next = new URLSearchParams(searchParams)
             if (enabled) {
