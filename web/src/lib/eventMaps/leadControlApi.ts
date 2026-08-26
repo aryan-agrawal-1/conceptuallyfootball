@@ -97,8 +97,8 @@ type ApiEpisode = {
   matched_baseline_windows: number
   matched_baseline_exposure_seconds: number
   time_to_first_meaningful_opponent_attack_seconds: number | null
-  behavior: ApiSurface['gravity']
-  ownership: ApiSurface['ownership']
+  behavior: Pick<ApiSurface['gravity'], 'components' | 'axis'>
+  ownership: Pick<ApiSurface['ownership'], 'components' | 'axis'>
   coverage: {
     exposure_seconds: number
     matched_baseline: boolean
@@ -159,7 +159,6 @@ type ApiPayload = {
       note: string
     }
   }
-  episodes: ApiEpisode[]
   coverage: {
     lead_episode_count: number
     one_goal_episode_count: number
@@ -312,12 +311,12 @@ function mapEpisode(value: ApiEpisode): LeadControlEpisode {
     timeToFirstMeaningfulOpponentAttackSeconds: value.time_to_first_meaningful_opponent_attack_seconds,
     behavior: {
       components: mapComponents(value.behavior.components) as unknown as LeadControlSurface['gravity']['components'],
-      rawComponents: mapComponents(value.behavior.raw_components) as unknown as LeadControlSurface['gravity']['rawComponents'],
+      rawComponents: mapComponents(value.behavior.components) as unknown as LeadControlSurface['gravity']['rawComponents'],
       axis: mapAxis(value.behavior.axis),
     },
     ownership: {
       components: mapComponents(value.ownership.components) as unknown as LeadControlSurface['ownership']['components'],
-      rawComponents: mapComponents(value.ownership.raw_components) as unknown as LeadControlSurface['ownership']['rawComponents'],
+      rawComponents: mapComponents(value.ownership.components) as unknown as LeadControlSurface['ownership']['rawComponents'],
       axis: mapAxis(value.ownership.axis),
     },
     coverage: {
@@ -395,7 +394,7 @@ export async function fetchTeamLeadControl(
         note: raw.quadrant.placement.note,
       },
     },
-    episodes: raw.episodes.map(mapEpisode),
+    episodes: raw.selected.episodes.map(mapEpisode),
     coverage: {
       leadEpisodeCount: raw.coverage.lead_episode_count,
       oneGoalEpisodeCount: raw.coverage.one_goal_episode_count,

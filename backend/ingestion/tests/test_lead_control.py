@@ -218,7 +218,10 @@ class LeadControlRuleTests(SimpleTestCase):
         self.assertEqual(ownership["opponent_shots"]["baseline_value"] is not None, True)
         self.assertEqual(payload["selected"]["lead_band_breakdown"]["one_goal"]["episode_count"], 1)
         self.assertEqual(payload["selected"]["lead_band_breakdown"]["multi_goal"]["episode_count"], 0)
-        self.assertEqual(payload["episodes"][0]["time_to_first_meaningful_opponent_attack_seconds"], 300)
+        self.assertNotIn("episodes", payload)
+        self.assertEqual(payload["selected"]["episodes"][0]["time_to_first_meaningful_opponent_attack_seconds"], 300)
+        self.assertNotIn("raw_components", payload["selected"]["episodes"][0]["behavior"])
+        self.assertNotIn("raw_components", payload["selected"]["episodes"][0]["ownership"])
         self.assertEqual(payload["comparison"]["baseline_goal_difference"], 0)
 
     def test_sparse_sample_withholds_quadrant_label_but_keeps_raw_components(self):

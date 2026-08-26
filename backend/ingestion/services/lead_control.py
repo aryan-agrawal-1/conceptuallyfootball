@@ -46,7 +46,7 @@ from ingestion.state_lens import StateLens, StateLensScope
 
 
 LEAD_CONTROL_FORMULA_VERSION = "lead_control_v1"
-LEAD_CONTROL_API_VERSION = "lead_control_api_v1"
+LEAD_CONTROL_API_VERSION = "lead_control_api_v2"
 CLOCK_BUCKET_SECONDS = 15 * 60
 CLOCK_MATCH_TOLERANCE_SECONDS = CLOCK_BUCKET_SECONDS
 MIN_LEAD_EPISODES = 3
@@ -1235,8 +1235,18 @@ def _episode_payload(
         "matched_baseline_windows": len(baseline_windows),
         "matched_baseline_exposure_seconds": baseline_raw["exposure_seconds"] if baseline_raw else 0,
         "time_to_first_meaningful_opponent_attack_seconds": first_attack,
-        "behavior": surface["gravity"],
-        "ownership": surface["ownership"],
+        # Episode drilldown keeps the component metrics (including each
+        # metric's raw values) but omits the aggregate raw_components alias.
+        # The alias is identical to components and would double the bounded
+        # evidence payload without adding information.
+        "behavior": {
+            "components": surface["gravity"]["components"],
+            "axis": surface["gravity"]["axis"],
+        },
+        "ownership": {
+            "components": surface["ownership"]["components"],
+            "axis": surface["ownership"]["axis"],
+        },
         "coverage": {
             "exposure_seconds": surface["exposure_seconds"],
             "matched_baseline": bool(baseline_raw and baseline_raw["exposure_seconds"] > 0),
@@ -1482,7 +1492,6 @@ def build_lead_control_payload(
             **axes,
             "placement": quadrant_for(axes, eligible=reliability["label_eligible"]),
         },
-        "episodes": episode_rows,
         "coverage": coverage,
         "thresholds": {
             "clock_bucket_seconds": CLOCK_BUCKET_SECONDS,
