@@ -17,6 +17,7 @@ from ingestion.gk_api import (
     GkDerivedPlayerSeasonListApi,
 )
 from ingestion.player_state_api import PlayerStateExposureApi
+from ingestion.player_state_comparison_api import PlayerStateComparisonApi
 from ingestion.possession_context_api import TeamPossessionContextApi
 from ingestion.pass_state_api import TeamPassStateApi
 from ingestion.team_api import TeamSeasonDetailApi, TeamSeasonListApi, TeamSquadApi
@@ -58,6 +59,10 @@ urlpatterns = [
     path(
         "player-seasons/state-exposure/<int:canonical_player_id>",
         PlayerStateExposureApi.as_view(),
+    ),
+    path(
+        "player-seasons/event-profile/<int:canonical_player_id>/state-comparison",
+        PlayerStateComparisonApi.as_view(),
     ),
     path("galaxy", GalaxyApi.as_view()),
     path("galaxy/similar", GalaxySimilarApi.as_view()),
