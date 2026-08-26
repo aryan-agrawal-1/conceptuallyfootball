@@ -8,7 +8,12 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ingestion.api_cache import get_or_build_payload_response, joined_version, stable_cache_key
+from ingestion.api_cache import (
+    get_or_build_payload_response,
+    joined_version,
+    model_version,
+    stable_cache_key,
+)
 from ingestion.models import (
     MatchEventShotOutcome,
     MatchEventType,
@@ -16,6 +21,8 @@ from ingestion.models import (
     PlayerSeasonGkDerivedStats,
     Provider,
     ProviderMatch,
+    ProviderMatchGameState,
+    ProviderMatchPlayerStateExposure,
     ProviderMatchStatus,
 )
 from ingestion.event_profile_api import (
@@ -34,6 +41,13 @@ from ingestion.services.shot_zones import (
     shooter_variant,
     split_variants,
 )
+from ingestion.services.player_state_comparison import (
+    event_in_segments,
+    exposure_segments,
+    player_state_lens_metadata,
+    scope_player_events,
+)
+from ingestion.state_lens import parse_state_lens
 
 ZONES_API_VERSION = "v3"
 
@@ -77,6 +91,7 @@ class PlayerShotZonesApi(PlayerEventProfileMixin, APIView):
         try:
             profile = self.resolve_profile(request, canonical_player_id)
             match_ref = parse_optional_match(request)
+            state_lens = parse_state_lens(request)
             cache_key = stable_cache_key(
                 f"event-profile:{profile.competition_season_id}:player-shot-zones",
                 {
@@ -86,6 +101,7 @@ class PlayerShotZonesApi(PlayerEventProfileMixin, APIView):
                     "season": profile.competition_season.season.label,
                     "team": profile.team_id,
                     "match": match_ref,
+                    "state_lens": state_lens.cache_scope(),
                     "formula_version": profile.formula_version,
                     "materialization_run": profile.materialized_ingestion_run_id,
                     "profile_version": profile.id,
@@ -93,8 +109,22 @@ class PlayerShotZonesApi(PlayerEventProfileMixin, APIView):
             )
             response, _ = get_or_build_payload_response(
                 cache_key=cache_key,
-                source_version=zones_source_version(profile.competition_season),
-                builder=lambda: self.build_payload(profile, match_ref),
+                source_version=joined_version(
+                    zones_source_version(profile.competition_season),
+                    state_lens.source_token(),
+                    model_version(
+                        ProviderMatchGameState,
+                        {"provider_match__competition_season": profile.competition_season_id},
+                    ),
+                    model_version(
+                        ProviderMatchPlayerStateExposure,
+                        {
+                            "player_interval__participation__provider_match__competition_season": profile.competition_season_id,
+                            "player_interval__participation__player_id": profile.player_id,
+                        },
+                    ),
+                ),
+                builder=lambda: self.build_payload(profile, match_ref, state_lens),
             )
             return response
         except DjangoValidationError as exc:
@@ -105,13 +135,18 @@ class PlayerShotZonesApi(PlayerEventProfileMixin, APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-    def build_payload(self, profile, match_ref: int | None) -> dict:
+    def build_payload(self, profile, match_ref: int | None, state_lens=None) -> dict:
         # Scope with the full event universe so match references align with
         # the main event-profile endpoint's match list; shots-only universes
         # silently shift every reference after a shotless match.
         scoped_events, matches, _references = scope_queryset_to_match(
             player_event_queryset(profile), match_ref
         )
+        match_ids = list(scoped_events.values_list("provider_match_id", flat=True).distinct())
+        if state_lens is not None and not state_lens.selected.is_default:
+            scoped_events = scope_player_events(
+                scoped_events, profile, state_lens.selected, match_ids
+            )
         placements = [
             shot_placement(event)
             for event in scoped_events.filter(
@@ -130,6 +165,8 @@ class PlayerShotZonesApi(PlayerEventProfileMixin, APIView):
                 "selected_match_ref": match_ref,
             }
         )
+        if state_lens is not None:
+            payload["state_lens"] = player_state_lens_metadata(profile, match_ids, state_lens)
         return payload
 
 
@@ -237,6 +274,7 @@ class PlayerGkShotZonesApi(APIView):
             ).exists():
                 raise PlayerSeasonGkDerivedStats.DoesNotExist
             match_ref = parse_optional_match(request)
+            state_lens = parse_state_lens(request)
             cache_key = stable_cache_key(
                 f"event-profile:{competition_season.id}:player-gk-shot-zones",
                 {
@@ -245,13 +283,28 @@ class PlayerGkShotZonesApi(APIView):
                     "competition": competition_season.competition.short_code,
                     "season": competition_season.season.label,
                     "match": match_ref,
+                    "state_lens": state_lens.cache_scope(),
                 },
             )
             response, _ = get_or_build_payload_response(
                 cache_key=cache_key,
-                source_version=zones_source_version(competition_season),
+                source_version=joined_version(
+                    zones_source_version(competition_season),
+                    state_lens.source_token(),
+                    model_version(
+                        ProviderMatchGameState,
+                        {"provider_match__competition_season": competition_season.id},
+                    ),
+                    model_version(
+                        ProviderMatchPlayerStateExposure,
+                        {
+                            "player_interval__participation__provider_match__competition_season": competition_season.id,
+                            "player_interval__participation__player_id": canonical_player_id,
+                        },
+                    ),
+                ),
                 builder=lambda: self.build_payload(
-                    competition_season, canonical_player_id, match_ref
+                    competition_season, canonical_player_id, match_ref, state_lens
                 ),
             )
             return response
@@ -268,6 +321,7 @@ class PlayerGkShotZonesApi(APIView):
         competition_season,
         canonical_player_id: int,
         match_ref: int | None,
+        state_lens=None,
     ) -> dict:
         included_matches, excluded_matches = keeper_match_attribution(
             competition_season, canonical_player_id
@@ -303,6 +357,36 @@ class PlayerGkShotZonesApi(APIView):
                 )
                 .exclude(player_id=canonical_player_id)
             )
+        profile = PlayerSeasonEventProfile.objects.filter(
+            competition_season=competition_season,
+            player_id=canonical_player_id,
+            is_current=True,
+            team__isnull=True,
+        ).first()
+        state_match_ids = selected_match_ids if match_ref is not None else list(references)
+        state_metadata = None
+        if state_lens is not None and not state_lens.selected.is_default:
+            if profile is None:
+                # A goalkeeper shot-facing record must never fall back to an
+                # unverified shot list when the State Lens is active.
+                shots_faced = []
+            else:
+                state_metadata = player_state_lens_metadata(
+                    profile,
+                    state_match_ids,
+                    state_lens,
+                )
+                segments = exposure_segments(profile, state_lens.selected, state_match_ids)
+                shots_faced = [
+                    event for event in shots_faced
+                    if event_in_segments(event, segments)
+                ]
+        elif state_lens is not None and profile is not None:
+            state_metadata = player_state_lens_metadata(
+                profile,
+                state_match_ids,
+                state_lens,
+            )
         placements = [shot_placement(event) for event in shots_faced]
         payload = zone_payload_base(competition_season, canonical_player_id)
         payload.update(
@@ -320,4 +404,6 @@ class PlayerGkShotZonesApi(APIView):
                 "selected_match_ref": match_ref,
             }
         )
+        if state_metadata is not None:
+            payload["state_lens"] = state_metadata
         return payload

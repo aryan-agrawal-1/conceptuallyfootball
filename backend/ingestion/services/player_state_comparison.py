@@ -1,0 +1,1053 @@
+"""Verified player game-state cohorts and matched team evidence.
+
+The player-facing State Lens has a stricter denominator than the team views:
+an event is eligible only when it falls inside a verified player interval and
+the corresponding verified team state episode.  This module keeps that rule
+in one place for the event-profile and comparison APIs.  It intentionally
+uses the already-materialized exposure rows; it does not rebuild possession
+chains or infer participation from event presence.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from dataclasses import dataclass
+from statistics import median
+from typing import Iterable
+
+from django.db.models import Count
+
+from ingestion.models import (
+    MatchEventGameState,
+    MatchEventShotOutcome,
+    MatchEventType,
+    MatchGameStateExclusionReason,
+    PlayerSeasonDerivedStats,
+    PlayerSeasonGkDerivedStats,
+    ProviderMatch,
+    ProviderMatchCarry,
+    ProviderMatchEvent,
+    ProviderMatchGameState,
+    ProviderMatchPlayerParticipation,
+    ProviderMatchPlayerStateExposure,
+    ProviderMatchPossession,
+    Provider,
+)
+from ingestion.services.whoscored_normalization import (
+    ACTION_GRID_COLUMNS,
+    ACTION_GRID_ROWS,
+    action_grid_assignment,
+    is_action_event,
+    is_defensive_event,
+)
+from ingestion.state_lens import (
+    GAME_STATE_CALCULATION_VERSION,
+    STATE_VALUES,
+    StateLens,
+    StateLensScope,
+)
+
+
+PLAYER_STATE_COMPARISON_VERSION = "player_state_comparison_v1"
+PLAYER_ROLE_MIN_EXPOSURE_SECONDS = 900
+PLAYER_ROLE_MIN_EVENTS = 5
+PLAYER_ROLE_MIN_MATCHES = 2
+
+
+@dataclass(frozen=True, slots=True)
+class PlayerExposureSegment:
+    match_id: int
+    team_id: int | None
+    start_second: int
+    end_second: int
+    episode_index: int
+
+    @property
+    def duration_seconds(self) -> int:
+        return max(0, self.end_second - self.start_second)
+
+
+def scope_age_bounds(row: ProviderMatchPlayerStateExposure, scope: StateLensScope) -> tuple[int, int] | None:
+    """Return the intersection of an exposure row and a State Lens scope."""
+
+    state = STATE_VALUES.get(scope.state)
+    if state is not None and row.coarse_state != state:
+        return None
+    if scope.goal_difference is not None and row.goal_difference != scope.goal_difference:
+        return None
+    if scope.phase is not None and row.phase != scope.phase:
+        return None
+    if scope.draw_provenance is not None and row.provenance != scope.draw_provenance:
+        return None
+    start = row.start_second
+    end = row.end_second
+    entry = row.team_episode.state_entry_second
+    if scope.minimum_state_age_seconds is not None:
+        start = max(start, entry + scope.minimum_state_age_seconds)
+    if scope.maximum_state_age_seconds is not None:
+        end = min(end, entry + scope.maximum_state_age_seconds)
+    if end <= start:
+        return None
+    return start, end
+
+
+def participation_queryset(profile, match_ids: Iterable[int] | None = None):
+    queryset = ProviderMatchPlayerParticipation.objects.filter(
+        provider_match__competition_season=profile.competition_season,
+        player_id=profile.player_id,
+    ).select_related("provider_match", "team")
+    if profile.team_id is not None:
+        queryset = queryset.filter(team_id=profile.team_id)
+    if match_ids is not None:
+        queryset = queryset.filter(provider_match_id__in=list(match_ids))
+    return queryset
+
+
+def exposure_queryset(profile, match_ids: Iterable[int] | None = None):
+    queryset = ProviderMatchPlayerStateExposure.objects.filter(
+        player_interval__participation__provider_match__competition_season=profile.competition_season,
+        player_interval__participation__player_id=profile.player_id,
+        player_interval__participation__status="verified",
+        player_interval__participation__confidence="verified",
+        player_interval__confidence="verified",
+    ).select_related(
+        "player_interval__participation",
+        "player_interval__participation__team",
+        "team_episode",
+    )
+    if profile.team_id is not None:
+        queryset = queryset.filter(player_interval__participation__team_id=profile.team_id)
+    if match_ids is not None:
+        queryset = queryset.filter(player_interval__participation__provider_match_id__in=list(match_ids))
+    return queryset.order_by(
+        "player_interval__participation__provider_match_id",
+        "start_second",
+        "end_second",
+        "id",
+    )
+
+
+def exposure_segments(profile, scope: StateLensScope, match_ids: Iterable[int] | None = None) -> list[PlayerExposureSegment]:
+    segments: list[PlayerExposureSegment] = []
+    for row in exposure_queryset(profile, match_ids):
+        bounds = scope_age_bounds(row, scope)
+        if bounds is None:
+            continue
+        participation = row.player_interval.participation
+        segments.append(
+            PlayerExposureSegment(
+                match_id=participation.provider_match_id,
+                team_id=participation.team_id,
+                start_second=bounds[0],
+                end_second=bounds[1],
+                episode_index=row.team_episode.episode_index,
+            )
+        )
+    return segments
+
+
+def event_second(event) -> int | None:
+    # State exposure uses the canonical timeline clock.  Falling back to the
+    # provider match clock would silently re-introduce events whose timeline
+    # could not be verified, so those events remain excluded.
+    return event.timeline_seconds
+
+
+ANY_TEAM = object()
+
+
+def value_in_segments(
+    value,
+    match_id: int,
+    segments: Iterable[PlayerExposureSegment],
+    team_id: int | None | object = ANY_TEAM,
+) -> bool:
+    """Check a timestamp against verified segments.
+
+    ``ANY_TEAM`` is intentionally distinct from ``None``.  Player events with
+    no canonical team must not pass a player's verified-team denominator, while
+    goalkeeper shot-facing evidence may intentionally match either side's
+    event stream.
+    """
+
+    if value is None:
+        return False
+    return any(
+        segment.match_id == match_id
+        and (team_id is ANY_TEAM or segment.team_id == team_id)
+        and segment.start_second <= value < segment.end_second
+        for segment in segments
+    )
+
+
+def event_in_segments(
+    event,
+    segments: Iterable[PlayerExposureSegment],
+    team_id: int | None | object = ANY_TEAM,
+) -> bool:
+    return value_in_segments(event_second(event), event.provider_match_id, segments, team_id)
+
+
+def carry_in_segments(
+    carry,
+    segments: Iterable[PlayerExposureSegment],
+    team_id: int | None | object = ANY_TEAM,
+) -> bool:
+    # Carries are derived from normalized on-ball events and retain the
+    # canonical match clock even though they do not carry a timeline field.
+    return value_in_segments(carry.match_seconds, carry.provider_match_id, segments, team_id)
+
+
+def verified_event_ids(queryset, profile, scope: StateLensScope, match_ids: Iterable[int] | None = None) -> list[int]:
+    segments = exposure_segments(profile, scope, match_ids)
+    if not segments:
+        return []
+    events = list(queryset)
+    return [
+        event.id
+        for event in events
+        if event_in_segments(event, segments, event.team_id)
+    ]
+
+
+def scope_player_events(queryset, profile, scope: StateLensScope, match_ids: Iterable[int] | None = None):
+    """Return only player events supported by verified exposure for ``scope``."""
+
+    ids = verified_event_ids(queryset, profile, scope, match_ids)
+    if not ids:
+        return queryset.none()
+    return queryset.filter(pk__in=ids)
+
+
+def player_event_scope_segments(profile, scope: StateLensScope, match_ids: Iterable[int] | None = None):
+    return exposure_segments(profile, scope, match_ids)
+
+
+def scope_player_carries(carries: Iterable, profile, scope: StateLensScope, match_ids: Iterable[int] | None = None) -> list:
+    segments = exposure_segments(profile, scope, match_ids)
+    return [
+        carry
+        for carry in carries
+        if carry_in_segments(carry, segments, carry.team_id)
+    ]
+
+
+def scope_match_ids(profile, match_ref: int | None = None) -> tuple[list[int], dict[int, int]]:
+    """Resolve match references from the player's full event universe."""
+
+    match_ids = list(
+        ProviderMatchEvent.objects.filter(
+            provider_match__competition_season=profile.competition_season,
+            player_id=profile.player_id,
+            **({"team_id": profile.team_id} if profile.team_id is not None else {}),
+        ).values_list("provider_match_id", flat=True).distinct()
+    )
+    matches = list(
+        ProviderMatch.objects.filter(pk__in=match_ids).order_by("kickoff_at", "id")
+    )
+    references = {match.id: index for index, match in enumerate(matches)}
+    selected = [
+        match.id for match in matches
+        if match_ref is None or references[match.id] == match_ref
+    ]
+    return selected, references
+
+
+def player_state_evidence(profile, match_ids: Iterable[int], scope: StateLensScope) -> dict:
+    match_ids = list(dict.fromkeys(int(value) for value in match_ids))
+    segments = exposure_segments(profile, scope, match_ids)
+    exposure_seconds = sum(segment.duration_seconds for segment in segments)
+    episode_keys = {(segment.match_id, segment.episode_index) for segment in segments}
+    segment_match_ids = {segment.match_id for segment in segments}
+    participation_rows = list(participation_queryset(profile, match_ids))
+    candidate_match_ids = {row.provider_match_id for row in participation_rows}
+    included_participation_match_ids = {
+        row.provider_match_id
+        for row in participation_rows
+        if row.status == "verified" and row.confidence == "verified"
+    }
+    excluded_match_ids = candidate_match_ids - included_participation_match_ids
+    reasons: Counter[str] = Counter()
+    for row in participation_rows:
+        if row.provider_match_id in excluded_match_ids:
+            reasons[row.exclusion_reason or "participation_unverified"] += 1
+    if included_participation_match_ids - segment_match_ids:
+        reasons["no_selected_state_exposure"] += len(included_participation_match_ids - segment_match_ids)
+    audits = ProviderMatchGameState.objects.filter(provider_match_id__in=match_ids)
+    for row in audits.filter(eligible=False).values("exclusion_reason").annotate(count=Count("id")):
+        reasons[str(row["exclusion_reason"] or MatchGameStateExclusionReason.INVALID_SCORE_REPLAY)] += row["count"]
+    audit_ids = set(audits.values_list("provider_match_id", flat=True))
+    if missing := set(match_ids) - audit_ids:
+        reasons[str(MatchGameStateExclusionReason.INVALID_SCORE_REPLAY)] += len(missing)
+    matches_included = len(included_participation_match_ids & segment_match_ids)
+    matches_excluded = max(0, len(candidate_match_ids) - matches_included)
+    return {
+        "exposure_seconds": exposure_seconds,
+        "exposure_minutes": round(exposure_seconds / 60, 2),
+        "episode_count": len(episode_keys),
+        "match_count": len(segment_match_ids),
+        "matches_included": matches_included,
+        "matches_excluded": matches_excluded,
+        "exclusion_reasons": dict(sorted(reasons.items())),
+        "formula_version": GAME_STATE_CALCULATION_VERSION,
+        "empty": exposure_seconds == 0,
+        "reliability": {
+            "eligible_only": True,
+            "verified_player_intervals_only": True,
+            "timeline": "half_open_played_seconds",
+            "shootouts_included": False,
+        },
+    }
+
+
+def player_state_lens_metadata(profile, match_ids: Iterable[int], lens: StateLens) -> dict:
+    match_ids = list(dict.fromkeys(int(value) for value in match_ids))
+    all_exposures = list(exposure_queryset(profile, match_ids))
+    refinement_states = {
+        value for value, code in STATE_VALUES.items()
+        if any(row.coarse_state == code for row in all_exposures)
+    }
+    goal_differences = sorted({row.goal_difference for row in all_exposures})
+    phases = sorted({row.phase for row in all_exposures})
+    provenances = sorted({row.provenance for row in all_exposures})
+    maximum_age = max(
+        (row.team_episode.end_second - row.team_episode.state_entry_second for row in all_exposures),
+        default=None,
+    )
+    selected = player_state_evidence(profile, match_ids, lens.selected)
+    baseline = (
+        player_state_evidence(profile, match_ids, lens.baseline)
+        if lens.baseline is not None else None
+    )
+    return {
+        "contract_version": PLAYER_STATE_COMPARISON_VERSION,
+        "selected": lens.selected.public(),
+        "evidence": selected,
+        "eligible_refinements": {
+            "states": sorted(refinement_states),
+            "goal_differences": goal_differences,
+            "phases": phases,
+            "draw_provenances": provenances,
+            "state_age_seconds": {"minimum": 0 if all_exposures else None, "maximum": maximum_age},
+        },
+        "comparison": {
+            "enabled": lens.comparison_enabled,
+            "baseline": lens.baseline.public() if lens.baseline else None,
+            "baseline_evidence": baseline,
+            "comparison": lens.selected.public(),
+            "comparison_evidence": selected,
+        },
+    }
+
+
+def metric_rate(count: int, exposure_seconds: int) -> dict:
+    per_minute = count / (exposure_seconds / 60) if exposure_seconds > 0 else None
+    per_90 = count * 5400 / exposure_seconds if exposure_seconds > 0 else None
+    return {
+        "count": count,
+        "per_state_minute": round(per_minute, 4) if per_minute is not None else None,
+        "per_90": round(per_90, 4) if per_90 is not None else None,
+    }
+
+
+def percentage(numerator: int, denominator: int) -> float | None:
+    return round(numerator / denominator, 4) if denominator else None
+
+
+def coordinate(event, attribute: str) -> float | None:
+    value = getattr(event, attribute, None)
+    return round(value / 100, 4) if value is not None else None
+
+
+def average_location(events: Iterable, *, x_attribute: str = "x", y_attribute: str = "y") -> dict:
+    points = [
+        (coordinate(event, x_attribute), coordinate(event, y_attribute))
+        for event in events
+    ]
+    points = [(x, y) for x, y in points if x is not None and y is not None]
+    return {
+        "x": round(sum(point[0] for point in points) / len(points), 4) if points else None,
+        "y": round(sum(point[1] for point in points) / len(points), 4) if points else None,
+        "sample_size": len(points),
+    }
+
+
+def grid(events: Iterable, exposure_seconds: int, *, defensive: bool = False) -> list[dict]:
+    counts = [0] * (ACTION_GRID_COLUMNS * ACTION_GRID_ROWS)
+    for event in events:
+        if event.x is None or event.y is None:
+            continue
+        if defensive and not is_defensive_event(event.event_type, defensive_qualifier=event.is_defensive):
+            continue
+        if not defensive and not event.is_touch:
+            continue
+        _, _, index = action_grid_assignment(event.x, event.y)
+        counts[index] += 1
+    total = sum(counts)
+    cells = []
+    for column in range(ACTION_GRID_COLUMNS):
+        for row in range(ACTION_GRID_ROWS):
+            count = counts[column * ACTION_GRID_ROWS + row]
+            cells.append({
+                "column": column,
+                "row": row,
+                "raw_count": count,
+                "per_state_minute": round(count / (exposure_seconds / 60), 4) if exposure_seconds else None,
+                "per_90": round(count * 5400 / exposure_seconds, 4) if exposure_seconds else None,
+                "share": round(count / total, 6) if total else 0.0,
+            })
+    return cells
+
+
+def state_event_rows(profile, scope: StateLensScope, match_ids: Iterable[int] | None = None) -> tuple[list, list, list, list, list, list[PlayerExposureSegment]]:
+    segments = exposure_segments(profile, scope, match_ids)
+    ids = {segment.match_id for segment in segments}
+    events = list(
+        ProviderMatchEvent.objects.filter(
+            provider_match__competition_season=profile.competition_season,
+            provider_match__provider=Provider.WHOSCORED,
+            provider_match_id__in=ids,
+        ).select_related("player", "team")
+    )
+    player_events = [
+        event for event in events
+        if event.player_id == profile.player_id
+        and (profile.team_id is None or event.team_id == profile.team_id)
+        and event_in_segments(event, segments, event.team_id)
+    ]
+    team_events = [
+        event for event in events
+        if event.team_id is not None and event_in_segments(event, segments, event.team_id)
+    ]
+    carries = list(
+        ProviderMatchCarry.objects.filter(
+            provider_match__competition_season=profile.competition_season,
+            player_id=profile.player_id,
+            provider_match_id__in=ids,
+        ).select_related("team")
+    )
+    if profile.team_id is not None:
+        carries = [carry for carry in carries if carry.team_id == profile.team_id]
+    carries = [carry for carry in carries if carry_in_segments(carry, segments, carry.team_id)]
+    team_ids = {segment.team_id for segment in segments if segment.team_id is not None}
+    team_carries = list(
+        ProviderMatchCarry.objects.filter(
+            provider_match__competition_season=profile.competition_season,
+            provider_match__provider=Provider.WHOSCORED,
+            provider_match_id__in=ids,
+            team_id__in=team_ids,
+        ).select_related("team")
+    )
+    team_carries = [
+        carry for carry in team_carries
+        if carry_in_segments(carry, segments, carry.team_id)
+    ]
+    return player_events, team_events, carries, team_carries, events, segments
+
+
+def event_summary(events: Iterable, carries: Iterable = ()) -> dict:
+    events = list(events)
+    carries = list(carries)
+    passes = [event for event in events if event.event_type == MatchEventType.PASS]
+    shots = [event for event in events if event.event_type == MatchEventType.SHOT]
+    defensive = [
+        event for event in events
+        if is_defensive_event(event.event_type, defensive_qualifier=event.is_defensive)
+    ]
+    touches = [event for event in events if event.is_touch]
+    progressive_passes = [event for event in passes if event.is_progressive_pass]
+    progressive_carries = [carry for carry in carries if carry.is_progressive_carry]
+    return {
+        "touches": len(touches),
+        "actions": sum(
+            is_action_event(event.event_type, defensive_qualifier=event.is_defensive)
+            for event in events
+        ),
+        "pass_attempts": len(passes),
+        "pass_completions": sum(event.outcome_successful is True for event in passes),
+        "progressive_passes": len(progressive_passes),
+        "progressive_carries": len(progressive_carries),
+        "progressive_actions": len(progressive_passes) + len(progressive_carries),
+        "carries": len(carries),
+        "shots": len(shots),
+        "goals": sum(event.shot_outcome == MatchEventShotOutcome.GOAL for event in shots),
+        "big_chance_shots": sum(event.is_big_chance for event in shots),
+        "take_ons": sum(event.event_type == MatchEventType.TAKE_ON for event in events),
+        "final_third_entries": sum(event.is_final_third_entry for event in passes),
+        "box_entries": sum(event.is_box_entry for event in passes),
+        "key_passes": sum(event.is_key_pass for event in passes),
+        "crosses": sum(event.is_cross for event in passes),
+        "long_balls": sum(event.is_long_ball for event in passes),
+        "defensive_actions": len(defensive),
+        "recoveries": sum(event.event_type == MatchEventType.BALL_RECOVERY for event in defensive),
+        "tackles": sum(event.event_type == MatchEventType.TACKLE for event in defensive),
+        "interceptions": sum(event.event_type == MatchEventType.INTERCEPTION for event in defensive),
+        "clearances": sum(event.event_type == MatchEventType.CLEARANCE for event in defensive),
+    }
+
+
+def distance_metres(start_x, start_y, end_x, end_y) -> float | None:
+    if None in (start_x, start_y, end_x, end_y):
+        return None
+    delta_x = (end_x - start_x) * 0.0105
+    delta_y = (end_y - start_y) * 0.0068
+    return (delta_x ** 2 + delta_y ** 2) ** 0.5
+
+
+def directional_metrics(events: Iterable, carries: Iterable) -> dict:
+    passes = [event for event in events if event.event_type == MatchEventType.PASS]
+    pass_lengths = [
+        distance_metres(event.x, event.y, event.end_x, event.end_y)
+        for event in passes
+    ]
+    pass_lengths = [value for value in pass_lengths if value is not None]
+    pass_forward_metres = [
+        (event.end_x - event.x) * 0.0105
+        for event in passes
+        if event.x is not None and event.end_x is not None
+    ]
+    carry_rows = list(carries)
+    carry_lengths = [
+        distance_metres(carry.x, carry.y, carry.end_x, carry.end_y)
+        for carry in carry_rows
+    ]
+    carry_lengths = [value for value in carry_lengths if value is not None]
+    carry_forward_metres = [
+        (carry.end_x - carry.x) * 0.0105
+        for carry in carry_rows
+        if carry.x is not None and carry.end_x is not None
+    ]
+    return {
+        "passing": {
+            "attempts": len(passes),
+            "completed": sum(event.outcome_successful is True for event in passes),
+            "completion_rate": percentage(
+                sum(event.outcome_successful is True for event in passes),
+                len(passes),
+            ),
+            "progressive": sum(event.is_progressive_pass for event in passes),
+            "key_passes": sum(event.is_key_pass for event in passes),
+            "final_third_entries": sum(event.is_final_third_entry for event in passes),
+            "box_entries": sum(event.is_box_entry for event in passes),
+            "crosses": sum(event.is_cross for event in passes),
+            "long_balls": sum(event.is_long_ball for event in passes),
+            "mean_length_metres": (
+                round(sum(pass_lengths) / len(pass_lengths), 2)
+                if pass_lengths else None
+            ),
+            "mean_forward_metres": (
+                round(sum(pass_forward_metres) / len(pass_forward_metres), 2)
+                if pass_forward_metres else None
+            ),
+            "forward_share": percentage(
+                sum(value > 0 for value in pass_forward_metres),
+                len(pass_forward_metres),
+            ),
+        },
+        "carrying": {
+            "attempts": len(carry_rows),
+            "progressive": sum(carry.is_progressive_carry for carry in carry_rows),
+            "final_third_entries": sum(carry.is_final_third_entry for carry in carry_rows),
+            "box_entries": sum(carry.is_box_entry for carry in carry_rows),
+            "mean_length_metres": (
+                round(sum(carry_lengths) / len(carry_lengths), 2)
+                if carry_lengths else None
+            ),
+            "mean_forward_metres": (
+                round(sum(carry_forward_metres) / len(carry_forward_metres), 2)
+                if carry_forward_metres else None
+            ),
+            "forward_share": percentage(
+                sum(value > 0 for value in carry_forward_metres),
+                len(carry_forward_metres),
+            ),
+        },
+    }
+
+
+def action_context(events: Iterable, carries: Iterable, exposure_seconds: int) -> dict:
+    events = list(events)
+    carries = list(carries)
+    summary = event_summary(events, carries)
+    rates = {
+        key: metric_rate(value, exposure_seconds)
+        for key, value in summary.items()
+        if isinstance(value, int)
+    }
+    defensive_events = [
+        event for event in events
+        if is_defensive_event(event.event_type, defensive_qualifier=event.is_defensive)
+        and event.x is not None
+    ]
+    defensive_location = average_location(defensive_events)
+    heights = [coordinate(event, "x") for event in defensive_events]
+    heights = [value for value in heights if value is not None]
+    return {
+        "summary": summary,
+        "rates": rates,
+        "exposure_seconds": exposure_seconds,
+        "exposure_minutes": round(exposure_seconds / 60, 2),
+        **directional_metrics(events, carries),
+        "touch_location": average_location([event for event in events if event.is_touch]),
+        "action_location": average_location([
+            event for event in events
+            if is_action_event(event.event_type, defensive_qualifier=event.is_defensive)
+        ]),
+        "defensive_location": defensive_location,
+        "touch_grid": grid(events, exposure_seconds),
+        "defensive_grid": grid(events, exposure_seconds, defensive=True),
+        "defensive_height": {
+            "sample_size": len(heights),
+            "mean": round(sum(heights) / len(heights), 4) if heights else None,
+            "median": round(median(heights), 4) if heights else None,
+        },
+    }
+
+
+def team_relative_shares(player_summary: dict, team_summary: dict) -> dict:
+    fields = {
+        "touches": ("touches", "touches"),
+        "passes": ("pass_attempts", "pass_attempts"),
+        "progressive_actions": ("progressive_actions", "progressive_actions"),
+        "shots": ("shots", "shots"),
+        "defensive_actions": ("defensive_actions", "defensive_actions"),
+    }
+    return {
+        name: {
+            "player_count": player_summary[player_key],
+            "team_count": team_summary[team_key],
+            "share": percentage(player_summary[player_key], team_summary[team_key]),
+            "unit": "share_of_matched_team_actions",
+        }
+        for name, (player_key, team_key) in fields.items()
+    }
+
+
+def delta_value(selected: float | int | None, baseline: float | int | None) -> float | int | None:
+    if selected is None or baseline is None:
+        return None
+    value = selected - baseline
+    return round(value, 4) if isinstance(value, float) else value
+
+
+def relative_delta(selected: float | int | None, baseline: float | int | None) -> float | None:
+    if selected is None or baseline in (None, 0):
+        return None
+    return round((selected - baseline) / abs(baseline), 4)
+
+
+def team_matched_context(team_events: list, team_carries: list, segments: list[PlayerExposureSegment], exposure_seconds: int) -> dict:
+    team_events = [
+        event for event in team_events
+        if event.team_id is not None
+    ]
+    # ``team_events`` already contains one focal-team row for each segment;
+    # avoid treating opponent actions as the denominator when a match includes
+    # both teams' normalized event stream.
+    team_events = [
+        event for event in team_events
+        if any(segment.match_id == event.provider_match_id and segment.team_id == event.team_id for segment in segments)
+    ]
+    return action_context(team_events, team_carries, exposure_seconds)
+
+
+def possession_context(profile, segments: list[PlayerExposureSegment]) -> dict:
+    match_ids = {segment.match_id for segment in segments}
+    possessions = list(
+        ProviderMatchPossession.objects.filter(
+            provider_match_id__in=match_ids,
+            participants__player_id=profile.player_id,
+            is_ambiguous=False,
+        ).distinct()
+    )
+    included = [
+        possession for possession in possessions
+        if any(
+            segment.match_id == possession.provider_match_id
+            and segment.team_id == possession.team_id
+            and possession.start_second < segment.end_second
+            and possession.end_second > segment.start_second
+            for segment in segments
+        )
+    ]
+    return {
+        "available": bool(possessions),
+        "verified": True,
+        "involved_possessions": len(included),
+        "counter_possessions": sum(possession.is_counter_launch for possession in included),
+        "shot_producing_possessions": sum(possession.counter_shot for possession in included),
+        "box_entry_possessions": sum(possession.counter_box_arrival for possession in included),
+        "final_third_possessions": sum(possession.counter_final_third_arrival for possession in included),
+        "ambiguous_excluded": sum(possession.is_ambiguous for possession in possessions),
+    }
+
+
+def position_group(profile) -> str:
+    outfield = PlayerSeasonDerivedStats.objects.filter(
+        competition_season=profile.competition_season,
+        canonical_player_id=profile.player_id,
+        is_current=True,
+    ).values_list("position_group", flat=True).first()
+    if outfield:
+        return outfield
+    if PlayerSeasonGkDerivedStats.objects.filter(
+        competition_season=profile.competition_season,
+        canonical_player_id=profile.player_id,
+        is_current=True,
+    ).exists():
+        return "GK"
+    return "UNK"
+
+
+def role_formulae() -> list[dict]:
+    return [
+        {
+            "label": "Unlocker",
+            "formula": "progressive_actions_per_90_change >= 20% and matched_team_progressive_action_share_change >= +3pp",
+            "eligible_positions": ["FWD", "MID", "DEF", "UNK"],
+            "minimum_verified_exposure_seconds": PLAYER_ROLE_MIN_EXPOSURE_SECONDS,
+            "minimum_events": PLAYER_ROLE_MIN_EVENTS,
+            "minimum_matches": PLAYER_ROLE_MIN_MATCHES,
+            "minimum_evidence_type": "progressive actions",
+            "minimum_evidence_count": PLAYER_ROLE_MIN_EVENTS,
+            "requires_team_context": True,
+        },
+        {
+            "label": "Progression Carrier",
+            "formula": "progressive_carries_per_90_change >= 20% and matched_team_progressive_action_share_change >= +2pp",
+            "eligible_positions": ["FWD", "MID", "DEF", "UNK"],
+            "minimum_verified_exposure_seconds": PLAYER_ROLE_MIN_EXPOSURE_SECONDS,
+            "minimum_events": PLAYER_ROLE_MIN_EVENTS,
+            "minimum_matches": PLAYER_ROLE_MIN_MATCHES,
+            "minimum_evidence_type": "progressive carries",
+            "minimum_evidence_count": 3,
+            "requires_team_context": True,
+        },
+        {
+            "label": "Stabiliser",
+            "formula": "pass_completion_change >= 0 and absolute progressive_action_rate_change < 20%",
+            "eligible_positions": ["FWD", "MID", "DEF", "GK", "UNK"],
+            "minimum_verified_exposure_seconds": PLAYER_ROLE_MIN_EXPOSURE_SECONDS,
+            "minimum_events": PLAYER_ROLE_MIN_EVENTS,
+            "minimum_matches": PLAYER_ROLE_MIN_MATCHES,
+            "minimum_evidence_type": "passes",
+            "minimum_evidence_count": PLAYER_ROLE_MIN_EVENTS,
+            "requires_team_context": True,
+        },
+        {
+            "label": "Territory Anchor",
+            "formula": "absolute player average-touch movement <= 5 percentage points and touch share does not fall by >3pp",
+            "eligible_positions": ["FWD", "MID", "DEF", "GK", "UNK"],
+            "minimum_verified_exposure_seconds": PLAYER_ROLE_MIN_EXPOSURE_SECONDS,
+            "minimum_events": PLAYER_ROLE_MIN_EVENTS,
+            "minimum_matches": PLAYER_ROLE_MIN_MATCHES,
+            "minimum_evidence_type": "located touches",
+            "minimum_evidence_count": 5,
+            "requires_team_context": True,
+        },
+        {
+            "label": "Closer",
+            "formula": "shots_per_90_change >= 30% and selected state is winning",
+            "eligible_positions": ["FWD", "MID", "DEF", "UNK"],
+            "minimum_verified_exposure_seconds": PLAYER_ROLE_MIN_EXPOSURE_SECONDS,
+            "minimum_events": 2,
+            "minimum_matches": PLAYER_ROLE_MIN_MATCHES,
+            "minimum_evidence_type": "shots",
+            "minimum_evidence_count": 2,
+            "requires_team_context": True,
+        },
+        {
+            "label": "Outlet",
+            "formula": "touch share change >= +3pp and pass attempts_per_90_change >= 20%",
+            "eligible_positions": ["FWD", "MID", "DEF", "GK", "UNK"],
+            "minimum_verified_exposure_seconds": PLAYER_ROLE_MIN_EXPOSURE_SECONDS,
+            "minimum_events": PLAYER_ROLE_MIN_EVENTS,
+            "minimum_matches": PLAYER_ROLE_MIN_MATCHES,
+            "minimum_evidence_type": "touches",
+            "minimum_evidence_count": PLAYER_ROLE_MIN_EVENTS,
+            "requires_team_context": True,
+        },
+        {
+            "label": "Role Migrant",
+            "formula": "player movement minus matched team movement has magnitude >= 8 percentage points",
+            "eligible_positions": ["FWD", "MID", "DEF", "GK", "UNK"],
+            "minimum_verified_exposure_seconds": PLAYER_ROLE_MIN_EXPOSURE_SECONDS,
+            "minimum_events": PLAYER_ROLE_MIN_EVENTS,
+            "minimum_matches": PLAYER_ROLE_MIN_MATCHES,
+            "minimum_evidence_type": "located touches",
+            "minimum_evidence_count": 5,
+            "requires_team_context": True,
+        },
+        {
+            "label": "State Constant",
+            "formula": "absolute rate changes < 15% and matched-team share changes < 3pp",
+            "eligible_positions": ["FWD", "MID", "DEF", "GK", "UNK"],
+            "minimum_verified_exposure_seconds": PLAYER_ROLE_MIN_EXPOSURE_SECONDS,
+            "minimum_events": PLAYER_ROLE_MIN_EVENTS,
+            "minimum_matches": PLAYER_ROLE_MIN_MATCHES,
+            "minimum_evidence_type": "actions",
+            "minimum_evidence_count": 20,
+            "requires_team_context": True,
+        },
+    ]
+
+
+def role_evidence(
+    profile,
+    lens: StateLens,
+    selected: dict,
+    baseline: dict | None,
+    team_selected: dict,
+    team_baseline: dict | None,
+    team_context_available: bool,
+    selected_evidence: dict,
+    baseline_evidence: dict | None,
+) -> list[dict]:
+    formulae = role_formulae()
+    if (
+        not baseline
+        or not lens.comparison_enabled
+        or not team_context_available
+        or lens.selected == lens.baseline
+    ):
+        return []
+    selected_exposure = selected["exposure_seconds"]
+    baseline_exposure = baseline["exposure_seconds"]
+    selected_events = selected["summary"]["actions"]
+    baseline_events = baseline["summary"]["actions"]
+    if min(selected_exposure, baseline_exposure) < PLAYER_ROLE_MIN_EXPOSURE_SECONDS:
+        return []
+    selected_match_count = selected_evidence["match_count"]
+    baseline_match_count = baseline_evidence["match_count"] if baseline_evidence else 0
+    if min(selected_match_count, baseline_match_count) < PLAYER_ROLE_MIN_MATCHES:
+        return []
+    if not team_baseline:
+        return []
+    selected_rate = selected["rates"]
+    baseline_rate = baseline["rates"]
+    selected_shares = selected["team_action_shares"]
+    baseline_shares = baseline["team_action_shares"]
+    player_position = selected["touch_location"]
+    baseline_position = baseline["touch_location"]
+    team_position = team_selected["touch_location"]
+    team_baseline_position = team_baseline["touch_location"]
+    position_supported = all(
+        location[coordinate_name] is not None
+        for location in (
+            player_position,
+            baseline_position,
+            team_position,
+            team_baseline_position,
+        )
+        for coordinate_name in ("x", "y")
+    )
+    player_delta_x = delta_value(player_position["x"], baseline_position["x"])
+    player_delta_y = delta_value(player_position["y"], baseline_position["y"])
+    team_delta_x = delta_value(team_position["x"], team_baseline_position["x"])
+    team_delta_y = delta_value(team_position["y"], team_baseline_position["y"])
+    relative_movement = max(
+        abs((player_delta_x or 0) - (team_delta_x or 0)),
+        abs((player_delta_y or 0) - (team_delta_y or 0)),
+    )
+    roles = []
+    progressive_rate_delta = relative_delta(selected_rate["progressive_actions"]["per_90"], baseline_rate["progressive_actions"]["per_90"])
+    carry_rate_delta = relative_delta(selected_rate["progressive_carries"]["per_90"], baseline_rate["progressive_carries"]["per_90"])
+    pass_accuracy_selected = percentage(selected["summary"]["pass_completions"], selected["summary"]["pass_attempts"])
+    pass_accuracy_baseline = percentage(baseline["summary"]["pass_completions"], baseline["summary"]["pass_attempts"])
+    share_delta = {
+        key: delta_value(selected_shares[key]["share"], baseline_shares[key]["share"])
+        for key in selected_shares
+    }
+    conditions = {
+        "Unlocker": progressive_rate_delta is not None and progressive_rate_delta >= 0.2 and share_delta["progressive_actions"] is not None and share_delta["progressive_actions"] >= 0.03,
+        "Progression Carrier": carry_rate_delta is not None and carry_rate_delta >= 0.2 and share_delta["progressive_actions"] is not None and share_delta["progressive_actions"] >= 0.02,
+        "Stabiliser": (pass_accuracy_selected is not None and pass_accuracy_baseline is not None and pass_accuracy_selected >= pass_accuracy_baseline and abs(progressive_rate_delta or 0) < 0.2),
+        "Territory Anchor": position_supported and max(abs(player_delta_x or 0), abs(player_delta_y or 0)) <= 5 and share_delta["touches"] is not None and share_delta["touches"] >= -0.03,
+        "Closer": lens.selected.state == "winning" and relative_delta(selected_rate["shots"]["per_90"], baseline_rate["shots"]["per_90"]) is not None and relative_delta(selected_rate["shots"]["per_90"], baseline_rate["shots"]["per_90"]) >= 0.3,
+        "Outlet": share_delta["touches"] is not None and share_delta["touches"] >= 0.03 and (relative_delta(selected_rate["pass_attempts"]["per_90"], baseline_rate["pass_attempts"]["per_90"]) or 0) >= 0.2,
+        "Role Migrant": position_supported and relative_movement >= 8,
+        "State Constant": max(
+            abs(progressive_rate_delta or 0),
+            abs(relative_delta(selected_rate["touches"]["per_90"], baseline_rate["touches"]["per_90"]) or 0),
+        ) < 0.15 and all(value is not None for value in share_delta.values()) and max(abs(value) for value in share_delta.values() if value is not None) < 0.03,
+    }
+    evidence_counts = {
+        "progressive actions": min(
+            selected["summary"]["progressive_actions"],
+            baseline["summary"]["progressive_actions"],
+        ),
+        "progressive carries": min(
+            selected["summary"]["progressive_carries"],
+            baseline["summary"]["progressive_carries"],
+        ),
+        "passes": min(
+            selected["summary"]["pass_attempts"],
+            baseline["summary"]["pass_attempts"],
+        ),
+        "located touches": min(
+            selected["touch_location"]["sample_size"],
+            baseline["touch_location"]["sample_size"],
+        ),
+        "shots": min(selected["summary"]["shots"], baseline["summary"]["shots"]),
+        "touches": min(selected["summary"]["touches"], baseline["summary"]["touches"]),
+        "actions": min(selected_events, baseline_events),
+    }
+    player_position_group = position_group(profile)
+    for formula in formulae:
+        label = formula["label"]
+        evidence_count = evidence_counts.get(formula["minimum_evidence_type"], 0)
+        if (
+            player_position_group in formula["eligible_positions"]
+            and min(selected_events, baseline_events) >= formula["minimum_events"]
+            and evidence_count >= formula["minimum_evidence_count"]
+            and conditions[label]
+        ):
+            roles.append({
+                "label": label,
+                "confidence": "directional",
+                "formula": formula["formula"],
+                "observations": {
+                    "selected": selected,
+                    "baseline": baseline,
+                    "matched_team_selected": team_selected,
+                    "matched_team_baseline": team_baseline,
+                    "relative_movement": {"x": delta_value(player_delta_x, team_delta_x), "y": delta_value(player_delta_y, team_delta_y)},
+                },
+                "reliability": {
+                    "verified_exposure_seconds": min(selected_exposure, baseline_exposure),
+                    "matches": min(selected_match_count, baseline_match_count),
+                    "events": min(selected_events, baseline_events),
+                    "evidence_type": formula["minimum_evidence_type"],
+                    "evidence_count": evidence_count,
+                    "minimum_evidence_count": formula["minimum_evidence_count"],
+                    "position_group": player_position_group,
+                    "sparse": False,
+                },
+            })
+    return roles
+
+
+def build_player_state_comparison(profile, lens: StateLens, match_ids: Iterable[int], *, team_context_required: bool = True) -> dict:
+    match_ids = list(dict.fromkeys(int(value) for value in match_ids))
+    selected_player_events, selected_team_events, selected_carries, selected_team_carries, _events, selected_segments = state_event_rows(profile, lens.selected, match_ids)
+    selected_evidence = player_state_evidence(profile, match_ids, lens.selected)
+    selected_player = action_context(selected_player_events, selected_carries, selected_evidence["exposure_seconds"])
+    selected_team = (
+        team_matched_context(
+            selected_team_events,
+            selected_team_carries,
+            selected_segments,
+            selected_evidence["exposure_seconds"],
+        )
+        if team_context_required
+        else None
+    )
+    selected_player["team_action_shares"] = (
+        team_relative_shares(selected_player["summary"], selected_team["summary"])
+        if selected_team is not None
+        else {}
+    )
+    selected_player["possession"] = possession_context(profile, selected_segments)
+    baseline_player = baseline_team = baseline_evidence = None
+    baseline_segments: list[PlayerExposureSegment] = []
+    if lens.baseline is not None:
+        baseline_player_events, baseline_team_events, baseline_carries, baseline_team_carries, _baseline_events, baseline_segments = state_event_rows(profile, lens.baseline, match_ids)
+        baseline_evidence = player_state_evidence(profile, match_ids, lens.baseline)
+        baseline_player = action_context(baseline_player_events, baseline_carries, baseline_evidence["exposure_seconds"])
+        baseline_team = (
+            team_matched_context(
+                baseline_team_events,
+                baseline_team_carries,
+                baseline_segments,
+                baseline_evidence["exposure_seconds"],
+            )
+            if team_context_required
+            else None
+        )
+        baseline_player["team_action_shares"] = (
+            team_relative_shares(baseline_player["summary"], baseline_team["summary"])
+            if baseline_team is not None
+            else {}
+        )
+        baseline_player["possession"] = possession_context(profile, baseline_segments)
+    comparison = None
+    roles = []
+    if baseline_player is not None and baseline_evidence is not None:
+        comparison = {
+            "enabled": True,
+            "selected_minus_baseline": {
+                key: {
+                    "absolute": delta_value(selected_player["rates"].get(key, {}).get("per_90"), baseline_player["rates"].get(key, {}).get("per_90")),
+                    "relative": relative_delta(selected_player["rates"].get(key, {}).get("per_90"), baseline_player["rates"].get(key, {}).get("per_90")),
+                    "unit": "per_90",
+                }
+                for key in selected_player["rates"]
+            },
+            "movement": {
+                "player": {
+                    "x": delta_value(selected_player["touch_location"]["x"], baseline_player["touch_location"]["x"]),
+                    "y": delta_value(selected_player["touch_location"]["y"], baseline_player["touch_location"]["y"]),
+                },
+                "matched_team": (
+                    {
+                        "x": delta_value(
+                            selected_team["touch_location"]["x"],
+                            baseline_team["touch_location"]["x"],
+                        ),
+                        "y": delta_value(
+                            selected_team["touch_location"]["y"],
+                            baseline_team["touch_location"]["y"],
+                        ),
+                    }
+                    if selected_team is not None and baseline_team is not None
+                    else None
+                ),
+            },
+            "action_share_change": (
+                {
+                    key: delta_value(
+                        selected_player["team_action_shares"][key]["share"],
+                        baseline_player["team_action_shares"][key]["share"],
+                    )
+                    for key in selected_player["team_action_shares"]
+                }
+                if team_context_required
+                else {}
+            ),
+        }
+        roles = role_evidence(
+            profile,
+            lens,
+            selected_player,
+            baseline_player,
+            selected_team,
+            baseline_team,
+            team_context_required,
+            selected_evidence,
+            baseline_evidence,
+        )
+    return {
+        "contract_version": PLAYER_STATE_COMPARISON_VERSION,
+        "canonical_player_id": profile.player_id,
+        "canonical_player_name": profile.player.display_name,
+        "canonical_team_id": profile.team_id,
+        "canonical_team_name": profile.team.name if profile.team else None,
+        "position_group": position_group(profile),
+        "selected": selected_player | {"evidence": selected_evidence},
+        "baseline": baseline_player | {"evidence": baseline_evidence} if baseline_player is not None and baseline_evidence is not None else None,
+        "comparison": comparison,
+        "response_roles": roles,
+        "role_formulae": role_formulae(),
+        "team_context": {
+            "available": team_context_required,
+            "matching": "same team, matches, state cohort, and verified player on-pitch intervals",
+            "selected": selected_team,
+            "baseline": baseline_team,
+        },
+        "exclusions": {
+            "unverified_player_intervals": True,
+            "unverified_team_state": True,
+            "timeline_missing_events": True,
+            "ambiguous_possessions": True,
+        },
+    }

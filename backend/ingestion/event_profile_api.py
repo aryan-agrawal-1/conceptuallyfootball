@@ -26,6 +26,7 @@ from ingestion.models import (
     ProviderMatchCarry,
     ProviderMatchEvent,
     ProviderMatchGameState,
+    ProviderMatchPlayerStateExposure,
     ProviderMatchTeamGameStateEpisode,
     TeamSeasonEventProfile,
 )
@@ -36,7 +37,14 @@ from ingestion.services.event_profiles import (
     _summary,
     event_profile_availability,
 )
+from ingestion.services.player_state_comparison import (
+    player_state_lens_metadata,
+    scope_player_carries,
+    scope_player_events,
+)
 from ingestion.state_lens import (
+    StateLens,
+    StateLensScope,
     parse_state_lens,
     scope_team_events,
     state_lens_metadata,
@@ -442,6 +450,7 @@ class PlayerEventProfileApi(PlayerEventProfileMixin, APIView):
         try:
             profile = self.resolve_profile(request, canonical_player_id)
             match_ref = parse_optional_match(request)
+            state_lens = parse_state_lens(request)
             cache_key = stable_cache_key(
                 f"event-profile:{profile.competition_season_id}:player",
                 {
@@ -451,6 +460,7 @@ class PlayerEventProfileApi(PlayerEventProfileMixin, APIView):
                     "season": profile.competition_season.season.label,
                     "team": profile.team_id,
                     "match": match_ref,
+                    "state_lens": state_lens.cache_scope(),
                     "formula_version": profile.formula_version,
                     "materialization_run": profile.materialized_ingestion_run_id,
                     "profile_version": profile.id,
@@ -458,8 +468,24 @@ class PlayerEventProfileApi(PlayerEventProfileMixin, APIView):
             )
             response, _ = get_or_build_payload_response(
                 cache_key=cache_key,
-                source_version=profile_source_version("player", profile, match_ref),
-                builder=lambda: self.build_payload(profile, match_ref),
+                source_version=profile_source_version(
+                    "player",
+                    profile,
+                    match_ref,
+                    state_lens.source_token(),
+                    model_version(
+                        ProviderMatchGameState,
+                        {"provider_match__competition_season": profile.competition_season_id},
+                    ),
+                    model_version(
+                        ProviderMatchPlayerStateExposure,
+                        {
+                            "player_interval__participation__provider_match__competition_season": profile.competition_season_id,
+                            "player_interval__participation__player_id": profile.player_id,
+                        },
+                    ),
+                ),
+                builder=lambda: self.build_payload(profile, match_ref, state_lens),
             )
             return response
         except DjangoValidationError as exc:
@@ -470,32 +496,52 @@ class PlayerEventProfileApi(PlayerEventProfileMixin, APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-    def build_payload(self, profile: PlayerSeasonEventProfile, match_ref: int | None) -> dict:
+    def build_payload(
+        self,
+        profile: PlayerSeasonEventProfile,
+        match_ref: int | None,
+        state_lens=None,
+    ) -> dict:
+        state_lens = state_lens or StateLens(StateLensScope(), None)
         scoped_queryset, matches, references = scope_queryset_to_match(
             player_event_queryset(profile), match_ref
         )
+        match_ids = list(scoped_queryset.values_list("provider_match_id", flat=True).distinct())
+        state_metadata = player_state_lens_metadata(profile, match_ids, state_lens)
+        selected_queryset = scoped_queryset
+        if not state_lens.selected.is_default:
+            selected_queryset = scope_player_events(
+                scoped_queryset,
+                profile,
+                state_lens.selected,
+                match_ids,
+            )
         shots = list(
-            scoped_queryset.filter(event_type=MatchEventType.SHOT).order_by(
+            selected_queryset.filter(event_type=MatchEventType.SHOT).order_by(
                 "provider_match__kickoff_at", "provider_match_id", "event_index"
             )
         )
-        if match_ref is None:
+        if match_ref is None and state_lens.selected.is_default:
             summary = {field: getattr(profile, field) for field in PLAYER_SUMMARY_FIELDS}
             touch_grid = profile.action_grid if profile.formula_version == FORMULA_VERSION else []
             located_touch_count = sum(cell.get("raw_count", 0) for cell in touch_grid)
             average_touch_x = profile.average_touch_x
             average_touch_y = profile.average_touch_y
         else:
-            events = list(scoped_queryset)
+            events = list(selected_queryset)
             summary_values = _summary(events)
-            observed_minutes = max(
-                (
-                    event.expanded_minute
-                    if event.expanded_minute is not None
-                    else event.minute
-                )
-                for event in events
-            ) if events else 0
+            observed_minutes = (
+                state_metadata["evidence"]["exposure_minutes"]
+                if not state_lens.selected.is_default
+                else max(
+                    (
+                        event.expanded_minute
+                        if event.expanded_minute is not None
+                        else event.minute
+                    )
+                    for event in events
+                ) if events else 0
+            )
             summary = {
                 field: summary_values[field]
                 for field in PLAYER_SUMMARY_FIELDS
@@ -505,7 +551,13 @@ class PlayerEventProfileApi(PlayerEventProfileMixin, APIView):
                 "minutes": observed_minutes,
                 "observed_event_minutes": observed_minutes,
             })
-            touch_grid, located_touch_count = _grid(events, 90, touches_only=True)
+            touch_grid, located_touch_count = _grid(
+                events,
+                state_metadata["evidence"]["exposure_seconds"] / 60
+                if not state_lens.selected.is_default
+                else 90,
+                touches_only=True,
+            )
             average_touch_x = summary_values["average_touch_x"]
             average_touch_y = summary_values["average_touch_y"]
         return {
@@ -531,6 +583,7 @@ class PlayerEventProfileApi(PlayerEventProfileMixin, APIView):
             "shots": [compact_shot(event, references) for event in shots],
             "matches": matches,
             "selected_match_ref": match_ref,
+            "state_lens": state_metadata,
         }
 
 
@@ -540,6 +593,7 @@ class PlayerEventProfilePassesApi(PlayerEventProfileMixin, APIView):
             profile = self.resolve_profile(request, canonical_player_id)
             pass_filter, pass_outcome = normalized_pass_filter(request)
             match_ref = parse_optional_match(request)
+            state_lens = parse_state_lens(request)
             carry_version = model_version(
                 ProviderMatchCarry,
                 {"provider_match__competition_season": profile.competition_season_id},
@@ -555,6 +609,7 @@ class PlayerEventProfilePassesApi(PlayerEventProfileMixin, APIView):
                     "pass_filter": pass_filter,
                     "pass_outcome": pass_outcome,
                     "match": match_ref,
+                    "state_lens": state_lens.cache_scope(),
                     "formula_version": profile.formula_version,
                     "materialization_run": profile.materialized_ingestion_run_id,
                     "profile_version": profile.id,
@@ -563,9 +618,17 @@ class PlayerEventProfilePassesApi(PlayerEventProfileMixin, APIView):
             response, _ = get_or_build_payload_response(
                 cache_key=cache_key,
                 source_version=profile_source_version(
-                    "player-passes", profile, pass_filter, pass_outcome, match_ref, carry_version
+                    "player-passes",
+                    profile,
+                    pass_filter,
+                    pass_outcome,
+                    match_ref,
+                    carry_version,
+                    state_lens.source_token(),
                 ),
-                builder=lambda: self.build_payload(profile, pass_filter, pass_outcome, match_ref),
+                builder=lambda: self.build_payload(
+                    profile, pass_filter, pass_outcome, match_ref, state_lens
+                ),
             )
             return response
         except DjangoValidationError as exc:
@@ -582,9 +645,15 @@ class PlayerEventProfilePassesApi(PlayerEventProfileMixin, APIView):
         pass_filter: str,
         pass_outcome: str,
         match_ref: int | None,
+        state_lens=None,
     ) -> dict:
+        state_lens = state_lens or StateLens(StateLensScope(), None)
         base_queryset = player_event_queryset(profile)
         queryset, matches, references = scope_queryset_to_match(base_queryset, match_ref)
+        match_ids = list(queryset.values_list("provider_match_id", flat=True).distinct())
+        state_metadata = player_state_lens_metadata(profile, match_ids, state_lens)
+        if not state_lens.selected.is_default:
+            queryset = scope_player_events(queryset, profile, state_lens.selected, match_ids)
         scoped_events = queryset
         queryset = queryset.filter(event_type=MatchEventType.PASS)
         queryset = PASS_FILTERS[pass_filter](queryset)
@@ -596,10 +665,25 @@ class PlayerEventProfilePassesApi(PlayerEventProfileMixin, APIView):
             ]
         )
         all_carries_queryset = self.derived_carries(profile, scoped_events)
-        total_all_carry_count = all_carries_queryset.count()
-        carries_queryset = CARRY_FILTERS[pass_filter](all_carries_queryset)
-        total_carry_count = carries_queryset.count()
-        carries = list(carries_queryset[:PASS_RESPONSE_LIMIT])
+        if state_lens.selected.is_default:
+            all_carries = list(all_carries_queryset)
+        else:
+            all_carries = scope_player_carries(
+                all_carries_queryset,
+                profile,
+                state_lens.selected,
+                match_ids,
+            )
+        total_all_carry_count = len(all_carries)
+        carries = [
+            carry for carry in all_carries
+            if pass_filter == "all"
+            or (pass_filter == "progressive" and carry.is_progressive_carry)
+            or (pass_filter == "final_third_entry" and carry.is_final_third_entry)
+            or (pass_filter == "box_entry" and carry.is_box_entry)
+        ]
+        total_carry_count = len(carries)
+        carries = carries[:PASS_RESPONSE_LIMIT]
         return {
             "canonical_player_id": profile.player_id,
             "canonical_team_id": profile.team_id,
@@ -618,6 +702,7 @@ class PlayerEventProfilePassesApi(PlayerEventProfileMixin, APIView):
             "carries": [compact_carry(carry, references) for carry in carries],
             "matches": matches,
             "selected_match_ref": match_ref,
+            "state_lens": state_metadata,
         }
 
     def derived_carries(
