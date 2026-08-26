@@ -350,13 +350,13 @@ type ApiPlayerStateCohort = {
   touch_grid: ApiPlayerStateGridCell[]
   defensive_grid: ApiPlayerStateGridCell[]
   defensive_height: { sample_size: number; mean: number | null; median: number | null }
-  team_action_shares: Record<string, {
+  team_action_shares?: Record<string, {
     player_count: number
     team_count: number
     share: number | null
     unit: string
   }>
-  possession: {
+  possession?: {
     available: boolean
     verified: boolean
     involved_possessions: number
@@ -370,7 +370,7 @@ type ApiPlayerStateCohort = {
     state_changing_possessions?: number
     transition_leverage?: ApiPlayerTransitionLeverage
   }
-  evidence: ApiStateLensEvidence
+  evidence?: ApiStateLensEvidence
 }
 
 type ApiPlayerStateComparison = {
@@ -674,27 +674,37 @@ function mapPlayerStateCohort(value: ApiPlayerStateCohort): PlayerStateCohort {
       mean: value.defensive_height.mean,
       median: value.defensive_height.median,
     },
-    teamActionShares: Object.fromEntries(Object.entries(value.team_action_shares).map(([key, share]) => [key, {
+    teamActionShares: Object.fromEntries(Object.entries(value.team_action_shares ?? {}).map(([key, share]) => [key, {
       playerCount: share.player_count,
       teamCount: share.team_count,
       share: share.share,
       unit: share.unit,
     }])),
     possession: {
-      available: value.possession.available,
-      verified: value.possession.verified,
-      involvedPossessions: value.possession.involved_possessions,
-      counterPossessions: value.possession.counter_possessions,
-      shotProducingPossessions: value.possession.shot_producing_possessions,
-      boxEntryPossessions: value.possession.box_entry_possessions,
-      finalThirdPossessions: value.possession.final_third_possessions,
-      ambiguousExcluded: value.possession.ambiguous_excluded,
-      bigChancePossessions: value.possession.big_chance_possessions ?? 0,
-      goalPossessions: value.possession.goal_possessions ?? 0,
-      stateChangingPossessions: value.possession.state_changing_possessions ?? 0,
-      transitionLeverage: mapPlayerTransitionLeverage(value.possession.transition_leverage),
+      available: value.possession?.available ?? false,
+      verified: value.possession?.verified ?? false,
+      involvedPossessions: value.possession?.involved_possessions ?? 0,
+      counterPossessions: value.possession?.counter_possessions ?? 0,
+      shotProducingPossessions: value.possession?.shot_producing_possessions ?? 0,
+      boxEntryPossessions: value.possession?.box_entry_possessions ?? 0,
+      finalThirdPossessions: value.possession?.final_third_possessions ?? 0,
+      ambiguousExcluded: value.possession?.ambiguous_excluded ?? 0,
+      bigChancePossessions: value.possession?.big_chance_possessions ?? 0,
+      goalPossessions: value.possession?.goal_possessions ?? 0,
+      stateChangingPossessions: value.possession?.state_changing_possessions ?? 0,
+      transitionLeverage: mapPlayerTransitionLeverage(value.possession?.transition_leverage),
     },
-    evidence: mapStateLensEvidence(value.evidence),
+    evidence: value.evidence ? mapStateLensEvidence(value.evidence) : {
+      exposureSeconds: value.exposure_seconds,
+      exposureMinutes: value.exposure_minutes,
+      episodeCount: 0,
+      matchCount: 0,
+      matchesIncluded: 0,
+      matchesExcluded: 0,
+      exclusionReasons: {},
+      formulaVersion: 'matched-player-intervals',
+      empty: value.exposure_seconds <= 0,
+    },
   }
 }
 

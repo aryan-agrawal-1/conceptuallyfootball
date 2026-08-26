@@ -15,6 +15,8 @@ from django.http import HttpRequest
 
 from ingestion.models import MaterializedApiPayload
 
+SOURCE_VERSION_MAX_LENGTH = 128
+
 
 def canonical_query_params(
     request: HttpRequest,
@@ -48,7 +50,12 @@ def model_version(model: type[Model], filters: Mapping[str, Any] | None = None) 
 
 
 def joined_version(*parts: Any) -> str:
-    return "|".join(str(part) for part in parts)
+    joined = "|".join(str(part) for part in parts)
+    if len(joined) <= SOURCE_VERSION_MAX_LENGTH:
+        return joined
+    digest = hashlib.sha256(joined.encode("utf-8")).hexdigest()
+    prefix_length = SOURCE_VERSION_MAX_LENGTH - len(digest) - 1
+    return f"{joined[:prefix_length]}:{digest}"
 
 
 def render_payload_json(payload: dict) -> str:

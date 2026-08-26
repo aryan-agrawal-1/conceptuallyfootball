@@ -17,6 +17,7 @@ from ingestion.models import (
     MatchEventType,
     MatchStateDrawProvenance,
     MatchStatePhase,
+    MaterializedApiPayload,
     PlayerSeasonDerivedStats,
     Provider,
     ProviderMatch,
@@ -391,6 +392,10 @@ class PlayerStateComparisonTests(TestCase):
         )
         response = PlayerStateComparisonApi.as_view()(request, self.player.id)
         self.assertEqual(response.status_code, 200)
+        cache_key = MaterializedApiPayload.objects.get(
+            cache_key__startswith=f"event-profile:{self.competition_season.id}:player-state:"
+        ).cache_key
+        self.assertLessEqual(len(cache_key), 128)
         payload = json.loads(response.content)
         self.assertTrue(payload["comparison"]["enabled"])
         self.assertEqual(payload["selected"]["summary"]["pass_attempts"], 1)

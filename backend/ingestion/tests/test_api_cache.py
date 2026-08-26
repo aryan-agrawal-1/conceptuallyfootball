@@ -4,11 +4,19 @@ import json
 
 from django.test import TestCase
 
-from ingestion.api_cache import get_or_build_payload_response
+from ingestion.api_cache import get_or_build_payload_response, joined_version
 from ingestion.models import MaterializedApiPayload
 
 
 class ApiCacheTests(TestCase):
+    def test_joined_version_bounds_long_source_tokens_deterministically(self):
+        first = joined_version("formula-v1", "x" * 200, 42)
+        repeated = joined_version("formula-v1", "x" * 200, 42)
+
+        self.assertEqual(first, repeated)
+        self.assertEqual(len(first), 128)
+        self.assertTrue(first.startswith("formula-v1|"))
+
     def test_payload_response_uses_rendered_cache(self):
         MaterializedApiPayload.objects.create(
             cache_key="cache-key",

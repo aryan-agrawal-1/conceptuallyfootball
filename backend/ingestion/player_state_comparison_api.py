@@ -66,7 +66,7 @@ class PlayerStateComparisonApi(PlayerEventProfileMixin, APIView):
             else:
                 team_context_available = len(team_ids) <= 1
             cache_key = stable_cache_key(
-                f"event-profile:{profile.competition_season_id}:player-state-comparison",
+                f"event-profile:{profile.competition_season_id}:player-state",
                 {
                     "endpoint": "player-state-comparison",
                     "player": canonical_player_id,
