@@ -348,6 +348,76 @@ export type PlayerStateLocation = {
   sampleSize: number
 }
 
+export type PlayerTransitionAction = {
+  sequence: number
+  eventType: string
+  matchSeconds: number | null
+  playerId: number | null
+  playerName: string | null
+  role: string
+  roleLabel: string
+}
+
+export type PlayerTransitionEvidence = {
+  matchRef: number
+  possessionId: string
+  teamId: number | null
+  state: {
+    state: string | null
+    goalDifference: number | null
+    phase: string | null
+    drawProvenance: string | null
+    stateAgeSeconds: number | null
+    episodeIndex: number | null
+  }
+  stateTransition: {
+    actual: boolean
+    classification: string
+    before: string | null
+    after: string | null
+    perspective: string | null
+  }
+  outcomeTier: string
+  rapidTransition: {
+    isCounterLaunch: boolean
+    qualifiesForwardProgress: boolean
+    elapsedSeconds: number | null
+    forwardMetres: number | null
+    speedMps: number | null
+    outcome: string | null
+  }
+  actionStages: string[]
+  actionEventIndexes: number[]
+  verifiedPlayerActionSequences: number[]
+  possessionTrace: PlayerTransitionAction[]
+}
+
+export type PlayerTransitionLeverage = {
+  available: boolean
+  verified: boolean
+  contractVersion: string
+  formulaVersion: string
+  opportunities: number
+  involvedPossessions: number
+  counterPossessions: number
+  shotProducingPossessions: number
+  boxEntryPossessions: number
+  finalThirdPossessions: number
+  bigChancePossessions: number
+  goalPossessions: number
+  stateChangingPossessions: number
+  sequenceStages: Record<string, {
+    actions: number
+    possessions: number
+    ratePerOpportunity: number | null
+  }>
+  sequenceEvidence: PlayerTransitionEvidence[]
+  evidenceTruncated: boolean
+  ambiguousExcluded: number
+  exclusions: Record<string, number>
+  matching: Record<string, boolean | string>
+}
+
 export type PlayerStateCohort = {
   exposureSeconds: number
   exposureMinutes: number
@@ -401,6 +471,10 @@ export type PlayerStateCohort = {
     boxEntryPossessions: number
     finalThirdPossessions: number
     ambiguousExcluded: number
+    bigChancePossessions: number
+    goalPossessions: number
+    stateChangingPossessions: number
+    transitionLeverage: PlayerTransitionLeverage
   }
   evidence: StateLensEvidence
 }

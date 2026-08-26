@@ -6,7 +6,7 @@ import { fetchGkShotZones, fetchPlayerEventProfile, fetchPlayerPassMap, fetchPla
 import { eventMatchExportLabel, type EventMapExportContext } from '../../lib/eventMaps/exportContext'
 import { stateLensRequest } from '../../lib/eventMaps/stateLensUrl'
 import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
-import type { PlayerPassFilter, PlayerPassOutcome, PlayerStateComparisonPayload, PlayerStateCohort, ShotOutcome, ShotZoneVariantKey, StateLensMetadata } from '../../types/eventMaps'
+import type { PlayerPassFilter, PlayerPassOutcome, PlayerStateComparisonPayload, PlayerStateCohort, PlayerTransitionEvidence, ShotOutcome, ShotZoneVariantKey, StateLensMetadata } from '../../types/eventMaps'
 import type { StateDeltaMapContract } from '../../lib/eventMaps/deltaMap'
 import { PortraitPitch } from './PortraitPitch'
 import { GoalZoneGridView, GoalZoneTotals } from './GoalZones'
@@ -327,6 +327,80 @@ function PlayerExposureCard({ label, cohort }: { label: string; cohort: PlayerSt
         <span>{cohort.summary.actions.toLocaleString()} actions</span>
         <span>{cohort.touchLocation.sampleSize.toLocaleString()} located touches</span>
         <span className={cohort.evidence.matchesExcluded ? 'text-gold' : ''}>{cohort.evidence.matchesExcluded.toLocaleString()} excluded matches</span>
+      </div>
+    </div>
+  )
+}
+
+function transitionLabel(value: string) {
+  return value.replaceAll('_', ' ').replace(/^./, character => character.toUpperCase())
+}
+
+function PlayerTransitionCohort({ label, cohort }: { label: string; cohort: PlayerStateCohort }) {
+  const transition = cohort.possession.transitionLeverage
+  return (
+    <div className="border border-control-border bg-raised/35 px-3 py-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink">{label}</p>
+        <span className={transition.available ? 'text-mint' : 'text-ink-muted'}>{transition.available ? 'supported' : 'unavailable'}</span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[10px] text-ink-dim sm:grid-cols-4">
+        <span>Involved <strong className="font-mono font-normal text-ink">{transition.involvedPossessions}</strong></span>
+        <span>Counter <strong className="font-mono font-normal text-ink">{transition.counterPossessions}</strong></span>
+        <span>Box entry <strong className="font-mono font-normal text-ink">{transition.boxEntryPossessions}</strong></span>
+        <span>Shot-producing <strong className="font-mono font-normal text-ink">{transition.shotProducingPossessions}</strong></span>
+        <span>Big chance <strong className="font-mono font-normal text-ink">{transition.bigChancePossessions}</strong></span>
+        <span>Goals <strong className="font-mono font-normal text-ink">{transition.goalPossessions}</strong></span>
+        <span>State changes <strong className="font-mono font-normal text-ink">{transition.stateChangingPossessions}</strong></span>
+        <span>Opportunities <strong className="font-mono font-normal text-ink">{transition.opportunities}</strong></span>
+      </div>
+      {transition.sequenceEvidence.length ? (
+        <details className="mt-2 border-t border-line-bright pt-2 text-[9px] leading-relaxed text-ink-dim">
+          <summary className="cursor-pointer font-bold uppercase tracking-[0.08em] text-electric">Inspect sequence evidence ({transition.sequenceEvidence.length}{transition.evidenceTruncated ? '+' : ''})</summary>
+          <div className="mt-2 space-y-2">
+            {transition.sequenceEvidence.map((evidence: PlayerTransitionEvidence) => (
+              <div key={evidence.possessionId} className="border border-line bg-panel px-2 py-2">
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-ink-dim">
+                  <span className="font-mono">match #{evidence.matchRef}</span>
+                  <span>{transitionLabel(evidence.outcomeTier)}</span>
+                  <span>{evidence.state.state ?? 'state unavailable'}</span>
+                  {evidence.rapidTransition.isCounterLaunch ? <span className="text-electric">counter launch</span> : null}
+                  {evidence.stateTransition.actual ? <span className="text-mint">{transitionLabel(evidence.stateTransition.classification)}</span> : null}
+                </div>
+                <ol className="mt-1.5 space-y-1 border-l border-line-bright pl-2">
+                  {evidence.possessionTrace.map(action => {
+                    const playerAction = evidence.verifiedPlayerActionSequences.includes(action.sequence)
+                    return <li key={`${evidence.possessionId}-${action.sequence}`} className={playerAction ? 'text-electric' : 'text-ink-dim'}>
+                      <span className="mr-1 font-mono text-ink-muted">{action.sequence + 1}.</span>
+                      <strong className="font-medium">{action.playerName ?? 'Unresolved player'}</strong>
+                      <span className="mx-1">·</span>{action.eventType.replaceAll('_', ' ')}
+                      <span className="mx-1">·</span>{action.roleLabel}
+                      {playerAction ? <span className="ml-1 text-[8px] uppercase tracking-[0.08em]">player action</span> : null}
+                    </li>
+                  })}
+                </ol>
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : (
+        <p className="mt-2 border-t border-line-bright pt-2 text-[9px] text-ink-muted">No linked player action falls inside a verified on-pitch interval in this cohort.</p>
+      )}
+      <p className="mt-2 text-[8px] leading-relaxed text-ink-muted">#117 transition sequence facts are shown only when the possession, team, state cohort and player timeline all match. Sequence proximity is evidence, not causality.</p>
+    </div>
+  )
+}
+
+function PlayerPossessionEvidence({ selected, baseline }: { selected: PlayerStateCohort; baseline: PlayerStateCohort | null }) {
+  return (
+    <div className="border border-line-bright bg-panel px-3 py-3" aria-label="Player possession involvement evidence">
+      <div>
+        <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-ink">Possession involvement</h3>
+        <p className="mt-1 text-[9px] leading-relaxed text-ink-dim">Counters and sequence roles consume the shared inspectable transition-leverage contract. Counts are restricted to linked player actions during verified on-pitch intervals.</p>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <PlayerTransitionCohort label="Selected state" cohort={selected} />
+        {baseline ? <PlayerTransitionCohort label="Baseline state" cohort={baseline} /> : <div className="border border-control-border bg-raised/25 px-3 py-2 text-[10px] text-ink-muted">Choose a baseline to compare possession involvement and sequence roles.</div>}
       </div>
     </div>
   )
@@ -654,6 +728,8 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
                   This player has multiple team contexts. Select a team above before reading action shares or response roles.
                 </EventMapNotice> : null}
               </div>
+
+              <PlayerPossessionEvidence selected={comparison.selected} baseline={comparison.baseline} />
 
               {touchShift ? <div className="border border-line-bright bg-panel p-3"><StateDeltaMap contract={touchShift} /></div> : null}
 

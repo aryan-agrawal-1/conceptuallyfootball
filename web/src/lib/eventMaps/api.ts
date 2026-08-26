@@ -9,6 +9,9 @@ import type {
   PlayerEventProfilePayload,
   PlayerStateComparisonPayload,
   PlayerStateCohort,
+  PlayerTransitionLeverage,
+  PlayerTransitionEvidence,
+  PlayerTransitionAction,
   PlayerPassFilter,
   PlayerPassOutcome,
   PlayerPassMapPayload,
@@ -239,6 +242,80 @@ type ApiPlayerStateGridCell = {
   share: number
 }
 
+type ApiPlayerTransitionState = {
+  state: string | null
+  goal_difference: number | null
+  phase: string | null
+  draw_provenance: string | null
+  state_age_seconds: number | null
+  episode_index: number | null
+}
+
+type ApiPlayerTransitionStateChange = {
+  actual: boolean
+  classification: string
+  before: string | null
+  after: string | null
+  perspective: string | null
+}
+
+type ApiPlayerTransitionAction = {
+  sequence: number
+  event_type: string
+  match_seconds: number | null
+  player_id: number | null
+  player_name: string | null
+  role: string
+  role_label: string
+}
+
+type ApiPlayerTransitionEvidence = {
+  match_ref: number
+  possession_id: string
+  team_id: number | null
+  state: ApiPlayerTransitionState
+  state_transition: ApiPlayerTransitionStateChange
+  outcome_tier: string
+  rapid_transition: {
+    is_counter_launch: boolean
+    qualifies_forward_progress: boolean
+    elapsed_seconds: number | null
+    forward_metres: number | null
+    speed_mps: number | null
+    outcome: string | null
+  }
+  action_stages: string[]
+  action_event_indexes: number[]
+  verified_player_action_sequences: number[]
+  possession_trace: ApiPlayerTransitionAction[]
+}
+
+type ApiPlayerTransitionLeverage = {
+  available: boolean
+  verified: boolean
+  contract_version: string
+  formula_version: string
+  opportunities: number
+  involved_possessions: number
+  counter_possessions: number
+  shot_producing_possessions: number
+  box_entry_possessions: number
+  final_third_possessions: number
+  big_chance_possessions: number
+  goal_possessions: number
+  state_changing_possessions: number
+  sequence_stages: Record<string, {
+    actions: number
+    possessions: number
+    rate_per_opportunity: number | null
+  }>
+  sequence_evidence: ApiPlayerTransitionEvidence[]
+  evidence_truncated: boolean
+  ambiguous_excluded: number
+  exclusions: Record<string, number>
+  matching: Record<string, boolean | string>
+}
+
 type ApiPlayerStateCohort = {
   exposure_seconds: number
   exposure_minutes: number
@@ -288,6 +365,10 @@ type ApiPlayerStateCohort = {
     box_entry_possessions: number
     final_third_possessions: number
     ambiguous_excluded: number
+    big_chance_possessions?: number
+    goal_possessions?: number
+    state_changing_possessions?: number
+    transition_leverage?: ApiPlayerTransitionLeverage
   }
   evidence: ApiStateLensEvidence
 }
@@ -446,6 +527,105 @@ function mapPlayerStateGrid(cells: ApiPlayerStateGridCell[]): ActionGridCell[] {
   }))
 }
 
+function mapPlayerTransitionAction(value: ApiPlayerTransitionAction): PlayerTransitionAction {
+  return {
+    sequence: value.sequence,
+    eventType: value.event_type,
+    matchSeconds: value.match_seconds,
+    playerId: value.player_id,
+    playerName: value.player_name,
+    role: value.role,
+    roleLabel: value.role_label,
+  }
+}
+
+function mapPlayerTransitionEvidence(value: ApiPlayerTransitionEvidence): PlayerTransitionEvidence {
+  return {
+    matchRef: value.match_ref,
+    possessionId: value.possession_id,
+    teamId: value.team_id,
+    state: {
+      state: value.state.state,
+      goalDifference: value.state.goal_difference,
+      phase: value.state.phase,
+      drawProvenance: value.state.draw_provenance,
+      stateAgeSeconds: value.state.state_age_seconds,
+      episodeIndex: value.state.episode_index,
+    },
+    stateTransition: {
+      actual: value.state_transition.actual,
+      classification: value.state_transition.classification,
+      before: value.state_transition.before,
+      after: value.state_transition.after,
+      perspective: value.state_transition.perspective,
+    },
+    outcomeTier: value.outcome_tier,
+    rapidTransition: {
+      isCounterLaunch: value.rapid_transition.is_counter_launch,
+      qualifiesForwardProgress: value.rapid_transition.qualifies_forward_progress,
+      elapsedSeconds: value.rapid_transition.elapsed_seconds,
+      forwardMetres: value.rapid_transition.forward_metres,
+      speedMps: value.rapid_transition.speed_mps,
+      outcome: value.rapid_transition.outcome,
+    },
+    actionStages: value.action_stages,
+    actionEventIndexes: value.action_event_indexes,
+    verifiedPlayerActionSequences: value.verified_player_action_sequences,
+    possessionTrace: value.possession_trace.map(mapPlayerTransitionAction),
+  }
+}
+
+function mapPlayerTransitionLeverage(value?: ApiPlayerTransitionLeverage): PlayerTransitionLeverage {
+  if (!value) {
+    return {
+      available: false,
+      verified: true,
+      contractVersion: 'transition_leverage_unavailable',
+      formulaVersion: 'unavailable',
+      opportunities: 0,
+      involvedPossessions: 0,
+      counterPossessions: 0,
+      shotProducingPossessions: 0,
+      boxEntryPossessions: 0,
+      finalThirdPossessions: 0,
+      bigChancePossessions: 0,
+      goalPossessions: 0,
+      stateChangingPossessions: 0,
+      sequenceStages: {},
+      sequenceEvidence: [],
+      evidenceTruncated: false,
+      ambiguousExcluded: 0,
+      exclusions: {},
+      matching: {},
+    }
+  }
+  return {
+    available: value.available,
+    verified: value.verified,
+    contractVersion: value.contract_version,
+    formulaVersion: value.formula_version,
+    opportunities: value.opportunities,
+    involvedPossessions: value.involved_possessions,
+    counterPossessions: value.counter_possessions,
+    shotProducingPossessions: value.shot_producing_possessions,
+    boxEntryPossessions: value.box_entry_possessions,
+    finalThirdPossessions: value.final_third_possessions,
+    bigChancePossessions: value.big_chance_possessions,
+    goalPossessions: value.goal_possessions,
+    stateChangingPossessions: value.state_changing_possessions,
+    sequenceStages: Object.fromEntries(Object.entries(value.sequence_stages).map(([key, stage]) => [key, {
+      actions: stage.actions,
+      possessions: stage.possessions,
+      ratePerOpportunity: stage.rate_per_opportunity,
+    }])),
+    sequenceEvidence: value.sequence_evidence.map(mapPlayerTransitionEvidence),
+    evidenceTruncated: value.evidence_truncated,
+    ambiguousExcluded: value.ambiguous_excluded,
+    exclusions: value.exclusions,
+    matching: value.matching,
+  }
+}
+
 function mapPlayerStateCohort(value: ApiPlayerStateCohort): PlayerStateCohort {
   const mapLocation = (location: ApiPlayerStateCohort['touch_location']) => ({
     x: location.x,
@@ -509,6 +689,10 @@ function mapPlayerStateCohort(value: ApiPlayerStateCohort): PlayerStateCohort {
       boxEntryPossessions: value.possession.box_entry_possessions,
       finalThirdPossessions: value.possession.final_third_possessions,
       ambiguousExcluded: value.possession.ambiguous_excluded,
+      bigChancePossessions: value.possession.big_chance_possessions ?? 0,
+      goalPossessions: value.possession.goal_possessions ?? 0,
+      stateChangingPossessions: value.possession.state_changing_possessions ?? 0,
+      transitionLeverage: mapPlayerTransitionLeverage(value.possession.transition_leverage),
     },
     evidence: mapStateLensEvidence(value.evidence),
   }

@@ -27,6 +27,10 @@ from ingestion.models import (
     ProviderMatchPlayerParticipation,
     ProviderMatchPlayerParticipationBuild,
     ProviderMatchPlayerStateExposure,
+    ProviderMatchPossession,
+    ProviderMatchPossessionBuild,
+    ProviderMatchPossessionEvent,
+    ProviderMatchPossessionParticipant,
     ProviderMatchStatus,
     ProviderMatchTeamGameStateEpisode,
     Season,
@@ -82,6 +86,7 @@ class PlayerStateComparisonTests(TestCase):
         self.add_carry(12, 2_500, self.player, x=6_000, y=7_000, end_x=7_000, end_y=7_000)
         self.add_carry(13, 2_600, self.teammate, x=7_000, y=8_000, end_x=8_000, end_y=8_000)
         self.create_state_rows()
+        self.create_possessions()
         run = IngestionRun.objects.create(
             kind=IngestionKind.EVENT_PROFILES,
             competition_season=self.competition_season,
@@ -221,6 +226,136 @@ class PlayerStateComparisonTests(TestCase):
                 formula_version="player_state_exposure_v1",
             )
 
+    def create_possessions(self):
+        outside_interval = ProviderMatchEvent.objects.create(
+            provider_match=self.match,
+            event_index=5,
+            provider_event_sequence_id="5",
+            provider_team_id="home",
+            team=self.home,
+            provider_player_id=str(self.player.id),
+            player=self.player,
+            period=MatchEventPeriod.FIRST_HALF,
+            minute=13,
+            second=20,
+            match_seconds=800,
+            timeline_seconds=None,
+            event_type=MatchEventType.PASS,
+            outcome_successful=True,
+            x=4_000,
+            y=4_000,
+            end_x=5_000,
+            end_y=4_000,
+            is_touch=True,
+        )
+        build = ProviderMatchPossessionBuild.objects.create(
+            provider_match=self.match,
+            calculation_version="possession_context_v1",
+            possession_count=3,
+            included_event_count=5,
+            calculated_at=datetime.now(tz=timezone.utc),
+        )
+        drawing = ProviderMatchPossession.objects.create(
+            build=build,
+            provider_match=self.match,
+            possession_index=0,
+            identity="state-comparison-drawing-possession",
+            provider_team_id="home",
+            team=self.home,
+            period=MatchEventPeriod.FIRST_HALF,
+            start_second=600,
+            end_second=701,
+            duration_seconds=101,
+            start_x=2_000,
+            start_y=2_000,
+            end_x=5_000,
+            end_y=3_000,
+            action_count=2,
+            termination_reason="period_end",
+            launch_type="turnover_recovery",
+            is_counter_launch=True,
+            counter_final_third_arrival=True,
+            counter_box_arrival=True,
+            counter_shot=True,
+            counter_outcome="saved",
+            counter_elapsed_seconds=100,
+            diagnostics={"qualifies_counter_progress": True},
+        )
+        winning = ProviderMatchPossession.objects.create(
+            build=build,
+            provider_match=self.match,
+            possession_index=1,
+            identity="state-comparison-winning-possession",
+            provider_team_id="home",
+            team=self.home,
+            period=MatchEventPeriod.FIRST_HALF,
+            start_second=2_000,
+            end_second=2_101,
+            duration_seconds=101,
+            start_x=7_000,
+            start_y=7_000,
+            end_x=9_000,
+            end_y=8_000,
+            action_count=2,
+            termination_reason="period_end",
+            launch_type="continued_control",
+        )
+        out_of_interval = ProviderMatchPossession.objects.create(
+            build=build,
+            provider_match=self.match,
+            possession_index=2,
+            identity="state-comparison-outside-interval-possession",
+            provider_team_id="home",
+            team=self.home,
+            period=MatchEventPeriod.FIRST_HALF,
+            start_second=800,
+            end_second=801,
+            duration_seconds=1,
+            start_x=4_000,
+            start_y=4_000,
+            end_x=5_000,
+            end_y=4_000,
+            action_count=1,
+            termination_reason="period_end",
+            launch_type="continued_control",
+        )
+        events = list(
+            ProviderMatchEvent.objects.filter(provider_match=self.match)
+            .exclude(event_index=outside_interval.event_index)
+            .order_by("event_index")
+        )
+        for possession, linked_events in (
+            (drawing, events[:2]),
+            (winning, events[2:]),
+        ):
+            for sequence, event in enumerate(linked_events):
+                ProviderMatchPossessionEvent.objects.create(
+                    possession=possession,
+                    event=event,
+                    sequence=sequence,
+                    is_control_action=True,
+                )
+                ProviderMatchPossessionParticipant.objects.create(
+                    possession=possession,
+                    provider_player_id=str(event.player_id),
+                    player=event.player,
+                    first_event_index=event.event_index,
+                    action_count=1,
+                )
+        ProviderMatchPossessionEvent.objects.create(
+            possession=out_of_interval,
+            event=outside_interval,
+            sequence=0,
+            is_control_action=True,
+        )
+        ProviderMatchPossessionParticipant.objects.create(
+            possession=out_of_interval,
+            provider_player_id=str(outside_interval.player_id),
+            player=outside_interval.player,
+            first_event_index=outside_interval.event_index,
+            action_count=1,
+        )
+
     @property
     def scope(self):
         return {"competition": "TST", "season": "2025-26"}
@@ -271,3 +406,42 @@ class PlayerStateComparisonTests(TestCase):
         self.assertEqual(payload["selected"]["defensive_location"]["sample_size"], 0)
         self.assertEqual(payload["team_context"]["matching"], "same team, matches, state cohort, and verified player on-pitch intervals")
         self.assertEqual(payload["response_roles"], [])
+
+    def test_comparison_projects_transition_leverage_onto_verified_player_actions(self):
+        request = APIRequestFactory().get(
+            "/api/v1/player-state-comparison",
+            {
+                **self.scope,
+                "state": "winning",
+                "baseline_state": "drawing",
+                "baseline_draw_provenance": "neutral",
+            },
+        )
+        response = PlayerStateComparisonApi.as_view()(request, self.player.id)
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.content)
+
+        selected = payload["selected"]["possession"]
+        baseline = payload["baseline"]["possession"]
+        self.assertEqual(selected["involved_possessions"], 1)
+        self.assertEqual(baseline["involved_possessions"], 1)
+        self.assertEqual(selected["counter_possessions"], 0)
+        self.assertEqual(baseline["counter_possessions"], 1)
+        self.assertEqual(baseline["shot_producing_possessions"], 1)
+        self.assertEqual(baseline["box_entry_possessions"], 1)
+        self.assertEqual(baseline["final_third_possessions"], 1)
+
+        transition = baseline["transition_leverage"]
+        self.assertEqual(transition["contract_version"], "transition_leverage_api_v2")
+        self.assertEqual(transition["opportunities"], 1)
+        self.assertEqual(transition["sequence_stages"]["origin_recovery"]["actions"], 1)
+        self.assertEqual(transition["sequence_stages"]["origin_recovery"]["possessions"], 1)
+        self.assertEqual(len(transition["sequence_evidence"]), 1)
+        evidence = transition["sequence_evidence"][0]
+        self.assertEqual(evidence["state"]["state"], "drawing")
+        self.assertEqual(evidence["action_event_indexes"], [1])
+        self.assertEqual(evidence["verified_player_action_sequences"], [0])
+        self.assertEqual(evidence["possession_trace"][0]["player_id"], self.player.id)
+        self.assertEqual(transition["matching"]["same_team"], True)
+        self.assertEqual(transition["matching"]["verified_player_on_pitch_intervals"], True)
+        self.assertEqual(transition["exclusions"]["outside_verified_player_interval"], 2)

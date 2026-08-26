@@ -10,12 +10,12 @@ chains or infer participation from event presence.
 
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from statistics import median
 from typing import Iterable
 
-from django.db.models import Count
+from django.db.models import Count, Prefetch
 
 from ingestion.models import (
     MatchEventGameState,
@@ -31,8 +31,12 @@ from ingestion.models import (
     ProviderMatchPlayerParticipation,
     ProviderMatchPlayerStateExposure,
     ProviderMatchPossession,
+    ProviderMatchPossessionEvent,
+    ProviderMatchPossessionParticipant,
+    ProviderMatchTeamGameStateEpisode,
     Provider,
 )
+from ingestion.services.possession_context import POSSESSION_CALCULATION_VERSION
 from ingestion.services.whoscored_normalization import (
     ACTION_GRID_COLUMNS,
     ACTION_GRID_ROWS,
@@ -48,10 +52,11 @@ from ingestion.state_lens import (
 )
 
 
-PLAYER_STATE_COMPARISON_VERSION = "player_state_comparison_v1"
+PLAYER_STATE_COMPARISON_VERSION = "player_state_comparison_v2"
 PLAYER_ROLE_MIN_EXPOSURE_SECONDS = 900
 PLAYER_ROLE_MIN_EVENTS = 5
 PLAYER_ROLE_MIN_MATCHES = 2
+PLAYER_TRANSITION_EVIDENCE_LIMIT = 25
 
 
 @dataclass(frozen=True, slots=True)
@@ -651,34 +656,341 @@ def team_matched_context(team_events: list, team_carries: list, segments: list[P
     return action_context(team_events, team_carries, exposure_seconds)
 
 
-def possession_context(profile, segments: list[PlayerExposureSegment]) -> dict:
+def _transition_scope_matches(context: dict, scope: StateLensScope) -> bool:
+    """Match a #117 observation to the already-selected player State Lens."""
+
+    if scope.state != "all" and context.get("state") != scope.state:
+        return False
+    if scope.goal_difference is not None and context.get("goal_difference") != scope.goal_difference:
+        return False
+    if scope.phase is not None and context.get("phase") != scope.phase:
+        return False
+    if scope.draw_provenance is not None and context.get("draw_provenance") != scope.draw_provenance:
+        return False
+    age = context.get("state_age_seconds")
+    if scope.minimum_state_age_seconds is not None and (
+        age is None or age < scope.minimum_state_age_seconds
+    ):
+        return False
+    if scope.maximum_state_age_seconds is not None and (
+        age is None or age >= scope.maximum_state_age_seconds
+    ):
+        return False
+    return True
+
+
+def _transition_player_evidence(
+    profile,
+    segments: list[PlayerExposureSegment],
+    scope: StateLensScope,
+) -> dict:
+    """Project the #117 sequence contract onto verified player exposure.
+
+    ``possession_observation`` is the shared transition-leverage formatter. It
+    keeps outcome/state/sequence semantics identical to the team surface while
+    this function supplies the player-specific denominator: a player event
+    must be linked to the possession, have a verified timeline timestamp, and
+    fall inside the player's selected team interval.
+    """
+
+    from ingestion.services.transition_leverage import (
+        TRANSITION_LEVERAGE_API_VERSION,
+        TRANSITION_LEVERAGE_FORMULA_VERSION,
+        possession_observation,
+    )
+
+    empty_stages = {
+        key: {
+            "actions": 0,
+            "possessions": 0,
+            "rate_per_opportunity": None,
+        }
+        for key in (
+            "origin_recovery",
+            "escape",
+            "advancement",
+            "destabilisation",
+            "creation",
+            "contest",
+            "terminal",
+            "support",
+        )
+    }
+    empty = {
+        "available": False,
+        "verified": True,
+        "contract_version": TRANSITION_LEVERAGE_API_VERSION,
+        "formula_version": TRANSITION_LEVERAGE_FORMULA_VERSION,
+        "opportunities": 0,
+        "involved_possessions": 0,
+        "counter_possessions": 0,
+        "shot_producing_possessions": 0,
+        "box_entry_possessions": 0,
+        "final_third_possessions": 0,
+        "big_chance_possessions": 0,
+        "goal_possessions": 0,
+        "state_changing_possessions": 0,
+        "sequence_stages": empty_stages,
+        "sequence_evidence": [],
+        "evidence_truncated": False,
+        "ambiguous_excluded": 0,
+        "exclusions": {
+            "ambiguous_possessions": 0,
+            "outside_verified_player_interval": 0,
+            "state_or_team_mismatch": 0,
+        },
+        "matching": {
+            "same_matches": True,
+            "same_team": True,
+            "same_state_cohort": True,
+            "verified_player_on_pitch_intervals": True,
+            "timeline": "half_open_played_seconds",
+        },
+    }
     match_ids = {segment.match_id for segment in segments}
+    team_ids = {segment.team_id for segment in segments if segment.team_id is not None}
+    if not match_ids or not team_ids:
+        return empty
+
+    matches = list(
+        ProviderMatch.objects.filter(
+            pk__in=match_ids,
+            provider=Provider.WHOSCORED,
+        )
+        .select_related("home_team", "away_team")
+        .order_by("kickoff_at", "id")
+    )
+    match_by_id = {match.id: match for match in matches}
+    match_refs = {match.id: index for index, match in enumerate(matches)}
+    episode_rows = ProviderMatchTeamGameStateEpisode.objects.filter(
+        provider_match_id__in=match_ids,
+        focal_team_id__in=team_ids,
+    ).order_by("provider_match_id", "focal_team_id", "episode_index")
+    episodes_by_match_team: dict[tuple[int, int], list] = {}
+    for episode in episode_rows:
+        episodes_by_match_team.setdefault(
+            (int(episode.provider_match_id), int(episode.focal_team_id)), []
+        ).append(episode)
+
+    link_queryset = ProviderMatchPossessionEvent.objects.select_related(
+        "event", "event__player", "event__team"
+    ).order_by("sequence")
     possessions = list(
         ProviderMatchPossession.objects.filter(
             provider_match_id__in=match_ids,
-            participants__player_id=profile.player_id,
-            is_ambiguous=False,
-        ).distinct()
-    )
-    included = [
-        possession for possession in possessions
-        if any(
-            segment.match_id == possession.provider_match_id
-            and segment.team_id == possession.team_id
-            and possession.start_second < segment.end_second
-            and possession.end_second > segment.start_second
-            for segment in segments
+            team_id__in=team_ids,
+            build__calculation_version=POSSESSION_CALCULATION_VERSION,
         )
+        .distinct()
+        .select_related("provider_match", "team", "build")
+        .prefetch_related(
+            Prefetch("event_links", queryset=link_queryset),
+            Prefetch(
+                "participants",
+                queryset=ProviderMatchPossessionParticipant.objects.filter(
+                    player_id=profile.player_id
+                ),
+                to_attr="player_participants",
+            ),
+        )
+        .order_by("provider_match_id", "possession_index")
+    )
+    candidate_possessions = [
+        possession
+        for possession in possessions
+        if getattr(possession, "player_participants", ())
     ]
+    candidate_count = len(candidate_possessions)
+    ambiguous_count = sum(possession.is_ambiguous for possession in candidate_possessions)
+    stages = {
+        key: value.copy() for key, value in empty_stages.items()
+    }
+    observations: list[dict] = []
+    outside_interval_count = 0
+    state_or_team_mismatch_count = 0
+    opportunities = 0
+    for possession in possessions:
+        if possession.is_ambiguous:
+            continue
+        match = match_by_id.get(int(possession.provider_match_id))
+        team_id = getattr(possession, "team_id", None)
+        if match is None or team_id is None:
+            state_or_team_mismatch_count += 1
+            continue
+        matching_segments = [
+            segment
+            for segment in segments
+            if segment.match_id == possession.provider_match_id
+            and segment.team_id == team_id
+        ]
+        if not matching_segments:
+            if getattr(possession, "player_participants", ()):
+                state_or_team_mismatch_count += 1
+            continue
+        links = list(possession.event_links.all())
+        links.sort(key=lambda link: (int(link.sequence), int(link.event.event_index)))
+        team_sequences = [
+            sequence
+            for sequence, link in enumerate(links)
+            if link.event.team_id == team_id
+            and event_in_segments(link.event, matching_segments, link.event.team_id)
+        ]
+        focal_team = getattr(possession, "team", None)
+        if focal_team is None:
+            focal_team = (
+                match.home_team
+                if match.home_team_id == team_id
+                else match.away_team
+                if match.away_team_id == team_id
+                else None
+            )
+        if focal_team is None:
+            if getattr(possession, "player_participants", ()):
+                state_or_team_mismatch_count += 1
+            continue
+        opportunity_observation = None
+        if team_sequences:
+            opportunity_observation = possession_observation(
+                possession,
+                match=match,
+                focal_team=focal_team,
+                match_ref=match_refs.get(match.id, 0),
+                episodes=episodes_by_match_team.get((match.id, int(team_id)), ()),
+            )
+            if _transition_scope_matches(opportunity_observation["state"], scope):
+                opportunities += 1
+        verified_player_sequences = [
+            sequence
+            for sequence, link in enumerate(links)
+            if link.event.player_id == profile.player_id
+            and link.event.team_id == team_id
+            and event_in_segments(link.event, matching_segments, link.event.team_id)
+        ]
+        if not verified_player_sequences:
+            if getattr(possession, "player_participants", ()):
+                outside_interval_count += 1
+            continue
+        observation = opportunity_observation or possession_observation(
+            possession,
+            match=match,
+            focal_team=focal_team,
+            match_ref=match_refs.get(match.id, 0),
+            episodes=episodes_by_match_team.get((match.id, int(team_id)), ()),
+        )
+        if not _transition_scope_matches(observation["state"], scope):
+            state_or_team_mismatch_count += 1
+            continue
+        # #117 deliberately exposes the richer rapid-transition outcome but
+        # keeps the materialized #112 arrival flags as the source of truth for
+        # the legacy player counters.  Retain those flags internally while
+        # exposing the inspectable sequence below.
+        observation["_counter_evidence"] = {
+            "final_third_arrival": bool(getattr(possession, "counter_final_third_arrival", False)),
+            "box_arrival": bool(getattr(possession, "counter_box_arrival", False)),
+            "shot": bool(getattr(possession, "counter_shot", False)),
+        }
+        observation["verified_player_action_sequences"] = verified_player_sequences
+        observation["verified_player_action_event_indexes"] = [
+            links[sequence].event.event_index for sequence in verified_player_sequences
+        ]
+        observations.append(observation)
+
+    role_possession_ids: dict[str, set[str]] = defaultdict(set)
+    for observation in observations:
+        for sequence in observation["verified_player_action_sequences"]:
+            action = observation["possession_trace"][sequence]
+            role = action["role"]
+            stages[role]["actions"] += 1
+            role_possession_ids[role].add(observation["possession_id"])
+        is_counter = observation["rapid_transition"]["is_counter_launch"]
+        if is_counter:
+            empty["counter_possessions"] += 1
+            outcome = observation["rapid_transition"].get("outcome")
+            direction_ladder = observation["direction_ladder"]
+            counter_evidence = observation["_counter_evidence"]
+            if (
+                counter_evidence["shot"]
+                or direction_ladder.get("shot")
+                or outcome in {"saved", "goal", "missed", "blocked", "woodwork"}
+            ):
+                empty["shot_producing_possessions"] += 1
+            if counter_evidence["box_arrival"] or direction_ladder.get("box_entry") or outcome == "box_arrival":
+                empty["box_entry_possessions"] += 1
+            if (
+                counter_evidence["final_third_arrival"]
+                or direction_ladder.get("territorial_entry")
+                or outcome == "final_third_arrival"
+            ):
+                empty["final_third_possessions"] += 1
+        if observation["direction_ladder"].get("big_chance"):
+            empty["big_chance_possessions"] += 1
+        if observation["score"]["perspective"] == "for":
+            empty["goal_possessions"] += 1
+        if observation["state_transition"]["actual"]:
+            empty["state_changing_possessions"] += 1
+
+    involved = len(observations)
+    for role, possession_ids in role_possession_ids.items():
+        stages[role]["possessions"] = len(possession_ids)
+        stages[role]["rate_per_opportunity"] = (
+            round(len(possession_ids) / opportunities, 4) if opportunities else None
+        )
+    sequence_evidence = []
+    for observation in observations[:PLAYER_TRANSITION_EVIDENCE_LIMIT]:
+        sequence_evidence.append({
+            "match_ref": observation["match_ref"],
+            "possession_id": observation["possession_id"],
+            "team_id": observation["team_id"],
+            "state": observation["state"],
+            "state_transition": observation["state_transition"],
+            "outcome_tier": observation["outcome_tier"],
+            "rapid_transition": observation["rapid_transition"],
+            "action_stages": sorted({
+                observation["possession_trace"][sequence]["stage"]
+                for sequence in observation["verified_player_action_sequences"]
+            }),
+            "action_event_indexes": observation["verified_player_action_event_indexes"],
+            "verified_player_action_sequences": observation["verified_player_action_sequences"],
+            "possession_trace": observation["possession_trace"],
+        })
+    empty.update({
+        "available": candidate_count > 0,
+        "opportunities": opportunities,
+        "involved_possessions": involved,
+        "sequence_stages": stages,
+        "sequence_evidence": sequence_evidence,
+        "evidence_truncated": len(observations) > PLAYER_TRANSITION_EVIDENCE_LIMIT,
+        "ambiguous_excluded": ambiguous_count,
+        "exclusions": {
+            "ambiguous_possessions": ambiguous_count,
+            "outside_verified_player_interval": outside_interval_count,
+            "state_or_team_mismatch": state_or_team_mismatch_count,
+        },
+    })
+    return empty
+
+
+def possession_context(
+    profile,
+    segments: list[PlayerExposureSegment],
+    scope: StateLensScope = StateLensScope(),
+) -> dict:
+    """Return legacy counters plus the inspectable #117 player projection."""
+
+    transition = _transition_player_evidence(profile, segments, scope)
     return {
-        "available": bool(possessions),
-        "verified": True,
-        "involved_possessions": len(included),
-        "counter_possessions": sum(possession.is_counter_launch for possession in included),
-        "shot_producing_possessions": sum(possession.counter_shot for possession in included),
-        "box_entry_possessions": sum(possession.counter_box_arrival for possession in included),
-        "final_third_possessions": sum(possession.counter_final_third_arrival for possession in included),
-        "ambiguous_excluded": sum(possession.is_ambiguous for possession in possessions),
+        "available": transition["available"],
+        "verified": transition["verified"],
+        "involved_possessions": transition["involved_possessions"],
+        "counter_possessions": transition["counter_possessions"],
+        "shot_producing_possessions": transition["shot_producing_possessions"],
+        "box_entry_possessions": transition["box_entry_possessions"],
+        "final_third_possessions": transition["final_third_possessions"],
+        "ambiguous_excluded": transition["ambiguous_excluded"],
+        "big_chance_possessions": transition["big_chance_possessions"],
+        "goal_possessions": transition["goal_possessions"],
+        "state_changing_possessions": transition["state_changing_possessions"],
+        "transition_leverage": transition,
     }
 
 
@@ -947,7 +1259,11 @@ def build_player_state_comparison(profile, lens: StateLens, match_ids: Iterable[
         if selected_team is not None
         else {}
     )
-    selected_player["possession"] = possession_context(profile, selected_segments)
+    selected_player["possession"] = possession_context(
+        profile,
+        selected_segments,
+        lens.selected,
+    )
     baseline_player = baseline_team = baseline_evidence = None
     baseline_segments: list[PlayerExposureSegment] = []
     if lens.baseline is not None:
@@ -969,7 +1285,11 @@ def build_player_state_comparison(profile, lens: StateLens, match_ids: Iterable[
             if baseline_team is not None
             else {}
         )
-        baseline_player["possession"] = possession_context(profile, baseline_segments)
+        baseline_player["possession"] = possession_context(
+            profile,
+            baseline_segments,
+            lens.baseline,
+        )
     comparison = None
     roles = []
     if baseline_player is not None and baseline_evidence is not None:

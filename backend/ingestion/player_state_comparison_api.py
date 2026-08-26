@@ -22,8 +22,13 @@ from ingestion.event_profile_api import (
 from ingestion.models import (
     PlayerSeasonEventProfile,
     ProviderMatchEvent,
+    ProviderMatchPlayerParticipationBuild,
     ProviderMatchPlayerParticipation,
     ProviderMatchPlayerStateExposure,
+    ProviderMatchPossession,
+    ProviderMatchPossessionBuild,
+    ProviderMatchPossessionEvent,
+    ProviderMatchTeamGameStateEpisode,
 )
 from ingestion.services.player_state_comparison import (
     PLAYER_STATE_COMPARISON_VERSION,
@@ -90,6 +95,33 @@ class PlayerStateComparisonApi(PlayerEventProfileMixin, APIView):
                             "player_interval__participation__provider_match__competition_season": profile.competition_season_id,
                             "player_interval__participation__player_id": profile.player_id,
                         },
+                    ),
+                    model_version(
+                        ProviderMatchPlayerParticipation,
+                        {
+                            "provider_match__competition_season": profile.competition_season_id,
+                            "player_id": profile.player_id,
+                        },
+                    ),
+                    model_version(
+                        ProviderMatchPlayerParticipationBuild,
+                        {"provider_match__competition_season": profile.competition_season_id},
+                    ),
+                    model_version(
+                        ProviderMatchPossession,
+                        {"provider_match__competition_season": profile.competition_season_id},
+                    ),
+                    model_version(
+                        ProviderMatchPossessionBuild,
+                        {"provider_match__competition_season": profile.competition_season_id},
+                    ),
+                    model_version(
+                        ProviderMatchPossessionEvent,
+                        {"possession__provider_match__competition_season": profile.competition_season_id},
+                    ),
+                    model_version(
+                        ProviderMatchTeamGameStateEpisode,
+                        {"provider_match__competition_season": profile.competition_season_id},
                     ),
                     lens.source_token(),
                 ),
