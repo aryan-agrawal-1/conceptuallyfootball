@@ -199,6 +199,7 @@ export type StateLensEvidence = {
   exclusionReasons: Record<string, number>
   formulaVersion: string
   empty: boolean
+  reliability?: Record<string, boolean | string | number>
 }
 
 export type StateLensMetadata = {
@@ -252,6 +253,7 @@ export type PlayerEventProfilePayload = {
   touchGrid: ActionGridCell[]
   shots: EventShot[]
   matches: EventMatchLookup
+  stateLens?: StateLensMetadata
 }
 
 export type PlayerPassMapPayload = {
@@ -268,6 +270,7 @@ export type PlayerPassMapPayload = {
   passes: EventPass[]
   carries: EventCarry[]
   matches: EventMatchLookup
+  stateLens?: StateLensMetadata
 }
 
 export type ShotZoneCell = {
@@ -315,6 +318,7 @@ export type PlayerShotZonesPayload = {
   shotCount: number
   variants: Record<ShotZoneVariantKey, ShotZoneVariant>
   matches: EventMatchLookup
+  stateLens?: StateLensMetadata
 }
 
 export type GkShotZonesPayload = {
@@ -329,6 +333,120 @@ export type GkShotZonesPayload = {
   shotsFaced: number
   variants: Record<ShotZoneVariantKey, ShotZoneVariant>
   matches: EventMatchLookup
+  stateLens?: StateLensMetadata
+}
+
+export type PlayerStateMetric = {
+  count: number
+  perStateMinute: number | null
+  per90: number | null
+}
+
+export type PlayerStateLocation = {
+  x: number | null
+  y: number | null
+  sampleSize: number
+}
+
+export type PlayerStateCohort = {
+  exposureSeconds: number
+  exposureMinutes: number
+  summary: Record<string, number>
+  rates: Record<string, PlayerStateMetric>
+  passing: {
+    attempts: number
+    completed: number
+    completionRate: number | null
+    progressive: number
+    keyPasses: number
+    finalThirdEntries: number
+    boxEntries: number
+    crosses: number
+    longBalls: number
+    meanLengthMetres: number | null
+    meanForwardMetres: number | null
+    forwardShare: number | null
+  }
+  carrying: {
+    attempts: number
+    progressive: number
+    finalThirdEntries: number
+    boxEntries: number
+    meanLengthMetres: number | null
+    meanForwardMetres: number | null
+    forwardShare: number | null
+  }
+  touchLocation: PlayerStateLocation
+  actionLocation: PlayerStateLocation
+  defensiveLocation: PlayerStateLocation
+  touchGrid: ActionGridCell[]
+  defensiveGrid: ActionGridCell[]
+  defensiveHeight: {
+    sampleSize: number
+    mean: number | null
+    median: number | null
+  }
+  teamActionShares: Record<string, {
+    playerCount: number
+    teamCount: number
+    share: number | null
+    unit: string
+  }>
+  possession: {
+    available: boolean
+    verified: boolean
+    involvedPossessions: number
+    counterPossessions: number
+    shotProducingPossessions: number
+    boxEntryPossessions: number
+    finalThirdPossessions: number
+    ambiguousExcluded: number
+  }
+  evidence: StateLensEvidence
+}
+
+export type PlayerStateComparisonPayload = {
+  contractVersion: string
+  playerId: number
+  playerName: string
+  teamId: number | null
+  teamName: string | null
+  positionGroup: string
+  stateLens: StateLensMetadata
+  selected: PlayerStateCohort
+  baseline: PlayerStateCohort | null
+  comparison: {
+    enabled: boolean
+    selectedMinusBaseline: {
+      [key: string]: {
+        absolute: number | null
+        relative: number | null
+        unit: string
+      }
+    }
+    movement: {
+      player: { x: number | null; y: number | null }
+      matchedTeam: { x: number | null; y: number | null } | null
+    }
+    actionShareChange: Record<string, number | null>
+  } | null
+  responseRoles: Array<{
+    label: string
+    confidence: string
+    formula: string
+    observations: Record<string, unknown>
+    reliability: Record<string, boolean | string | number>
+  }>
+  roleFormulae: Array<Record<string, unknown>>
+  teamContext: {
+    available: boolean
+    selectionRequired?: boolean
+    selectionNote?: string | null
+    matching: string
+    selected: PlayerStateCohort | null
+    baseline: PlayerStateCohort | null
+  }
+  exclusions: Record<string, boolean>
 }
 
 export type TeamEventProfilePayload = {
