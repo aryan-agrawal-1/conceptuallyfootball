@@ -85,8 +85,8 @@ create a confident radial shift. A single-match view keeps its raw evidence and
 explicitly withholds season-cohort percentiles because a match reference is
 not a common fixture for the other teams.
 
-The distribution exposes sample size, p10/p25/p50/p75/p90, min/max/IQR, raw
-values, and the per-team member rows. This makes a displayed percentile
+The distribution exposes sample size, p10/p25/p50/p75/p90, min/max/IQR, sorted
+cohort values, and the per-team member rows. This makes a displayed percentile
 reconstructable and avoids hiding a thin comparison cohort.
 
 ## State comparison and signed shift
@@ -124,4 +124,3 @@ axis data in a semantic table for keyboard and screen-reader users, and uses
 the existing Event Map share/export shell. The parent Team Event Maps surface
 owns URL state for `axes` and the shared State Lens; the client helper includes
 both in the request/cache key so copied links restore the same profile.
-

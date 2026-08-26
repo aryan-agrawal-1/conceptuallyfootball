@@ -10,15 +10,22 @@ consumer can audit a value without treating the profile as a quality score.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
+from math import hypot
 from statistics import median
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Sequence
 
 from ingestion.models import MatchEventShotSituation, MatchEventType
 from ingestion.services.defensive_territory import (
+    ALWAYS_DEFENSIVE_TYPES,
+    FAMILY_BY_TYPE,
+    QUALIFIED_DEFENSIVE_TYPES,
     defensive_family,
     focal_defensive_location,
 )
 from ingestion.services.pass_state import (
+    PITCH_LENGTH_METRES,
+    PITCH_WIDTH_METRES,
     direction as pass_direction,
     physical_vector,
 )
@@ -249,13 +256,56 @@ def _rate_per_90(count: int | float, exposure_seconds: int) -> float | None:
 
 
 def _event_value(event: Any, name: str, default: Any = None) -> Any:
+    if isinstance(event, dict):
+        return event.get(name, default)
     return getattr(event, name, default)
 
 
 def _row_value(row: Any, name: str, default: Any = None) -> Any:
-    if isinstance(row, Mapping):
+    if isinstance(row, dict):
         return row.get(name, default)
     return getattr(row, name, default)
+
+
+def _physical_vector(row: Any) -> tuple[float, float, float]:
+    """Use the Batch 9 vector contract for model rows and compact mappings."""
+
+    if isinstance(row, dict):
+        forward = (row["end_x"] - row["x"]) * PITCH_LENGTH_METRES / 10_000
+        lateral = (row["end_y"] - row["y"]) * PITCH_WIDTH_METRES / 10_000
+        return forward, lateral, hypot(forward, lateral)
+    return physical_vector(row)
+
+
+def _defensive_family(row: Any) -> str | None:
+    """Dispatch the shared defensive qualifier for compact API rows."""
+
+    if not isinstance(row, dict):
+        return defensive_family(row)
+    event_type = row.get("event_type")
+    if event_type in ALWAYS_DEFENSIVE_TYPES:
+        return FAMILY_BY_TYPE[event_type]
+    if event_type in QUALIFIED_DEFENSIVE_TYPES and row.get("is_defensive"):
+        return FAMILY_BY_TYPE[event_type]
+    return None
+
+
+def _focal_defensive_location(row: Any) -> tuple[int | None, int | None]:
+    if isinstance(row, dict):
+        return row.get("x"), row.get("y")
+    return focal_defensive_location(row)
+
+
+def _non_penalty_shots(shots: Sequence[Any]) -> list[Any]:
+    """Apply the Batch 9 penalty mode to compact rows without model access."""
+
+    if shots and isinstance(shots[0], dict):
+        return [
+            shot
+            for shot in shots
+            if shot.get("shot_situation") != MatchEventShotSituation.PENALTY
+        ]
+    return penalty_mode_shots(shots, "exclude")
 
 
 def _axis_reliability(
@@ -367,7 +417,7 @@ def build_style_cohort(
             _event_value(row, "end_y"),
         )
     ]
-    pass_vectors = [physical_vector(row) for row in located_passes]
+    pass_vectors = [_physical_vector(row) for row in located_passes]
     lengths = [vector[2] for vector in pass_vectors]
     forward_passes = sum(pass_direction(vector[0]) == "forward" for vector in pass_vectors)
     pass_completions = sum(_event_value(row, "outcome_successful") is True for row in pass_rows)
@@ -379,7 +429,7 @@ def build_style_cohort(
     carry_final_third_entries = sum(bool(_row_value(row, "is_final_third_entry", False)) for row in carry_rows)
 
     shots = [row for row in event_rows if _event_value(row, "event_type") == MatchEventType.SHOT]
-    non_penalty_shot_rows = penalty_mode_shots(shots, "exclude")
+    non_penalty_shot_rows = _non_penalty_shots(shots)
     penalty_shots = [
         row for row in shots
         if _event_value(row, "shot_situation") == MatchEventShotSituation.PENALTY
@@ -388,8 +438,8 @@ def build_style_cohort(
 
     defensive_rows = []
     for row in event_rows:
-        family = defensive_family(row)
-        location = focal_defensive_location(row)
+        family = _defensive_family(row)
+        location = _focal_defensive_location(row)
         if family is not None and location[0] is not None:
             defensive_rows.append((row, family, location[0]))
     defensive_heights = [float(item[2]) / 100 for item in defensive_rows]
@@ -652,7 +702,6 @@ def distribution(values: Sequence[float | int | None]) -> dict[str, Any]:
         "max": _round(numeric[-1]) if numeric else None,
         "iqr": _round((_quantile(numeric, 0.75) or 0) - (_quantile(numeric, 0.25) or 0)) if numeric else None,
         "values": [_round(item) for item in numeric],
-        "raw_values": [_round(item) for item in numeric],
     }
 
 
@@ -787,6 +836,4 @@ def add_prevalence_percentile(
             if axis.get("percentile_eligible")
             else None
         )
-        if row:
-            axis["distribution"] = row
     return cohort

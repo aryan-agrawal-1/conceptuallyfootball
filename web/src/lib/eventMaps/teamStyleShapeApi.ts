@@ -78,7 +78,6 @@ type ApiDistribution = {
     max: number | null
     iqr: number | null
     values: number[]
-    raw_values: number[]
   }
   members: Array<{
     team_id: number
@@ -245,7 +244,6 @@ function mapDistribution(value: ApiDistribution): TeamStyleDistribution {
       max: value.distribution.max,
       iqr: value.distribution.iqr,
       values: value.distribution.values,
-      rawValues: value.distribution.raw_values,
     },
     members: value.members.map(member => ({
       teamId: member.team_id,

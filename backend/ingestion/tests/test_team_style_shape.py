@@ -2,7 +2,9 @@ from types import SimpleNamespace
 from datetime import datetime, timezone
 import json
 
+from django.db import connection
 from django.test import SimpleTestCase, TestCase
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIRequestFactory
 
 from ingestion.models import (
@@ -36,6 +38,7 @@ from ingestion.services.team_style_shape import (
     percentile_rank,
     signed_shift,
 )
+from ingestion.state_lens import StateLens, StateLensScope
 
 
 def event(event_type, index=1, **values):
@@ -226,7 +229,7 @@ class TeamStyleShapeApiTests(TestCase):
             kind=IngestionKind.EVENT_PROFILES,
             competition_season=self.competition_season,
         )
-        TeamSeasonEventProfile.objects.create(
+        self.profile = TeamSeasonEventProfile.objects.create(
             competition_season=self.competition_season,
             team=self.team,
             materialized_ingestion_run=run,
@@ -325,3 +328,32 @@ class TeamStyleShapeApiTests(TestCase):
         invalid = self.call({"competition": "TST", "season": "2025-26", "axes": "pass_length,nope"})
         self.assertEqual(invalid.status_code, 400)
         self.assertIn("Unknown Team Style Shape axis", str(invalid.data["detail"]))
+
+    def test_full_season_cohort_load_is_query_bounded(self):
+        lens = StateLens(StateLensScope(), StateLensScope(state="drawing"))
+
+        def build_and_count():
+            with CaptureQueriesContext(connection) as queries:
+                payload = TeamStyleShapeApi().build_payload(
+                    TeamSeasonEventProfile.objects.get(pk=self.profile.id),
+                    None,
+                    lens,
+                )
+            return len(queries), payload
+
+        initial_queries, initial_payload = build_and_count()
+        run = IngestionRun.objects.get(pk=self.profile.materialized_ingestion_run_id)
+        for index in range(4):
+            team = CanonicalTeam.objects.create(name=f"Cohort {index}")
+            TeamSeasonEventProfile.objects.create(
+                competition_season=self.competition_season,
+                team=team,
+                materialized_ingestion_run=run,
+                observed_match_count=0,
+            )
+        expanded_queries, expanded_payload = build_and_count()
+
+        self.assertLessEqual(initial_queries, 30)
+        self.assertLessEqual(expanded_queries, initial_queries + 2)
+        self.assertNotIn("distribution", initial_payload["overall"]["axes"]["pass_length"])
+        self.assertLess(len(json.dumps(expanded_payload, separators=(",", ":"))), 250_000)

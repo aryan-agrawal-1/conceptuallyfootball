@@ -104,7 +104,6 @@ export interface TeamStyleDistribution {
     max: number | null
     iqr: number | null
     values: number[]
-    rawValues: number[]
   }
   members: Array<{
     teamId: number

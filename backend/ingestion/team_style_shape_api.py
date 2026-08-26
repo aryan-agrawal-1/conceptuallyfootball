@@ -7,7 +7,8 @@ deterministic axis contract.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections import defaultdict
+from collections.abc import Mapping, Sequence
 from hashlib import sha256
 
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -29,16 +30,20 @@ from ingestion.event_profile_api import (
     scope_queryset_to_match,
 )
 from ingestion.models import (
+    MatchEventGameState,
+    MatchGameStateExclusionReason,
     Provider,
     ProviderMatchCarry,
     ProviderMatchEvent,
     ProviderMatchGameState,
     ProviderMatchPossession,
+    ProviderMatchPossessionEvent,
     ProviderMatchPossessionBuild,
     ProviderMatchTeamGameStateEpisode,
     TeamSeasonEventProfile,
 )
 from ingestion.services.possession_context import POSSESSION_CALCULATION_VERSION
+from ingestion.services.game_state import GAME_STATE_CALCULATION_VERSION
 from ingestion.services.team_style_shape import (
     DEFAULT_AXIS_KEYS,
     TEAM_STYLE_SHAPE_FORMULA_VERSION,
@@ -81,7 +86,428 @@ def parse_axis_selection(request) -> tuple[str, ...]:
 
 
 def _event_key(event) -> tuple[int, int]:
-    return event.provider_match_id, event.event_index
+    return _row_value(event, "provider_match_id"), _row_value(event, "event_index")
+
+
+def _row_value(row, name: str, default=None):
+    if isinstance(row, dict):
+        return row.get(name, default)
+    return getattr(row, name, default)
+
+
+def _episode_matches_scope(episode, filters: Mapping) -> bool:
+    """Match the State Lens predicates without issuing an event subquery."""
+
+    for field in ("state", "goal_difference", "phase", "draw_provenance"):
+        expected = filters[field]
+        if expected is not None and getattr(episode, field) != expected:
+            return False
+    return True
+
+
+def _events_in_scope(event_rows: Sequence[Mapping], episodes: Sequence, scope: StateLensScope, filters: Mapping) -> list:
+    """Mirror ``scope_events_to_focal_state`` for one preloaded match/team."""
+
+    minimum_age = scope.minimum_state_age_seconds
+    maximum_age = scope.maximum_state_age_seconds
+    result = []
+    for event in event_rows:
+        timeline_seconds = event["timeline_seconds"]
+        if timeline_seconds is None:
+            continue
+        for episode in episodes:
+            if not episode.start_second <= timeline_seconds < episode.end_second:
+                continue
+            if not _episode_matches_scope(episode, filters):
+                continue
+            if minimum_age is not None and timeline_seconds < episode.state_entry_second + minimum_age:
+                continue
+            if maximum_age is not None and timeline_seconds >= episode.state_entry_second + maximum_age:
+                continue
+            result.append(event)
+            break
+    return result
+
+
+def _bulk_scope_evidence(
+    focal_team_id: int,
+    match_ids: Sequence[int],
+    scope: StateLensScope,
+    episodes_by_key,
+    audits_by_match,
+) -> dict:
+    """Build State Lens exposure metadata from already-loaded source rows."""
+
+    exposure_seconds = 0
+    episodes = set()
+    included_matches = set()
+    for match_id in match_ids:
+        for episode in episodes_by_key.get((match_id, focal_team_id), ()):
+            if not _episode_matches_scope(episode, scope.event_filters()):
+                continue
+            start = episode.start_second
+            end = episode.end_second
+            if scope.minimum_state_age_seconds is not None:
+                start = max(
+                    start,
+                    episode.state_entry_second + scope.minimum_state_age_seconds,
+                )
+            if scope.maximum_state_age_seconds is not None:
+                end = min(
+                    end,
+                    episode.state_entry_second + scope.maximum_state_age_seconds,
+                )
+            if end <= start:
+                continue
+            exposure_seconds += end - start
+            episodes.add((episode.provider_match_id, episode.episode_index))
+            included_matches.add(episode.provider_match_id)
+
+    audits = [audits_by_match[match_id] for match_id in match_ids if match_id in audits_by_match]
+    eligible_matches = sum(bool(audit.eligible) for audit in audits)
+    reasons = {}
+    for audit in audits:
+        if audit.eligible:
+            continue
+        reason = str(audit.exclusion_reason or MatchGameStateExclusionReason.INVALID_SCORE_REPLAY)
+        reasons[reason] = reasons.get(reason, 0) + 1
+    missing = len(match_ids) - len(audits)
+    if missing:
+        key = str(MatchGameStateExclusionReason.INVALID_SCORE_REPLAY)
+        reasons[key] = reasons.get(key, 0) + missing
+    return {
+        "exposure_seconds": exposure_seconds,
+        "exposure_minutes": round(exposure_seconds / 60, 2),
+        "episode_count": len(episodes),
+        "match_count": len(included_matches),
+        "matches_included": eligible_matches,
+        "matches_excluded": len(match_ids) - eligible_matches,
+        "exclusion_reasons": dict(sorted(reasons.items())),
+        "formula_version": GAME_STATE_CALCULATION_VERSION,
+        "empty": exposure_seconds == 0,
+        "reliability": {
+            "eligible_only": True,
+            "timeline": "half_open_played_seconds",
+            "shootouts_included": False,
+        },
+    }
+
+
+def _bulk_eligible_refinements(episodes: Sequence) -> dict:
+    states = {
+        MatchEventGameState.DRAWING: "drawing",
+        MatchEventGameState.WINNING: "winning",
+        MatchEventGameState.LOSING: "losing",
+    }
+    return {
+        "states": sorted({states[row.state] for row in episodes if row.state in states}),
+        "goal_differences": sorted({row.goal_difference for row in episodes}),
+        "phases": sorted({row.phase for row in episodes}),
+        "draw_provenances": sorted({row.draw_provenance for row in episodes}),
+        "state_age_seconds": {
+            "minimum": 0 if episodes else None,
+            "maximum": max(
+                (row.end_second - row.state_entry_second for row in episodes),
+                default=None,
+            ),
+        },
+    }
+
+
+def _load_bulk_style_inputs(competition_season, team_ids: Sequence[int], scopes: dict[str, StateLensScope]) -> dict:
+    """Load a season's style inputs once for all team/state cohorts.
+
+    The first implementation evaluated seven querysets per team/state cohort.
+    A full competition season therefore performed hundreds of repeated event,
+    possession, carry, and episode scans.  This loader keeps the same source
+    filters but shares the rows and applies the State Lens in memory.
+    """
+
+    provider_match_filter = {
+        "provider_match__competition_season": competition_season,
+        "provider_match__provider": Provider.WHOSCORED,
+    }
+    team_ids = tuple(sorted(set(team_ids)))
+    match_team_rows = list(
+        ProviderMatchEvent.objects.filter(
+            **provider_match_filter,
+            team_id__in=team_ids,
+        ).values_list("provider_match_id", "team_id").distinct()
+    )
+    match_ids_by_team: dict[int, list[int]] = defaultdict(list)
+    all_match_ids = set()
+    for match_id, team_id in match_team_rows:
+        match_ids_by_team[int(team_id)].append(int(match_id))
+        all_match_ids.add(int(match_id))
+    for team_id in match_ids_by_team:
+        match_ids_by_team[team_id] = sorted(set(match_ids_by_team[team_id]))
+    all_match_ids = sorted(all_match_ids)
+
+    event_rows = list(
+        ProviderMatchEvent.objects.filter(
+            **provider_match_filter,
+            provider_match__game_state__eligible=True,
+            team_id__in=team_ids,
+        )
+        .values(
+            "id",
+            "provider_match_id",
+            "event_index",
+            "team_id",
+            "event_type",
+            "x",
+            "y",
+            "end_x",
+            "end_y",
+            "outcome_successful",
+            "is_progressive_pass",
+            "is_box_entry",
+            "is_defensive",
+            "shot_situation",
+            "timeline_seconds",
+        )
+        .order_by("provider_match_id", "event_index")
+    )
+    episodes = list(
+        ProviderMatchTeamGameStateEpisode.objects.filter(
+            provider_match_id__in=all_match_ids,
+            focal_team_id__in=team_ids,
+        )
+        .only(
+            "provider_match_id",
+            "focal_team_id",
+            "episode_index",
+            "start_second",
+            "end_second",
+            "state",
+            "goal_difference",
+            "phase",
+            "draw_provenance",
+            "state_entry_second",
+        )
+        .order_by("provider_match_id", "focal_team_id", "episode_index")
+    )
+    episodes_by_key: dict[tuple[int, int], list] = defaultdict(list)
+    for episode in episodes:
+        episodes_by_key[(episode.provider_match_id, episode.focal_team_id)].append(episode)
+    audits_by_match = {
+        int(audit.provider_match_id): audit
+        for audit in ProviderMatchGameState.objects.filter(provider_match_id__in=all_match_ids)
+        .only("provider_match_id", "eligible", "exclusion_reason")
+    }
+
+    events_by_scope: dict[str, dict[int, list]] = {
+        name: defaultdict(list) for name in scopes
+    }
+    event_ids_by_scope: dict[str, dict[int, set[int]]] = {
+        name: defaultdict(set) for name in scopes
+    }
+    event_keys_by_scope: dict[str, dict[int, set[tuple[int, int]]]] = {
+        name: defaultdict(set) for name in scopes
+    }
+    event_team_by_id = {}
+    events_by_match_team: dict[tuple[int, int], list] = defaultdict(list)
+    for event in event_rows:
+        event_team_by_id[event["id"]] = event["team_id"]
+        events_by_match_team[(event["provider_match_id"], event["team_id"])].append(event)
+    scoped_names = {
+        name: (scope, scope.event_filters())
+        for name, scope in scopes.items()
+        if not scope.is_default
+    }
+    for (match_id, team_id), rows in events_by_match_team.items():
+        for name, scope in scopes.items():
+            scoped_rows = (
+                rows
+                if scope.is_default
+                else _events_in_scope(
+                    rows,
+                    episodes_by_key.get((match_id, team_id), ()),
+                    scope,
+                    scoped_names[name][1],
+                )
+            )
+            if not scoped_rows:
+                continue
+            events_by_scope[name][team_id].extend(scoped_rows)
+            event_ids_by_scope[name][team_id].update(event["id"] for event in scoped_rows)
+            event_keys_by_scope[name][team_id].update(_event_key(event) for event in scoped_rows)
+
+    possession_rows = list(
+        ProviderMatchPossession.objects.filter(
+            provider_match_id__in=all_match_ids,
+            provider_match__provider=Provider.WHOSCORED,
+            build__calculation_version=POSSESSION_CALCULATION_VERSION,
+            is_ambiguous=False,
+        )
+        .values(
+            "id",
+            "provider_match_id",
+            "team_id",
+            "is_counter_launch",
+            "counter_final_third_arrival",
+            "counter_shot",
+            "counter_speed_mps",
+            "provider_fast_break_shot_count",
+            "settled_defensive_average_x",
+        )
+        .order_by("provider_match_id", "possession_index")
+    )
+    possession_by_id = {row["id"]: row for row in possession_rows}
+    links = ProviderMatchPossessionEvent.objects.filter(
+        possession_id__in=possession_by_id,
+    ).values_list("possession_id", "event_id", "is_settled_defensive_action")
+    own_ids_by_scope: dict[str, dict[int, set[int]]] = {
+        name: defaultdict(set) for name in scopes
+    }
+    settled_ids_by_scope: dict[str, dict[int, set[int]]] = {
+        name: defaultdict(set) for name in scopes
+    }
+    for possession_id, event_id, settled in links:
+        event_team = event_team_by_id.get(event_id)
+        if event_team is None:
+            continue
+        possession = possession_by_id[possession_id]
+        for name in scopes:
+            if event_id not in event_ids_by_scope[name].get(event_team, ()):
+                continue
+            if possession["team_id"] == event_team:
+                own_ids_by_scope[name][event_team].add(possession_id)
+            elif settled:
+                settled_ids_by_scope[name][event_team].add(possession_id)
+    own_by_scope = {
+        name: {
+            team_id: [possession_by_id[row_id] for row_id in sorted(row_ids)]
+            for team_id, row_ids in team_rows.items()
+        }
+        for name, team_rows in own_ids_by_scope.items()
+    }
+    settled_by_scope = {
+        name: {
+            team_id: [possession_by_id[row_id] for row_id in sorted(row_ids)]
+            for team_id, row_ids in team_rows.items()
+        }
+        for name, team_rows in settled_ids_by_scope.items()
+    }
+
+    carry_rows = list(
+        ProviderMatchCarry.objects.filter(
+            provider_match_id__in=all_match_ids,
+            provider_match__provider=Provider.WHOSCORED,
+            team_id__in=team_ids,
+        )
+        .values(
+            "provider_match_id",
+            "start_event_index",
+            "team_id",
+            "is_progressive_carry",
+            "is_final_third_entry",
+            "is_box_entry",
+            "is_low_confidence",
+        )
+        .order_by("provider_match_id", "start_event_index")
+    )
+    carry_by_key = {
+        (_row_value(row, "provider_match_id"), _row_value(row, "start_event_index")): row
+        for row in carry_rows
+    }
+    carries_by_scope = {
+        name: {
+            team_id: [
+                carry_by_key[key]
+                for key in sorted(event_keys_by_scope[name].get(team_id, ()))
+                if key in carry_by_key
+            ]
+            for team_id in team_ids
+        }
+        for name in scopes
+    }
+    evidence_by_scope = {
+        name: {
+            team_id: _bulk_scope_evidence(
+                team_id,
+                match_ids_by_team.get(team_id, ()),
+                scope,
+                episodes_by_key,
+                audits_by_match,
+            )
+            for team_id in team_ids
+        }
+        for name, scope in scopes.items()
+    }
+    return {
+        "match_ids_by_team": match_ids_by_team,
+        "events_by_scope": events_by_scope,
+        "event_ids_by_scope": event_ids_by_scope,
+        "event_keys_by_scope": event_keys_by_scope,
+        "own_by_scope": own_by_scope,
+        "settled_by_scope": settled_by_scope,
+        "carries_by_scope": carries_by_scope,
+        "evidence_by_scope": evidence_by_scope,
+        "episodes_by_key": episodes_by_key,
+        "audits_by_match": audits_by_match,
+        "episodes_by_target": {
+            team_id: [
+                episode
+                for (match_id, focal_team_id), rows in episodes_by_key.items()
+                if focal_team_id == team_id
+                for episode in rows
+            ]
+            for team_id in team_ids
+        },
+    }
+
+
+def _bulk_scope_rows(data: dict, scope_name: str, team_id: int, match_ids: Sequence[int] | None = None) -> tuple[list, list, list, list]:
+    """Return event, possession, settled-block, and carry rows for one cohort."""
+
+    if match_ids is None:
+        return (
+            data["events_by_scope"][scope_name].get(team_id, []),
+            data["own_by_scope"][scope_name].get(team_id, []),
+            data["settled_by_scope"][scope_name].get(team_id, []),
+            data["carries_by_scope"][scope_name].get(team_id, []),
+        )
+    match_set = set(match_ids)
+    return tuple(
+        [row for row in rows if _row_value(row, "provider_match_id") in match_set]
+        for rows in (
+            data["events_by_scope"][scope_name].get(team_id, []),
+            data["own_by_scope"][scope_name].get(team_id, []),
+            data["settled_by_scope"][scope_name].get(team_id, []),
+            data["carries_by_scope"][scope_name].get(team_id, []),
+        )
+    )
+
+
+def _build_bulk_cohort(
+    data: dict,
+    *,
+    scope_name: str,
+    scope: StateLensScope,
+    team_id: int,
+    evidence: dict,
+    axis_keys: Sequence[str],
+    match_ids: Sequence[int] | None = None,
+) -> dict:
+    events, possessions, settled_blocks, carries = _bulk_scope_rows(
+        data,
+        scope_name,
+        team_id,
+        match_ids,
+    )
+    return build_style_cohort(
+        events,
+        exposure_seconds=evidence["exposure_seconds"],
+        possessions=possessions,
+        settled_blocks=settled_blocks,
+        carries=carries,
+        scope=scope.public(),
+        match_count=evidence["match_count"],
+        episode_count=evidence["episode_count"],
+        matches_excluded=evidence["matches_excluded"],
+        axis_keys=axis_keys,
+    )
 
 
 class TeamStyleShapeApi(APIView):
@@ -188,33 +614,6 @@ class TeamStyleShapeApi(APIView):
             lens,
         )
 
-        target_overall = self.build_team_scope(
-            team_id=profile.team_id,
-            events=target_eligible_events,
-            match_ids=target_match_ids,
-            scope=StateLensScope(),
-            evidence=scope_evidence(profile.team_id, target_match_ids, StateLensScope()),
-            axis_keys=axis_keys,
-        )
-        target_selected = self.build_team_scope(
-            team_id=profile.team_id,
-            events=target_eligible_events,
-            match_ids=target_match_ids,
-            scope=lens.selected,
-            evidence=target_state_metadata["evidence"],
-            axis_keys=axis_keys,
-        )
-        target_baseline = None
-        if lens.baseline is not None:
-            target_baseline = self.build_team_scope(
-                team_id=profile.team_id,
-                events=target_eligible_events,
-                match_ids=target_match_ids,
-                scope=lens.baseline,
-                evidence=target_state_metadata["comparison"]["baseline_evidence"],
-                axis_keys=axis_keys,
-            )
-
         # A single-match view is useful for raw evidence but has no meaningful
         # same-season team percentile cohort.  Keep the rows available for
         # season views, and explicitly suppress percentiles for a match view.
@@ -227,48 +626,75 @@ class TeamStyleShapeApi(APIView):
         team_names = {row.team_id: row.team.name for row in profiles}
         team_names[profile.team_id] = profile.team.name
         team_ids = sorted(set(team_names))
+        scopes = {"overall": StateLensScope(), "selected": lens.selected}
+        if lens.baseline is not None:
+            scopes["baseline"] = lens.baseline
+        bulk = _load_bulk_style_inputs(competition_season, team_ids, scopes)
+        target_overall_evidence = _bulk_scope_evidence(
+            profile.team_id,
+            target_match_ids,
+            scopes["overall"],
+            bulk["episodes_by_key"],
+            bulk["audits_by_match"],
+        )
+        target_overall = _build_bulk_cohort(
+            bulk,
+            scope_name="overall",
+            scope=scopes["overall"],
+            team_id=profile.team_id,
+            evidence=target_overall_evidence,
+            axis_keys=axis_keys,
+            match_ids=target_match_ids,
+        )
+        target_selected = _build_bulk_cohort(
+            bulk,
+            scope_name="selected",
+            scope=scopes["selected"],
+            team_id=profile.team_id,
+            evidence=target_state_metadata["evidence"],
+            axis_keys=axis_keys,
+            match_ids=target_match_ids,
+        )
+        target_baseline = None
+        if lens.baseline is not None:
+            target_baseline = _build_bulk_cohort(
+                bulk,
+                scope_name="baseline",
+                scope=scopes["baseline"],
+                team_id=profile.team_id,
+                evidence=target_state_metadata["comparison"]["baseline_evidence"],
+                axis_keys=axis_keys,
+                match_ids=target_match_ids,
+            )
         cohort_overall: dict[int, dict] = {}
         cohort_selected: dict[int, dict] = {}
         cohort_baseline: dict[int, dict] = {}
 
         if match_ref is None:
             for team_id in team_ids:
-                team_events = event_queryset(competition_season).filter(team_id=team_id)
-                team_match_ids = list(
-                    team_events.values_list("provider_match_id", flat=True).distinct()
-                )
-                team_eligible_events = team_events.filter(
-                    provider_match__game_state__eligible=True
-                )
-                overall_evidence = scope_evidence(
-                    team_id,
-                    team_match_ids,
-                    StateLensScope(),
-                )
-                selected_evidence = scope_evidence(team_id, team_match_ids, lens.selected)
-                cohort_overall[team_id] = self.build_team_scope(
+                cohort_overall[team_id] = _build_bulk_cohort(
+                    bulk,
+                    scope_name="overall",
+                    scope=scopes["overall"],
                     team_id=team_id,
-                    events=team_eligible_events,
-                    match_ids=team_match_ids,
-                    scope=StateLensScope(),
-                    evidence=overall_evidence,
+                    evidence=bulk["evidence_by_scope"]["overall"][team_id],
                     axis_keys=axis_keys,
                 )
-                cohort_selected[team_id] = self.build_team_scope(
+                cohort_selected[team_id] = _build_bulk_cohort(
+                    bulk,
+                    scope_name="selected",
+                    scope=scopes["selected"],
                     team_id=team_id,
-                    events=team_eligible_events,
-                    match_ids=team_match_ids,
-                    scope=lens.selected,
-                    evidence=selected_evidence,
+                    evidence=bulk["evidence_by_scope"]["selected"][team_id],
                     axis_keys=axis_keys,
                 )
                 if lens.baseline is not None:
-                    cohort_baseline[team_id] = self.build_team_scope(
+                    cohort_baseline[team_id] = _build_bulk_cohort(
+                        bulk,
+                        scope_name="baseline",
+                        scope=scopes["baseline"],
                         team_id=team_id,
-                        events=team_eligible_events,
-                        match_ids=team_match_ids,
-                        scope=lens.baseline,
-                        evidence=scope_evidence(team_id, team_match_ids, lens.baseline),
+                        evidence=bulk["evidence_by_scope"]["baseline"][team_id],
                         axis_keys=axis_keys,
                     )
 
