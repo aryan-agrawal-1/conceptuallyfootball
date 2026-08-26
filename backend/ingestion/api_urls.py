@@ -16,6 +16,7 @@ from ingestion.gk_api import (
     GkDerivedPlayerSeasonDetailApi,
     GkDerivedPlayerSeasonListApi,
 )
+from ingestion.lead_control_api import TeamLeadControlApi
 from ingestion.player_state_api import PlayerStateExposureApi
 from ingestion.player_state_comparison_api import PlayerStateComparisonApi
 from ingestion.possession_context_api import TeamPossessionContextApi
@@ -89,6 +90,10 @@ urlpatterns = [
     path(
         "team-seasons/shot-pressure/<int:canonical_team_id>",
         TeamShotPressureApi.as_view(),
+    ),
+    path(
+        "team-seasons/lead-control/<int:canonical_team_id>",
+        TeamLeadControlApi.as_view(),
     ),
     path("team-seasons/squad/<int:canonical_team_id>", TeamSquadApi.as_view()),
     path(
