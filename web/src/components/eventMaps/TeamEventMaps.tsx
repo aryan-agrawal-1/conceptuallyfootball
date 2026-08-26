@@ -3,6 +3,10 @@ import { useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { fetchTeamEventProfile } from '../../lib/eventMaps/api'
 import { fetchTeamDefensiveTerritory, fetchTeamShotPressure } from '../../lib/eventMaps/stateAnalysisApi'
+import { fetchTeamLeadControl } from '../../lib/eventMaps/leadControlApi'
+import { fetchTeamResponseHalfLife } from '../../lib/eventMaps/responseHalfLifeApi'
+import { fetchTeamStyleShape } from '../../lib/eventMaps/teamStyleShapeApi'
+import { fetchTeamTransitionLeverage } from '../../lib/eventMaps/transitionLeverageApi'
 import { eventMatchExportLabel, type EventMapExportContext } from '../../lib/eventMaps/exportContext'
 import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
 import type { ActionGridCell, EventShot, ShotPressurePenaltyMode, StateLensMetadata } from '../../types/eventMaps'
@@ -16,14 +20,27 @@ import { TeamPassStateFlow } from './TeamPassStateFlow'
 import { stateLensRequest } from '../../lib/eventMaps/stateLensUrl'
 import { DefensiveTerritoryMap } from './DefensiveTerritoryMap'
 import { ShotPressurePanel } from './ShotPressurePanel'
+import { LeadControlPanel } from './LeadControlPanel'
+import { ResponseHalfLifePanel } from './ResponseHalfLifePanel'
+import { TeamStyleShapePanel } from './TeamStyleShapePanel'
+import { TransitionLeveragePanel } from './TransitionLeveragePanel'
 
-type TeamMap = 'flow' | 'defensive-territory' | 'shots-for' | 'shots-against' | 'shot-pressure'
-type AnalysisMode = 'shooting' | 'passing' | 'defending'
+type TeamMap = 'flow' | 'defensive-territory' | 'shots-for' | 'shots-against' | 'shot-pressure' | 'style-shape'
+type AnalysisMode = 'shooting' | 'passing' | 'defending' | 'interpretation'
+type InterpretationMode = 'style' | 'lead' | 'response' | 'transitions'
 
 const ANALYSIS_MODES: Array<{ value: AnalysisMode; label: string; description: string }> = [
   { value: 'shooting', label: 'Shooting', description: 'Shot locations, outcomes and pressure' },
   { value: 'passing', label: 'Passing', description: 'Volume, direction and completion' },
   { value: 'defending', label: 'Defending', description: 'Action height and territory' },
+  { value: 'interpretation', label: 'Interpretation', description: 'Style, leads, responses and transitions' },
+]
+
+const INTERPRETATION_MODES: Array<{ value: InterpretationMode; label: string }> = [
+  { value: 'style', label: 'Style Shape' },
+  { value: 'lead', label: 'Lead Control' },
+  { value: 'response', label: 'Response Half-Life' },
+  { value: 'transitions', label: 'Transition Leverage' },
 ]
 
 function MapStage({ map, expanded, setExpanded, children }: {
@@ -96,6 +113,7 @@ export function TeamEventMaps({ teamId, competition, season }: {
   const [expanded, setExpanded] = useState<TeamMap | null>(null)
   const [penaltyMode, setPenaltyMode] = useState<ShotPressurePenaltyMode>('exclude')
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('shooting')
+  const [interpretationMode, setInterpretationMode] = useState<InterpretationMode>('style')
   const profileQuery = useQuery({
     queryKey: ['team-event-profile', teamId, competition, season, matchRef, lensRequest],
     queryFn: () => fetchTeamEventProfile(teamId, competition, season, matchRef, lensRequest),
@@ -113,6 +131,30 @@ export function TeamEventMaps({ teamId, competition, season }: {
     queryFn: () => fetchTeamShotPressure(teamId, competition, season, matchRef, lensRequest, penaltyMode),
     staleTime: 10 * 60 * 1000,
     enabled: analysisMode === 'shooting',
+  })
+  const styleShapeQuery = useQuery({
+    queryKey: ['team-style-shape', teamId, competition, season, matchRef, lensRequest],
+    queryFn: () => fetchTeamStyleShape(teamId, competition, season, matchRef, lensRequest),
+    staleTime: 10 * 60 * 1000,
+    enabled: analysisMode === 'interpretation' && interpretationMode === 'style',
+  })
+  const leadControlQuery = useQuery({
+    queryKey: ['team-lead-control', teamId, competition, season, matchRef, lensRequest],
+    queryFn: () => fetchTeamLeadControl(teamId, competition, season, matchRef, lensRequest),
+    staleTime: 10 * 60 * 1000,
+    enabled: analysisMode === 'interpretation' && interpretationMode === 'lead',
+  })
+  const responseHalfLifeQuery = useQuery({
+    queryKey: ['team-response-half-life', teamId, competition, season, matchRef, lensRequest],
+    queryFn: () => fetchTeamResponseHalfLife(teamId, competition, season, matchRef, lensRequest),
+    staleTime: 10 * 60 * 1000,
+    enabled: analysisMode === 'interpretation' && interpretationMode === 'response',
+  })
+  const transitionLeverageQuery = useQuery({
+    queryKey: ['team-transition-leverage', teamId, competition, season, matchRef, lensRequest],
+    queryFn: () => fetchTeamTransitionLeverage(teamId, competition, season, matchRef, lensRequest),
+    staleTime: 10 * 60 * 1000,
+    enabled: analysisMode === 'interpretation' && interpretationMode === 'transitions',
   })
   const setLensParams = (next: URLSearchParams) => {
     setSelection(null)
@@ -201,9 +243,15 @@ export function TeamEventMaps({ teamId, competition, season }: {
         <StateLensControls metadata={profile.stateLens} searchParams={searchParams} onChange={setLensParams} />
       </div>
       {expanded ? <div className="fixed left-3 right-16 top-3 z-[95] max-h-[45svh] overflow-y-auto sm:left-8 sm:right-20"><StateLensControls compact metadata={profile.stateLens} searchParams={searchParams} onChange={setLensParams} /></div> : null}
-      <nav className="mb-2 grid grid-cols-3 border-b border-line-bright" aria-label="Event map analysis">
+      <nav className="mb-2 grid grid-cols-2 border-b border-line-bright sm:grid-cols-4" aria-label="Event map analysis">
         {ANALYSIS_MODES.map(mode => <button key={mode.value} type="button" aria-pressed={analysisMode === mode.value} onClick={() => { setAnalysisMode(mode.value); setSelection(null) }} className={`border-b-2 px-2 py-2 text-left transition-colors hover:bg-raised sm:px-3 ${analysisMode === mode.value ? 'border-electric text-electric' : 'border-transparent text-ink'}`}><strong className="block text-[9px] uppercase tracking-[0.1em] sm:text-[10px] sm:tracking-[0.14em]">{mode.label}</strong><span className="mt-0.5 hidden text-[8px] text-ink-dim sm:block">{mode.description}</span></button>)}
       </nav>
+
+      {analysisMode === 'interpretation' ? (
+        <nav className="mb-2 grid grid-cols-2 gap-px bg-line sm:grid-cols-4" aria-label="Team interpretation product">
+          {INTERPRETATION_MODES.map(mode => <button key={mode.value} type="button" aria-pressed={interpretationMode === mode.value} onClick={() => { setInterpretationMode(mode.value); setExpanded(null) }} className={`min-h-9 bg-panel px-2 py-2 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors hover:bg-raised ${interpretationMode === mode.value ? 'text-electric' : 'text-control-fg'}`}>{mode.label}</button>)}
+        </nav>
+      ) : null}
 
       {analysisMode === 'shooting' ? (
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2 border-b border-line-bright pb-2">
@@ -212,10 +260,10 @@ export function TeamEventMaps({ teamId, competition, season }: {
         </div>
       ) : null}
 
-      <div className="mb-2 flex flex-wrap items-center gap-x-6 gap-y-2 py-2">
+      {analysisMode !== 'interpretation' ? <div className="mb-2 flex flex-wrap items-center gap-x-6 gap-y-2 py-2">
         {headlineStats.map(([label, value]) => <p key={label as string} className="text-[10px] text-ink-dim"><span className="mr-1.5 uppercase tracking-[0.1em]">{label}</span><strong className="font-mono text-[13px] font-normal text-ink">{typeof value === 'number' ? value.toLocaleString() : value ?? '—'}</strong></p>)}
         <p className="ml-auto text-[10px] text-ink-dim">Coverage <span className={profile.coverage.complete ? 'text-mint' : 'text-gold'}>{profile.coverage.matchesIncluded}/{profile.coverage.matchesExpected || '—'} matches</span></p>
-      </div>
+      </div> : null}
 
       <div className="space-y-3">
         {analysisMode === 'shooting' ? <>
@@ -266,6 +314,44 @@ export function TeamEventMaps({ teamId, competition, season }: {
           exportContext={exportContext}
           expanded={expanded === 'defensive-territory'}
           onExpandedChange={next => setExpanded(next ? 'defensive-territory' : null)}
+        /> : null}
+
+        {analysisMode === 'interpretation' && interpretationMode === 'style' ? <TeamStyleShapePanel
+          payload={styleShapeQuery.data}
+          loading={styleShapeQuery.isLoading}
+          error={styleShapeQuery.error?.message}
+          onRetry={() => styleShapeQuery.refetch()}
+          exportContext={exportContext}
+          expanded={expanded === 'style-shape'}
+          onExpandedChange={next => setExpanded(next ? 'style-shape' : null)}
+          axisSelection={searchParams.get('style_axes')?.split(',').filter(Boolean)}
+          onAxisSelectionChange={keys => {
+            const next = new URLSearchParams(searchParams)
+            if (keys.length) next.set('style_axes', keys.join(','))
+            else next.delete('style_axes')
+            setSearchParams(next)
+          }}
+        /> : null}
+
+        {analysisMode === 'interpretation' && interpretationMode === 'lead' ? <LeadControlPanel
+          payload={leadControlQuery.data}
+          loading={leadControlQuery.isLoading}
+          error={leadControlQuery.error?.message}
+          onRetry={() => leadControlQuery.refetch()}
+        /> : null}
+
+        {analysisMode === 'interpretation' && interpretationMode === 'response' ? <ResponseHalfLifePanel
+          payload={responseHalfLifeQuery.data}
+          loading={responseHalfLifeQuery.isLoading}
+          error={responseHalfLifeQuery.error?.message}
+          onRetry={() => responseHalfLifeQuery.refetch()}
+        /> : null}
+
+        {analysisMode === 'interpretation' && interpretationMode === 'transitions' ? <TransitionLeveragePanel
+          payload={transitionLeverageQuery.data}
+          loading={transitionLeverageQuery.isLoading}
+          error={transitionLeverageQuery.error?.message}
+          onRetry={() => transitionLeverageQuery.refetch()}
         /> : null}
       </div>
     </section>
