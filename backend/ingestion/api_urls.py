@@ -21,6 +21,7 @@ from ingestion.player_state_comparison_api import PlayerStateComparisonApi
 from ingestion.possession_context_api import TeamPossessionContextApi
 from ingestion.pass_state_api import TeamPassStateApi
 from ingestion.team_api import TeamSeasonDetailApi, TeamSeasonListApi, TeamSquadApi
+from ingestion.transition_leverage_api import TeamTransitionLeverageApi
 from ingestion.regression_api import RegressionLabFitApi
 from ingestion.search_api import SearchEntitiesApi
 from ingestion.shot_zones_api import PlayerGkShotZonesApi, PlayerShotZonesApi
@@ -88,6 +89,10 @@ urlpatterns = [
     path(
         "team-seasons/possession-context/<int:canonical_team_id>",
         TeamPossessionContextApi.as_view(),
+    ),
+    path(
+        "team-seasons/transition-leverage/<int:canonical_team_id>",
+        TeamTransitionLeverageApi.as_view(),
     ),
     path("labs/regression/fit", RegressionLabFitApi.as_view()),
 ]
