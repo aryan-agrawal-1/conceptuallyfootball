@@ -25,6 +25,7 @@ from ingestion.team_api import TeamSeasonDetailApi, TeamSeasonListApi, TeamSquad
 from ingestion.team_style_shape_api import TeamStyleShapeApi
 from ingestion.transition_leverage_api import TeamTransitionLeverageApi
 from ingestion.regression_api import RegressionLabFitApi
+from ingestion.response_half_life_api import TeamResponseHalfLifeApi
 from ingestion.search_api import SearchEntitiesApi
 from ingestion.shot_zones_api import PlayerGkShotZonesApi, PlayerShotZonesApi
 from ingestion.shot_pressure_api import TeamShotPressureApi
@@ -94,6 +95,10 @@ urlpatterns = [
     path(
         "team-seasons/lead-control/<int:canonical_team_id>",
         TeamLeadControlApi.as_view(),
+    ),
+    path(
+        "team-seasons/response-half-life/<int:canonical_team_id>",
+        TeamResponseHalfLifeApi.as_view(),
     ),
     path("team-seasons/squad/<int:canonical_team_id>", TeamSquadApi.as_view()),
     path(
