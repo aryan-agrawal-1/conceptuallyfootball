@@ -21,6 +21,7 @@ from ingestion.player_state_comparison_api import PlayerStateComparisonApi
 from ingestion.possession_context_api import TeamPossessionContextApi
 from ingestion.pass_state_api import TeamPassStateApi
 from ingestion.team_api import TeamSeasonDetailApi, TeamSeasonListApi, TeamSquadApi
+from ingestion.team_style_shape_api import TeamStyleShapeApi
 from ingestion.transition_leverage_api import TeamTransitionLeverageApi
 from ingestion.regression_api import RegressionLabFitApi
 from ingestion.search_api import SearchEntitiesApi
@@ -69,6 +70,10 @@ urlpatterns = [
     path("galaxy/similar", GalaxySimilarApi.as_view()),
     path("team-seasons/stats", TeamSeasonListApi.as_view()),
     path("team-seasons/stats/<int:canonical_team_id>", TeamSeasonDetailApi.as_view()),
+    path(
+        "team-seasons/style-shape/<int:canonical_team_id>",
+        TeamStyleShapeApi.as_view(),
+    ),
     path(
         "team-seasons/event-profile/<int:canonical_team_id>",
         TeamEventProfileApi.as_view(),
