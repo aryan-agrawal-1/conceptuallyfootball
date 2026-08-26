@@ -134,7 +134,10 @@ function ObservationList({ observations }: { observations: TransitionObservation
   )
 }
 
-function PlayerList({ players }: { players: TransitionPlayerRow[] }) {
+function PlayerList({ players, observations }: {
+  players: TransitionPlayerRow[]
+  observations: TransitionObservation[]
+}) {
   const [expanded, setExpanded] = useState<number | null>(null)
   return (
     <div className="space-y-1">
@@ -161,31 +164,25 @@ function PlayerList({ players }: { players: TransitionPlayerRow[] }) {
                     <div key={role} className="flex justify-between bg-raised px-2 py-1 text-[10px] text-ink-dim"><span>{label(role)}</span><span className="font-mono text-ink">{stage.actions} actions</span></div>
                   ))}
                 </div>
-                {player.evidence.length ? <ObservationList observations={player.evidence.map(item => ({
-                  possessionId: item.possessionId,
-                  matchRef: item.matchRef,
-                  teamId: player.canonicalTeamId,
-                  teamName: player.canonicalTeamName,
-                  direction: 'for',
-                  period: null,
-                  startSecond: null,
-                  endSecond: null,
-                  durationSeconds: null,
-                  start: { x: null, y: null },
-                  end: { x: null, y: null },
-                  launchType: 'evidence',
-                  terminationReason: item.outcomeTier,
-                  isAmbiguous: false,
-                  rapidTransition: { isCounterLaunch: false, qualifiesForwardProgress: false, elapsedSeconds: null, forwardMetres: null, speedMps: null, outcome: null },
-                  outcomeTier: item.outcomeTier,
-                  outcomeLadder: {} as TransitionObservation['outcomeLadder'],
-                  directionLadder: {} as TransitionObservation['directionLadder'],
-                  score: { isGoal: false, goalType: null, scoringTeamId: null, perspective: null, beforeGoalDifference: null, afterGoalDifference: null, situation: null },
-                  state: item.state,
-                  stateTransition: item.stateTransition,
-                  possessionTrace: item.possessionTrace,
-                  actionEvidence: item.possessionTrace,
-                }))} /> : null}
+                {player.evidence.length ? (
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase tracking-[0.1em] text-ink-muted">Shared possession traces</p>
+                    {player.evidence.map(item => {
+                      const observation = observations.find(candidate => candidate.observationRef === item.observationRef)
+                      return (
+                        <details key={item.observationRef} className="border border-line bg-raised px-2 py-1.5">
+                          <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-ink-dim">
+                            <span className="font-mono text-ink-muted">#{item.matchRef} · {item.possessionId.slice(0, 8)}</span>
+                            <strong className="font-medium text-ink">{label(item.outcomeTier)}</strong>
+                            <span>{item.actionStages.map(label).join(' · ')}</span>
+                          </summary>
+                          {observation ? <Trace observation={observation} /> : <p className="mt-2 text-[10px] text-gold">The bounded trace is unavailable in this response window.</p>}
+                        </details>
+                      )
+                    })}
+                    {player.evidenceTruncated ? <p className="text-[10px] text-gold">Additional player opportunities are counted but not repeated here; inspect the shared possession list for bounded traces.</p> : null}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -233,7 +230,7 @@ export function TransitionLeveragePanel({ payload, loading, error, onRetry }: {
       {transitionRows.length ? <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-ink-dim">{transitionRows.map(([name, count]) => <span key={name}>{label(name)} <strong className="ml-1 font-mono font-normal text-ink">{count}</strong></span>)}</div> : null}
       <details className="border border-line-bright bg-raised/40 px-3 py-2 text-[10px] leading-relaxed text-ink-dim">
         <summary className="cursor-pointer text-control-fg hover:text-ink">Verified player involvement</summary>
-        <div className="mt-2 space-y-2"><p>Rates use only team possession opportunities with an event inside that player’s verified on-pitch interval. Transfer/team spells stay separate; excluded or ambiguous intervals remain visible.</p><PlayerList players={payload.selected.playerInvolvement} /></div>
+        <div className="mt-2 space-y-2"><p>Rates use only team possession opportunities with an event inside that player’s verified on-pitch interval. Transfer/team spells stay separate; excluded or ambiguous intervals remain visible.</p><PlayerList players={payload.selected.playerInvolvement} observations={payload.selected.observations} /></div>
       </details>
       <details className="border border-line-bright bg-raised/40 px-3 py-2 text-[10px] leading-relaxed text-ink-dim">
         <summary className="cursor-pointer text-control-fg hover:text-ink">Inspect possession traces ({payload.selected.observations.length})</summary>

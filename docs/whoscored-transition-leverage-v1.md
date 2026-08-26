@@ -92,6 +92,14 @@ it is not a whole-match or team-volume denominator. The payload reports
 opportunities, involved possessions, rates, stage counts, verified minutes,
 excluded matches/reasons, and inspectable evidence traces.
 
+The response keeps `selected.observations` (and any baseline observations) as
+the bounded shared trace set, currently at 100 complete chains per scope.
+Player evidence carries an `observation_ref`, state/outcome summary, stages,
+and the player's action indexes; clients resolve that reference to the shared
+trace instead of receiving a duplicated chain. Counts and rates still use the
+full eligible observation set, while `evidence_truncated` makes the display
+cap explicit.
+
 Substitutions, withdrawals, dismissals, added time, transfers/team spells,
 unmatched participation, missing timestamps, ambiguous possessions, and
 unverified game-state matches remain excluded or explicitly marked. No

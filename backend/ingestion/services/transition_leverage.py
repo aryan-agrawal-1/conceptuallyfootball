@@ -53,9 +53,12 @@ from ingestion.state_lens import StateLens, StateLensScope, state_lens_metadata
 
 
 TRANSITION_LEVERAGE_FORMULA_VERSION = "transition_leverage_v1"
-# Bumped when the public observation shape gained rapid-transition evidence;
-# this also invalidates already materialized API payloads safely.
+# Bumped when player evidence changed from repeated full traces to shared
+# observation references and the duplicated action-evidence alias was removed.
+# The public contract remains v2 for the player-state projection; the separate
+# shape token invalidates old materialized payloads safely.
 TRANSITION_LEVERAGE_API_VERSION = "transition_leverage_api_v2"
+TRANSITION_LEVERAGE_PAYLOAD_SHAPE_VERSION = "transition_leverage_payload_v2"
 PLAYER_EVIDENCE_LIMIT = 25
 OBSERVATION_LIMIT = 100
 SPARSE_POSSESSION_THRESHOLD = 10
@@ -880,6 +883,7 @@ def possession_observation(
     return {
         "possession_id": str(getattr(possession, "identity", "")),
         "match_ref": match_ref,
+        "observation_ref": f"{match_ref}:{getattr(possession, 'identity', '')}",
         "team_id": owner_team_id,
         "team_name": owner_name,
         "direction": direction,
@@ -930,7 +934,6 @@ def possession_observation(
         "actual_state_transition": transition["actual"],
         "transition_classification": transition["classification"],
         "possession_trace": trace,
-        "action_evidence": trace,
     }
 
 
@@ -1119,6 +1122,7 @@ def _build_player_involvement(
     episodes_by_match: Mapping[int, Sequence[Any]],
     participation_by_match: Mapping[int, Sequence[Any]],
     excluded_match_reasons: Mapping[int, str],
+    evidence_observation_refs: set[str],
 ) -> list[dict[str, Any]]:
     rows: dict[int, dict[str, Any]] = {}
     participant_intervals: dict[tuple[int, int], Sequence[Any]] = {}
@@ -1231,14 +1235,16 @@ def _build_player_involvement(
             evidence = {
                 "match_ref": observation["match_ref"],
                 "possession_id": observation["possession_id"],
+                "observation_ref": observation["observation_ref"],
                 "state": observation["state"],
                 "state_transition": observation["state_transition"],
                 "outcome_tier": observation["outcome_tier"],
                 "action_stages": sorted({event["stage"] for event in involved_events}),
                 "action_event_indexes": [event["event_index"] for event in involved_events],
-                "possession_trace": observation["possession_trace"],
             }
-            if len(row["evidence"]) < PLAYER_EVIDENCE_LIMIT:
+            if observation["observation_ref"] not in evidence_observation_refs:
+                row["evidence_truncated"] = True
+            elif len(row["evidence"]) < PLAYER_EVIDENCE_LIMIT:
                 row["evidence"].append(evidence)
             else:
                 row["evidence_truncated"] = True
@@ -1424,6 +1430,10 @@ def _build_scope(
 ) -> dict[str, Any]:
     attacking = _ladder_for_observations(observations, direction="attacking")
     concession = _ladder_for_observations(observations, direction="concession")
+    bounded_observations = list(observations[:OBSERVATION_LIMIT])
+    evidence_observation_refs = {
+        observation["observation_ref"] for observation in bounded_observations
+    }
     players = _build_player_involvement(
         observations,
         matches=all_matches,
@@ -1432,6 +1442,7 @@ def _build_scope(
         episodes_by_match=episodes_by_match,
         participation_by_match=participation_by_match,
         excluded_match_reasons=excluded_match_reasons,
+        evidence_observation_refs=evidence_observation_refs,
     )
     return {
         "scope": scope.public(),
@@ -1440,7 +1451,7 @@ def _build_scope(
         "concession_vulnerability": concession,
         "players": players,
         "player_involvement": players,
-        "observations": list(observations[:OBSERVATION_LIMIT]),
+        "observations": bounded_observations,
         "coverage": _coverage(
             matches=matches,
             eligible_match_ids=eligible_match_ids,

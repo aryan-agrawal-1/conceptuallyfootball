@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from copy import deepcopy
 import json
 from types import SimpleNamespace
 
@@ -33,9 +34,11 @@ from ingestion.models import (
 )
 from ingestion.services.transition_leverage import (
     _ladder_for_observations,
+    _build_scope,
     classify_state_transition,
     possession_observation,
 )
+from ingestion.state_lens import StateLensScope
 from ingestion.transition_leverage_api import TeamTransitionLeverageApi
 
 
@@ -300,6 +303,78 @@ class TransitionLeverageRuleTests(SimpleTestCase):
             },
         )
 
+    def test_player_evidence_references_bounded_shared_traces(self):
+        events = [
+            fake_event(index, event_type=MatchEventType.BALL_TOUCH)
+            for index in range(1, 9)
+        ]
+        template = possession_observation(
+            fake_possession(events),
+            match=self.match,
+            focal_team=self.focal_team,
+            match_ref=0,
+        )
+        observations = []
+        for index in range(100):
+            observation = deepcopy(template)
+            observation["possession_id"] = f"bounded-{index}"
+            observation["observation_ref"] = f"0:bounded-{index}"
+            observations.append(observation)
+
+        class IntervalManager(LinkManager):
+            pass
+
+        players = []
+        for player_id in range(1, 9):
+            players.append(
+                SimpleNamespace(
+                    player_id=player_id,
+                    team_id=10,
+                    player=SimpleNamespace(display_name=f"Player {player_id}"),
+                    intervals=IntervalManager(
+                        [
+                            SimpleNamespace(
+                                start_second=0,
+                                end_second=120,
+                                duration_seconds=120,
+                                confidence="verified",
+                            )
+                        ]
+                    ),
+                    status="verified",
+                    confidence="verified",
+                    roster_role="starter",
+                )
+            )
+        scope = _build_scope(
+            observations,
+            matches=[SimpleNamespace(id=1)],
+            all_matches=[SimpleNamespace(id=1)],
+            focal_team=self.focal_team,
+            scope=StateLensScope(),
+            episodes_by_match={1: []},
+            participation_by_match={1: players},
+            excluded_match_reasons={},
+            eligible_match_ids={1},
+            excluded_reasons={},
+            ambiguous_count=0,
+        )
+        serialized = json.dumps(scope, separators=(",", ":"))
+        self.assertLess(len(serialized), 2_000_000)
+        self.assertEqual(len(scope["observations"]), 100)
+        self.assertTrue(scope["players"])
+        self.assertTrue(scope["players"][0]["evidence"])
+        self.assertTrue(
+            all("possession_trace" not in evidence for row in scope["players"] for evidence in row["evidence"])
+        )
+        self.assertTrue(
+            all(
+                evidence["observation_ref"] in {row["observation_ref"] for row in scope["observations"]}
+                for row in scope["players"]
+                for evidence in row["evidence"]
+            )
+        )
+
 
 class TeamTransitionLeverageApiTests(TestCase):
     @classmethod
@@ -469,8 +544,13 @@ class TeamTransitionLeverageApiTests(TestCase):
         self.assertEqual(player["involved_possessions"], 1)
         self.assertEqual(player["sequence_stages"]["origin_recovery"]["possessions"], 1)
         self.assertEqual(player["coverage"]["selected_verified_seconds"], 5400)
-        self.assertEqual(player["evidence"][0]["possession_trace"][0]["player_name"], "Verified Player")
+        self.assertEqual(
+            player["evidence"][0]["observation_ref"],
+            payload["selected"]["observations"][0]["observation_ref"],
+        )
+        self.assertNotIn("possession_trace", player["evidence"][0])
         self.assertEqual(payload["selected"]["observations"][0]["possession_trace"][0]["event_type"], "pass")
+        self.assertNotIn("action_evidence", payload["selected"]["observations"][0])
         self.assertNotIn("provider_team_id", first.content.decode())
 
     def test_api_reuses_state_lens_validation(self):

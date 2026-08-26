@@ -119,6 +119,7 @@ export interface TransitionLadderRow {
 export interface TransitionObservation {
   possessionId: string
   matchRef: number
+  observationRef: string
   teamId: number | null
   teamName: string | null
   direction: 'for' | 'against'
@@ -173,12 +174,12 @@ export interface TransitionPlayerOutcome {
 export interface TransitionPlayerEvidence {
   matchRef: number
   possessionId: string
+  observationRef: string
   state: TransitionState
   stateTransition: TransitionStateChange
   outcomeTier: TransitionOutcomeKey | 'possession'
   actionStages: string[]
   actionEventIndexes: number[]
-  possessionTrace: TransitionAction[]
 }
 
 export interface TransitionPlayerRow {

@@ -100,6 +100,7 @@ type ApiOutcomeLadder = Record<string, { reached: boolean; first_event_index: nu
 type ApiObservation = {
   possession_id: string
   match_ref: number
+  observation_ref: string
   team_id: number | null
   team_name: string | null
   direction: 'for' | 'against'
@@ -122,7 +123,7 @@ type ApiObservation = {
   actual_state_transition?: boolean
   transition_classification?: string
   possession_trace: ApiAction[]
-  action_evidence: ApiAction[]
+  action_evidence?: ApiAction[]
 }
 
 type ApiLadderRow = {
@@ -196,12 +197,12 @@ type ApiPlayer = {
   evidence: Array<{
     match_ref: number
     possession_id: string
+    observation_ref: string
     state: ApiState
     state_transition: ApiStateChange
     outcome_tier: TransitionObservation['outcomeTier']
     action_stages: string[]
     action_event_indexes: number[]
-    possession_trace: ApiAction[]
   }>
   evidence_truncated: boolean
 }
@@ -368,9 +369,11 @@ function mapObservation(value: ApiObservation): TransitionObservation {
       firstEventIndex: tier.first_event_index,
     }]),
   ) as TransitionObservation['outcomeLadder']
+  const possessionTrace = value.possession_trace.map(mapAction)
   return {
     possessionId: value.possession_id,
     matchRef: value.match_ref,
+    observationRef: value.observation_ref,
     teamId: value.team_id,
     teamName: value.team_name,
     direction: value.direction,
@@ -392,8 +395,10 @@ function mapObservation(value: ApiObservation): TransitionObservation {
     stateTransition: mapStateChange(value.state_transition),
     actualStateTransition: value.actual_state_transition,
     transitionClassification: value.transition_classification,
-    possessionTrace: value.possession_trace.map(mapAction),
-    actionEvidence: value.action_evidence.map(mapAction),
+    possessionTrace,
+    actionEvidence: value.action_evidence
+      ? value.action_evidence.map(mapAction)
+      : possessionTrace,
   }
 }
 
@@ -402,11 +407,11 @@ function mapPlayerEvidence(value: ApiPlayer['evidence'][number]): TransitionPlay
     matchRef: value.match_ref,
     possessionId: value.possession_id,
     state: mapState(value.state),
+    observationRef: value.observation_ref,
     stateTransition: mapStateChange(value.state_transition),
     outcomeTier: value.outcome_tier,
     actionStages: value.action_stages,
     actionEventIndexes: value.action_event_indexes,
-    possessionTrace: value.possession_trace.map(mapAction),
   }
 }
 

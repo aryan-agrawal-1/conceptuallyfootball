@@ -35,6 +35,7 @@ from ingestion.services.possession_context import POSSESSION_CALCULATION_VERSION
 from ingestion.services.transition_leverage import (
     TRANSITION_LEVERAGE_API_VERSION,
     TRANSITION_LEVERAGE_FORMULA_VERSION,
+    TRANSITION_LEVERAGE_PAYLOAD_SHAPE_VERSION,
     build_transition_leverage_payload,
 )
 from ingestion.state_lens import parse_state_lens
@@ -63,6 +64,7 @@ class TeamTransitionLeverageApi(APIView):
             source_version = joined_version(
                 TRANSITION_LEVERAGE_API_VERSION,
                 TRANSITION_LEVERAGE_FORMULA_VERSION,
+                TRANSITION_LEVERAGE_PAYLOAD_SHAPE_VERSION,
                 POSSESSION_CALCULATION_VERSION,
                 model_version(ProviderMatch, {"competition_season": competition_season}),
                 model_version(ProviderMatchEvent, season_filter),
