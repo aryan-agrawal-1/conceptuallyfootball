@@ -136,7 +136,6 @@ class TeamLeadControlApi(APIView):
                 provider_match_id__in=match_ids,
                 provider_match__provider=Provider.WHOSCORED,
             )
-            .select_related("provider_match", "team", "player")
             .order_by("provider_match_id", "period", "timeline_seconds", "event_index")
         )
         episodes = list(

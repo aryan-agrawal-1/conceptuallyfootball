@@ -67,4 +67,3 @@ The public endpoint is:
 It is cached using the materialized payload cache and includes the formula,
 State Lens, matching thresholds, coverage, limitations, raw components, and
 episode evidence in the response.
-

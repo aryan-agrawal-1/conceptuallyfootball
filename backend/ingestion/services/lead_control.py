@@ -21,10 +21,12 @@ and sparse-data behaviour straightforward to test without a database.
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
 from statistics import mean, median
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Sequence
 
 from ingestion.models import (
     MatchEventGameState,
@@ -174,7 +176,10 @@ def _episode_index(row: Any, fallback: int = 0) -> int:
 
 
 def _episode_key(row: Any, fallback: int = 0) -> tuple[int, int]:
-    return _object_id(getattr(row, "provider_match", None), _int(getattr(row, "provider_match_id", None), fallback) or fallback), _episode_index(row, fallback)
+    match_id = _int(getattr(row, "provider_match_id", None))
+    if match_id is None:
+        match_id = _object_id(getattr(row, "provider_match", None), fallback)
+    return match_id, _episode_index(row, fallback)
 
 
 def _scope_matches_episode(episode: Any, scope: StateLensScope | None) -> bool:
@@ -349,35 +354,109 @@ def _event_second(event: Any) -> int | None:
 
 
 def _event_match_id(event: Any) -> int:
-    provider_match = getattr(event, "provider_match", None)
-    return _int(getattr(event, "provider_match_id", None), _object_id(provider_match)) or 0
+    match_id = _int(getattr(event, "provider_match_id", None))
+    if match_id is not None:
+        return match_id
+    return _object_id(getattr(event, "provider_match", None))
 
 
 def _event_id(event: Any) -> tuple[int, int]:
-    return _event_match_id(event), _int(getattr(event, "event_index", None), _object_id(event)) or 0
+    event_index = _int(getattr(event, "event_index", None))
+    if event_index is None:
+        event_index = _object_id(event)
+    return _event_match_id(event), event_index
 
 
 def _possession_match_id(possession: Any) -> int:
-    return _int(getattr(possession, "provider_match_id", None), _object_id(getattr(possession, "provider_match", None))) or 0
+    match_id = _int(getattr(possession, "provider_match_id", None))
+    if match_id is not None:
+        return match_id
+    return _object_id(getattr(possession, "provider_match", None))
 
 
-def _event_in_windows(event: Any, windows: Sequence[LeadWindow]) -> LeadWindow | None:
+def _window_index(windows: Sequence[LeadWindow]) -> dict[int, tuple[tuple[int, ...], tuple[LeadWindow, ...]]]:
+    indexed: dict[int, list[LeadWindow]] = {}
+    for window in windows:
+        indexed.setdefault(window.match_id, []).append(window)
+    result: dict[int, tuple[tuple[int, ...], tuple[LeadWindow, ...]]] = {}
+    for match_id, windows_for_match in indexed.items():
+        sorted_windows = sorted(
+            windows_for_match,
+            key=lambda window: (window.start_second, window.end_second),
+        )
+        result[match_id] = (
+            tuple(window.start_second for window in sorted_windows),
+            tuple(sorted_windows),
+        )
+    return result
+
+
+def _rows_by_match(rows: Iterable[Any], match_id_getter: Any) -> dict[int, list[Any]]:
+    indexed: dict[int, list[Any]] = {}
+    for row in rows:
+        indexed.setdefault(int(match_id_getter(row)), []).append(row)
+    return indexed
+
+
+def _window_candidates(
+    windows: Sequence[LeadWindow] | Mapping[int, tuple[tuple[int, ...], tuple[LeadWindow, ...]]],
+    match_id: int,
+) -> Sequence[LeadWindow]:
+    if isinstance(windows, Mapping):
+        indexed = windows.get(match_id)
+        if indexed is None:
+            return ()
+        return indexed[1]
+    return windows
+
+
+def _event_in_windows(
+    event: Any,
+    windows: Sequence[LeadWindow] | Mapping[int, tuple[tuple[int, ...], tuple[LeadWindow, ...]]],
+) -> LeadWindow | None:
     second = _event_second(event)
     if second is None:
         return None
     match_id = _event_match_id(event)
-    for window in windows:
+    if isinstance(windows, Mapping):
+        indexed = windows.get(match_id)
+        if indexed is None:
+            return None
+        starts, candidates = indexed
+        candidate_index = bisect_right(starts, second) - 1
+        while candidate_index >= 0 and candidates[candidate_index].start_second <= second:
+            window = candidates[candidate_index]
+            if window.end_second > second:
+                return window
+            candidate_index -= 1
+        return None
+    for window in _window_candidates(windows, match_id):
         if window.match_id == match_id and window.start_second <= second < window.end_second:
             return window
     return None
 
 
-def _possession_in_windows(possession: Any, windows: Sequence[LeadWindow]) -> LeadWindow | None:
+def _possession_in_windows(
+    possession: Any,
+    windows: Sequence[LeadWindow] | Mapping[int, tuple[tuple[int, ...], tuple[LeadWindow, ...]]],
+) -> LeadWindow | None:
     second = _int(getattr(possession, "start_second", None))
     if second is None:
         return None
     match_id = _possession_match_id(possession)
-    for window in windows:
+    if isinstance(windows, Mapping):
+        indexed = windows.get(match_id)
+        if indexed is None:
+            return None
+        starts, candidates = indexed
+        candidate_index = bisect_right(starts, second) - 1
+        while candidate_index >= 0 and candidates[candidate_index].start_second <= second:
+            window = candidates[candidate_index]
+            if window.end_second > second:
+                return window
+            candidate_index -= 1
+        return None
+    for window in _window_candidates(windows, match_id):
         if window.match_id == match_id and window.start_second <= second < window.end_second:
             return window
     return None
@@ -547,9 +626,19 @@ def _first_meaningful_attacks(
     *,
     focal_team_id: int,
     focal_provider_by_match: Mapping[int, str],
+    events_by_match: Mapping[int, Sequence[Any]] | None = None,
 ) -> dict[tuple[int, int], int]:
     first: dict[tuple[int, int], int] = {}
-    for event in events:
+    window_index = _window_index(windows)
+    if events_by_match is None:
+        event_rows: Iterable[Any] = events
+    else:
+        event_rows = (
+            event
+            for match_id in sorted(window_index)
+            for event in events_by_match.get(match_id, ())
+        )
+    for event in event_rows:
         if _is_deleted(event) or _is_focal_event(event, focal_team_id, focal_provider_by_match):
             continue
         if not (
@@ -558,7 +647,7 @@ def _first_meaningful_attacks(
             or bool(getattr(event, "is_big_chance", False))
         ):
             continue
-        window = _event_in_windows(event, windows)
+        window = _event_in_windows(event, window_index)
         if window is None:
             continue
         second = _event_second(event)
@@ -577,15 +666,26 @@ def _raw_cohort(
     *,
     focal_team_id: int,
     focal_provider_by_match: Mapping[int, str] | None = None,
+    events_by_match: Mapping[int, Sequence[Any]] | None = None,
+    possessions_by_match: Mapping[int, Sequence[Any]] | None = None,
 ) -> dict[str, Any]:
     windows = _unique_windows(windows)
+    window_index = _window_index(windows)
     focal_provider_by_match = focal_provider_by_match or {}
     selected_event_rows: list[Any] = []
     seen_events: set[tuple[int, int]] = set()
-    for event in events:
+    if events_by_match is None:
+        event_rows: Iterable[Any] = events
+    else:
+        event_rows = (
+            event
+            for match_id in sorted(window_index)
+            for event in events_by_match.get(match_id, ())
+        )
+    for event in event_rows:
         if _is_deleted(event):
             continue
-        window = _event_in_windows(event, windows)
+        window = _event_in_windows(event, window_index)
         if window is None:
             continue
         event_id = _event_id(event)
@@ -601,8 +701,16 @@ def _raw_cohort(
 
     selected_possessions: list[Any] = []
     seen_possessions: set[tuple[int, int, int]] = set()
-    for possession in possessions:
-        window = _possession_in_windows(possession, windows)
+    if possessions_by_match is None:
+        possession_rows: Iterable[Any] = possessions
+    else:
+        possession_rows = (
+            possession
+            for match_id in sorted(window_index)
+            for possession in possessions_by_match.get(match_id, ())
+        )
+    for possession in possession_rows:
+        window = _possession_in_windows(possession, window_index)
         if window is None or bool(getattr(possession, "is_ambiguous", False)):
             continue
         key = (
@@ -622,7 +730,8 @@ def _raw_cohort(
         for event in selected_event_rows
         if _is_focal_event(event, focal_team_id, focal_provider_by_match)
     ]
-    opponent_events = [event for event in selected_event_rows if event not in own_events]
+    own_event_ids = {_event_id(event) for event in own_events}
+    opponent_events = [event for event in selected_event_rows if _event_id(event) not in own_event_ids]
     located_passes = _located_passes(own_events)
     pass_directions = Counter()
     for event in located_passes:
@@ -1067,6 +1176,9 @@ def _episode_payload(
     match_references: Mapping[int, int],
     matches_by_id: Mapping[int, Any],
     match_end_seconds: Mapping[int, int] | None = None,
+    events_by_match: Mapping[int, Sequence[Any]] | None = None,
+    possessions_by_match: Mapping[int, Sequence[Any]] | None = None,
+    first_attacks: Mapping[tuple[int, int], int] | None = None,
 ) -> dict[str, Any]:
     lead_raw = _raw_cohort(
         events,
@@ -1074,6 +1186,8 @@ def _episode_payload(
         lead_windows,
         focal_team_id=focal_team_id,
         focal_provider_by_match=focal_provider_by_match,
+        events_by_match=events_by_match,
+        possessions_by_match=possessions_by_match,
     )
     baseline_raw = _raw_cohort(
         events,
@@ -1081,18 +1195,23 @@ def _episode_payload(
         baseline_windows,
         focal_team_id=focal_team_id,
         focal_provider_by_match=focal_provider_by_match,
+        events_by_match=events_by_match,
+        possessions_by_match=possessions_by_match,
     ) if baseline_windows else None
     surface = _surface_payload(lead_raw, baseline_raw)
     match_id, episode_index = _episode_key(episode)
     start = _int(getattr(episode, "start_second", None), 0) or 0
     end = _int(getattr(episode, "end_second", None), start) or start
     state_entry = _int(getattr(episode, "state_entry_second", None), start) or start
-    first_attack = _first_meaningful_attacks(
-        events,
-        lead_windows,
-        focal_team_id=focal_team_id,
-        focal_provider_by_match=focal_provider_by_match,
-    ).get((match_id, episode_index))
+    if first_attacks is None:
+        first_attacks = _first_meaningful_attacks(
+            events,
+            lead_windows,
+            focal_team_id=focal_team_id,
+            focal_provider_by_match=focal_provider_by_match,
+            events_by_match=events_by_match,
+        )
+    first_attack = first_attacks.get((match_id, episode_index))
     match = matches_by_id.get(match_id)
     match_end = (match_end_seconds or {}).get(match_id)
     survived = (
@@ -1139,6 +1258,8 @@ def _group_surface(
     *,
     focal_team_id: int,
     focal_provider_by_match: Mapping[int, str],
+    events_by_match: Mapping[int, Sequence[Any]] | None = None,
+    possessions_by_match: Mapping[int, Sequence[Any]] | None = None,
 ) -> dict[str, Any]:
     lead_keys = {window.episode_key for window in lead_windows}
     baseline = [window for window in baseline_windows if window.matched_lead_key in lead_keys]
@@ -1149,6 +1270,8 @@ def _group_surface(
             lead_windows,
             focal_team_id=focal_team_id,
             focal_provider_by_match=focal_provider_by_match,
+            events_by_match=events_by_match,
+            possessions_by_match=possessions_by_match,
         ),
         _raw_cohort(
             events,
@@ -1156,6 +1279,8 @@ def _group_surface(
             baseline,
             focal_team_id=focal_team_id,
             focal_provider_by_match=focal_provider_by_match,
+            events_by_match=events_by_match,
+            possessions_by_match=possessions_by_match,
         ) if baseline else None,
     )
 
@@ -1190,6 +1315,9 @@ def build_lead_control_payload(
         possessions = [possession for possession in possessions if _possession_match_id(possession) in allowed]
         matches = [match for match in matches if _object_id(match) in allowed]
 
+    events_by_match = _rows_by_match(events, _event_match_id)
+    possessions_by_match = _rows_by_match(possessions, _possession_match_id)
+
     lens = lens or StateLens(selected=StateLensScope(), baseline=None)
     selected_scope = lens.selected
     # Lead Gravity always requires winning episodes.  ``state=all`` means
@@ -1223,6 +1351,8 @@ def build_lead_control_payload(
         lead_windows,
         focal_team_id=focal_team_id,
         focal_provider_by_match=focal_provider_by_match,
+        events_by_match=events_by_match,
+        possessions_by_match=possessions_by_match,
     )
     baseline_raw = _raw_cohort(
         events,
@@ -1230,13 +1360,23 @@ def build_lead_control_payload(
         baseline_windows,
         focal_team_id=focal_team_id,
         focal_provider_by_match=focal_provider_by_match,
+        events_by_match=events_by_match,
+        possessions_by_match=possessions_by_match,
     ) if baseline_windows else None
     selected = _surface_payload(selected_raw, baseline_raw)
     baseline = _surface_payload(baseline_raw, None) if baseline_raw else None
     reliability = selected["reliability"]
     axes = selected["axes"]
+    lead_first_attacks = _first_meaningful_attacks(
+        events,
+        lead_windows,
+        focal_team_id=focal_team_id,
+        focal_provider_by_match=focal_provider_by_match,
+        events_by_match=events_by_match,
+    )
 
     episodes_by_key = {_episode_key(episode): episode for episode in lead_episodes}
+    matches_by_id = {_object_id(match): match for match in matches}
     episode_rows = []
     for key, episode in sorted(episodes_by_key.items(), key=lambda item: (item[1].start_second, item[0])):
         windows = [window for window in lead_windows if window.episode_key == key]
@@ -1253,8 +1393,11 @@ def build_lead_control_payload(
                 focal_team_id=focal_team_id,
                 focal_provider_by_match=focal_provider_by_match,
                 match_references=match_references,
-                matches_by_id={_object_id(match): match for match in matches},
+                matches_by_id=matches_by_id,
                 match_end_seconds=match_end_seconds,
+                events_by_match=events_by_match,
+                possessions_by_match=possessions_by_match,
+                first_attacks=lead_first_attacks,
             )
         )
 
@@ -1266,6 +1409,8 @@ def build_lead_control_payload(
             possessions,
             focal_team_id=focal_team_id,
             focal_provider_by_match=focal_provider_by_match,
+            events_by_match=events_by_match,
+            possessions_by_match=possessions_by_match,
         )
         for band in LEAD_BANDS
     }
@@ -1278,6 +1423,8 @@ def build_lead_control_payload(
             possessions,
             focal_team_id=focal_team_id,
             focal_provider_by_match=focal_provider_by_match,
+            events_by_match=events_by_match,
+            possessions_by_match=possessions_by_match,
         )
         for phase in phase_names
     }
