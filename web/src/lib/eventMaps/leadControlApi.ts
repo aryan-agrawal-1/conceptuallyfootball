@@ -230,7 +230,7 @@ function mapMetric(value: ApiMetric): LeadControlMetric {
 function mapComponents(value: ApiComponents): Record<string, LeadControlMetric | Record<string, LeadControlMetric>> {
   return Object.fromEntries(
     Object.entries(value).map(([key, component]) => [
-      key,
+      key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase()),
       'value' in component
         ? mapMetric(component as ApiMetric)
         : Object.fromEntries(

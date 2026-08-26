@@ -59,7 +59,12 @@ type ApiCohort = {
   }
   axes: Record<string, ApiAxis>
   evidence: TeamStyleCohort['evidence']
-  reliability: TeamStyleCohort['reliability']
+  reliability: {
+    state_exposure_verified: boolean
+    matches_excluded: number
+    sparse_axes: string[]
+    unavailable_axes: string[]
+  }
 }
 
 type ApiDistribution = {
@@ -223,7 +228,12 @@ function mapCohort(value: ApiCohort): TeamStyleCohort {
       Object.entries(value.axes).map(([key, axis]) => [key, mapAxis(axis)]),
     ),
     evidence: value.evidence,
-    reliability: value.reliability,
+    reliability: {
+      stateExposureVerified: value.reliability.state_exposure_verified,
+      matchesExcluded: value.reliability.matches_excluded,
+      sparseAxes: value.reliability.sparse_axes,
+      unavailableAxes: value.reliability.unavailable_axes,
+    },
   }
 }
 
