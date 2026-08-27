@@ -7,6 +7,7 @@ import type {
   GkShotZonesPayload,
   PitchCoordinate,
   PlayerEventProfilePayload,
+  PlayerDefensiveFamily,
   PlayerStateComparisonPayload,
   PlayerStateCohort,
   PlayerTransitionLeverage,
@@ -22,6 +23,7 @@ import type {
   ShotZoneVariant,
   TeamEventProfilePayload,
   TeamPassFlow,
+  DefensiveActionFamily,
 } from '../../types/eventMaps'
 import { appendStateLens, mapStateLens, mapStateLensEvidence, type ApiStateLens, type ApiStateLensEvidence, type StateLensRequest } from './stateLensApi'
 
@@ -242,6 +244,18 @@ type ApiPlayerStateGridCell = {
   share: number
 }
 
+type ApiPlayerDefensiveFamily = {
+  count: number
+  located_count: number
+  rate_per_state_minute: number | null
+  height: {
+    sample_size: number
+    mean: number | null
+    median: number | null
+  }
+  grid: ApiPlayerStateGridCell[]
+}
+
 type ApiPlayerTransitionState = {
   state: string | null
   goal_difference: number | null
@@ -349,6 +363,7 @@ type ApiPlayerStateCohort = {
   defensive_location: { x: number | null; y: number | null; sample_size: number }
   touch_grid: ApiPlayerStateGridCell[]
   defensive_grid: ApiPlayerStateGridCell[]
+  defensive_by_family?: Partial<Record<DefensiveActionFamily, ApiPlayerDefensiveFamily>>
   defensive_height: { sample_size: number; mean: number | null; median: number | null }
   team_action_shares?: Record<string, {
     player_count: number
@@ -416,7 +431,12 @@ type ApiTeamProfile = {
   canonical_team_name: string
   competition_code: string
   season_label: string
-  coverage: { observed_matches: number; expected_matches: number; ratio: number | null }
+  coverage: {
+    observed_matches: number
+    expected_matches: number
+    observed_event_minutes: number
+    ratio: number | null
+  }
   materialization: ApiMaterialization
   summary: Record<string, number>
   pass_flow: Array<{
@@ -525,6 +545,24 @@ function mapPlayerStateGrid(cells: ApiPlayerStateGridCell[]): ActionGridCell[] {
     per90Count: cell.per_90 ?? (cell.per_state_minute == null ? 0 : cell.per_state_minute * 90),
     share: cell.share,
   }))
+}
+
+function mapPlayerDefensiveFamilies(
+  value: ApiPlayerStateCohort['defensive_by_family'],
+): Partial<Record<DefensiveActionFamily, PlayerDefensiveFamily>> {
+  return Object.fromEntries(
+    Object.entries(value ?? {}).map(([family, evidence]) => [family, {
+      count: evidence.count,
+      locatedCount: evidence.located_count,
+      ratePerStateMinute: evidence.rate_per_state_minute,
+      height: {
+        sampleSize: evidence.height.sample_size,
+        mean: evidence.height.mean,
+        median: evidence.height.median,
+      },
+      grid: mapPlayerStateGrid(evidence.grid),
+    }]),
+  ) as Partial<Record<DefensiveActionFamily, PlayerDefensiveFamily>>
 }
 
 function mapPlayerTransitionAction(value: ApiPlayerTransitionAction): PlayerTransitionAction {
@@ -669,6 +707,7 @@ function mapPlayerStateCohort(value: ApiPlayerStateCohort): PlayerStateCohort {
     defensiveLocation: mapLocation(value.defensive_location),
     touchGrid: mapPlayerStateGrid(value.touch_grid),
     defensiveGrid: mapPlayerStateGrid(value.defensive_grid),
+    defensiveByFamily: mapPlayerDefensiveFamilies(value.defensive_by_family),
     defensiveHeight: {
       sampleSize: value.defensive_height.sample_size,
       mean: value.defensive_height.mean,
@@ -1047,7 +1086,7 @@ export async function fetchTeamEventProfile(
     coverage: {
       matchesIncluded: raw.coverage.observed_matches,
       matchesExpected: raw.coverage.expected_matches,
-      minutes: raw.coverage.observed_matches * 90,
+      minutes: raw.coverage.observed_event_minutes,
       complete:
         raw.coverage.expected_matches > 0 &&
         raw.coverage.observed_matches >= raw.coverage.expected_matches,

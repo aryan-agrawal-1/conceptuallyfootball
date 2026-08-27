@@ -32,7 +32,7 @@ from ingestion.services.pass_state import (
 from ingestion.services.shot_pressure import penalty_mode_shots
 
 
-TEAM_STYLE_SHAPE_FORMULA_VERSION = "team_style_shape_v1"
+TEAM_STYLE_SHAPE_FORMULA_VERSION = "team_style_shape_v2"
 STYLE_PERCENTILE_VERSION = "midrank_percentile_v1"
 
 # A state cohort can retain raw values below these thresholds, but its
@@ -86,8 +86,8 @@ AXIS_DEFINITIONS: tuple[dict[str, Any], ...] = (
     {
         "key": "circulation_security",
         "category": "build_up",
-        "label": "Circulation security",
-        "description": "Share of attempted passes completed by the acting team.",
+        "label": "Pass completion",
+        "description": "The share of attempted passes completed by the acting team.",
         "formula": "completed_passes / pass_attempts",
         "unit": "share of passes",
         "higher_means": "completed circulation is more prevalent",
@@ -142,8 +142,8 @@ AXIS_DEFINITIONS: tuple[dict[str, Any], ...] = (
         "key": "defensive_action_height",
         "category": "defence",
         "label": "Defensive-action height",
-        "description": "Median location of included defensive actions measured from the team's own goal.",
-        "formula": "median(defensive_action_x / 100)",
+        "description": "The median location of every qualified, located defensive action, including transition defending, measured from the team's own goal.",
+        "formula": "median(qualified_defensive_action_x / 100)",
         "unit": "pitch x percentage",
         "higher_means": "defensive actions farther from the own goal are more prevalent",
         "evidence_type": "qualified_defensive_events_with_coordinates",
@@ -175,8 +175,8 @@ AXIS_DEFINITIONS: tuple[dict[str, Any], ...] = (
         "key": "settled_block_height",
         "category": "defence",
         "label": "Settled block height",
-        "description": "Median settled defensive block location during opponent possessions after establishment.",
-        "formula": "median(settled_defensive_average_x / 100)",
+        "description": "The median average defensive location once an opponent possession is established; transition defending is excluded.",
+        "formula": "median(mean(settled_defensive_action_x) / 100)",
         "unit": "pitch x percentage",
         "higher_means": "higher settled blocks are more prevalent",
         "evidence_type": "settled_opponent_possessions",
@@ -185,22 +185,22 @@ AXIS_DEFINITIONS: tuple[dict[str, Any], ...] = (
     {
         "key": "counter_launch",
         "category": "transitions",
-        "label": "Counter launch",
-        "description": "Derived counter-attacking possessions launched per 90 verified state minutes.",
-        "formula": "derived_counter_launches * 5400 / exposure_seconds",
-        "unit": "launches per 90 state minutes",
-        "higher_means": "derived counter launches are more prevalent",
+        "label": "Counter starts",
+        "description": "Possessions that start with a non-restart recovery or control change at or behind x=60, then are tracked for 12 seconds for forward progress.",
+        "formula": "counter_starts * 5400 / exposure_seconds",
+        "unit": "counter starts per 90 state minutes",
+        "higher_means": "counter starts are more prevalent",
         "evidence_type": "derived_possession_counters",
         "minimum_evidence": {"exposure_seconds": MIN_STYLE_EXPOSURE_SECONDS, "events": MIN_COUNTER_EVENTS},
     },
     {
         "key": "counter_arrival",
         "category": "transitions",
-        "label": "Counter arrival",
-        "description": "Share of derived counter launches reaching the final third.",
-        "formula": "counter_final_third_arrivals / derived_counter_launches",
-        "unit": "share of derived counter launches",
-        "higher_means": "final-third counter arrivals are more prevalent",
+        "label": "Counters reaching final third",
+        "description": "The share of derived counter starts that travel at least 21 metres forward within 12 seconds and reach the final third at x≥66.67.",
+        "formula": "counter_final_third_arrivals / counter_starts",
+        "unit": "share of counter starts",
+        "higher_means": "counter starts reaching the final third are more prevalent",
         "evidence_type": "derived_possession_counters",
         "minimum_evidence": {"exposure_seconds": MIN_STYLE_EXPOSURE_SECONDS, "events": MIN_COUNTER_EVENTS},
     },
@@ -218,11 +218,11 @@ AXIS_DEFINITIONS: tuple[dict[str, Any], ...] = (
     {
         "key": "counter_shot_tendency",
         "category": "transitions",
-        "label": "Counter-shot tendency",
-        "description": "Share of derived counter launches containing a shot.",
-        "formula": "counter_shots / derived_counter_launches",
-        "unit": "share of derived counter launches",
-        "higher_means": "counter shots are more prevalent",
+        "label": "Counters leading to shots",
+        "description": "The share of derived counter starts that meet the 21-metre progress rule and contain a shot within the 12-second window.",
+        "formula": "counter_shots / counter_starts",
+        "unit": "share of counter starts",
+        "higher_means": "counter starts leading to shots are more prevalent",
         "evidence_type": "derived_possession_counters",
         "minimum_evidence": {"exposure_seconds": MIN_STYLE_EXPOSURE_SECONDS, "events": MIN_COUNTER_EVENTS},
     },

@@ -14,20 +14,11 @@ import {
   EventPitchStage,
 } from './EventMapUi'
 import { StateDeltaMap } from './StateDeltaMap'
-
-const ACTION_FAMILIES: Array<{ value: DefensiveActionFamily; label: string }> = [
-  { value: 'recovery', label: 'Recoveries' },
-  { value: 'tackle', label: 'Tackles' },
-  { value: 'interception', label: 'Interceptions' },
-  { value: 'blocked_pass', label: 'Blocked passes' },
-  { value: 'defensive_aerial', label: 'Defensive aerials' },
-  { value: 'defensive_challenge', label: 'Defensive challenges' },
-  { value: 'clearance', label: 'Clearances' },
-]
-const ALL_FAMILIES = ACTION_FAMILIES.map(option => option.value)
-const ACTION_FAMILY_LABELS = new Map(
-  ACTION_FAMILIES.map(({ value, label }) => [value, label]),
-)
+import {
+  ALL_DEFENSIVE_ACTION_FAMILIES,
+  defensiveActionFamilyLabel,
+} from './defensiveActionFamilies'
+import { DefensiveActionSelector } from './DefensiveActionSelector'
 
 function pitchHeight(value: number | null) {
   return value == null ? '—' : `${value.toFixed(1)}%`
@@ -84,7 +75,7 @@ function combinedSummary(evidence: DefensiveTerritoryEvidence, selected: Defensi
       ? composition.get(selected[0])
         ? evidence.familyEvidence[selected[0]].height.median
         : null
-      : selected.length === ACTION_FAMILIES.length
+      : selected.length === ALL_DEFENSIVE_ACTION_FAMILIES.length
         ? evidence.heights.all.median
         : null,
   }
@@ -227,44 +218,6 @@ function defensiveDeltaContract(
   }
 }
 
-function DefensiveActionSelect({ selected, onChange }: {
-  selected: DefensiveActionFamily[]
-  onChange: (selected: DefensiveActionFamily[]) => void
-}) {
-  const allSelected = selected.length === ACTION_FAMILIES.length
-  const label = allSelected
-    ? 'All defensive actions'
-    : selected.length === 1
-      ? ACTION_FAMILY_LABELS.get(selected[0]) ?? selected[0]
-      : `${selected.length} action types`
-  const toggle = (family: DefensiveActionFamily) => {
-    if (selected.includes(family)) {
-      if (selected.length > 1) onChange(selected.filter(value => value !== family))
-    } else {
-      onChange(ALL_FAMILIES.filter(value => selected.includes(value) || value === family))
-    }
-  }
-  return (
-    <details className="relative">
-      <summary className="event-lens-control flex min-w-48 list-none items-center justify-between gap-3 whitespace-nowrap text-left marker:hidden">
-        <span>{label}</span><span aria-hidden className="text-electric">▾</span>
-      </summary>
-      <div className="absolute right-0 z-30 mt-1 min-w-60 border border-control-border bg-overlay p-2 shadow-2xl">
-        <label className="flex min-h-9 items-center gap-2 border-b border-line-bright px-2 text-[10px] font-bold text-ink">
-          <input type="checkbox" checked={allSelected} onChange={() => onChange(ALL_FAMILIES)} />
-          All defensive actions
-        </label>
-        {ACTION_FAMILIES.map(option => (
-          <label key={option.value} className="flex min-h-9 items-center gap-2 px-2 text-[10px] text-control-fg hover:bg-raised hover:text-ink">
-            <input type="checkbox" checked={selected.includes(option.value)} onChange={() => toggle(option.value)} />
-            {option.label}
-          </label>
-        ))}
-      </div>
-    </details>
-  )
-}
-
 export function DefensiveTerritoryMap({
   payload,
   loading,
@@ -282,7 +235,7 @@ export function DefensiveTerritoryMap({
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
 }) {
-  const [selectedFamilies, setSelectedFamilies] = useState<DefensiveActionFamily[]>(ALL_FAMILIES)
+  const [selectedFamilies, setSelectedFamilies] = useState<DefensiveActionFamily[]>(ALL_DEFENSIVE_ACTION_FAMILIES)
   if (loading) return <EventMapNotice kind="loading" title="Loading defensive territory" />
   if (error || !payload) {
     return <EventMapNotice kind="error" title="Defensive territory failed to load" onRetry={retry}>{error}</EventMapNotice>
@@ -302,14 +255,14 @@ export function DefensiveTerritoryMap({
     <EventMapCard
       title="Defensive action territory"
       description="Choose the action types to map. Positions run from the team's own goal (0) to the opponent's goal (100)."
-      controls={<DefensiveActionSelect selected={selectedFamilies} onChange={setSelectedFamilies} />}
+      controls={<DefensiveActionSelector selected={selectedFamilies} onChange={setSelectedFamilies} />}
       exportContext={{
         ...exportContext,
         filters: [...exportContext.filters, {
           label: 'Defensive actions',
-          value: selectedFamilies.length === ACTION_FAMILIES.length
+          value: selectedFamilies.length === ALL_DEFENSIVE_ACTION_FAMILIES.length
             ? 'All action types'
-            : selectedFamilies.map(family => ACTION_FAMILY_LABELS.get(family) ?? family).join(' · '),
+            : selectedFamilies.map(defensiveActionFamilyLabel).join(' · '),
         }],
       }}
       expanded={expanded}
@@ -348,7 +301,7 @@ export function DefensiveTerritoryMap({
             <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] uppercase tracking-[0.08em] text-ink-dim" aria-label="Defensive event family composition">
               {evidence.familyComposition.flatMap(row => (
                 selectedFamilySet.has(row.family) && row.count > 0
-                  ? [<span key={row.family}>{ACTION_FAMILY_LABELS.get(row.family) ?? row.family} {row.count}</span>]
+                  ? [<span key={row.family}>{defensiveActionFamilyLabel(row.family)} {row.count}</span>]
                   : []
               ))}
             </div>

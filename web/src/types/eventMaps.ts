@@ -348,6 +348,18 @@ export type PlayerStateLocation = {
   sampleSize: number
 }
 
+export type PlayerDefensiveFamily = {
+  count: number
+  locatedCount: number
+  ratePerStateMinute: number | null
+  height: {
+    sampleSize: number
+    mean: number | null
+    median: number | null
+  }
+  grid: ActionGridCell[]
+}
+
 export type PlayerTransitionAction = {
   sequence: number
   eventType: string
@@ -451,6 +463,7 @@ export type PlayerStateCohort = {
   defensiveLocation: PlayerStateLocation
   touchGrid: ActionGridCell[]
   defensiveGrid: ActionGridCell[]
+  defensiveByFamily: Partial<Record<DefensiveActionFamily, PlayerDefensiveFamily>>
   defensiveHeight: {
     sampleSize: number
     mean: number | null

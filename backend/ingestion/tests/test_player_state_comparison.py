@@ -38,6 +38,7 @@ from ingestion.models import (
 )
 from ingestion.player_state_comparison_api import PlayerStateComparisonApi
 from ingestion.services.event_profiles import materialize_event_profiles
+from ingestion.services.player_state_comparison import action_context
 
 
 class PlayerStateComparisonTests(TestCase):
@@ -94,7 +95,7 @@ class PlayerStateComparisonTests(TestCase):
         )
         self.assertIsNotNone(materialize_event_profiles(self.competition_season, run=run))
 
-    def add_event(self, index, seconds, player, *, x, y, end_x):
+    def add_event(self, index, seconds, player, *, x, y, end_x, event_type=MatchEventType.PASS, is_defensive=False):
         return ProviderMatchEvent.objects.create(
             provider_match=self.match,
             event_index=index,
@@ -108,7 +109,7 @@ class PlayerStateComparisonTests(TestCase):
             second=seconds % 60,
             match_seconds=seconds,
             timeline_seconds=seconds,
-            event_type=MatchEventType.PASS,
+            event_type=event_type,
             outcome_successful=True,
             x=x,
             y=y,
@@ -116,6 +117,7 @@ class PlayerStateComparisonTests(TestCase):
             end_y=y,
             is_touch=True,
             is_progressive_pass=end_x > x,
+            is_defensive=is_defensive,
         )
 
     def add_carry(self, index, seconds, player, *, x, y, end_x, end_y):
@@ -450,3 +452,44 @@ class PlayerStateComparisonTests(TestCase):
         self.assertEqual(transition["matching"]["same_team"], True)
         self.assertEqual(transition["matching"]["verified_player_on_pitch_intervals"], True)
         self.assertEqual(transition["exclusions"]["outside_verified_player_interval"], 2)
+
+    def test_action_context_exposes_the_same_seven_defensive_families_as_team_territory(self):
+        family_events = [
+            (20, MatchEventType.BALL_RECOVERY, False),
+            (21, MatchEventType.TACKLE, False),
+            (22, MatchEventType.INTERCEPTION, False),
+            (23, MatchEventType.BLOCKED_PASS, False),
+            (24, MatchEventType.AERIAL, True),
+            (25, MatchEventType.CHALLENGE, True),
+            (26, MatchEventType.CLEARANCE, False),
+        ]
+        events = [
+            self.add_event(
+                index,
+                100 + index,
+                self.player,
+                x=2_000 + index * 100,
+                y=2_000,
+                end_x=3_000,
+                event_type=event_type,
+                is_defensive=is_defensive,
+            )
+            for index, event_type, is_defensive in family_events
+        ]
+
+        context = action_context(events, [], 1_800)
+
+        self.assertEqual(
+            set(context["defensive_by_family"]),
+            {
+                "recovery",
+                "tackle",
+                "interception",
+                "blocked_pass",
+                "defensive_aerial",
+                "defensive_challenge",
+                "clearance",
+            },
+        )
+        self.assertTrue(all(row["count"] == 1 for row in context["defensive_by_family"].values()))
+        self.assertTrue(all(len(row["grid"]) == 384 for row in context["defensive_by_family"].values()))

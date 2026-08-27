@@ -308,7 +308,7 @@ class TeamStyleShapeApiTests(TestCase):
         response = self.call({"competition": "TST", "season": "2025-26", "state": "winning", "baseline_state": "drawing"})
         self.assertEqual(response.status_code, 200)
         payload = json.loads(response.content)
-        self.assertEqual(payload["contract_version"], "v1")
+        self.assertEqual(payload["contract_version"], "v2")
         self.assertEqual(payload["selected"]["scope"]["state"], "winning")
         self.assertEqual(payload["baseline"]["scope"]["state"], "drawing")
         self.assertEqual(payload["overall"]["scope"]["state"], "all")
@@ -316,6 +316,21 @@ class TeamStyleShapeApiTests(TestCase):
         self.assertIn("selected_minus_baseline", payload["comparison"])
         self.assertEqual(payload["comparison"]["selected_minus_baseline"]["pass_directness"]["direction"], "prevalence")
         self.assertEqual(payload["state_lens"]["evidence"]["exposure_seconds"], 900)
+        self.assertIsNone(payload["game_states"])
+
+    def test_optional_game_state_series_is_built_in_one_payload(self):
+        response = self.call({
+            "competition": "TST",
+            "season": "2025-26",
+            "include_game_states": "1",
+        })
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.content)
+        self.assertEqual(set(payload["game_states"]), {"winning", "drawing", "losing"})
+        self.assertEqual(payload["game_states"]["winning"]["scope"]["state"], "winning")
+        self.assertEqual(payload["game_states"]["drawing"]["scope"]["state"], "drawing")
+        self.assertEqual(payload["axis_definitions"][3]["label"], "Pass completion")
+        self.assertEqual(payload["axis_definitions"][12]["label"], "Counter starts")
 
     def test_axis_selection_validation_and_materialized_cache_are_deterministic(self):
         params = {"competition": "TST", "season": "2025-26", "axes": "pass_length,shot_frequency"}

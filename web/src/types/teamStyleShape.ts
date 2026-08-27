@@ -7,6 +7,7 @@ export type TeamStyleAxisCategory =
   | 'transitions'
 
 export type TeamStyleReliability = 'verified' | 'partial' | 'sparse' | 'unavailable'
+export type TeamStyleGameState = 'winning' | 'drawing' | 'losing'
 
 export interface TeamStyleAxisDefinition {
   key: string
@@ -160,6 +161,8 @@ export interface TeamStyleShapePayload {
     selected: Record<string, TeamStyleDistribution>
     baseline: Record<string, TeamStyleDistribution> | null
   }
+  /** Optional target-team state series, loaded only for the state chart view. */
+  gameStates?: Partial<Record<TeamStyleGameState, TeamStyleCohort | null>> | null
   comparison: {
     enabled: boolean
     baseline: TeamStyleCohort | null

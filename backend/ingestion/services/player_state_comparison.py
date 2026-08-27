@@ -37,6 +37,7 @@ from ingestion.models import (
     Provider,
 )
 from ingestion.services.possession_context import POSSESSION_CALCULATION_VERSION
+from ingestion.services.defensive_territory import FAMILY_BY_TYPE, defensive_family
 from ingestion.services.whoscored_normalization import (
     ACTION_GRID_COLUMNS,
     ACTION_GRID_ROWS,
@@ -52,11 +53,12 @@ from ingestion.state_lens import (
 )
 
 
-PLAYER_STATE_COMPARISON_VERSION = "player_state_comparison_v2"
+PLAYER_STATE_COMPARISON_VERSION = "player_state_comparison_v3"
 PLAYER_ROLE_MIN_EXPOSURE_SECONDS = 900
 PLAYER_ROLE_MIN_EVENTS = 5
 PLAYER_ROLE_MIN_MATCHES = 2
 PLAYER_TRANSITION_EVIDENCE_LIMIT = 25
+DEFENSIVE_ACTION_FAMILIES = tuple(dict.fromkeys(FAMILY_BY_TYPE.values()))
 
 
 @dataclass(frozen=True, slots=True)
@@ -404,6 +406,41 @@ def grid(events: Iterable, exposure_seconds: int, *, defensive: bool = False) ->
     return cells
 
 
+def defensive_family_data(events: Iterable, exposure_seconds: int) -> dict:
+    """Return the player defensive-action contract split by team family.
+
+    The team defensive territory surface and player State Lens use the same
+    family classifier.  Keeping the split here means the player map can offer
+    the same seven action filters without changing the existing all-actions
+    grid contract.
+    """
+
+    family_events = {family: [] for family in DEFENSIVE_ACTION_FAMILIES}
+    for event in events:
+        if event.is_deleted_event:
+            continue
+        family = defensive_family(event)
+        if family in family_events:
+            family_events[family].append(event)
+
+    family_data = {}
+    for family, rows in family_events.items():
+        heights = [coordinate(event, "x") for event in rows if event.x is not None]
+        heights = [value for value in heights if value is not None]
+        family_data[family] = {
+            "count": len(rows),
+            "located_count": sum(event.x is not None and event.y is not None for event in rows),
+            "rate_per_state_minute": metric_rate(len(rows), exposure_seconds)["per_state_minute"],
+            "height": {
+                "sample_size": len(heights),
+                "mean": round(sum(heights) / len(heights), 4) if heights else None,
+                "median": round(median(heights), 4) if heights else None,
+            },
+            "grid": grid(rows, exposure_seconds, defensive=True),
+        }
+    return family_data
+
+
 def state_event_rows(profile, scope: StateLensScope, match_ids: Iterable[int] | None = None) -> tuple[list, list, list, list, list, list[PlayerExposureSegment]]:
     segments = exposure_segments(profile, scope, match_ids)
     ids = {segment.match_id for segment in segments}
@@ -570,7 +607,13 @@ def directional_metrics(events: Iterable, carries: Iterable) -> dict:
     }
 
 
-def action_context(events: Iterable, carries: Iterable, exposure_seconds: int) -> dict:
+def action_context(
+    events: Iterable,
+    carries: Iterable,
+    exposure_seconds: int,
+    *,
+    include_defensive_families: bool = True,
+) -> dict:
     events = list(events)
     carries = list(carries)
     summary = event_summary(events, carries)
@@ -587,7 +630,7 @@ def action_context(events: Iterable, carries: Iterable, exposure_seconds: int) -
     defensive_location = average_location(defensive_events)
     heights = [coordinate(event, "x") for event in defensive_events]
     heights = [value for value in heights if value is not None]
-    return {
+    context = {
         "summary": summary,
         "rates": rates,
         "exposure_seconds": exposure_seconds,
@@ -607,6 +650,9 @@ def action_context(events: Iterable, carries: Iterable, exposure_seconds: int) -
             "median": round(median(heights), 4) if heights else None,
         },
     }
+    if include_defensive_families:
+        context["defensive_by_family"] = defensive_family_data(events, exposure_seconds)
+    return context
 
 
 def team_relative_shares(player_summary: dict, team_summary: dict) -> dict:
@@ -653,7 +699,12 @@ def team_matched_context(team_events: list, team_carries: list, segments: list[P
         event for event in team_events
         if any(segment.match_id == event.provider_match_id and segment.team_id == event.team_id for segment in segments)
     ]
-    return action_context(team_events, team_carries, exposure_seconds)
+    return action_context(
+        team_events,
+        team_carries,
+        exposure_seconds,
+        include_defensive_families=False,
+    )
 
 
 def _transition_scope_matches(context: dict, scope: StateLensScope) -> bool:

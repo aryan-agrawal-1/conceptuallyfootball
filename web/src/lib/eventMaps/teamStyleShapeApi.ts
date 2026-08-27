@@ -7,6 +7,7 @@ import type {
   TeamStyleAxisDefinition,
   TeamStyleCohort,
   TeamStyleDistribution,
+  TeamStyleGameState,
   TeamStyleShapePayload,
   TeamStyleSignedShift,
 } from '../../types/teamStyleShape'
@@ -161,6 +162,7 @@ type ApiPayload = {
     selected: Record<string, ApiDistribution>
     baseline: Record<string, ApiDistribution> | null
   }
+  game_states?: Partial<Record<TeamStyleGameState, ApiCohort | null>> | null
   comparison: {
     enabled: boolean
     baseline: ApiCohort | null
@@ -302,11 +304,13 @@ export async function fetchTeamStyleShape(
   matchRef: string | null,
   stateLens: StateLensRequest,
   axisKeys?: string[],
+  includeGameStates = false,
 ): Promise<TeamStyleShapePayload> {
   const params = new URLSearchParams({ competition, season })
   if (matchRef != null) params.set('match', matchRef)
   appendStateLens(params, stateLens)
   if (axisKeys?.length) params.set('axes', axisKeys.join(','))
+  if (includeGameStates) params.set('include_game_states', '1')
   const raw = await readJson<ApiPayload>(
     `${BASE}/team-seasons/style-shape/${teamId}?${params}`,
   )
@@ -362,6 +366,14 @@ export async function fetchTeamStyleShape(
       selected: mapDistributionRecord(raw.distributions.selected),
       baseline: raw.distributions.baseline ? mapDistributionRecord(raw.distributions.baseline) : null,
     },
+    gameStates: raw.game_states
+      ? Object.fromEntries(
+          Object.entries(raw.game_states).map(([key, value]) => [
+            key,
+            value ? mapCohort(value) : null,
+          ]),
+        ) as Partial<Record<TeamStyleGameState, TeamStyleCohort | null>>
+      : null,
     comparison: {
       enabled: raw.comparison.enabled,
       baseline: raw.comparison.baseline ? mapCohort(raw.comparison.baseline) : null,

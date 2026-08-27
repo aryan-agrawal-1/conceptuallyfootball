@@ -63,7 +63,8 @@ from ingestion.state_lens import (
 )
 
 
-TEAM_STYLE_SHAPE_API_VERSION = "v1"
+TEAM_STYLE_SHAPE_API_VERSION = "v2"
+STYLE_GAME_STATES = ("winning", "drawing", "losing")
 
 
 def parse_axis_selection(request) -> tuple[str, ...]:
@@ -83,6 +84,13 @@ def parse_axis_selection(request) -> tuple[str, ...]:
             "Unknown Team Style Shape axis: " + ", ".join(unknown) + "."
         )
     return tuple(key for key in DEFAULT_AXIS_KEYS if key in requested)
+
+
+def parse_game_state_view(request) -> bool:
+    """Opt into the small target-team state series used by the chart view."""
+
+    raw = request.query_params.get("include_game_states", "")
+    return raw.strip().lower() in {"1", "true", "yes"}
 
 
 def _event_key(event) -> tuple[int, int]:
@@ -519,6 +527,7 @@ class TeamStyleShapeApi(APIView):
             match_ref = parse_optional_match(request)
             lens = parse_state_lens(request)
             axis_keys = parse_axis_selection(request)
+            include_game_states = parse_game_state_view(request)
             competition_season = profile.competition_season
             event_version = model_version(
                 ProviderMatchEvent,
@@ -549,6 +558,7 @@ class TeamStyleShapeApi(APIView):
                     "match": match_ref,
                     "state_lens": lens.cache_scope(),
                     "axes": axis_keys,
+                    "include_game_states": include_game_states,
                     "formula_version": TEAM_STYLE_SHAPE_FORMULA_VERSION,
                     "possession_version": POSSESSION_CALCULATION_VERSION,
                 },
@@ -576,7 +586,13 @@ class TeamStyleShapeApi(APIView):
             response, cached = get_or_build_payload_response(
                 cache_key=cache_key,
                 source_version=source_version,
-                builder=lambda: self.build_payload(profile, match_ref, lens, axis_keys),
+                builder=lambda: self.build_payload(
+                    profile,
+                    match_ref,
+                    lens,
+                    axis_keys,
+                    include_game_states=include_game_states,
+                ),
             )
             response["X-Materialized-Payload"] = "hit" if cached else "miss"
             return response
@@ -594,6 +610,8 @@ class TeamStyleShapeApi(APIView):
         match_ref: int | None,
         lens: StateLens,
         axis_keys: Sequence[str] = DEFAULT_AXIS_KEYS,
+        *,
+        include_game_states: bool = False,
     ) -> dict:
         competition_season = profile.competition_season
         target_events_all = event_queryset(competition_season).filter(team_id=profile.team_id)
@@ -629,6 +647,11 @@ class TeamStyleShapeApi(APIView):
         scopes = {"overall": StateLensScope(), "selected": lens.selected}
         if lens.baseline is not None:
             scopes["baseline"] = lens.baseline
+        if include_game_states:
+            scopes.update({
+                state: StateLensScope(state=state)
+                for state in STYLE_GAME_STATES
+            })
         bulk = _load_bulk_style_inputs(competition_season, team_ids, scopes)
         target_overall_evidence = _bulk_scope_evidence(
             profile.team_id,
@@ -748,6 +771,31 @@ class TeamStyleShapeApi(APIView):
             target_baseline["team_id"] = profile.team_id
             target_baseline["team_name"] = profile.team.name
 
+        game_states = None
+        if include_game_states:
+            game_states = {}
+            for state in STYLE_GAME_STATES:
+                state_scope = scopes[state]
+                state_evidence = _bulk_scope_evidence(
+                    profile.team_id,
+                    target_match_ids,
+                    state_scope,
+                    bulk["episodes_by_key"],
+                    bulk["audits_by_match"],
+                )
+                state_cohort = _build_bulk_cohort(
+                    bulk,
+                    scope_name=state,
+                    scope=state_scope,
+                    team_id=profile.team_id,
+                    evidence=state_evidence,
+                    axis_keys=axis_keys,
+                    match_ids=target_match_ids,
+                )
+                state_cohort["team_id"] = profile.team_id
+                state_cohort["team_name"] = profile.team.name
+                game_states[state] = state_cohort
+
         comparison = {
             "enabled": target_baseline is not None,
             "baseline": target_baseline,
@@ -757,8 +805,8 @@ class TeamStyleShapeApi(APIView):
                 else None
             ),
             "normalisation_note": (
-                "Signed radial values use raw selected-minus-baseline change divided by "
-                "the same-axis competition-season p90-minus-p10 spread, clipped to [-1,1]."
+                "Horizontal state positions use each axis's all-state competition-season p10-p90 spread; "
+                "0 is p10, 100 is p90, and values outside that typical range are clipped with an edge marker."
             ),
         }
 
@@ -803,11 +851,12 @@ class TeamStyleShapeApi(APIView):
                 "baseline": baseline_distributions if target_baseline is not None else None,
             },
             "comparison": comparison,
+            "game_states": game_states,
             "notes": [
                 "Percentiles describe how prevalent a style behavior is in this competition-season; they are not quality or outcome grades.",
                 "Pass, shot, defensive, state-exposure, and possession semantics are inherited from the Batch 9 contracts.",
-                "Counter axes use derived possession evidence; provider-tagged fast-break shots remain a separate observation.",
-                "Settled block height uses opponent possessions after the persisted establishment rule and excludes transition defence.",
+                "Counter starts begin with a non-restart recovery or control change at or behind x=60 and are tracked for 12 seconds; final-third and shot outcomes require at least 21 metres of forward progress.",
+                "Settled block height uses opponent possessions after the persisted establishment rule and excludes transition defence; defensive-action height includes all qualified defensive events.",
                 "Lead ownership, result attribution, and causal quality claims are outside this profile.",
             ],
         }
