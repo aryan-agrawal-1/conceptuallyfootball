@@ -13,7 +13,7 @@ import { GoalZoneGridView, GoalZoneTotals } from './GoalZones'
 import { StateDeltaMap } from './StateDeltaMap'
 import { StateLensControls } from './StateLensControls'
 import {
-  EventCoverage, EventMapCard, EventMapNotice, EventMatchFilter, EventMetricStrip,
+  EventCoverageLine, EventMapCard, EventMapNotice, EventMatchFilter,
   EventMapViewTabs, EventPitchStage, EventSelectionDetails, ShotMapLegend,
 } from './EventMapUi'
 
@@ -620,23 +620,7 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
 
   return (
     <section aria-label="Player event maps" className="relative">
-      <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-stretch">
-        <div className="min-w-0 flex-1">
-          <EventMetricStrip metrics={[
-            { label: 'Passes', value: profile.summary.pass_attempts?.toLocaleString() ?? '—' },
-            { label: 'Carries', value: passQuery.data?.totalAllCarries.toLocaleString() ?? '—' },
-            { label: 'Shots', value: profile.summary.shots?.toLocaleString() ?? '—' },
-            { label: 'Touches', value: locatedTouchCount.toLocaleString() },
-          ]} />
-        </div>
-        <div className="min-w-[220px]"><EventCoverage coverage={profile.coverage} /></div>
-        <EventMatchFilter matches={profile.matches} value={matchRef} onChange={value => {
-          const next = new URLSearchParams(searchParams)
-          if (value == null) next.delete('match')
-          else next.set('match', value)
-          setLensParams(next)
-        }} />
-        {teams.length > 1 ? (
+      {teams.length > 1 ? <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
           <label className="flex items-center justify-between gap-2 border border-line-bright bg-panel px-3 text-[9px] font-bold uppercase tracking-[0.14em] text-ink-dim sm:justify-start">
             Team split
             <select aria-label="Player team split" value={teamId ?? ''} onChange={event => {
@@ -650,38 +634,81 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
               {teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}
             </select>
           </label>
-        ) : null}
-      </div>
+      </div> : null}
 
-      {stateLens ? <div className="mb-3">
-        <StateLensControls metadata={stateLens} searchParams={searchParams} onChange={setLensParams} />
+      {stateLens ? <div className="mb-2">
+        <StateLensControls metadata={stateLens} searchParams={searchParams} onChange={setLensParams} controls={<EventMatchFilter matches={profile.matches} value={matchRef} onChange={value => {
+          const next = new URLSearchParams(searchParams)
+          if (value == null) next.delete('match')
+          else next.set('match', value)
+          setLensParams(next)
+        }} />} />
       </div> : null}
       {expanded && stateLens ? <div className="fixed left-3 right-16 top-3 z-[95] max-h-[45svh] overflow-y-auto sm:left-8 sm:right-20">
         <StateLensControls compact metadata={stateLens} searchParams={searchParams} onChange={setLensParams} />
       </div> : null}
 
-      <nav className="mb-3 grid grid-cols-4 border-b border-line-bright" aria-label="Player state analysis">
+      <nav className="mb-2 grid grid-cols-4 border-b border-line-bright" aria-label="Player event analysis">
         {([
-          ['overview', 'Overview', 'Compare player state exposure and movement'],
-          ['passing', 'Passing & Carrying', 'Inspect selected passes and derived carries'],
-          ['shooting', 'Shooting', 'Inspect selected shots and goal zones'],
-          ['defending', 'Defending', 'Inspect defensive territory and height'],
-        ] as const).map(([value, label, description]) => (
+          ['overview', 'Touches'],
+          ['passing', 'Passing'],
+          ['shooting', 'Shooting'],
+          ['defending', 'Defending'],
+        ] as const).map(([value, label]) => (
           <button key={value} type="button" aria-pressed={analysisMode === value} onClick={() => { setAnalysisMode(value); setSelection(null) }} className={`border-b-2 px-2 py-2 text-left transition-colors hover:bg-raised sm:px-3 ${analysisMode === value ? 'border-electric text-electric' : 'border-transparent text-ink'}`}>
             <strong className="block text-[9px] uppercase tracking-[0.08em] sm:text-[10px] sm:tracking-[0.1em]">{label}</strong>
-            <span className="mt-0.5 hidden text-[8px] text-ink-dim sm:block">{description}</span>
           </button>
         ))}
       </nav>
 
+      <div className="mb-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 py-1">
+        {([
+          ['Touches', locatedTouchCount],
+          ['Passes', profile.summary.pass_attempts],
+          ['Carries', passQuery.data?.totalAllCarries],
+          ['Shots', profile.summary.shots],
+        ] as const).map(([label, value]) => <p key={label} className="text-[9px] text-ink-dim"><span className="mr-1 uppercase tracking-[0.08em]">{label}</span><strong className="font-mono text-[12px] font-normal text-ink">{value?.toLocaleString() ?? '—'}</strong></p>)}
+        <span className="ml-auto"><EventCoverageLine coverage={profile.coverage} minutes={profile.coverage.minutes} /></span>
+      </div>
+
+      {analysisMode === 'overview' && (locatedTouchCount > 0 || matchRef !== null) ? (
+        <div className="mb-3 grid gap-3 lg:grid-cols-12">
+          <EventMapCard className="lg:col-span-8" expanded={expanded === 'actions'} onExpandedChange={next => setExpanded(next ? 'actions' : null)} title="Touch map" description="Smoothed density of located touches, with the average position overlaid." exportContext={mapExportContext()} footer={(
+            <div className="flex flex-wrap items-center gap-3 text-[8px] font-bold uppercase tracking-[0.1em] text-ink-dim">
+              <span className="inline-flex items-center gap-1.5"><span className="size-3 rounded-full bg-mint/55 blur-[2px]" aria-hidden /> Higher density</span>
+              {profile.averageTouchLocation ? <span className="inline-flex items-center gap-1.5 text-electric"><span aria-hidden>◆</span> Average touch · {profile.averageTouchLocation.sampleSize.toLocaleString()}</span> : null}
+            </div>
+          )}>
+            <MapStage map="actions" expanded={expanded} setExpanded={setExpanded}>
+              {locatedTouchCount ? <PortraitPitch densityCells={profile.touchGrid} densityStyle="smooth" markers={profile.averageTouchLocation ? [{ id: 'average-touch', coordinate: profile.averageTouchLocation, kind: 'jersey', ariaLabel: `Average touch location from ${profile.averageTouchLocation.sampleSize} located touches`, label: 'Avg touch', tone: 'accent' }] : []} ariaLabel={`${profile.playerName} touch-only heatmap with average touch overlay. Attacking left to right.`} /> : <EventMapNotice kind="empty" title="No located touches recorded" />}
+            </MapStage>
+          </EventMapCard>
+          <aside className="flex flex-col justify-between border border-line-bright bg-panel p-3 lg:col-span-4">
+            <div>
+              <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink-dim">Observed profile</p>
+              <p className="mt-2 font-mono text-2xl text-ink">{locatedTouchCount.toLocaleString()}</p>
+              <p className="text-[10px] text-ink-dim">located touches</p>
+            </div>
+            {profile.averageTouchLocation ? <p className="mt-4 text-[10px] leading-relaxed text-ink-dim">Average position <span className="font-mono text-ink">{profile.averageTouchLocation.x.toFixed(1)} × {profile.averageTouchLocation.y.toFixed(1)}</span></p> : null}
+            {locatedTouchCount < 100 ? <p className="mt-3 border-l-2 border-gold pl-2 text-[9px] leading-relaxed text-gold">Small sample; read as directional context.</p> : null}
+          </aside>
+        </div>
+      ) : null}
+
       {analysisMode === 'overview' ? (
-        <section aria-label="Player State Lens overview" className="mb-3 space-y-3">
+        <section aria-label="Player context analysis" className="mb-3 space-y-3">
           {comparisonQuery.isLoading ? <EventMapNotice kind="loading" title="Loading verified player comparison" /> : comparisonQuery.isError || !comparison ? (
             <EventMapNotice kind="error" title="Player state comparison failed to load" onRetry={() => comparisonQuery.refetch()}>
               {comparisonQuery.error?.message ?? 'The verified player comparison service returned no data.'}
             </EventMapNotice>
           ) : (
             <>
+              <details className="group border border-line-bright bg-panel">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.12em] text-control-fg hover:text-ink">
+                  <span>Context comparison</span>
+                  <span className="font-normal normal-case tracking-normal text-ink-dim">{selectedStateLabel}{comparison.baseline ? ` vs ${baselineStateLabel}` : ''} · view evidence</span>
+                </summary>
+                <div className="space-y-3 border-t border-line-bright p-3">
               <div className="border border-line-bright bg-panel px-3 py-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -776,6 +803,8 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
                 </ul>
                 <p className="mt-2 text-ink-muted">All roles require at least 15 verified minutes, two matches, both cohorts, and matched-team context. Shot-specific rules use a separate low-count threshold; labels describe observed response patterns, not player quality or causality.</p>
               </details> : null}
+                </div>
+              </details>
             </>
           )}
         </section>
@@ -958,21 +987,6 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
           </EventMapCard>
         ) : null}
 
-        {analysisMode === 'overview' && (locatedTouchCount > 0 || matchRef !== null) ? (
-          <EventMapCard className="lg:col-span-6" expanded={expanded === 'actions'} onExpandedChange={next => setExpanded(next ? 'actions' : null)} title="Touch heatmap" description="Smoothed density of located touches only, with the average touch position overlaid." exportContext={mapExportContext()} footer={(
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-3 text-[8px] font-bold uppercase tracking-[0.1em] text-ink-dim">
-              <span className="inline-flex items-center gap-1.5"><span className="size-3 rounded-full bg-mint/55 blur-[2px]" aria-hidden /> Higher touch density</span>
-              {profile.averageTouchLocation ? <span className="inline-flex items-center gap-1.5 text-electric"><span aria-hidden>◆</span> Average touch · {profile.averageTouchLocation.sampleSize.toLocaleString()} touches</span> : null}
-              </div>
-              {locatedTouchCount < 100 ? <EventMapNotice kind="sparse" title="Small located-touch sample">The heatmap is directional context, not a settled season tendency.</EventMapNotice> : null}
-            </div>
-          )}>
-            <MapStage map="actions" expanded={expanded} setExpanded={setExpanded}>
-              {locatedTouchCount ? <PortraitPitch densityCells={profile.touchGrid} densityStyle="smooth" markers={profile.averageTouchLocation ? [{ id: 'average-touch', coordinate: profile.averageTouchLocation, kind: 'jersey', ariaLabel: `Average touch location from ${profile.averageTouchLocation.sampleSize} located touches`, label: 'Avg touch', tone: 'accent' }] : []} ariaLabel={`${profile.playerName} touch-only heatmap with average touch overlay. Attacking left to right.`} /> : <EventMapNotice kind="empty" title="No located touches recorded" />}
-            </MapStage>
-          </EventMapCard>
-        ) : null}
       </div>
 
       {analysisMode === 'passing' ? (

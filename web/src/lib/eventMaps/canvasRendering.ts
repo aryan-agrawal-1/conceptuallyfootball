@@ -122,6 +122,7 @@ export function drawPassLayer(
 ) {
   const colors = { ...defaultLayerOptions, ...options }
   const hasSelection = Boolean(options.selectedEventId)
+  const densityOpacity = passes.length > 120 ? 0.28 : passes.length > 50 ? 0.5 : 0.82
 
   context.save()
   context.lineCap = 'butt'
@@ -135,13 +136,22 @@ export function drawPassLayer(
     context.lineTo(end.x, end.y)
     context.strokeStyle =
       pass.outcome === 'successful' ? colors.successfulColor : colors.unsuccessfulColor
-    context.globalAlpha = selected ? 1 : hasSelection ? 0.4 : 1
+    context.globalAlpha = selected ? 1 : hasSelection ? 0.2 : densityOpacity
     context.lineWidth = selected ? (pass.keyPass ? 2.1 : 1.65) : pass.keyPass ? 1.35 : 0.95
     context.stroke()
 
-    const endpointRadius = selected ? 2.8 : 1.2
+    const deltaX = end.x - start.x
+    const deltaY = end.y - start.y
+    const distance = Math.hypot(deltaX, deltaY)
+    if (distance < 4) continue
+    const unitX = deltaX / distance
+    const unitY = deltaY / distance
+    const arrowSize = selected ? 4.5 : passes.length > 120 ? 2.2 : 3
     context.beginPath()
-    context.arc(end.x, end.y, endpointRadius, 0, Math.PI * 2)
+    context.moveTo(end.x, end.y)
+    context.lineTo(end.x - unitX * arrowSize - unitY * arrowSize * 0.65, end.y - unitY * arrowSize + unitX * arrowSize * 0.65)
+    context.lineTo(end.x - unitX * arrowSize + unitY * arrowSize * 0.65, end.y - unitY * arrowSize - unitX * arrowSize * 0.65)
+    context.closePath()
     context.fillStyle = context.strokeStyle
     context.fill()
   }

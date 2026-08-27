@@ -1,3 +1,4 @@
+import { ChevronDown, SlidersHorizontal } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import type { StateLensMetadata } from '../../types/eventMaps'
 
@@ -16,12 +17,14 @@ function withCurrent<T extends string | number>(values: T[] | undefined, current
   return result
 }
 
-export function StateLensControls({ metadata, searchParams, onChange, compact = false }: {
+export function StateLensControls({ metadata, searchParams, onChange, compact = false, controls }: {
   metadata?: StateLensMetadata
   searchParams: URLSearchParams
   onChange: (next: URLSearchParams) => void
   compact?: boolean
+  controls?: ReactNode
 }) {
+  const [panelOpen, setPanelOpen] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const refinements = metadata?.eligibleRefinements
   const selectedState = searchParams.get('state') ?? 'all'
@@ -29,6 +32,8 @@ export function StateLensControls({ metadata, searchParams, onChange, compact = 
   const selectedPhase = searchParams.get('phase') ?? ''
   const selectedProvenance = searchParams.get('draw_provenance') ?? ''
   const comparisonEnabled = STATE_FIELDS.some(field => searchParams.has(`baseline_${field}`))
+  const baselineState = searchParams.get('baseline_state') ?? 'all'
+  const contextLabel = `${selectedState === 'all' ? 'All states' : displayLabel(selectedState)}${comparisonEnabled ? ` vs ${displayLabel(baselineState)}` : ''}`
 
   const update = (field: string, value: string) => {
     const next = new URLSearchParams(searchParams)
@@ -37,9 +42,20 @@ export function StateLensControls({ metadata, searchParams, onChange, compact = 
     onChange(next)
   }
   return (
-    <fieldset className={`border border-line-bright bg-panel px-3 pb-3 pt-2 shadow-[0_12px_32px_rgba(0,0,0,0.18)] ${compact ? 'shadow-2xl' : ''}`}>
-      <legend className="px-1 text-[9px] font-bold uppercase tracking-[0.18em] text-electric">State Lens</legend>
-      <div>
+    <div className={`border border-line-bright bg-panel ${compact ? 'shadow-2xl' : ''}`}>
+      <div className="flex min-h-10 flex-wrap items-center gap-2 px-2 py-1.5">
+        <button type="button" aria-expanded={panelOpen} onClick={() => setPanelOpen(open => !open)} className="inline-flex h-8 items-center gap-2 px-2 text-[9px] font-bold uppercase tracking-[0.12em] text-control-fg transition-colors hover:bg-raised hover:text-ink">
+          <SlidersHorizontal size={13} aria-hidden="true" /> Context
+          <ChevronDown size={12} className={`transition-transform ${panelOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+        </button>
+        <span className={`border px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] ${selectedState === 'all' && !comparisonEnabled ? 'border-line-bright text-ink-dim' : 'border-electric/45 bg-electric/10 text-electric'}`}>
+          {contextLabel}
+        </span>
+        {controls ? <div className="order-3 flex w-full min-w-0 items-center gap-2 sm:order-none sm:ml-auto sm:w-auto">{controls}</div> : null}
+        {metadata ? <span className={controls ? 'text-[9px] text-ink-muted sm:ml-0' : 'ml-auto text-[9px] text-ink-muted'}>{metadata.evidence.exposureMinutes.toLocaleString()} min · {metadata.evidence.matchCount.toLocaleString()} matches</span> : null}
+      </div>
+      {panelOpen ? <fieldset className="border-t border-line-bright px-3 pb-3 pt-2">
+        <legend className="sr-only">Game-state context</legend>
         <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(260px,0.9fr)_minmax(360px,1.1fr)] lg:items-end">
         <Control text="State">
           <select aria-label="Game state" value={selectedState} onChange={event => update('state', event.target.value)} className="event-lens-control">
@@ -62,7 +78,6 @@ export function StateLensControls({ metadata, searchParams, onChange, compact = 
           ) : <span className="text-[10px] text-ink-dim">Loading state evidence…</span>}
         </div>
         </div>
-      </div>
       {advancedOpen ? <div className="mt-3 grid gap-3 bg-raised/45 p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <p className="text-[10px] leading-relaxed text-ink-dim sm:col-span-2 lg:col-span-3 xl:col-span-6">Time in state limits events to a window after the score last changed.</p>
         <Control text="Exact goal difference">
@@ -105,7 +120,8 @@ export function StateLensControls({ metadata, searchParams, onChange, compact = 
           </div>
         </Control>
       </div> : null}
-    </fieldset>
+      </fieldset> : null}
+    </div>
   )
 }
 

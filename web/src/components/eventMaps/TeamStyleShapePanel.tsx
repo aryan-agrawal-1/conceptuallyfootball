@@ -173,6 +173,55 @@ function SignedShiftRadial({
   )
 }
 
+function PrevalenceRadial({ axes }: { axes: TeamStyleAxis[] }) {
+  const center = 200
+  const radius = 124
+  const count = Math.max(axes.length, 1)
+  const point = (index: number, fraction: number) => {
+    const angle = -Math.PI / 2 + index * ((Math.PI * 2) / count)
+    return {
+      x: center + Math.cos(angle) * radius * fraction,
+      y: center + Math.sin(angle) * radius * fraction,
+      angle,
+    }
+  }
+  const polygon = axes.map((axis, index) => {
+    const percentile = axis.percentile == null ? 0 : Math.max(0, Math.min(100, axis.percentile))
+    const coordinate = point(index, 0.18 + (percentile / 100) * 0.82)
+    return `${coordinate.x},${coordinate.y}`
+  }).join(' ')
+
+  return (
+    <div className="mx-auto w-full max-w-[520px]">
+      <svg viewBox="0 0 400 400" className="h-auto w-full overflow-visible" role="img" aria-labelledby="team-style-prevalence-title team-style-prevalence-description">
+        <title id="team-style-prevalence-title">Team style prevalence profile</title>
+        <desc id="team-style-prevalence-description">A radial profile showing how prevalent each selected behaviour is relative to teams in the same competition and season. Distance from the centre represents percentile, not quality.</desc>
+        {[0.25, 0.5, 0.75, 1].map(fraction => (
+          <circle key={fraction} cx={center} cy={center} r={radius * fraction} fill="none" stroke="#2A3050" strokeWidth="1" strokeDasharray={fraction === 1 ? undefined : '3 5'} />
+        ))}
+        {axes.map((axis, index) => {
+          const outer = point(index, 1)
+          const label = point(index, 1.18)
+          const anchor = Math.abs(Math.cos(label.angle)) < 0.35 ? 'middle' : Math.cos(label.angle) > 0 ? 'start' : 'end'
+          return <g key={axis.key}>
+            <line x1={center} y1={center} x2={outer.x} y2={outer.y} stroke="#1F2438" strokeWidth="1" />
+            <text x={label.x} y={label.y} textAnchor={anchor} dominantBaseline="middle" fill="#8A95B8" fontSize="9" fontWeight="600">{axis.label.length > 18 ? `${axis.label.slice(0, 17)}…` : axis.label}</text>
+          </g>
+        })}
+        <polygon points={polygon} fill="rgba(74,158,245,0.20)" stroke="#4A9EF5" strokeWidth="2" />
+        {axes.map((axis, index) => {
+          const percentile = axis.percentile == null ? 0 : Math.max(0, Math.min(100, axis.percentile))
+          const coordinate = point(index, 0.18 + (percentile / 100) * 0.82)
+          return <circle key={axis.key} cx={coordinate.x} cy={coordinate.y} r="4" fill={axis.percentile == null ? ZERO : '#4A9EF5'}><title>{axis.label}: {axis.percentile == null ? 'percentile unavailable' : `P${Math.round(axis.percentile)}`}</title></circle>
+        })}
+        <text x={center} y={center - 7} textAnchor="middle" fill="#E4EAF8" fontSize="10" fontWeight="700">STYLE</text>
+        <text x={center} y={center + 10} textAnchor="middle" fill="#8A95B8" fontSize="8">PREVALENCE</text>
+      </svg>
+      <p className="text-center text-[9px] text-ink-muted">Distance from centre = same competition-season percentile · prevalence, not quality</p>
+    </div>
+  )
+}
+
 function ExposureStrip({ payload }: { payload: TeamStyleShapePayload }) {
   const selected = payload.selected.exposure
   const baseline = payload.baseline?.exposure
@@ -295,10 +344,13 @@ export function TeamStyleShapePanel({
   axisSelection,
   onAxisSelectionChange,
 }: TeamStyleShapePanelProps) {
-  const [localAxisSelection, setLocalAxisSelection] = useState<string[]>(() => payload?.axisKeys ?? [])
+  const defaultAxisKeys = payload?.axisDefinitions.filter(definition => (
+    payload.axisDefinitions.filter(candidate => candidate.category === definition.category).indexOf(definition) < 2
+  )).map(definition => definition.key) ?? []
+  const [localAxisSelection, setLocalAxisSelection] = useState<string[]>(() => defaultAxisKeys)
   const localKeys = payload && localAxisSelection.length && localAxisSelection.every(key => payload.axisKeys.includes(key))
     ? localAxisSelection
-    : payload?.axisKeys ?? []
+    : defaultAxisKeys
   const activeAxisKeys = axisSelection ?? localKeys
   const setAxisSelection = (keys: string[]) => {
     if (onAxisSelectionChange) onAxisSelectionChange(keys)
@@ -346,30 +398,23 @@ export function TeamStyleShapePanel({
       }}
     >
       <div className="w-full max-w-[1180px] space-y-3" aria-label="Team Style Shape evidence">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line-bright pb-2">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-electric">{payload.canonicalTeamName} · {scopeLabel(payload.selected.scope)}</p>
-            <p className="mt-1 max-w-3xl text-[11px] leading-relaxed text-ink-dim">Higher values mean the behaviour is more prevalent in the selected evidence. They do not mean better performance, stronger outcomes or causal impact.</p>
-          </div>
-          <p className="shrink-0 font-mono text-[9px] text-ink-muted">{payload.formulaVersion} · {payload.percentileVersion}</p>
-        </div>
-        <ExposureStrip payload={payload} />
-
-        <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,440px)_minmax(0,1fr)]">
-          <section className="border border-line-bright bg-panel p-3" aria-labelledby="style-shift-heading">
+        <section className="border border-line-bright bg-panel p-3" aria-labelledby="style-shift-heading">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <h4 id="style-shift-heading" className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink">Signed State Shift</h4>
-                <p className="mt-1 text-[10px] leading-relaxed text-ink-dim">Selected minus baseline, centred at zero. Spokes use same-axis competition spread and are clipped for legibility.</p>
+                <h4 id="style-shift-heading" className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink">{shifts ? 'Signed State Shift' : 'Style prevalence'}</h4>
+                <p className="mt-1 text-[10px] leading-relaxed text-ink-dim">{payload.canonicalTeamName} · {scopeLabel(payload.selected.scope)}</p>
               </div>
               {shifts ? <span className="font-mono text-[9px] text-ink-muted">{stableShiftCount}/{shiftAxes.length} stable</span> : null}
             </div>
-            {shifts ? <SignedShiftRadial axes={shiftAxes} shifts={shifts} /> : <EventMapNotice kind="unavailable" title="Baseline required for signed shift">Enable an explicit baseline in the State Lens to compare more and less prevalent behaviour.</EventMapNotice>}
-            <RadialLegend />
-            <p className="mt-2 text-[10px] leading-relaxed text-ink-muted">{payload.comparison.normalisationNote} Unsupported or sparse axes remain visible in the evidence table and do not receive a confident radial magnitude.</p>
+            {shifts ? <SignedShiftRadial axes={shiftAxes} shifts={shifts} /> : <PrevalenceRadial axes={activeAxes} />}
+            {shifts ? <RadialLegend /> : null}
           </section>
 
-          <section className="min-w-0 space-y-2" aria-labelledby="style-values-heading">
+        <details className="group border border-line-bright bg-panel">
+          <summary className="cursor-pointer list-none px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.12em] text-control-fg hover:text-ink">Evidence & methodology <span className="ml-2 font-normal normal-case tracking-normal text-ink-muted">{payload.selected.exposure.matchCount} matches · {payload.cohort.teamCount} team cohort</span></summary>
+          <div className="space-y-3 border-t border-line-bright p-3">
+            <ExposureStrip payload={payload} />
+            <section className="min-w-0 space-y-2" aria-labelledby="style-values-heading">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <div>
                 <h4 id="style-values-heading" className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink">Prevalence readout</h4>
@@ -380,7 +425,8 @@ export function TeamStyleShapePanel({
             <AxisRows payload={payload} axes={activeAxes} shifts={shifts} />
             <MethodDetails payload={payload} axes={activeAxes} />
           </section>
-        </div>
+          </div>
+        </details>
         {payload.selected.reliability.sparseAxes.length || (payload.baseline?.reliability.sparseAxes.length ?? 0) ? (
           <EventMapNotice kind="sparse" title="Comparison contains sparse axes">
             Raw selected and baseline evidence remains available. Percentiles and radial magnitudes are withheld for axes below their family-specific minimum evidence rule.

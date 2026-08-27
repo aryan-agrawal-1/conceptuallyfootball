@@ -33,7 +33,7 @@ const ANALYSIS_MODES: Array<{ value: AnalysisMode; label: string; description: s
   { value: 'shooting', label: 'Shooting', description: 'Shot locations, outcomes and pressure' },
   { value: 'passing', label: 'Passing', description: 'Volume, direction and completion' },
   { value: 'defending', label: 'Defending', description: 'Action height and territory' },
-  { value: 'interpretation', label: 'Interpretation', description: 'Style, leads, responses and transitions' },
+  { value: 'interpretation', label: 'Insights', description: 'Style, leads, responses and transitions' },
 ]
 
 const INTERPRETATION_MODES: Array<{ value: InterpretationMode; label: string }> = [
@@ -232,24 +232,21 @@ export function TeamEventMaps({ teamId, competition, season }: {
   return (
     <section aria-label="Team event maps">
       <div className="mb-2">
-        <div className="mb-2 flex items-center justify-end gap-3">
-          <EventMatchFilter matches={profile.matches} value={matchRef} onChange={value => {
+        <StateLensControls metadata={profile.stateLens} searchParams={searchParams} onChange={setLensParams} controls={<EventMatchFilter matches={profile.matches} value={matchRef} onChange={value => {
             const next = new URLSearchParams(searchParams)
             if (value == null) next.delete('match')
             else next.set('match', value)
             setLensParams(next)
-          }} />
-        </div>
-        <StateLensControls metadata={profile.stateLens} searchParams={searchParams} onChange={setLensParams} />
+          }} />} />
       </div>
       {expanded ? <div className="fixed left-3 right-16 top-3 z-[95] max-h-[45svh] overflow-y-auto sm:left-8 sm:right-20"><StateLensControls compact metadata={profile.stateLens} searchParams={searchParams} onChange={setLensParams} /></div> : null}
-      <nav className="mb-2 grid grid-cols-2 border-b border-line-bright sm:grid-cols-4" aria-label="Event map analysis">
-        {ANALYSIS_MODES.map(mode => <button key={mode.value} type="button" aria-pressed={analysisMode === mode.value} onClick={() => { setAnalysisMode(mode.value); setSelection(null) }} className={`border-b-2 px-2 py-2 text-left transition-colors hover:bg-raised sm:px-3 ${analysisMode === mode.value ? 'border-electric text-electric' : 'border-transparent text-ink'}`}><strong className="block text-[9px] uppercase tracking-[0.1em] sm:text-[10px] sm:tracking-[0.14em]">{mode.label}</strong><span className="mt-0.5 hidden text-[8px] text-ink-dim sm:block">{mode.description}</span></button>)}
+      <nav className="mb-2 grid grid-cols-4 border-b border-line-bright" aria-label="Event map analysis">
+        {ANALYSIS_MODES.map(mode => <button key={mode.value} type="button" aria-pressed={analysisMode === mode.value} onClick={() => { setAnalysisMode(mode.value); setSelection(null) }} className={`border-b-2 px-2 py-2 text-left transition-colors hover:bg-raised sm:px-3 ${analysisMode === mode.value ? 'border-electric text-electric' : 'border-transparent text-ink'}`}><strong className="block text-[9px] uppercase tracking-[0.1em] sm:text-[10px] sm:tracking-[0.14em]">{mode.label}</strong></button>)}
       </nav>
 
       {analysisMode === 'interpretation' ? (
-        <nav className="mb-2 grid grid-cols-2 gap-px bg-line sm:grid-cols-4" aria-label="Team interpretation product">
-          {INTERPRETATION_MODES.map(mode => <button key={mode.value} type="button" aria-pressed={interpretationMode === mode.value} onClick={() => { setInterpretationMode(mode.value); setExpanded(null) }} className={`min-h-9 bg-panel px-2 py-2 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors hover:bg-raised ${interpretationMode === mode.value ? 'text-electric' : 'text-control-fg'}`}>{mode.label}</button>)}
+        <nav className="mb-3 flex gap-1 overflow-x-auto border-b border-line-bright pb-2" aria-label="Team insights">
+          {INTERPRETATION_MODES.map(mode => <button key={mode.value} type="button" aria-pressed={interpretationMode === mode.value} onClick={() => { setInterpretationMode(mode.value); setExpanded(null) }} className={`min-h-8 shrink-0 px-3 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors hover:bg-raised ${interpretationMode === mode.value ? 'bg-electric/10 text-electric' : 'text-control-fg'}`}>{mode.label}</button>)}
         </nav>
       ) : null}
 

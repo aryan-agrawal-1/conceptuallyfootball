@@ -1,4 +1,4 @@
-import { AlertCircle, Loader2, Maximize2, Minimize2, RotateCcw } from 'lucide-react'
+import { AlertCircle, ChevronRight, Info, Loader2, Maximize2, Minimize2, RotateCcw } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type {
   EventMatchLookup,
@@ -74,20 +74,13 @@ export function EventMapCard({
 }) {
   return (
     <article className={cn('flex min-w-0 flex-col border border-line-bright bg-panel', className)}>
-      <header className="flex flex-col gap-2 border-b border-line-bright px-3 py-2 sm:flex-row sm:items-center sm:gap-3">
-        <div className="min-w-0 sm:max-w-[42%] sm:shrink-0">
+      <header className="flex min-h-12 flex-wrap items-center gap-2 border-b border-line-bright px-3 py-2">
+        <div className="min-w-0 flex-1">
           <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-ink">{title}</h3>
-          <p className="mt-1 text-[10px] leading-relaxed text-ink-dim">{description}</p>
         </div>
-        <div className="flex w-full min-w-24 flex-1 flex-col items-center justify-center px-2 text-electric sm:px-4" aria-label="Attacking direction is left to right">
-          <span className="font-mono text-[8px] font-bold uppercase tracking-[0.2em]">Attack</span>
-          <span className="relative mt-0.5 h-2 w-full" aria-hidden="true">
-            <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-current" />
-            <span className="absolute right-0 top-1/2 size-1.5 -translate-y-1/2 rotate-45 border-r border-t border-current" />
-          </span>
-        </div>
-        <div className="flex shrink-0 items-center justify-end gap-2">
+        <div className="flex min-w-0 shrink-0 items-center justify-end gap-2">
           {controls}
+          <AttackDirectionCue />
           <button type="button" onClick={() => onExpandedChange(!expanded)} className="flex size-8 items-center justify-center border border-control-border bg-raised text-control-fg transition-colors hover:border-electric hover:text-ink" aria-label={expanded ? 'Exit full-screen event map' : `Expand ${title.toLowerCase()}`}>
             {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
@@ -96,20 +89,39 @@ export function EventMapCard({
       <div className="flex min-h-0 flex-1 items-center justify-center bg-mat p-2 sm:p-2.5">
         {children}
       </div>
-      <footer className="border-t border-line-bright px-3 py-2.5">
-        {footer ? <div className="mb-3">{footer}</div> : null}
-        <ChartShareCard
-          title={`${exportContext.subjectName} · ${title}`}
-          subtitle={description}
-          contextLabel={`${exportContext.subjectType} Event Map · ${exportContext.competition} · ${exportContext.season}`}
-          fileName={`${exportContext.subjectName}-${title}-${exportContext.competition}-${exportContext.season}`}
-          contextDetails={exportContext.filters}
-          copyUrl={typeof window === 'undefined' ? undefined : window.location.href}
-          renderContent={() => <div className="w-full">{children}</div>}
-          renderExportLegend={footer ? () => <div className="px-2">{footer}</div> : undefined}
-        />
+      <footer className="border-t border-line-bright px-3 py-2">
+        <details className="group text-[10px] text-ink-dim">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 font-bold uppercase tracking-[0.12em] text-control-fg hover:text-ink">
+            <Info size={12} aria-hidden="true" /> Details
+            <ChevronRight size={12} className="transition-transform group-open:rotate-90" aria-hidden="true" />
+          </summary>
+          <div className="mt-2 border-t border-line-bright pt-2">
+            <p className="mb-2 max-w-3xl leading-relaxed">{description}</p>
+            {footer ? <div className="mb-3">{footer}</div> : null}
+            <ChartShareCard
+              title={`${exportContext.subjectName} · ${title}`}
+              subtitle={description}
+              contextLabel={`${exportContext.subjectType} Event Map · ${exportContext.competition} · ${exportContext.season}`}
+              fileName={`${exportContext.subjectName}-${title}-${exportContext.competition}-${exportContext.season}`}
+              contextDetails={exportContext.filters}
+              copyUrl={typeof window === 'undefined' ? undefined : window.location.href}
+              renderContent={() => <div className="w-full">{children}</div>}
+              renderExportLegend={footer ? () => <div className="px-2">{footer}</div> : undefined}
+            />
+          </div>
+        </details>
       </footer>
     </article>
+  )
+}
+
+export function AttackDirectionCue() {
+  return (
+    <span className="inline-flex h-8 items-center gap-0.5 px-1 text-electric" aria-label="Attacking direction is left to right" title="Attacking left to right">
+      <ChevronRight size={13} aria-hidden="true" />
+      <ChevronRight size={13} className="-ml-1" aria-hidden="true" />
+      <ChevronRight size={13} className="-ml-1" aria-hidden="true" />
+    </span>
   )
 }
 
@@ -241,6 +253,18 @@ export function EventCoverage({ coverage }: { coverage: EventProfileCoverage }) 
         />
       </div>
     </div>
+  )
+}
+
+export function EventCoverageLine({ coverage, minutes }: { coverage: EventProfileCoverage; minutes?: number }) {
+  return (
+    <p className="text-[9px] text-ink-muted" title={`${coverage.matchesIncluded} of ${coverage.matchesExpected || 'unknown'} expected matches observed`}>
+      {coverage.matchesIncluded.toLocaleString()} matches
+      {minutes != null ? ` · ${Math.round(minutes).toLocaleString()} min` : ''}
+      {' · '}
+      <span className={coverage.complete ? 'text-ink-dim' : 'text-gold'}>{coverage.complete ? 'complete coverage' : 'partial coverage'}</span>
+      <Info size={10} className="ml-1 inline" aria-hidden="true" />
+    </p>
   )
 }
 
