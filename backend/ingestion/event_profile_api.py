@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db.models import QuerySet
+from django.db.models import Max, QuerySet
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -53,7 +53,7 @@ from ingestion.state_lens import (
 
 PASS_RESPONSE_LIMIT = 5_000
 COORDINATE_SCALE = 100
-EVENT_PROFILE_API_VERSION = "v4"
+EVENT_PROFILE_API_VERSION = "v5"
 
 PLAYER_SUMMARY_FIELDS = (
     "minutes",
@@ -99,6 +99,22 @@ TEAM_SUMMARY_FIELDS = (
     "take_ons_successful",
     "defensive_actions",
 )
+
+
+def observed_event_minutes(queryset: QuerySet) -> int:
+    """Sum each selected match's last observed event minute.
+
+    This describes event-feed coverage rather than assuming every supplied
+    fixture lasts exactly 90 minutes.
+    """
+    rows = queryset.values("provider_match_id").annotate(
+        expanded=Max("expanded_minute"),
+        regular=Max("minute"),
+    )
+    return sum(
+        row["expanded"] if row["expanded"] is not None else row["regular"] or 0
+        for row in rows
+    )
 
 
 def resolve_event_profile_competition_season(request):
@@ -780,6 +796,7 @@ class TeamEventProfileApi(APIView):
             match_ref,
             profile.team_id,
         )
+        coverage_minutes = observed_event_minutes(scoped_queryset)
         evidence_match_ids = list(
             scoped_queryset.values_list("provider_match_id", flat=True).distinct()
         )
@@ -839,6 +856,7 @@ class TeamEventProfileApi(APIView):
             "coverage": {
                 "observed_matches": profile.observed_match_count,
                 "expected_matches": profile.expected_match_count,
+                "observed_event_minutes": coverage_minutes,
                 "ratio": profile.coverage,
             },
             "materialization": materialization_metadata(profile),

@@ -440,6 +440,7 @@ function ProfileLayout({
             season={player.season_label}
             teams={eventMapTeams}
             positionGroup={player.position_group}
+            rateMode={rateMode}
           />
         </Suspense>
       )}

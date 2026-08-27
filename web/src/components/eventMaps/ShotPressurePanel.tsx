@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import type { EventMapExportContext } from '../../lib/eventMaps/exportContext'
+import type { ProfileRateMode } from '../../lib/profileMetrics'
 import { buildDeltaCell, buildDeltaGrid, type StateDeltaMapContract } from '../../lib/eventMaps/deltaMap'
 import type { ShotPressureMetric, TeamShotPressurePayload } from '../../types/eventMaps'
-import { EventMapCard, EventMapNotice, EventMapViewTabs, EventPitchStage } from './EventMapUi'
+import { EventMapCard, EventMapNotice, EventPitchStage } from './EventMapUi'
 import { StateDeltaMap } from './StateDeltaMap'
 
 const BREAKDOWNS = [
@@ -183,7 +184,7 @@ function BreakdownTable({ payload, perspective, displayMode }: {
   )
 }
 
-export function ShotPressurePanel({ payload, loading, error, onRetry, exportContext, expanded, onExpandedChange }: {
+export function ShotPressurePanel({ payload, loading, error, onRetry, exportContext, expanded, onExpandedChange, rateMode }: {
   payload?: TeamShotPressurePayload
   loading: boolean
   error?: string
@@ -191,9 +192,10 @@ export function ShotPressurePanel({ payload, loading, error, onRetry, exportCont
   exportContext: EventMapExportContext
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
+  rateMode: ProfileRateMode
 }) {
   const [perspective, setPerspective] = useState<'for' | 'against'>('for')
-  const [displayMode, setDisplayMode] = useState<ShotDisplayMode>('per90')
+  const displayMode: ShotDisplayMode = rateMode === 'per90' ? 'per90' : 'total'
   if (loading) return <EventMapNotice kind="loading" title="Loading state-conditioned shot pressure" />
   if (error || !payload) return <EventMapNotice kind="error" title="Shot pressure failed to load" onRetry={onRetry}>{error}</EventMapNotice>
   const cohort = payload.selected
@@ -206,21 +208,8 @@ export function ShotPressurePanel({ payload, loading, error, onRetry, exportCont
           <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-ink">Shot tempo & territory</h3>
           <p className="mt-1 max-w-3xl text-[11px] leading-relaxed text-ink-dim">How often shots happen in this state, where they originate, and what happened to them.</p>
         </div>
-        <EventMapViewTabs
-          value={displayMode}
-          onChange={setDisplayMode}
-          label="Shot statistic display"
-          options={[{ value: 'per90', label: 'Per 90' }, { value: 'total', label: 'Total' }]}
-        />
       </div>
-      <div className="mb-3 flex flex-wrap items-baseline gap-x-6 gap-y-1 py-1">
-        {[
-          ['Shots for', metricValue(cohort.frequency.for.shots, displayMode)],
-          ['Shots against', metricValue(cohort.frequency.against.shots, displayMode)],
-          ['Combined shots', displayMode === 'total' ? cohort.frequency.openness.shotCount.toLocaleString() : rate(cohort.frequency.openness.shotsPer90)],
-        ].map(([label, value]) => <p key={label} className="text-[10px] uppercase tracking-[0.1em] text-ink-dim">{label} <strong className="ml-1 font-mono text-[14px] font-normal text-ink">{value}</strong></p>)}
-        <div className="ml-auto"><Evidence payload={payload} /></div>
-      </div>
+      <div className="mb-3 py-1"><Evidence payload={payload} /></div>
       <div className="mb-2 flex gap-4 border-b border-line-bright" role="group" aria-label="Shot pressure perspective">
         {(['for', 'against'] as const).map(value => <button key={value} type="button" aria-pressed={perspective === value} onClick={() => setPerspective(value)} className={`border-b-2 px-1 py-2 text-[10px] uppercase tracking-[0.12em] ${perspective === value ? 'border-electric text-electric' : 'border-transparent text-ink-dim hover:text-ink'}`}>Shots {value}</button>)}
       </div>

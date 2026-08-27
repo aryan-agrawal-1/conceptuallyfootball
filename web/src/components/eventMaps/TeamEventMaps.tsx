@@ -8,11 +8,12 @@ import { fetchTeamResponseHalfLife } from '../../lib/eventMaps/responseHalfLifeA
 import { fetchTeamStyleShape } from '../../lib/eventMaps/teamStyleShapeApi'
 import { fetchTeamTransitionLeverage } from '../../lib/eventMaps/transitionLeverageApi'
 import { eventMatchExportLabel, type EventMapExportContext } from '../../lib/eventMaps/exportContext'
+import type { ProfileRateMode } from '../../lib/profileMetrics'
 import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
 import type { ActionGridCell, EventShot, ShotPressurePenaltyMode, StateLensMetadata } from '../../types/eventMaps'
 import { PortraitPitch } from './PortraitPitch'
 import {
-  EventMapCard, EventMapNotice, EventMatchFilter,
+  EventCoverageLine, EventMapCard, EventMapNotice, EventMatchFilter,
   EventPitchStage, EventSelectionDetails, ShotMapLegend,
 } from './EventMapUi'
 import { StateLensControls } from './StateLensControls'
@@ -22,7 +23,7 @@ import { DefensiveTerritoryMap } from './DefensiveTerritoryMap'
 import { ShotPressurePanel } from './ShotPressurePanel'
 import { LeadControlPanel } from './LeadControlPanel'
 import { ResponseHalfLifePanel } from './ResponseHalfLifePanel'
-import { TeamStyleShapePanel } from './TeamStyleShapePanel'
+import { TeamStyleShapePanel, type TeamStyleShapeView } from './TeamStyleShapePanel'
 import { TransitionLeveragePanel } from './TransitionLeveragePanel'
 
 type TeamMap = 'flow' | 'defensive-territory' | 'shots-for' | 'shots-against' | 'shot-pressure' | 'style-shape'
@@ -101,10 +102,11 @@ function stateExportFilters(metadata: StateLensMetadata): EventMapExportContext[
   return filters
 }
 
-export function TeamEventMaps({ teamId, competition, season }: {
+export function TeamEventMaps({ teamId, competition, season, rateMode }: {
   teamId: number
   competition: string
   season: string
+  rateMode: ProfileRateMode
 }) {
   const [selection, setSelection] = useState<SelectablePitchEvent | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -114,10 +116,12 @@ export function TeamEventMaps({ teamId, competition, season }: {
   const [penaltyMode, setPenaltyMode] = useState<ShotPressurePenaltyMode>('exclude')
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('shooting')
   const [interpretationMode, setInterpretationMode] = useState<InterpretationMode>('style')
+  const [styleView, setStyleView] = useState<TeamStyleShapeView>('profile')
   const profileQuery = useQuery({
     queryKey: ['team-event-profile', teamId, competition, season, matchRef, lensRequest],
     queryFn: () => fetchTeamEventProfile(teamId, competition, season, matchRef, lensRequest),
     staleTime: 10 * 60 * 1000,
+    placeholderData: previous => previous,
   })
   const defensiveQuery = useQuery({
     queryKey: ['team-defensive-territory', teamId, competition, season, matchRef, lensRequest],
@@ -133,8 +137,8 @@ export function TeamEventMaps({ teamId, competition, season }: {
     enabled: analysisMode === 'shooting',
   })
   const styleShapeQuery = useQuery({
-    queryKey: ['team-style-shape', teamId, competition, season, matchRef, lensRequest],
-    queryFn: () => fetchTeamStyleShape(teamId, competition, season, matchRef, lensRequest),
+    queryKey: ['team-style-shape', teamId, competition, season, matchRef, lensRequest, styleView],
+    queryFn: () => fetchTeamStyleShape(teamId, competition, season, matchRef, lensRequest, undefined, styleView === 'states'),
     staleTime: 10 * 60 * 1000,
     enabled: analysisMode === 'interpretation' && interpretationMode === 'style',
   })
@@ -191,6 +195,13 @@ export function TeamEventMaps({ teamId, competition, season }: {
     })) ?? []
   )
 
+  const displayCount = (count: number | undefined) => {
+    if (count == null) return '—'
+    if (rateMode === 'full') return count.toLocaleString()
+    const minutes = profile.stateLens.evidence.exposureMinutes
+    return minutes > 0 ? ((count * 90) / minutes).toFixed(2) : '—'
+  }
+
   const shotCard = (kind: 'for' | 'against', shots: EventShot[], map: TeamMap) => {
     const title = kind === 'for' ? 'Shots for' : 'Shots against'
     return (
@@ -211,21 +222,21 @@ export function TeamEventMaps({ teamId, competition, season }: {
     )
   }
 
-  const headlineStats = analysisMode === 'shooting'
+  const headlineStats: Array<[string, string]> = analysisMode === 'shooting'
     ? [
-        ['Shots for', shotsFor.length],
-        ['Shots against', shotsAgainst.length],
-        ['Goals for', shotsFor.filter(shot => shot.outcome === 'goal').length],
+        ['Shots for', displayCount(shotsFor.length)],
+        ['Shots against', displayCount(shotsAgainst.length)],
+        ['Goals for', displayCount(shotsFor.filter(shot => shot.outcome === 'goal').length)],
       ]
     : analysisMode === 'passing'
       ? [
-          ['Pass attempts', profile.summary.pass_attempts],
+          ['Pass attempts', displayCount(profile.summary.pass_attempts)],
           ['Pass completion', percentage(profile.summary.pass_completions, profile.summary.pass_attempts)],
-          ['Progressive attempts', profile.summary.progressive_pass_attempts],
+          ['Progressive attempts', displayCount(profile.summary.progressive_pass_attempts)],
         ]
       : [
-          ['Defensive actions', defensiveQuery.data?.selected.counts.included],
-          ['Located actions', defensiveQuery.data?.selected.counts.withLocation],
+          ['Defensive actions', displayCount(defensiveQuery.data?.selected.counts.included)],
+          ['Located actions', displayCount(defensiveQuery.data?.selected.counts.withLocation)],
           ['Average position', defensiveQuery.data?.selected.heights.all.mean == null ? '—' : `${defensiveQuery.data.selected.heights.all.mean.toFixed(1)}%`],
         ]
 
@@ -257,10 +268,10 @@ export function TeamEventMaps({ teamId, competition, season }: {
         </div>
       ) : null}
 
-      {analysisMode !== 'interpretation' ? <div className="mb-2 flex flex-wrap items-center gap-x-6 gap-y-2 py-2">
-        {headlineStats.map(([label, value]) => <p key={label as string} className="text-[10px] text-ink-dim"><span className="mr-1.5 uppercase tracking-[0.1em]">{label}</span><strong className="font-mono text-[13px] font-normal text-ink">{typeof value === 'number' ? value.toLocaleString() : value ?? '—'}</strong></p>)}
-        <p className="ml-auto text-[10px] text-ink-dim">Coverage <span className={profile.coverage.complete ? 'text-mint' : 'text-gold'}>{profile.coverage.matchesIncluded}/{profile.coverage.matchesExpected || '—'} matches</span></p>
-      </div> : null}
+      <div className="mb-2 flex flex-wrap items-center gap-x-6 gap-y-2 py-2">
+        {analysisMode !== 'interpretation' ? headlineStats.map(([label, value]) => <p key={label} className="text-[10px] text-ink-dim"><span className="mr-1.5 uppercase tracking-[0.1em]">{label}</span><strong className="font-mono text-[13px] font-normal text-ink">{value}</strong></p>) : null}
+        <span className="ml-auto"><EventCoverageLine coverage={profile.coverage} minutes={profile.coverage.minutes} /></span>
+      </div>
 
       <div className="space-y-3">
         {analysisMode === 'shooting' ? <>
@@ -276,6 +287,7 @@ export function TeamEventMaps({ teamId, competition, season }: {
           exportContext={exportContext}
           expanded={expanded === 'shot-pressure'}
           onExpandedChange={next => setExpanded(next ? 'shot-pressure' : null)}
+          rateMode={rateMode}
           />
         </> : null}
 
@@ -287,17 +299,6 @@ export function TeamEventMaps({ teamId, competition, season }: {
           matchRef={matchRef}
           stateLens={lensRequest}
           stateLensMetadata={profile.stateLens}
-          onComparisonChange={enabled => {
-            const next = new URLSearchParams(searchParams)
-            if (enabled) {
-              next.set('baseline_state', 'all')
-            } else {
-              for (const key of Array.from(next.keys())) {
-                if (key.startsWith('baseline_')) next.delete(key)
-              }
-            }
-            setLensParams(next)
-          }}
           exportContext={exportContext}
           expanded={expanded === 'flow'}
           onExpandedChange={next => setExpanded(next ? 'flow' : null)}
@@ -328,6 +329,8 @@ export function TeamEventMaps({ teamId, competition, season }: {
             else next.delete('style_axes')
             setSearchParams(next)
           }}
+          view={styleView}
+          onViewChange={setStyleView}
         /> : null}
 
         {analysisMode === 'interpretation' && interpretationMode === 'lead' ? <LeadControlPanel

@@ -12,6 +12,7 @@ import type { EventMapExportContext } from '../../lib/eventMaps/exportContext'
 import { goalZone, goalZoneLabel } from '../../lib/eventMaps/goalMouth'
 import { cn } from '../../lib/utils'
 import { ChartShareCard } from '../visualizer/ChartShareCard'
+import { ProfileSelectControl } from '../profile/ProfileScopeSelector'
 
 export type EventMapViewOption<T extends string> = {
   value: T
@@ -31,24 +32,10 @@ export function EventMatchFilter({
   const rows = Object.values(matches).sort((left, right) =>
     left.matchDate.localeCompare(right.matchDate) || left.matchId.localeCompare(right.matchId),
   )
-  return (
-    <label className="min-w-0">
-      <span className="sr-only">Match</span>
-      <select
-        aria-label="Match"
-        value={value ?? ''}
-        onChange={event => onChange(event.target.value || null)}
-        className="h-9 min-w-48 max-w-full border border-control-border bg-raised px-3 text-[10px] normal-case tracking-normal text-control-fg outline-none hover:border-electric focus:border-electric"
-      >
-        <option value="">All season matches</option>
-        {rows.map(match => (
-          <option key={match.matchId} value={match.matchId}>
-            {match.opponent} ({match.venue === 'home' ? 'H' : match.venue === 'away' ? 'A' : 'N'})
-          </option>
-        ))}
-      </select>
-    </label>
-  )
+  return <ProfileSelectControl label="Match" ariaLabel="Match" value={value ?? ''} options={[
+    { value: '', label: 'All season matches' },
+    ...rows.map(match => ({ value: match.matchId, label: `${match.opponent} (${match.venue === 'home' ? 'H' : match.venue === 'away' ? 'A' : 'N'})` })),
+  ]} onChange={next => onChange(next || null)} className="w-full sm:w-64" />
 }
 
 export function EventMapCard({
@@ -80,7 +67,6 @@ export function EventMapCard({
         </div>
         <div className="flex min-w-0 shrink-0 items-center justify-end gap-2">
           {controls}
-          <AttackDirectionCue />
           <button type="button" onClick={() => onExpandedChange(!expanded)} className="flex size-8 items-center justify-center border border-control-border bg-raised text-control-fg transition-colors hover:border-electric hover:text-ink" aria-label={expanded ? 'Exit full-screen event map' : `Expand ${title.toLowerCase()}`}>
             {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
@@ -89,8 +75,8 @@ export function EventMapCard({
       <div className="flex min-h-0 flex-1 items-center justify-center bg-mat p-2 sm:p-2.5">
         {children}
       </div>
-      <footer className="border-t border-line-bright px-3 py-2">
-        <details className="group text-[10px] text-ink-dim">
+      <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-line-bright px-3 py-2">
+        <details className="group min-w-0 flex-1 text-[10px] text-ink-dim">
           <summary className="flex cursor-pointer list-none items-center gap-1.5 font-bold uppercase tracking-[0.12em] text-control-fg hover:text-ink">
             <Info size={12} aria-hidden="true" /> Details
             <ChevronRight size={12} className="transition-transform group-open:rotate-90" aria-hidden="true" />
@@ -98,30 +84,20 @@ export function EventMapCard({
           <div className="mt-2 border-t border-line-bright pt-2">
             <p className="mb-2 max-w-3xl leading-relaxed">{description}</p>
             {footer ? <div className="mb-3">{footer}</div> : null}
-            <ChartShareCard
-              title={`${exportContext.subjectName} · ${title}`}
-              subtitle={description}
-              contextLabel={`${exportContext.subjectType} Event Map · ${exportContext.competition} · ${exportContext.season}`}
-              fileName={`${exportContext.subjectName}-${title}-${exportContext.competition}-${exportContext.season}`}
-              contextDetails={exportContext.filters}
-              copyUrl={typeof window === 'undefined' ? undefined : window.location.href}
-              renderContent={() => <div className="w-full">{children}</div>}
-              renderExportLegend={footer ? () => <div className="px-2">{footer}</div> : undefined}
-            />
           </div>
         </details>
+        <ChartShareCard
+          title={`${exportContext.subjectName} · ${title}`}
+          subtitle={description}
+          contextLabel={`${exportContext.subjectType} Event Map · ${exportContext.competition} · ${exportContext.season}`}
+          fileName={`${exportContext.subjectName}-${title}-${exportContext.competition}-${exportContext.season}`}
+          contextDetails={exportContext.filters}
+          copyUrl={typeof window === 'undefined' ? undefined : window.location.href}
+          renderContent={() => <div className="w-full">{children}</div>}
+          renderExportLegend={footer ? () => <div className="px-2">{footer}</div> : undefined}
+        />
       </footer>
     </article>
-  )
-}
-
-export function AttackDirectionCue() {
-  return (
-    <span className="inline-flex h-8 items-center gap-0.5 px-1 text-electric" aria-label="Attacking direction is left to right" title="Attacking left to right">
-      <ChevronRight size={13} aria-hidden="true" />
-      <ChevronRight size={13} className="-ml-1" aria-hidden="true" />
-      <ChevronRight size={13} className="-ml-1" aria-hidden="true" />
-    </span>
   )
 }
 
@@ -258,12 +234,9 @@ export function EventCoverage({ coverage }: { coverage: EventProfileCoverage }) 
 
 export function EventCoverageLine({ coverage, minutes }: { coverage: EventProfileCoverage; minutes?: number }) {
   return (
-    <p className="text-[9px] text-ink-muted" title={`${coverage.matchesIncluded} of ${coverage.matchesExpected || 'unknown'} expected matches observed`}>
-      {coverage.matchesIncluded.toLocaleString()} matches
+    <p className={`font-mono text-[9px] ${coverage.complete ? 'text-mint' : 'text-gold'}`} title="Observed event-feed coverage">
+      {coverage.matchesIncluded.toLocaleString()}/{coverage.matchesExpected || '—'} matches
       {minutes != null ? ` · ${Math.round(minutes).toLocaleString()} min` : ''}
-      {' · '}
-      <span className={coverage.complete ? 'text-ink-dim' : 'text-gold'}>{coverage.complete ? 'complete coverage' : 'partial coverage'}</span>
-      <Info size={10} className="ml-1 inline" aria-hidden="true" />
     </p>
   )
 }

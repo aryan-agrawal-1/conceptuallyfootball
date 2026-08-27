@@ -501,7 +501,7 @@ export function StateDeltaMap({
         <p className="shrink-0 text-[9px] font-bold uppercase tracking-[0.1em] text-electric">{contract.selected.label} − {contract.baseline.label}</p>
       </header>
 
-      <div className={cn('grid min-w-0 items-start gap-4', compact ? 'lg:grid-cols-[minmax(0,1.35fr)_minmax(220px,0.65fr)]' : 'lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.7fr)]')}>
+      <div className={cn('grid min-w-0 items-start gap-4', compact ? 'grid-cols-1' : 'lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.7fr)]')}>
         <div className="min-w-0 space-y-2">
           <div id={mapDescriptionId} className="sr-only">{evidenceStateDescription(state)} Use Tab to enter a cell and the arrow keys to move between cells. Enter or Space selects a cell; Escape clears it.</div>
           {state !== 'ready' ? (
@@ -527,10 +527,10 @@ export function StateDeltaMap({
             {shownCell ? <CellTooltip cell={shownCell} contract={contract} status={classifyDeltaCell(shownCell, contract.metric.zeroEpsilon)} /> : 'Focus or select a cell to inspect the supplied baseline value, selected value, raw event counts, and delta.'}
           </div>
           <DeltaMapLegend contract={contract} domain={domain} />
-          {contract.notes?.length ? <div className="space-y-1 text-[10px] leading-relaxed text-ink-dim">{contract.notes.map(note => <p key={note}>· {note}</p>)}</div> : null}
+          {!compact && contract.notes?.length ? <div className="space-y-1 text-[10px] leading-relaxed text-ink-dim">{contract.notes.map(note => <p key={note}>· {note}</p>)}</div> : null}
         </div>
 
-        <aside className="min-w-0 space-y-3 border-t border-line-bright pt-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0" aria-label="State Delta Map details">
+        {!compact ? <aside className="min-w-0 space-y-3 border-t border-line-bright pt-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0" aria-label="State Delta Map details">
           <DeltaMapEvidenceDisclosure contract={contract} />
           <div className="space-y-1 text-[10px] leading-relaxed text-ink-dim">
             <p><span className="font-bold uppercase tracking-[0.08em] text-ink-dim">Subject:</span> {contract.subject.name} ({contract.subject.type})</p>
@@ -548,7 +548,7 @@ export function StateDeltaMap({
             {contract.markers?.teamReference ? <span className="text-gold"><i className="mr-1 inline-block size-2 rounded-full border border-dashed border-gold align-middle" aria-hidden="true" />Matched team reference</span> : null}
             {contract.teamReferenceMovement ? <span className="text-ink-dim"><i className="mr-1 inline-block h-px w-4 border-t border-dashed border-ink-dim align-middle" aria-hidden="true" />Team movement reference</span> : null}
           </div>
-        </aside>
+        </aside> : null}
       </div>
     </section>
   )

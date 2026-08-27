@@ -10,6 +10,7 @@ import {
   type PointerEvent,
   type RefObject,
 } from 'react'
+import { ChevronRight } from 'lucide-react'
 import type {
   ActionGridCell,
   EventCarry,
@@ -437,7 +438,10 @@ export const PortraitPitch = memo(function PortraitPitch({
   )
 
   return (
-    <figure className={`m-0 w-full ${className}`}>
+    <figure className={`relative m-0 w-full pt-2 ${className}`}>
+      <span className="absolute left-1/2 top-2 z-30 inline-flex -translate-x-1/2 -translate-y-1/2 items-center bg-mat px-1 text-electric" aria-label="Attacking direction is left to right" title="Attacking left to right">
+        <ChevronRight size={13} aria-hidden="true" /><ChevronRight size={13} className="-ml-1" aria-hidden="true" /><ChevronRight size={13} className="-ml-1" aria-hidden="true" />
+      </span>
       <div
           ref={containerRef}
           className={`relative isolate w-full overflow-hidden border border-line-bright bg-[radial-gradient(circle_at_72%_44%,rgba(74,158,245,0.10),transparent_42%),repeating-linear-gradient(90deg,rgba(255,255,255,0.018)_0,rgba(255,255,255,0.018)_1px,transparent_1px,transparent_52.5px),linear-gradient(90deg,#0a101b_0%,#11192a_100%)] shadow-[0_18px_48px_rgba(0,0,0,0.30),inset_0_0_42px_rgba(74,158,245,0.05)] ${pitchView === 'attacking-half' ? 'aspect-[105/136]' : 'aspect-[105/68]'}`}

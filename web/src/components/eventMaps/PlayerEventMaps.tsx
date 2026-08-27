@@ -6,12 +6,15 @@ import { fetchGkShotZones, fetchPlayerEventProfile, fetchPlayerPassMap, fetchPla
 import { eventMatchExportLabel, type EventMapExportContext } from '../../lib/eventMaps/exportContext'
 import { stateLensRequest } from '../../lib/eventMaps/stateLensUrl'
 import type { SelectablePitchEvent } from '../../lib/eventMaps/selection'
-import type { PlayerPassFilter, PlayerPassOutcome, PlayerStateComparisonPayload, PlayerStateCohort, PlayerTransitionEvidence, ShotOutcome, ShotZoneVariantKey, StateLensMetadata } from '../../types/eventMaps'
+import type { ActionGridCell, DefensiveActionFamily, PlayerPassFilter, PlayerPassOutcome, PlayerStateComparisonPayload, PlayerStateCohort, ShotOutcome, ShotZoneVariantKey, StateLensMetadata } from '../../types/eventMaps'
 import type { StateDeltaMapContract } from '../../lib/eventMaps/deltaMap'
+import type { ProfileRateMode } from '../../lib/profileMetrics'
 import { PortraitPitch } from './PortraitPitch'
 import { GoalZoneGridView, GoalZoneTotals } from './GoalZones'
 import { StateDeltaMap } from './StateDeltaMap'
 import { StateLensControls } from './StateLensControls'
+import { DefensiveActionSelector } from './DefensiveActionSelector'
+import { ALL_DEFENSIVE_ACTION_FAMILIES } from './defensiveActionFamilies'
 import {
   EventCoverageLine, EventMapCard, EventMapNotice, EventMatchFilter,
   EventMapViewTabs, EventPitchStage, EventSelectionDetails, ShotMapLegend,
@@ -234,6 +237,22 @@ function formatRate(cohort: PlayerStateCohort, key: string) {
   return value == null ? '—' : value.toFixed(2)
 }
 
+function formatCohortMetric(cohort: PlayerStateCohort, key: string, rateMode: ProfileRateMode) {
+  if (rateMode === 'per90') return formatRate(cohort, key)
+  const value = cohort.summary[key]
+  return typeof value === 'number' ? value.toLocaleString() : '—'
+}
+
+function formatComparisonMetric(comparison: PlayerStateComparisonPayload, key: string, rateMode: ProfileRateMode) {
+  if (rateMode === 'per90') return comparisonRate(comparison.comparison, key)
+  if (!comparison.baseline) return '—'
+  const selected = comparison.selected.summary[key]
+  const baseline = comparison.baseline.summary[key]
+  if (typeof selected !== 'number' || typeof baseline !== 'number') return '—'
+  const delta = selected - baseline
+  return `${delta >= 0 ? '+' : ''}${delta.toLocaleString()}`
+}
+
 function comparisonRate(comparison: PlayerStateComparisonPayload['comparison'], key: string) {
   const value = comparison?.selectedMinusBaseline[key]?.absolute
   return value == null ? '—' : `${value >= 0 ? '+' : ''}${value.toFixed(2)}`
@@ -247,6 +266,56 @@ function formatMetres(value: number | null | undefined) {
   return value == null ? '—' : `${value.toFixed(1)}m`
 }
 
+function playerDefensiveSelection(cohort: PlayerStateCohort, families: DefensiveActionFamily[]) {
+  if (families.length === ALL_DEFENSIVE_ACTION_FAMILIES.length) return cohort
+  const familyRows = families.reduce<Array<NonNullable<PlayerStateCohort['defensiveByFamily'][DefensiveActionFamily]>>>((rows, family) => {
+    const evidence = cohort.defensiveByFamily[family]
+    if (evidence) rows.push(evidence)
+    return rows
+  }, [])
+  const locatedCount = familyRows.reduce((sum, evidence) => sum + evidence.locatedCount, 0)
+  const count = familyRows.reduce((sum, evidence) => sum + evidence.count, 0)
+  const sourceGrid = familyRows[0]?.grid ?? cohort.defensiveGrid
+  const defensiveGrid = sourceGrid.map((cell, index): ActionGridCell => {
+    let rawCount = 0
+    let per90Count = 0
+    for (const evidence of familyRows) {
+      const value = evidence.grid[index]
+      if (!value) continue
+      rawCount += value.rawCount
+      per90Count += value.per90Count
+    }
+    return {
+      column: cell.column,
+      row: cell.row,
+      rawCount,
+      per90Count,
+      share: locatedCount ? rawCount / locatedCount : 0,
+    }
+  })
+  const weightedMean = familyRows.reduce((sum, evidence) => (
+    sum + (evidence.height.mean ?? 0) * evidence.height.sampleSize
+  ), 0)
+  const yTotal = defensiveGrid.reduce((sum, cell) => (
+    sum + ((cell.row + 0.5) / 16) * 100 * cell.rawCount
+  ), 0)
+  return {
+    ...cohort,
+    summary: { ...cohort.summary, defensive_actions: count },
+    defensiveGrid,
+    defensiveLocation: {
+      x: locatedCount ? weightedMean / locatedCount : null,
+      y: locatedCount ? yTotal / locatedCount : null,
+      sampleSize: locatedCount,
+    },
+    defensiveHeight: {
+      sampleSize: locatedCount,
+      mean: locatedCount ? weightedMean / locatedCount : null,
+      median: familyRows.length === 1 ? familyRows[0].height.median : null,
+    },
+  }
+}
+
 function EvidenceRow({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3 border-t border-line-bright pt-2 text-[10px]">
@@ -256,7 +325,11 @@ function EvidenceRow({ label, value, detail }: { label: string; value: string; d
   )
 }
 
-function PlayerPassingEvidence({ comparison }: { comparison: PlayerStateComparisonPayload }) {
+function ReliabilityBadge({ status, label }: { status: 'verified' | 'partial' | 'sparse' | 'unsupported' | 'unavailable'; label?: string }) {
+  return <span className={`text-[9px] font-bold uppercase tracking-[0.08em] ${status === 'verified' ? 'text-mint' : status === 'unavailable' ? 'text-ember' : 'text-gold'}`}>{label ?? status}</span>
+}
+
+function PlayerPassingEvidence({ comparison, rateMode }: { comparison: PlayerStateComparisonPayload; rateMode: ProfileRateMode }) {
   const selected = comparison.selected
   const baseline = comparison.baseline
   const passesShare = selected.teamActionShares.passes
@@ -266,21 +339,21 @@ function PlayerPassingEvidence({ comparison }: { comparison: PlayerStateComparis
     <section className="border border-line-bright bg-panel p-3" aria-label="Player passing and carrying evidence">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
         <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-ink">Passing & carrying evidence</h3>
-        <p className="text-[9px] text-ink-muted">Counts are raw; rates use verified state minutes.</p>
+        <p className="text-[9px] text-ink-muted">{rateMode === 'per90' ? 'Per 90 verified state minutes' : 'Selected-context totals'}</p>
       </div>
       <div className="mt-3 grid gap-x-5 gap-y-3 sm:grid-cols-2">
         <div className="space-y-2">
           <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-electric">Passing</p>
-          <EvidenceRow label="Attempts" value={`${selected.passing.attempts.toLocaleString()} · ${formatRate(selected, 'pass_attempts')}`} detail="raw · /90" />
-          <EvidenceRow label="Completion" value={`${selected.passing.completed.toLocaleString()}/${selected.passing.attempts.toLocaleString()} · ${formatPercent(selected.passing.completionRate)}`} detail="raw · rate" />
-          <EvidenceRow label="Progressive" value={`${selected.passing.progressive.toLocaleString()} · ${formatRate(selected, 'progressive_passes')}`} detail="raw · /90" />
+          <EvidenceRow label="Attempts" value={formatCohortMetric(selected, 'pass_attempts', rateMode)} detail={rateMode === 'per90' ? '/90' : undefined} />
+          <EvidenceRow label="Completion" value={formatPercent(selected.passing.completionRate)} />
+          <EvidenceRow label="Progressive" value={formatCohortMetric(selected, 'progressive_passes', rateMode)} detail={rateMode === 'per90' ? '/90' : undefined} />
           <EvidenceRow label="Length / forward" value={`${formatMetres(selected.passing.meanLengthMetres)} · ${formatMetres(selected.passing.meanForwardMetres)}`} detail="mean" />
           <EvidenceRow label="Forward share" value={formatPercent(selected.passing.forwardShare)} />
         </div>
         <div className="space-y-2">
           <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-gold">Carrying & matched team</p>
-          <EvidenceRow label="Carries" value={`${selected.carrying.attempts.toLocaleString()} · ${formatRate(selected, 'carries')}`} detail="raw · /90" />
-          <EvidenceRow label="Progressive carries" value={`${selected.carrying.progressive.toLocaleString()} · ${formatRate(selected, 'progressive_carries')}`} detail="raw · /90" />
+          <EvidenceRow label="Carries" value={formatCohortMetric(selected, 'carries', rateMode)} detail={rateMode === 'per90' ? '/90' : undefined} />
+          <EvidenceRow label="Progressive carries" value={formatCohortMetric(selected, 'progressive_carries', rateMode)} detail={rateMode === 'per90' ? '/90' : undefined} />
           <EvidenceRow label="Carry length / forward" value={`${formatMetres(selected.carrying.meanLengthMetres)} · ${formatMetres(selected.carrying.meanForwardMetres)}`} detail="mean" />
           <EvidenceRow label="Team pass share" value={passesShare ? `${formatPercent(passesShare.share)}${shareChange?.passes == null ? '' : ` · ${shareChange.passes >= 0 ? '+' : ''}${(shareChange.passes * 100).toFixed(1)}pp`}` : '—'} detail="matched intervals" />
           <EvidenceRow label="Team progression share" value={progressiveShare ? `${formatPercent(progressiveShare.share)}${shareChange?.progressive_actions == null ? '' : ` · ${shareChange.progressive_actions >= 0 ? '+' : ''}${(shareChange.progressive_actions * 100).toFixed(1)}pp`}` : '—'} detail="matched intervals" />
@@ -291,7 +364,7 @@ function PlayerPassingEvidence({ comparison }: { comparison: PlayerStateComparis
   )
 }
 
-function PlayerShootingEvidence({ comparison }: { comparison: PlayerStateComparisonPayload }) {
+function PlayerShootingEvidence({ comparison, rateMode }: { comparison: PlayerStateComparisonPayload; rateMode: ProfileRateMode }) {
   const selected = comparison.selected
   const shotShare = selected.teamActionShares.shots
   const shotShareChange = comparison.comparison?.actionShareChange.shots
@@ -302,9 +375,9 @@ function PlayerShootingEvidence({ comparison }: { comparison: PlayerStateCompari
         <p className="text-[9px] text-ink-muted">Rare shots and goals stay visibly qualified.</p>
       </div>
       <div className="mt-3 grid gap-x-5 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
-        <EvidenceRow label="Shots" value={`${selected.summary.shots.toLocaleString()} · ${formatRate(selected, 'shots')}`} detail="raw · /90" />
-        <EvidenceRow label="Goals" value={`${selected.summary.goals.toLocaleString()} · ${formatRate(selected, 'goals')}`} detail="raw · /90" />
-        <EvidenceRow label="Big chances" value={`${selected.summary.big_chance_shots.toLocaleString()} · ${formatRate(selected, 'big_chance_shots')}`} detail="raw · /90" />
+        <EvidenceRow label="Shots" value={formatCohortMetric(selected, 'shots', rateMode)} detail={rateMode === 'per90' ? '/90' : undefined} />
+        <EvidenceRow label="Goals" value={formatCohortMetric(selected, 'goals', rateMode)} detail={rateMode === 'per90' ? '/90' : undefined} />
+        <EvidenceRow label="Big chances" value={formatCohortMetric(selected, 'big_chance_shots', rateMode)} detail={rateMode === 'per90' ? '/90' : undefined} />
         <EvidenceRow label="Team shot share" value={shotShare ? `${formatPercent(shotShare.share)}${shotShareChange == null ? '' : ` · ${shotShareChange >= 0 ? '+' : ''}${(shotShareChange * 100).toFixed(1)}pp`}` : '—'} detail="matched intervals" />
       </div>
       <p className="mt-3 border-t border-line-bright pt-2 text-[9px] leading-relaxed text-ink-muted">Shot locations and goal zones remain event-backed. A low raw count is descriptive evidence, not a stable finishing or clutch claim.</p>
@@ -318,7 +391,7 @@ function PlayerExposureCard({ label, cohort }: { label: string; cohort: PlayerSt
     <div className="border border-control-border bg-raised/35 px-3 py-2" data-player-state-cohort={label}>
       <div className="flex items-baseline justify-between gap-2">
         <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink">{label}</p>
-        <span className={`text-[9px] font-bold uppercase tracking-[0.08em] ${reliability === 'verified' ? 'text-mint' : reliability === 'unavailable' ? 'text-ember' : 'text-gold'}`}>{reliability}</span>
+        <ReliabilityBadge status={reliability} />
       </div>
       <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[10px] text-ink-dim">
         <span>{cohort.exposureMinutes.toLocaleString()} verified min</span>
@@ -332,17 +405,13 @@ function PlayerExposureCard({ label, cohort }: { label: string; cohort: PlayerSt
   )
 }
 
-function transitionLabel(value: string) {
-  return value.replaceAll('_', ' ').replace(/^./, character => character.toUpperCase())
-}
-
 function PlayerTransitionCohort({ label, cohort }: { label: string; cohort: PlayerStateCohort }) {
   const transition = cohort.possession.transitionLeverage
   return (
     <div className="border border-control-border bg-raised/35 px-3 py-2">
       <div className="flex items-baseline justify-between gap-2">
         <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink">{label}</p>
-        <span className={transition.available ? 'text-mint' : 'text-ink-muted'}>{transition.available ? 'supported' : 'unavailable'}</span>
+        <ReliabilityBadge status={transition.available ? 'verified' : 'unavailable'} label={transition.available ? 'Supported' : 'Unavailable'} />
       </div>
       <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[10px] text-ink-dim sm:grid-cols-4">
         <span>Involved <strong className="font-mono font-normal text-ink">{transition.involvedPossessions}</strong></span>
@@ -354,39 +423,6 @@ function PlayerTransitionCohort({ label, cohort }: { label: string; cohort: Play
         <span>State changes <strong className="font-mono font-normal text-ink">{transition.stateChangingPossessions}</strong></span>
         <span>Opportunities <strong className="font-mono font-normal text-ink">{transition.opportunities}</strong></span>
       </div>
-      {transition.sequenceEvidence.length ? (
-        <details className="mt-2 border-t border-line-bright pt-2 text-[9px] leading-relaxed text-ink-dim">
-          <summary className="cursor-pointer font-bold uppercase tracking-[0.08em] text-electric">Inspect sequence evidence ({transition.sequenceEvidence.length}{transition.evidenceTruncated ? '+' : ''})</summary>
-          <div className="mt-2 space-y-2">
-            {transition.sequenceEvidence.map((evidence: PlayerTransitionEvidence) => (
-              <div key={evidence.possessionId} className="border border-line bg-panel px-2 py-2">
-                <div className="flex flex-wrap gap-x-3 gap-y-1 text-ink-dim">
-                  <span className="font-mono">match #{evidence.matchRef}</span>
-                  <span>{transitionLabel(evidence.outcomeTier)}</span>
-                  <span>{evidence.state.state ?? 'state unavailable'}</span>
-                  {evidence.rapidTransition.isCounterLaunch ? <span className="text-electric">counter launch</span> : null}
-                  {evidence.stateTransition.actual ? <span className="text-mint">{transitionLabel(evidence.stateTransition.classification)}</span> : null}
-                </div>
-                <ol className="mt-1.5 space-y-1 border-l border-line-bright pl-2">
-                  {evidence.possessionTrace.map(action => {
-                    const playerAction = evidence.verifiedPlayerActionSequences.includes(action.sequence)
-                    return <li key={`${evidence.possessionId}-${action.sequence}`} className={playerAction ? 'text-electric' : 'text-ink-dim'}>
-                      <span className="mr-1 font-mono text-ink-muted">{action.sequence + 1}.</span>
-                      <strong className="font-medium">{action.playerName ?? 'Unresolved player'}</strong>
-                      <span className="mx-1">·</span>{action.eventType.replaceAll('_', ' ')}
-                      <span className="mx-1">·</span>{action.roleLabel}
-                      {playerAction ? <span className="ml-1 text-[8px] uppercase tracking-[0.08em]">player action</span> : null}
-                    </li>
-                  })}
-                </ol>
-              </div>
-            ))}
-          </div>
-        </details>
-      ) : (
-        <p className="mt-2 border-t border-line-bright pt-2 text-[9px] text-ink-muted">No linked player action falls inside a verified on-pitch interval in this cohort.</p>
-      )}
-      <p className="mt-2 text-[8px] leading-relaxed text-ink-muted">#117 transition sequence facts are shown only when the possession, team, state cohort and player timeline all match. Sequence proximity is evidence, not causality.</p>
     </div>
   )
 }
@@ -483,12 +519,13 @@ function MapStage({ map, expanded, setExpanded, children }: {
   )
 }
 
-export function PlayerEventMaps({ playerId, competition, season, teams, positionGroup }: {
+export function PlayerEventMaps({ playerId, competition, season, teams, positionGroup, rateMode }: {
   playerId: number
   competition: string
   season: string
   teams: PlayerEventMapTeam[]
   positionGroup?: string
+  rateMode: ProfileRateMode
 }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const lensRequest = stateLensRequest(searchParams)
@@ -501,6 +538,7 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
   const [expanded, setExpanded] = useState<PlayerMap | null>(null)
   const [shotPenalties, setShotPenalties] = useState<PenaltyOption>('all')
   const [analysisMode, setAnalysisMode] = useState<PlayerAnalysisMode>('overview')
+  const [defensiveFamilies, setDefensiveFamilies] = useState<DefensiveActionFamily[]>(ALL_DEFENSIVE_ACTION_FAMILIES)
   const matchRef = searchParams.get('match')
   const teamIdValue = searchParams.get('team')
   const teamId = teamIdValue ? Number(teamIdValue) : null
@@ -513,12 +551,14 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
     queryKey: ['player-event-profile', playerId, competition, season, teamId, matchRef, lensRequest],
     queryFn: () => fetchPlayerEventProfile(playerId, competition, season, teamId, matchRef, lensRequest),
     staleTime: 10 * 60 * 1000,
+    placeholderData: previous => previous,
   })
   const comparisonQuery = useQuery({
     queryKey: ['player-state-comparison', playerId, competition, season, teamId, matchRef, lensRequest],
     queryFn: () => fetchPlayerStateComparison(playerId, competition, season, teamId, matchRef, lensRequest),
     enabled: profileQuery.data != null,
     staleTime: 10 * 60 * 1000,
+    placeholderData: previous => previous,
   })
   const profile = profileQuery.data
   const passQuery = useQuery({
@@ -573,18 +613,20 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
 
   const stateLens = profile.stateLens
   const comparison = comparisonQuery.data
+  const selectedDefensiveCohort = comparison ? playerDefensiveSelection(comparison.selected, defensiveFamilies) : null
+  const baselineDefensiveCohort = comparison?.baseline ? playerDefensiveSelection(comparison.baseline, defensiveFamilies) : null
   const selectedStateLabel = scopeLabel(stateLens?.selected.state)
   const baselineStateLabel = scopeLabel(stateLens?.comparison.baseline?.state)
   const touchShift = comparison
       ? stateShiftContract(
         playerId,
         profile.playerName,
-        comparison.selected,
-        comparison.baseline,
+        selectedDefensiveCohort ?? comparison.selected,
+        baselineDefensiveCohort,
         selectedStateLabel,
         baselineStateLabel,
-        comparison.teamContext.selected,
-        comparison.teamContext.baseline,
+        defensiveFamilies.length === ALL_DEFENSIVE_ACTION_FAMILIES.length ? comparison.teamContext.selected : null,
+        defensiveFamilies.length === ALL_DEFENSIVE_ACTION_FAMILIES.length ? comparison.teamContext.baseline : null,
       )
     : null
   const defensiveShift = comparison
@@ -651,7 +693,7 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
       <nav className="mb-2 grid grid-cols-4 border-b border-line-bright" aria-label="Player event analysis">
         {([
           ['overview', 'Touches'],
-          ['passing', 'Passing'],
+          ['passing', 'Passing & Carrying'],
           ['shooting', 'Shooting'],
           ['defending', 'Defending'],
         ] as const).map(([value, label]) => (
@@ -663,11 +705,11 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
 
       <div className="mb-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 py-1">
         {([
-          ['Touches', locatedTouchCount],
-          ['Passes', profile.summary.pass_attempts],
-          ['Carries', passQuery.data?.totalAllCarries],
-          ['Shots', profile.summary.shots],
-        ] as const).map(([label, value]) => <p key={label} className="text-[9px] text-ink-dim"><span className="mr-1 uppercase tracking-[0.08em]">{label}</span><strong className="font-mono text-[12px] font-normal text-ink">{value?.toLocaleString() ?? '—'}</strong></p>)}
+          ['Touches', rateMode === 'per90' && comparison ? formatCohortMetric(comparison.selected, 'touches', rateMode) : locatedTouchCount.toLocaleString()],
+          ['Passes', rateMode === 'per90' && comparison ? formatCohortMetric(comparison.selected, 'pass_attempts', rateMode) : profile.summary.pass_attempts?.toLocaleString() ?? '—'],
+          ['Carries', rateMode === 'per90' && comparison ? formatCohortMetric(comparison.selected, 'carries', rateMode) : passQuery.data?.totalAllCarries.toLocaleString() ?? '—'],
+          ['Shots', rateMode === 'per90' && comparison ? formatCohortMetric(comparison.selected, 'shots', rateMode) : profile.summary.shots?.toLocaleString() ?? '—'],
+        ] as const).map(([label, value]) => <p key={label} className="text-[9px] text-ink-dim"><span className="mr-1 uppercase tracking-[0.08em]">{label}</span><strong className="font-mono text-[12px] font-normal text-ink">{value}</strong>{rateMode === 'per90' ? <span className="ml-1 text-[8px]">/90</span> : null}</p>)}
         <span className="ml-auto"><EventCoverageLine coverage={profile.coverage} minutes={profile.coverage.minutes} /></span>
       </div>
 
@@ -726,7 +768,7 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
                   <PlayerExposureCard label={selectedStateLabel} cohort={comparison.selected} />
                   {comparison.baseline ? <PlayerExposureCard label={baselineStateLabel} cohort={comparison.baseline} /> : (
                     <div className="border border-control-border bg-raised/35 px-3 py-2 text-[10px] leading-relaxed text-ink-dim">
-                      Select a comparison baseline in Refine state to see before/after rates, shares, movement and response-role evidence.
+                      Select a comparison state in Context to see changes in rates, shares, movement and response-role evidence.
                     </div>
                   )}
                 </div>
@@ -734,7 +776,7 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
                   {(['touches', 'pass_attempts', 'progressive_actions', 'shots', 'defensive_actions', 'carries', 'box_entries', 'take_ons'] as const).map(key => (
                     <div key={key} className="flex items-baseline justify-between gap-2 border-t border-line-bright pt-2 text-[10px]">
                       <span className="text-ink-dim">{key.replaceAll('_', ' ')}</span>
-                      <span className="font-mono text-ink">{formatRate(comparison.selected, key)} <span className="text-[8px] text-ink-muted">/90</span>{comparison.baseline ? <span className={comparisonRate(comparison.comparison, key).startsWith('+') ? 'text-mint' : comparisonRate(comparison.comparison, key).startsWith('-') ? 'text-ember' : 'text-ink-muted'}> ({comparisonRate(comparison.comparison, key)})</span> : null}</span>
+                      <span className="font-mono text-ink">{formatCohortMetric(comparison.selected, key, rateMode)} {rateMode === 'per90' ? <span className="text-[8px] text-ink-muted">/90</span> : null}{comparison.baseline ? <span className={formatComparisonMetric(comparison, key, rateMode).startsWith('+') ? 'text-mint' : formatComparisonMetric(comparison, key, rateMode).startsWith('-') ? 'text-ember' : 'text-ink-muted'}> ({formatComparisonMetric(comparison, key, rateMode)})</span> : null}</span>
                     </div>
                   ))}
                 </div>
@@ -774,7 +816,7 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
                       <details className="mt-2 border-t border-line-bright pt-2 text-[9px] leading-relaxed text-ink-dim">
                         <summary className="cursor-pointer font-bold uppercase tracking-[0.08em] text-electric">Show supporting observations</summary>
                         <div className="mt-2 space-y-1">
-                          <p>Player touches: {formatRate(comparison.selected, 'touches')} /90 selected vs {comparison.baseline ? formatRate(comparison.baseline, 'touches') : '—'} baseline; progressive actions: {formatRate(comparison.selected, 'progressive_actions')} vs {comparison.baseline ? formatRate(comparison.baseline, 'progressive_actions') : '—'} /90.</p>
+                          <p>Player touches: {formatCohortMetric(comparison.selected, 'touches', rateMode)}{rateMode === 'per90' ? ' /90' : ''} selected vs {comparison.baseline ? formatCohortMetric(comparison.baseline, 'touches', rateMode) : '—'} baseline; progressive actions: {formatCohortMetric(comparison.selected, 'progressive_actions', rateMode)} vs {comparison.baseline ? formatCohortMetric(comparison.baseline, 'progressive_actions', rateMode) : '—'}{rateMode === 'per90' ? ' /90' : ''}.</p>
                           <p>Matched team progressive-action share: {comparison.selected.teamActionShares.progressive_actions?.share == null ? '—' : formatPercent(comparison.selected.teamActionShares.progressive_actions.share)} selected vs {comparison.baseline?.teamActionShares.progressive_actions?.share == null ? '—' : formatPercent(comparison.baseline.teamActionShares.progressive_actions.share)} baseline.</p>
                           <p>Average touch movement: {comparison.comparison?.movement.player.x == null || comparison.comparison.movement.player.y == null ? 'unsupported' : `${comparison.comparison.movement.player.x >= 0 ? '+' : ''}${comparison.comparison.movement.player.x.toFixed(1)} x · ${comparison.comparison.movement.player.y >= 0 ? '+' : ''}${comparison.comparison.movement.player.y.toFixed(1)} y pitch points`}; position group {comparison.positionGroup}.</p>
                           <p>Minimum evidence: {role.reliability.evidence_type ?? 'actions'} {role.reliability.evidence_count ?? '—'} / {role.reliability.minimum_evidence_count ?? '—'}; observations are directional and do not imply quality or causality.</p>
@@ -812,26 +854,24 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
 
       {analysisMode === 'defending' ? (
         <div className="mb-3 grid gap-3 lg:grid-cols-12">
-          <EventMapCard className="lg:col-span-8" expanded={expanded === 'actions'} onExpandedChange={next => setExpanded(next ? 'actions' : null)} title="Defensive territory" description="Located defensive actions, normalized within each verified player state cohort." exportContext={mapExportContext()} footer={(
+          <EventMapCard className="lg:col-span-8" expanded={expanded === 'actions'} onExpandedChange={next => setExpanded(next ? 'actions' : null)} title="Defensive territory" description="Located defensive actions, normalized within each verified player state cohort." controls={<DefensiveActionSelector selected={defensiveFamilies} onChange={setDefensiveFamilies} />} exportContext={mapExportContext([{ label: 'Defensive actions', value: defensiveFamilies.length === ALL_DEFENSIVE_ACTION_FAMILIES.length ? 'All action types' : `${defensiveFamilies.length} selected types` }])} footer={(
             <div className="space-y-2 text-[10px] leading-relaxed text-ink-dim">
               <p>Action territory is event-backed; it is not a settled high-, mid- or low-block claim.</p>
-              {comparison?.selected ? <p>{comparison.selected.defensiveHeight.sampleSize.toLocaleString()} located defensive actions · median height {comparison.selected.defensiveHeight.median == null ? '—' : `${comparison.selected.defensiveHeight.median.toFixed(1)}%`}.</p> : null}
+              {selectedDefensiveCohort ? <p>{selectedDefensiveCohort.defensiveHeight.sampleSize.toLocaleString()} located defensive actions · {selectedDefensiveCohort.defensiveHeight.median == null ? 'combined median unavailable' : `median height ${selectedDefensiveCohort.defensiveHeight.median.toFixed(1)}%`}.</p> : null}
             </div>
           )}>
             <MapStage map="actions" expanded={expanded} setExpanded={setExpanded}>
-              {defensiveShift ? <StateDeltaMap contract={defensiveShift} /> : comparison?.selected.defensiveGrid.some(cell => cell.rawCount > 0) ? (
-                <PortraitPitch densityCells={comparison.selected.defensiveGrid} densityStyle="smooth" ariaLabel={`${profile.playerName} located defensive action territory. Event-backed location only.`} />
+              {defensiveShift ? <StateDeltaMap contract={defensiveShift} /> : selectedDefensiveCohort?.defensiveGrid.some(cell => cell.rawCount > 0) ? (
+                <PortraitPitch densityCells={selectedDefensiveCohort.defensiveGrid} densityStyle="smooth" ariaLabel={`${profile.playerName} located defensive action territory. Event-backed location only.`} />
               ) : <EventMapNotice kind="empty" title="No located defensive actions in this scope" />}
             </MapStage>
           </EventMapCard>
           <div className="lg:col-span-4 border border-line-bright bg-panel p-3">
             <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-ink">Defensive evidence</h3>
-            {comparison?.selected ? <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[10px] text-ink-dim">
-              <div><dt>Actions / 90</dt><dd className="font-mono text-ink">{formatRate(comparison.selected, 'defensive_actions')}</dd></div>
-              <div><dt>Recoveries / 90</dt><dd className="font-mono text-ink">{formatRate(comparison.selected, 'recoveries')}</dd></div>
-              <div><dt>Tackles / 90</dt><dd className="font-mono text-ink">{formatRate(comparison.selected, 'tackles')}</dd></div>
-              <div><dt>Interceptions / 90</dt><dd className="font-mono text-ink">{formatRate(comparison.selected, 'interceptions')}</dd></div>
-              <div className="col-span-2 border-t border-line-bright pt-2"><dt>Median action height</dt><dd className="font-mono text-ink">{comparison.selected.defensiveHeight.median == null ? '—' : `${comparison.selected.defensiveHeight.median.toFixed(1)}%`} <span className="text-[8px] text-ink-muted">event location</span></dd></div>
+            {selectedDefensiveCohort ? <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[10px] text-ink-dim">
+              <div><dt>Selected actions</dt><dd className="font-mono text-ink">{rateMode === 'per90' ? selectedDefensiveCohort.exposureMinutes > 0 ? ((selectedDefensiveCohort.summary.defensive_actions * 90) / selectedDefensiveCohort.exposureMinutes).toFixed(2) : '—' : selectedDefensiveCohort.summary.defensive_actions.toLocaleString()}{rateMode === 'per90' ? ' / 90' : ''}</dd></div>
+              <div><dt>Located</dt><dd className="font-mono text-ink">{selectedDefensiveCohort.defensiveLocation.sampleSize.toLocaleString()}</dd></div>
+              <div className="col-span-2 border-t border-line-bright pt-2"><dt>Action height</dt><dd className="font-mono text-ink">{selectedDefensiveCohort.defensiveHeight.median == null ? selectedDefensiveCohort.defensiveHeight.mean == null ? '—' : `${selectedDefensiveCohort.defensiveHeight.mean.toFixed(1)}% mean` : `${selectedDefensiveCohort.defensiveHeight.median.toFixed(1)}% median`} <span className="text-[8px] text-ink-muted">event location</span></dd></div>
             </dl> : <p className="mt-2 text-[10px] text-ink-dim">Loading verified defensive evidence…</p>}
           </div>
         </div>
@@ -896,6 +936,10 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
             </MapStage>
           </EventMapCard>
         ) : null}
+
+        {analysisMode === 'passing' ? <div className="lg:col-span-6">
+          {comparisonQuery.isLoading ? <EventMapNotice kind="loading" title="Loading passing and carrying evidence" /> : comparisonQuery.isError || !comparison ? <EventMapNotice kind="error" title="Passing and carrying evidence failed to load" onRetry={() => comparisonQuery.refetch()} /> : <PlayerPassingEvidence comparison={comparison} rateMode={rateMode} />}
+        </div> : null}
 
         {analysisMode === 'shooting' && profile.modules.shotMap.available ? (
           <EventMapCard className="lg:col-span-6" expanded={expanded === 'shots'} onExpandedChange={next => setExpanded(next ? 'shots' : null)} title="Shot map" description={shotMapDescription} exportContext={mapExportContext([
@@ -989,15 +1033,10 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
 
       </div>
 
-      {analysisMode === 'passing' ? (
-        comparisonQuery.isLoading ? <EventMapNotice kind="loading" title="Loading passing and carrying evidence" /> : comparisonQuery.isError || !comparison ? (
-          <EventMapNotice kind="error" title="Passing and carrying evidence failed to load" onRetry={() => comparisonQuery.refetch()} />
-        ) : <PlayerPassingEvidence comparison={comparison} />
-      ) : null}
       {analysisMode === 'shooting' ? (
         comparisonQuery.isLoading ? <EventMapNotice kind="loading" title="Loading shooting evidence" /> : comparisonQuery.isError || !comparison ? (
           <EventMapNotice kind="error" title="Shooting evidence failed to load" onRetry={() => comparisonQuery.refetch()} />
-        ) : <PlayerShootingEvidence comparison={comparison} />
+        ) : <PlayerShootingEvidence comparison={comparison} rateMode={rateMode} />
       ) : null}
     </section>
   )

@@ -181,7 +181,6 @@ export function TeamPassStateFlow({
   matchRef,
   stateLens,
   stateLensMetadata,
-  onComparisonChange,
   exportContext,
   expanded,
   onExpandedChange,
@@ -193,7 +192,6 @@ export function TeamPassStateFlow({
   matchRef: string | null
   stateLens: StateLensRequest
   stateLensMetadata?: StateLensMetadata
-  onComparisonChange: (enabled: boolean) => void
   exportContext: EventMapExportContext
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
@@ -252,19 +250,6 @@ export function TeamPassStateFlow({
       description={comparisonEnabled
         ? 'Compare the selected State Lens cohort with its explicit baseline in the same origin zones.'
         : 'Attempt volume and mean pass shape in each origin zone for the selected State Lens.'}
-      controls={(
-        <button
-          type="button"
-          aria-pressed={comparisonEnabled}
-          onClick={() => {
-            setSelectedFlow(null)
-            onComparisonChange(!comparisonEnabled)
-          }}
-          className={`h-8 whitespace-nowrap border px-2.5 text-[9px] font-bold uppercase tracking-[0.08em] transition-colors ${comparisonEnabled ? 'border-electric bg-electric/10 text-electric' : 'border-control-border bg-raised text-control-fg hover:border-electric hover:text-ink'}`}
-        >
-          Compare baseline
-        </button>
-      )}
       exportContext={{
         ...exportContext,
         filters: [
@@ -307,35 +292,39 @@ export function TeamPassStateFlow({
             </div> : null}
           </div>
           <aside className="space-y-4 border-t border-line-bright pt-5 lg:border-t-0 lg:pt-0" aria-label="Passing evidence">
-            {comparisonEnabled ? <div>
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-dim">Game-state comparison</p>
-              <div className="grid grid-cols-2 gap-2">
-                {comparisons.map(cohort => (
-                  <div key={cohort.key} className="border border-line/60 bg-paper/40 px-2 py-2" style={{ borderTopColor: cohort.color }}>
-                    <p className="text-[9px] font-bold uppercase tracking-[0.08em]" style={{ color: cohort.color }}>{cohort.label}{cohort.key === 'baseline' ? ' baseline' : ''}</p>
-                    <p className="mt-1 font-mono text-[13px] text-ink">{cohort.evidence?.summary.attemptsPerStateMinute?.toFixed(2) ?? '—'}</p>
-                    <p className="text-[9px] text-ink-dim">passes/min</p>
-                    <p className="mt-1 font-mono text-[10px] text-ink-dim">{cohort.evidence ? percent(cohort.evidence.summary.completionRate) : '—'}</p>
-                    <p className="text-[9px] text-ink-dim">completion</p>
-                    <p className="mt-1 text-[9px] text-ink-muted">{cohort.evidence ? `${cohort.evidence.exposureMinutes.toFixed(0)} min` : '—'}</p>
-                  </div>
-                ))}
+            {comparisonEnabled ? <>
+              <div>
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-dim">Game-state comparison</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {comparisons.map(cohort => (
+                    <div key={cohort.key} className="border border-line/60 bg-paper/40 px-2 py-2" style={{ borderTopColor: cohort.color }}>
+                      <p className="text-[9px] font-bold uppercase tracking-[0.08em]" style={{ color: cohort.color }}>{cohort.label}{cohort.key === 'baseline' ? ' baseline' : ''}</p>
+                      <p className="mt-1 font-mono text-[13px] text-ink">{cohort.evidence?.summary.attemptsPerStateMinute?.toFixed(2) ?? '—'}<span className="ml-1 text-[9px] text-ink-dim">passes/min</span></p>
+                      <div className="mt-1 grid grid-cols-2 gap-x-2 text-[9px] text-ink-dim">
+                        <span>{cohort.evidence ? percent(cohort.evidence.summary.completionRate) : '—'} complete</span>
+                        <span>{cohort.evidence ? metres(cohort.evidence.summary.meanLengthMetres) : '—'} avg length</span>
+                      </div>
+                      <p className="mt-1 text-[9px] text-ink-muted">{cohort.evidence ? `${cohort.evidence.exposureMinutes.toFixed(0)} min · ${cohort.evidence.summary.attempts.toLocaleString()} attempted` : '—'}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div> : null}
-            <p className="text-[10px] leading-relaxed text-ink-dim">{comparisonEnabled
-              ? 'Each arrow shows the attempted mean direction and length for the selected or baseline cohort. Zone shading combines passes per eligible state minute, not raw totals.'
-              : 'Each arrow shows attempted mean direction and length. Brighter origin zones represent more attempted passes in the selected state.'}</p>
-            <div className="grid grid-cols-3 gap-3 text-[12px] leading-relaxed lg:grid-cols-1">
-              <p><span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-ink-dim">Passes per minute</span>{summary.attemptsPerStateMinute?.toFixed(2) ?? '—'}</p>
-              <p><span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-ink-dim">Pass completion</span>{percent(summary.completionRate)}</p>
-              <p><span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-ink-dim">Mean pass length</span>{metres(summary.meanLengthMetres)}</p>
-            </div>
-            <EvidenceBands title="Direction" rows={evidence.directions} />
-            <EvidenceBands title="Length" rows={evidence.lengthBands} />
-            <p className="text-[11px] leading-relaxed text-ink-dim">
-              Passes per minute uses only the eligible minutes in the selected game state. {summary.attempts.toLocaleString()} attempted · {summary.completions.toLocaleString()} completed · {evidence.exposureMinutes.toFixed(1)} eligible minutes
-              {disclosure ? ` · ${disclosure}` : ''}
-            </p>
+              <EvidenceBands title="Selected direction" rows={evidence.directions} />
+              <EvidenceBands title="Selected length" rows={evidence.lengthBands} />
+            </> : <>
+              <p className="text-[10px] leading-relaxed text-ink-dim">Each arrow shows attempted mean direction and length. Brighter origin zones represent more attempted passes in the selected state.</p>
+              <div className="grid grid-cols-3 gap-3 text-[12px] leading-relaxed lg:grid-cols-1">
+                <p><span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-ink-dim">Passes per minute</span>{summary.attemptsPerStateMinute?.toFixed(2) ?? '—'}</p>
+                <p><span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-ink-dim">Pass completion</span>{percent(summary.completionRate)}</p>
+                <p><span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-ink-dim">Mean pass length</span>{metres(summary.meanLengthMetres)}</p>
+              </div>
+              <EvidenceBands title="Direction" rows={evidence.directions} />
+              <EvidenceBands title="Length" rows={evidence.lengthBands} />
+              <p className="text-[11px] leading-relaxed text-ink-dim">
+                Passes per minute uses only the eligible minutes in the selected game state. {summary.attempts.toLocaleString()} attempted · {summary.completions.toLocaleString()} completed · {evidence.exposureMinutes.toFixed(1)} eligible minutes
+                {disclosure ? ` · ${disclosure}` : ''}
+              </p>
+            </>}
           </aside>
         </div>
       </EventPitchStage>
