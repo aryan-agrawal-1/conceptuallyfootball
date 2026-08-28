@@ -412,6 +412,13 @@ function StateComparisonChart({
                   const description = `${point.item.label} · ${axis.label}: ${rawValue} · ${stateAxis?.reliability ?? 'unavailable'}${point.normalized?.direction ? ` · outside ${point.normalized.direction === 'low' ? 'P10' : 'P90'}` : ''}`
                   const readoutLane = readoutLaneByKey.get(point.item.key) ?? 0
                   const readoutAnchor = point.normalized && point.normalized.position <= 7 ? 'start' : point.normalized && point.normalized.position >= 93 ? 'end' : 'middle'
+                  const readoutX = x == null
+                    ? null
+                    : point.normalized && point.normalized.position <= 7
+                      ? x + 9
+                      : point.normalized && point.normalized.position >= 93
+                        ? x - 9
+                        : x
                   return (
                     <g
                       key={point.item.key}
@@ -434,7 +441,7 @@ function StateComparisonChart({
                       <title>{description}</title>
                       {x == null ? null : sparse ? <StateMarker x={x} y={y} color={point.item.color} shape="square" hollow opacity={0.4} /> : <CompareSvgMarker x={x} y={y} color={point.item.color} />}
                       {x != null && point.normalized?.direction ? <EdgeIndicator x={x} y={y} direction={point.normalized.direction} color={point.item.color} /> : null}
-                      {x != null ? <text x={x} y={y + 20 + readoutLane * 12} textAnchor={readoutAnchor} fill={sparse ? '#65759E' : point.item.color} fontSize="9" fontWeight="600" fontFamily="ui-monospace, SFMono-Regular, monospace">{rawValue}</text> : null}
+                      {readoutX != null ? <text x={readoutX} y={y + 20 + readoutLane * 12} textAnchor={readoutAnchor} fill={sparse ? '#65759E' : point.item.color} fontSize="9" fontWeight="600" fontFamily="ui-monospace, SFMono-Regular, monospace">{rawValue}</text> : null}
                     </g>
                   )
                 })}
