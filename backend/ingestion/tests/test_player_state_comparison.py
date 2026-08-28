@@ -413,6 +413,9 @@ class PlayerStateComparisonTests(TestCase):
         self.assertEqual(payload["selected"]["defensive_location"]["sample_size"], 0)
         self.assertEqual(payload["team_context"]["matching"], "same team, matches, state cohort, and verified player on-pitch intervals")
         self.assertEqual(payload["response_roles"], [])
+        self.assertEqual(payload["season_role"]["confidence"], "insufficient")
+        self.assertIn("selected", payload["state_evidence"])
+        self.assertIn("baseline", payload["state_evidence"])
 
     def test_comparison_projects_transition_leverage_onto_verified_player_actions(self):
         request = APIRequestFactory().get(

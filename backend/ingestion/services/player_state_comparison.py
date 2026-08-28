@@ -660,6 +660,7 @@ def team_relative_shares(player_summary: dict, team_summary: dict) -> dict:
         "touches": ("touches", "touches"),
         "passes": ("pass_attempts", "pass_attempts"),
         "progressive_actions": ("progressive_actions", "progressive_actions"),
+        "progressive_carries": ("progressive_carries", "progressive_carries"),
         "shots": ("shots", "shots"),
         "defensive_actions": ("defensive_actions", "defensive_actions"),
     }
@@ -1407,6 +1408,8 @@ def build_player_state_comparison(profile, lens: StateLens, match_ids: Iterable[
         "selected": selected_player | {"evidence": selected_evidence},
         "baseline": baseline_player | {"evidence": baseline_evidence} if baseline_player is not None and baseline_evidence is not None else None,
         "comparison": comparison,
+        # Compatibility-only selected-lens evidence. The stable header role is
+        # supplied separately by the season-role materialization.
         "response_roles": roles,
         "role_formulae": role_formulae(),
         "team_context": {

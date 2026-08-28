@@ -153,6 +153,27 @@ def task_run_team_merge(competition_season_id: int) -> dict:
 
 
 @shared_task
+def task_materialize_player_season_roles(
+    competition_season_id: int,
+    affected_player_ids: list[int] | None = None,
+    affected_team_ids: list[int] | None = None,
+) -> dict:
+    """Refresh stable season roles after verified state and event outputs exist."""
+
+    from ingestion.services.player_season_roles import materialize_player_season_roles
+
+    competition_season = CompetitionSeason.objects.get(pk=competition_season_id)
+    return {
+        "ok": True,
+        **materialize_player_season_roles(
+            competition_season,
+            affected_player_ids=affected_player_ids,
+            affected_team_ids=affected_team_ids,
+        ),
+    }
+
+
+@shared_task
 def task_repair_slice_materializations(competition_season_id: int) -> dict:
     cs = CompetitionSeason.objects.get(pk=competition_season_id)
     team_run = IngestionRun.objects.create(

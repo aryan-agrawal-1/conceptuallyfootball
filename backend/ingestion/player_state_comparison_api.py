@@ -20,6 +20,7 @@ from ingestion.event_profile_api import (
     scope_queryset_to_match,
 )
 from ingestion.models import (
+    PlayerSeasonRole,
     PlayerSeasonEventProfile,
     ProviderMatchEvent,
     ProviderMatchPlayerParticipationBuild,
@@ -35,6 +36,7 @@ from ingestion.services.player_state_comparison import (
     build_player_state_comparison,
     player_state_lens_metadata,
 )
+from ingestion.services.player_season_roles import serialize_season_role
 from ingestion.state_lens import parse_state_lens
 
 
@@ -123,6 +125,14 @@ class PlayerStateComparisonApi(PlayerEventProfileMixin, APIView):
                         ProviderMatchTeamGameStateEpisode,
                         {"provider_match__competition_season": profile.competition_season_id},
                     ),
+                    model_version(
+                        PlayerSeasonRole,
+                        {
+                            "competition_season_id": profile.competition_season_id,
+                            "player_id": profile.player_id,
+                            "is_current": True,
+                        },
+                    ),
                     lens.source_token(),
                 ),
                 builder=lambda: self.build_payload(
@@ -152,7 +162,19 @@ class PlayerStateComparisonApi(PlayerEventProfileMixin, APIView):
             team_context_required=team_context_available,
         )
         metadata = player_state_lens_metadata(profile, match_ids, lens)
+        season_role = PlayerSeasonRole.objects.filter(
+            competition_season=profile.competition_season,
+            player_id=profile.player_id,
+            is_current=True,
+        ).first()
         return comparison | {
+            "season_role": serialize_season_role(season_role),
+            "state_evidence": {
+                "selected": comparison["selected"].get("rates", {}),
+                "baseline": comparison["baseline"].get("rates", {}) if comparison["baseline"] else None,
+                "selected_scope": lens.selected.public(),
+                "baseline_scope": lens.baseline.public() if lens.baseline else None,
+            },
             "selected_match_ref": match_ref,
             "state_lens": metadata,
             "team_context": comparison["team_context"] | {

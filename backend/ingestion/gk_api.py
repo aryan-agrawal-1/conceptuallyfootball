@@ -41,7 +41,9 @@ from ingestion.models import (
     CompetitionSeason,
     PlayerSeasonEventProfile,
     PlayerSeasonGkDerivedStats,
+    PlayerSeasonRole,
 )
+from ingestion.services.player_season_roles import serialize_season_role
 from ingestion.profile_modes import (
     comparison_source_code,
     comparison_scope_options,
@@ -420,6 +422,10 @@ class GkDerivedPlayerSeasonDetailApi(APIView):
                 PlayerSeasonEventProfile,
                 {"is_current": True, "player_id": canonical_player_id},
             ),
+            model_version(
+                PlayerSeasonRole,
+                {"is_current": True, "player_id": canonical_player_id},
+            ),
             model_version(CompetitionSeason),
         )
         try:
@@ -465,6 +471,13 @@ class GkDerivedPlayerSeasonDetailApi(APIView):
         payload["event_profile"] = player_event_profile_flag(
             competition_season,
             canonical_player_id,
+        )
+        payload["season_role"] = serialize_season_role(
+            PlayerSeasonRole.objects.filter(
+                competition_season=competition_season,
+                player_id=canonical_player_id,
+                is_current=True,
+            ).first()
         )
         if scope_percentiles is not None:
             _attach_scope_percentiles(payload, row, scope_percentiles)

@@ -1794,6 +1794,69 @@ class PlayerSeasonEventProfile(models.Model):
         return f"{self.player} @ {self.competition_season} ({scope})"
 
 
+class PlayerSeasonRole(models.Model):
+    """Versioned season-level interpretation of verified player state evidence."""
+
+    competition_season = models.ForeignKey(
+        CompetitionSeason,
+        on_delete=models.CASCADE,
+        related_name="player_season_roles",
+    )
+    player = models.ForeignKey(
+        CanonicalPlayer,
+        on_delete=models.CASCADE,
+        related_name="season_roles",
+    )
+    team_context = models.JSONField(default=list, blank=True)
+    team_context_quality = models.CharField(max_length=32)
+    primary_role = models.CharField(max_length=48, null=True, blank=True)
+    primary_score = models.FloatField(null=True, blank=True)
+    runner_up_role = models.CharField(max_length=48, null=True, blank=True)
+    runner_up_score = models.FloatField(null=True, blank=True)
+    score_margin = models.FloatField(null=True, blank=True)
+    confidence = models.CharField(max_length=24)
+    state_coverage = models.JSONField(default=dict, blank=True)
+    verified_exposure_seconds = models.PositiveIntegerField(default=0)
+    evidence = models.JSONField(default=dict, blank=True)
+    calculation_version = models.CharField(max_length=64, db_index=True)
+    source_event_version = models.CharField(max_length=64)
+    source_state_version = models.CharField(max_length=64)
+    source_participation_version = models.CharField(max_length=64)
+    calculated_through_match = models.ForeignKey(
+        ProviderMatch,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="player_roles_calculated_through",
+    )
+    calculated_through_date = models.DateField(null=True, blank=True)
+    is_current = models.BooleanField(default=True, db_index=True)
+    superseded_at = models.DateTimeField(null=True, blank=True)
+    calculated_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["competition_season", "player"],
+                condition=models.Q(is_current=True),
+                name="uniq_current_player_season_role",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["competition_season", "player", "is_current"],
+                name="player_season_role_idx",
+            ),
+            models.Index(
+                fields=["competition_season", "primary_role", "is_current"],
+                name="season_primary_role_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.player} @ {self.competition_season}: {self.primary_role or 'unestablished'}"
+
+
 class TeamSeasonEventProfile(models.Model):
     competition_season = models.ForeignKey(
         CompetitionSeason,
