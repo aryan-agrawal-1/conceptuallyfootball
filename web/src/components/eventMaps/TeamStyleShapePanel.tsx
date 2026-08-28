@@ -342,11 +342,9 @@ function StateComparisonChart({
   ]
   const width = 1120
   const left = 220
-  const plotWidth = 540
-  const valuesLeft = 800
-  const valueColumnWidth = 78
+  const plotWidth = 870
   const top = 50
-  const rowHeight = 46
+  const rowHeight = 82
   const height = top + Math.max(axes.length, 1) * rowHeight + 30
   const xFor = (position: number) => left + (position / 100) * plotWidth
 
@@ -368,10 +366,9 @@ function StateComparisonChart({
           aria-labelledby="team-style-states-title team-style-states-description"
         >
           <title id="team-style-states-title">Team style by game state</title>
-          <desc id="team-style-states-description">Every row always compares All States, Winning, Drawing and Losing against the all-state competition-season tenth to ninetieth percentile range. Raw values are printed in the columns to the right.</desc>
+          <desc id="team-style-states-description">Every row always compares All States, Winning, Drawing and Losing against the all-state competition-season tenth to ninetieth percentile range. Each raw value is printed with its node.</desc>
           <text x={left} y="16" fill="#8A95B8" fontSize="9" fontWeight="600" letterSpacing="0.35">LOWER IN TYPICAL RANGE</text>
           <text x={left + plotWidth} y="16" textAnchor="end" fill="#8A95B8" fontSize="9" fontWeight="600" letterSpacing="0.35">HIGHER IN TYPICAL RANGE</text>
-          {series.map((item, index) => <text key={`heading-${item.key}`} x={valuesLeft + index * valueColumnWidth} y="16" textAnchor="middle" fill={item.color} fontSize="8" fontWeight="700" letterSpacing="0.3">{item.label.toUpperCase()}</text>)}
           {[0, 50, 100].map(position => (
             <g key={position}>
               <line x1={xFor(position)} y1={top - 13} x2={xFor(position)} y2={height - 18} stroke="#252B43" strokeWidth="1" strokeDasharray={position === 50 ? '2 5' : undefined} />
@@ -391,6 +388,17 @@ function StateComparisonChart({
             const supportedPositions = points.filter(point => point.supported && point.normalized).map(point => point.normalized!.position)
             const min = supportedPositions.length > 1 ? Math.min(...supportedPositions) : null
             const max = supportedPositions.length > 1 ? Math.max(...supportedPositions) : null
+            const readoutLaneByKey = new Map<string, number>()
+            const plottedPoints = points
+              .filter(point => point.normalized)
+              .sort((a, b) => a.normalized!.position - b.normalized!.position)
+            let clusterStart = 0
+            plottedPoints.forEach((point, pointIndex) => {
+              if (pointIndex > 0 && point.normalized!.position - plottedPoints[pointIndex - 1].normalized!.position >= 14) {
+                clusterStart = pointIndex
+              }
+              readoutLaneByKey.set(point.item.key, pointIndex - clusterStart)
+            })
             return (
               <g key={axis.key}>
                 <SvgLabel x={12} y={y + 3} lines={labelLines} fill="#E4EAF8" fontSize={9} />
@@ -402,6 +410,8 @@ function StateComparisonChart({
                   const x = point.normalized ? xFor(point.normalized.position) : null
                   const sparse = !stateAxis || stateAxis.reliability === 'sparse' || stateAxis.reliability === 'unavailable'
                   const description = `${point.item.label} · ${axis.label}: ${rawValue} · ${stateAxis?.reliability ?? 'unavailable'}${point.normalized?.direction ? ` · outside ${point.normalized.direction === 'low' ? 'P10' : 'P90'}` : ''}`
+                  const readoutLane = readoutLaneByKey.get(point.item.key) ?? 0
+                  const readoutAnchor = point.normalized && point.normalized.position <= 7 ? 'start' : point.normalized && point.normalized.position >= 93 ? 'end' : 'middle'
                   return (
                     <g
                       key={point.item.key}
@@ -424,7 +434,7 @@ function StateComparisonChart({
                       <title>{description}</title>
                       {x == null ? null : sparse ? <StateMarker x={x} y={y} color={point.item.color} shape="square" hollow opacity={0.4} /> : <CompareSvgMarker x={x} y={y} color={point.item.color} />}
                       {x != null && point.normalized?.direction ? <EdgeIndicator x={x} y={y} direction={point.normalized.direction} color={point.item.color} /> : null}
-                      <text x={valuesLeft + series.findIndex(item => item.key === point.item.key) * valueColumnWidth} y={y + 3} textAnchor="middle" fill={sparse ? '#65759E' : point.item.color} fontSize="9" fontWeight="600">{rawValue}</text>
+                      {x != null ? <text x={x} y={y + 20 + readoutLane * 12} textAnchor={readoutAnchor} fill={sparse ? '#65759E' : point.item.color} fontSize="9" fontWeight="600" fontFamily="ui-monospace, SFMono-Regular, monospace">{rawValue}</text> : null}
                     </g>
                   )
                 })}
