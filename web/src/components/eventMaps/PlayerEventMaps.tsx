@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { fetchGkShotZones, fetchPlayerEventProfile, fetchPlayerPassMap, fetchPlayerShotZones, fetchPlayerStateComparison } from '../../lib/eventMaps/api'
@@ -10,6 +9,9 @@ import type { ActionGridCell, DefensiveActionFamily, PlayerPassFilter, PlayerPas
 import type { StateDeltaMapContract } from '../../lib/eventMaps/deltaMap'
 import type { ProfileRateMode } from '../../lib/profileMetrics'
 import { PortraitPitch } from './PortraitPitch'
+import { PairedStatePitch } from './PairedStatePitch'
+import { ProfileSelectControl } from '../profile/ProfileScopeSelector'
+import { statePresentation } from '../../lib/eventMaps/statePresentation'
 import { GoalZoneGridView, GoalZoneTotals } from './GoalZones'
 import { StateDeltaMap } from './StateDeltaMap'
 import { StateLensControls } from './StateLensControls'
@@ -329,56 +331,79 @@ function ReliabilityBadge({ status, label }: { status: 'verified' | 'partial' | 
   return <span className={`text-[9px] font-bold uppercase tracking-[0.08em] ${status === 'verified' ? 'text-mint' : status === 'unavailable' ? 'text-ember' : 'text-gold'}`}>{label ?? status}</span>
 }
 
+function StateEvidenceCard({ label, state, children }: { label: string; state: string; children: ReactNode }) {
+  const presentation = statePresentation(state)
+  return (
+    <section className="border border-line/60 bg-paper/40 px-3 py-2" style={{ borderTopColor: presentation.color }}>
+      <p className="text-[9px] font-bold uppercase tracking-[0.1em]" style={{ color: presentation.color }}>{label}</p>
+      <div className="mt-2 space-y-2">{children}</div>
+    </section>
+  )
+}
+
+function PassingCohortCard({ label, state, cohort, rateMode }: { label: string; state: string; cohort: PlayerStateCohort; rateMode: ProfileRateMode }) {
+  return (
+    <StateEvidenceCard label={label} state={state}>
+      <EvidenceRow label="Attempts" value={formatCohortMetric(cohort, 'pass_attempts', rateMode)} />
+      <EvidenceRow label="Completion" value={formatPercent(cohort.passing.completionRate)} />
+      <EvidenceRow label="Progressive passes" value={formatCohortMetric(cohort, 'progressive_passes', rateMode)} />
+      <EvidenceRow label="Mean length · forward" value={`${formatMetres(cohort.passing.meanLengthMetres)} · ${formatMetres(cohort.passing.meanForwardMetres)}`} />
+      <EvidenceRow label="Forward share" value={formatPercent(cohort.passing.forwardShare)} />
+      <EvidenceRow label="Carries" value={formatCohortMetric(cohort, 'carries', rateMode)} />
+      <EvidenceRow label="Progressive carries" value={formatCohortMetric(cohort, 'progressive_carries', rateMode)} />
+      <EvidenceRow label="Carry length · forward" value={`${formatMetres(cohort.carrying.meanLengthMetres)} · ${formatMetres(cohort.carrying.meanForwardMetres)}`} />
+      <EvidenceRow label="Team pass share" value={formatPercent(cohort.teamActionShares.passes?.share)} detail="matched" />
+      <EvidenceRow label="Team progression share" value={formatPercent(cohort.teamActionShares.progressive_actions?.share)} detail="matched" />
+    </StateEvidenceCard>
+  )
+}
+
 function PlayerPassingEvidence({ comparison, rateMode }: { comparison: PlayerStateComparisonPayload; rateMode: ProfileRateMode }) {
   const selected = comparison.selected
   const baseline = comparison.baseline
-  const passesShare = selected.teamActionShares.passes
-  const progressiveShare = selected.teamActionShares.progressive_actions
-  const shareChange = comparison.comparison?.actionShareChange
+  const selectedState = comparison.stateLens.selected.state
+  const baselineState = comparison.stateLens.comparison.baseline?.state ?? 'all'
   return (
     <section className="border border-line-bright bg-panel p-3" aria-label="Player passing and carrying evidence">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
         <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-ink">Passing & carrying evidence</h3>
-        <p className="text-[9px] text-ink-muted">{rateMode === 'per90' ? 'Per 90 verified state minutes' : 'Selected-context totals'}</p>
+        <p className="text-[9px] text-ink-muted">{rateMode === 'per90' ? 'Rate view · verified state minutes' : 'Selected-context totals'}</p>
       </div>
-      <div className="mt-3 grid gap-x-5 gap-y-3 sm:grid-cols-2">
-        <div className="space-y-2">
-          <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-electric">Passing</p>
-          <EvidenceRow label="Attempts" value={formatCohortMetric(selected, 'pass_attempts', rateMode)} detail={rateMode === 'per90' ? '/90' : undefined} />
-          <EvidenceRow label="Completion" value={formatPercent(selected.passing.completionRate)} />
-          <EvidenceRow label="Progressive" value={formatCohortMetric(selected, 'progressive_passes', rateMode)} detail={rateMode === 'per90' ? '/90' : undefined} />
-          <EvidenceRow label="Length / forward" value={`${formatMetres(selected.passing.meanLengthMetres)} · ${formatMetres(selected.passing.meanForwardMetres)}`} detail="mean" />
-          <EvidenceRow label="Forward share" value={formatPercent(selected.passing.forwardShare)} />
-        </div>
-        <div className="space-y-2">
-          <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-gold">Carrying & matched team</p>
-          <EvidenceRow label="Carries" value={formatCohortMetric(selected, 'carries', rateMode)} detail={rateMode === 'per90' ? '/90' : undefined} />
-          <EvidenceRow label="Progressive carries" value={formatCohortMetric(selected, 'progressive_carries', rateMode)} detail={rateMode === 'per90' ? '/90' : undefined} />
-          <EvidenceRow label="Carry length / forward" value={`${formatMetres(selected.carrying.meanLengthMetres)} · ${formatMetres(selected.carrying.meanForwardMetres)}`} detail="mean" />
-          <EvidenceRow label="Team pass share" value={passesShare ? `${formatPercent(passesShare.share)}${shareChange?.passes == null ? '' : ` · ${shareChange.passes >= 0 ? '+' : ''}${(shareChange.passes * 100).toFixed(1)}pp`}` : '—'} detail="matched intervals" />
-          <EvidenceRow label="Team progression share" value={progressiveShare ? `${formatPercent(progressiveShare.share)}${shareChange?.progressive_actions == null ? '' : ` · ${shareChange.progressive_actions >= 0 ? '+' : ''}${(shareChange.progressive_actions * 100).toFixed(1)}pp`}` : '—'} detail="matched intervals" />
-        </div>
+      <div className={`mt-3 grid gap-3 ${baseline ? 'sm:grid-cols-2' : ''}`}>
+        <PassingCohortCard label={scopeLabel(selectedState)} state={selectedState} cohort={selected} rateMode={rateMode} />
+        {baseline ? <PassingCohortCard label={scopeLabel(baselineState)} state={baselineState} cohort={baseline} rateMode={rateMode} /> : null}
       </div>
-      {baseline ? <p className="mt-3 border-t border-line-bright pt-2 text-[9px] leading-relaxed text-ink-muted">Selected-minus-baseline rate changes are shown in Overview; this panel keeps individual pass/carry units explicit. {comparison.teamContext.available ? 'Team shares use team events and derived carries from the same verified intervals.' : 'Choose one team split to enable matched-team shares.'}</p> : null}
+      {baseline ? <div className="mt-3 border-t border-line-bright pt-2">
+        <p className="text-[8px] font-bold uppercase tracking-[0.12em] text-ink-dim">Selected minus comparison</p>
+        <div className="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-2">
+          {(['pass_attempts', 'progressive_passes', 'carries', 'progressive_carries'] as const).map(key => <EvidenceRow key={key} label={key.replaceAll('_', ' ')} value={formatComparisonMetric(comparison, key, rateMode)} />)}
+          <EvidenceRow label="Team pass share" value={comparison.comparison?.actionShareChange.passes == null ? '—' : `${comparison.comparison.actionShareChange.passes >= 0 ? '+' : ''}${(comparison.comparison.actionShareChange.passes * 100).toFixed(1)}pp`} />
+          <EvidenceRow label="Team progression share" value={comparison.comparison?.actionShareChange.progressive_actions == null ? '—' : `${comparison.comparison.actionShareChange.progressive_actions >= 0 ? '+' : ''}${(comparison.comparison.actionShareChange.progressive_actions * 100).toFixed(1)}pp`} />
+        </div>
+      </div> : null}
+      <p className="mt-3 border-t border-line-bright pt-2 text-[9px] leading-relaxed text-ink-muted">{comparison.teamContext.available ? 'Team shares use team events and derived carries from the same verified intervals.' : 'Choose one team split to enable matched-team shares.'}</p>
     </section>
   )
 }
 
 function PlayerShootingEvidence({ comparison, rateMode }: { comparison: PlayerStateComparisonPayload; rateMode: ProfileRateMode }) {
   const selected = comparison.selected
-  const shotShare = selected.teamActionShares.shots
-  const shotShareChange = comparison.comparison?.actionShareChange.shots
+  const baseline = comparison.baseline
+  const card = (label: string, state: string, cohort: PlayerStateCohort) => <StateEvidenceCard label={label} state={state}>
+    <EvidenceRow label="Shots" value={formatCohortMetric(cohort, 'shots', rateMode)} />
+    <EvidenceRow label="Goals" value={formatCohortMetric(cohort, 'goals', rateMode)} />
+    <EvidenceRow label="Big chances" value={formatCohortMetric(cohort, 'big_chance_shots', rateMode)} />
+    <EvidenceRow label="Team shot share" value={formatPercent(cohort.teamActionShares.shots?.share)} detail="matched" />
+  </StateEvidenceCard>
   return (
     <section className="border border-line-bright bg-panel p-3" aria-label="Player shooting evidence">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
         <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-ink">Shooting evidence</h3>
         <p className="text-[9px] text-ink-muted">Rare shots and goals stay visibly qualified.</p>
       </div>
-      <div className="mt-3 grid gap-x-5 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
-        <EvidenceRow label="Shots" value={formatCohortMetric(selected, 'shots', rateMode)} detail={rateMode === 'per90' ? '/90' : undefined} />
-        <EvidenceRow label="Goals" value={formatCohortMetric(selected, 'goals', rateMode)} detail={rateMode === 'per90' ? '/90' : undefined} />
-        <EvidenceRow label="Big chances" value={formatCohortMetric(selected, 'big_chance_shots', rateMode)} detail={rateMode === 'per90' ? '/90' : undefined} />
-        <EvidenceRow label="Team shot share" value={shotShare ? `${formatPercent(shotShare.share)}${shotShareChange == null ? '' : ` · ${shotShareChange >= 0 ? '+' : ''}${(shotShareChange * 100).toFixed(1)}pp`}` : '—'} detail="matched intervals" />
+      <div className={`mt-3 grid gap-3 ${baseline ? 'sm:grid-cols-2' : ''}`}>
+        {card(scopeLabel(comparison.stateLens.selected.state), comparison.stateLens.selected.state, selected)}
+        {baseline ? card(scopeLabel(comparison.stateLens.comparison.baseline?.state ?? 'all'), comparison.stateLens.comparison.baseline?.state ?? 'all', baseline) : null}
       </div>
       <p className="mt-3 border-t border-line-bright pt-2 text-[9px] leading-relaxed text-ink-muted">Shot locations and goal zones remain event-backed. A low raw count is descriptive evidence, not a stable finishing or clutch claim.</p>
     </section>
@@ -405,61 +430,12 @@ function PlayerExposureCard({ label, cohort }: { label: string; cohort: PlayerSt
   )
 }
 
-function PlayerTransitionCohort({ label, cohort }: { label: string; cohort: PlayerStateCohort }) {
-  const transition = cohort.possession.transitionLeverage
-  return (
-    <div className="border border-control-border bg-raised/35 px-3 py-2">
-      <div className="flex items-baseline justify-between gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink">{label}</p>
-        <ReliabilityBadge status={transition.available ? 'verified' : 'unavailable'} label={transition.available ? 'Supported' : 'Unavailable'} />
-      </div>
-      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[10px] text-ink-dim sm:grid-cols-4">
-        <span>Involved <strong className="font-mono font-normal text-ink">{transition.involvedPossessions}</strong></span>
-        <span>Counter <strong className="font-mono font-normal text-ink">{transition.counterPossessions}</strong></span>
-        <span>Box entry <strong className="font-mono font-normal text-ink">{transition.boxEntryPossessions}</strong></span>
-        <span>Shot-producing <strong className="font-mono font-normal text-ink">{transition.shotProducingPossessions}</strong></span>
-        <span>Big chance <strong className="font-mono font-normal text-ink">{transition.bigChancePossessions}</strong></span>
-        <span>Goals <strong className="font-mono font-normal text-ink">{transition.goalPossessions}</strong></span>
-        <span>State changes <strong className="font-mono font-normal text-ink">{transition.stateChangingPossessions}</strong></span>
-        <span>Opportunities <strong className="font-mono font-normal text-ink">{transition.opportunities}</strong></span>
-      </div>
-    </div>
-  )
-}
-
-function PlayerPossessionEvidence({ selected, baseline }: { selected: PlayerStateCohort; baseline: PlayerStateCohort | null }) {
-  return (
-    <div className="border border-line-bright bg-panel px-3 py-3" aria-label="Player possession involvement evidence">
-      <div>
-        <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-ink">Possession involvement</h3>
-        <p className="mt-1 text-[9px] leading-relaxed text-ink-dim">Counters and sequence roles consume the shared inspectable transition-leverage contract. Counts are restricted to linked player actions during verified on-pitch intervals.</p>
-      </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        <PlayerTransitionCohort label="Selected state" cohort={selected} />
-        {baseline ? <PlayerTransitionCohort label="Baseline state" cohort={baseline} /> : <div className="border border-control-border bg-raised/25 px-3 py-2 text-[10px] text-ink-muted">Choose a baseline to compare possession involvement and sequence roles.</div>}
-      </div>
-    </div>
-  )
-}
-
 function PenaltyToggle({ value, onChange }: {
   value: PenaltyOption
   onChange: (value: PenaltyOption) => void
 }) {
   return (
-    <span className="relative inline-flex">
-      <select
-        aria-label="Penalty inclusion"
-        value={value}
-        onChange={event => onChange(event.target.value as PenaltyOption)}
-        className="h-8 max-w-36 appearance-none border border-control-border bg-raised py-0 pl-2.5 pr-9 text-[9px] font-bold uppercase tracking-[0.08em] text-control-fg outline-none focus:border-electric"
-      >
-        {PENALTY_OPTIONS.map(option => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
-      <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-control-fg" aria-hidden="true" />
-    </span>
+    <ProfileSelectControl compact ariaLabel="Penalty inclusion" value={value} options={PENALTY_OPTIONS} onChange={next => onChange(next as PenaltyOption)} className="w-36" />
   )
 }
 
@@ -476,32 +452,8 @@ function ShotMapFilters({
 }) {
   return (
     <span className="flex flex-wrap justify-end gap-1.5">
-      <span className="relative inline-flex">
-        <select
-          aria-label="Shot outcome"
-          value={outcome}
-          onChange={event => onOutcomeChange(event.target.value as ShotOutcomeFilter)}
-          className="h-8 max-w-36 appearance-none border border-control-border bg-raised py-0 pl-2.5 pr-9 text-[9px] font-bold uppercase tracking-[0.08em] text-control-fg outline-none focus:border-electric"
-        >
-          {SHOT_OUTCOME_FILTERS.map(option => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </select>
-        <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-control-fg" aria-hidden="true" />
-      </span>
-      <span className="relative inline-flex">
-        <select
-          aria-label="Shot chance classification"
-          value={chance}
-          onChange={event => onChanceChange(event.target.value as ShotChanceFilter)}
-          className="h-8 max-w-40 appearance-none border border-control-border bg-raised py-0 pl-2.5 pr-9 text-[9px] font-bold uppercase tracking-[0.08em] text-control-fg outline-none focus:border-electric"
-        >
-          {SHOT_CHANCE_FILTERS.map(option => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </select>
-        <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-control-fg" aria-hidden="true" />
-      </span>
+      <ProfileSelectControl compact ariaLabel="Shot outcome" value={outcome} options={SHOT_OUTCOME_FILTERS} onChange={next => onOutcomeChange(next as ShotOutcomeFilter)} className="w-36" />
+      <ProfileSelectControl compact ariaLabel="Shot chance classification" value={chance} options={SHOT_CHANCE_FILTERS} onChange={next => onChanceChange(next as ShotChanceFilter)} className="w-40" />
     </span>
   )
 }
@@ -567,6 +519,17 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
     enabled: profile?.modules.passMap.available === true,
     staleTime: 10 * 60 * 1000,
   })
+  const baselineLensRequest = Object.fromEntries(
+    Object.entries(lensRequest)
+      .filter(([key]) => key.startsWith('baseline_'))
+      .map(([key, value]) => [key.replace(/^baseline_/, ''), value]),
+  )
+  const baselinePassQuery = useQuery({
+    queryKey: ['player-event-passes-baseline', playerId, competition, season, teamId, matchRef, passFilter, passOutcome, baselineLensRequest],
+    queryFn: () => fetchPlayerPassMap(playerId, competition, season, passFilter, passOutcome, teamId, matchRef, baselineLensRequest),
+    enabled: profile?.modules.passMap.available === true && Boolean(lensRequest.baseline_state),
+    staleTime: 10 * 60 * 1000,
+  })
   const zoneVariantKey: ShotZoneVariantKey = shotPenalties
   const shotZonesQuery = useQuery({
     queryKey: ['player-shot-zones', playerId, competition, season, teamId, matchRef, lensRequest],
@@ -584,8 +547,16 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
     () => profile?.touchGrid.reduce((total, cell) => total + cell.rawCount, 0) ?? 0,
     [profile?.touchGrid],
   )
-  const visiblePasses = passMapLayer === 'carries' ? [] : passQuery.data?.passes ?? []
-  const visibleCarries = passMapLayer === 'passes' ? [] : passQuery.data?.carries ?? []
+  const selectedRouteColor = statePresentation(comparisonQuery.data?.stateLens.selected.state).color
+  const baselineRouteColor = statePresentation(comparisonQuery.data?.stateLens.comparison.baseline?.state).color
+  const visiblePasses = passMapLayer === 'carries' ? [] : [
+    ...(passQuery.data?.passes ?? []).map(pass => ({ ...pass, id: `selected-${pass.id}`, color: selectedRouteColor })),
+    ...(baselinePassQuery.data?.passes ?? []).map(pass => ({ ...pass, id: `baseline-${pass.id}`, color: baselineRouteColor })),
+  ]
+  const visibleCarries = passMapLayer === 'passes' ? [] : [
+    ...(passQuery.data?.carries ?? []).map(carry => ({ ...carry, id: `selected-${carry.id}`, color: selectedRouteColor })),
+    ...(baselinePassQuery.data?.carries ?? []).map(carry => ({ ...carry, id: `baseline-${carry.id}`, color: baselineRouteColor })),
+  ]
   const categoryFilters = passMapLayer === 'carries' ? CARRY_FILTERS : PASS_FILTERS
   const passCountLabel = `${passQuery.data?.totalMatching.toLocaleString() ?? '—'} ${PASS_OUTCOMES.find(item => item.value === passOutcome)?.label.toLowerCase()} · ${PASS_FILTERS.find(item => item.value === passFilter)?.label.toLowerCase()}`
   const carryCountLabel = `${passQuery.data?.totalCarries.toLocaleString() ?? '—'} derived carries · ${PASS_FILTERS.find(item => item.value === passFilter)?.label.toLowerCase()}`
@@ -613,6 +584,7 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
 
   const stateLens = profile.stateLens
   const comparison = comparisonQuery.data
+  const stateTransitionLoading = profileQuery.isFetching || comparisonQuery.isFetching || (analysisMode === 'passing' && baselinePassQuery.isFetching)
   const selectedDefensiveCohort = comparison ? playerDefensiveSelection(comparison.selected, defensiveFamilies) : null
   const baselineDefensiveCohort = comparison?.baseline ? playerDefensiveSelection(comparison.baseline, defensiveFamilies) : null
   const selectedStateLabel = scopeLabel(stateLens?.selected.state)
@@ -663,19 +635,13 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
   return (
     <section aria-label="Player event maps" className="relative">
       {teams.length > 1 ? <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-          <label className="flex items-center justify-between gap-2 border border-line-bright bg-panel px-3 text-[9px] font-bold uppercase tracking-[0.14em] text-ink-dim sm:justify-start">
-            Team split
-            <select aria-label="Player team split" value={teamId ?? ''} onChange={event => {
+          <ProfileSelectControl compact label="Team split" ariaLabel="Player team split" value={teamId == null ? '' : String(teamId)} onChange={value => {
               const next = new URLSearchParams(searchParams)
-              if (event.target.value) next.set('team', event.target.value)
+              if (value) next.set('team', value)
               else next.delete('team')
               next.delete('match')
               setLensParams(next)
-            }} className="h-9 min-w-40 max-w-full border border-control-border bg-panel px-3 text-[10px] text-control-fg outline-none hover:border-electric focus:border-electric">
-              <option value="">Season total</option>
-              {teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}
-            </select>
-          </label>
+            }} className="min-w-56" options={[{ value: '', label: 'Season total' }, ...teams.map(team => ({ value: String(team.id), label: team.name }))]} />
       </div> : null}
 
       {stateLens ? <div className="mb-2">
@@ -709,11 +675,15 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
           ['Passes', rateMode === 'per90' && comparison ? formatCohortMetric(comparison.selected, 'pass_attempts', rateMode) : profile.summary.pass_attempts?.toLocaleString() ?? '—'],
           ['Carries', rateMode === 'per90' && comparison ? formatCohortMetric(comparison.selected, 'carries', rateMode) : passQuery.data?.totalAllCarries.toLocaleString() ?? '—'],
           ['Shots', rateMode === 'per90' && comparison ? formatCohortMetric(comparison.selected, 'shots', rateMode) : profile.summary.shots?.toLocaleString() ?? '—'],
-        ] as const).map(([label, value]) => <p key={label} className="text-[9px] text-ink-dim"><span className="mr-1 uppercase tracking-[0.08em]">{label}</span><strong className="font-mono text-[12px] font-normal text-ink">{value}</strong>{rateMode === 'per90' ? <span className="ml-1 text-[8px]">/90</span> : null}</p>)}
+        ] as const).map(([label, value]) => <p key={label} className="text-[9px] text-ink-dim"><span className="mr-1 uppercase tracking-[0.08em]">{label}</span><strong className="font-mono text-[12px] font-normal text-ink">{value}</strong></p>)}
         <span className="ml-auto"><EventCoverageLine coverage={profile.coverage} minutes={profile.coverage.minutes} /></span>
       </div>
 
-      {analysisMode === 'overview' && (locatedTouchCount > 0 || matchRef !== null) ? (
+      {stateTransitionLoading ? <EventMapNotice kind="loading" title={`Loading ${analysisMode === 'overview' ? 'touch' : analysisMode} state evidence`}>
+        The previous state's maps and metrics are hidden while this context loads.
+      </EventMapNotice> : null}
+
+      {!stateTransitionLoading && analysisMode === 'overview' && (locatedTouchCount > 0 || matchRef !== null) ? (
         <div className="mb-3 grid gap-3 lg:grid-cols-12">
           <EventMapCard className="lg:col-span-8" expanded={expanded === 'actions'} onExpandedChange={next => setExpanded(next ? 'actions' : null)} title="Touch map" description="Smoothed density of located touches, with the average position overlaid." exportContext={mapExportContext()} footer={(
             <div className="flex flex-wrap items-center gap-3 text-[8px] font-bold uppercase tracking-[0.1em] text-ink-dim">
@@ -722,22 +692,37 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
             </div>
           )}>
             <MapStage map="actions" expanded={expanded} setExpanded={setExpanded}>
-              {locatedTouchCount ? <PortraitPitch densityCells={profile.touchGrid} densityStyle="smooth" markers={profile.averageTouchLocation ? [{ id: 'average-touch', coordinate: profile.averageTouchLocation, kind: 'jersey', ariaLabel: `Average touch location from ${profile.averageTouchLocation.sampleSize} located touches`, label: 'Avg touch', tone: 'accent' }] : []} ariaLabel={`${profile.playerName} touch-only heatmap with average touch overlay. Attacking left to right.`} /> : <EventMapNotice kind="empty" title="No located touches recorded" />}
+              {comparison?.baseline ? <PairedStatePitch
+                selected={{ state: comparison.stateLens.selected.state, label: selectedStateLabel, cells: comparison.selected.touchGrid, average: comparison.selected.touchLocation.x == null || comparison.selected.touchLocation.y == null ? null : { x: comparison.selected.touchLocation.x, y: comparison.selected.touchLocation.y, sampleSize: comparison.selected.touchLocation.sampleSize }, exposureMinutes: comparison.selected.exposureMinutes, matchCount: comparison.selected.evidence.matchCount }}
+                comparison={{ state: comparison.stateLens.comparison.baseline?.state ?? 'all', label: baselineStateLabel, cells: comparison.baseline.touchGrid, average: comparison.baseline.touchLocation.x == null || comparison.baseline.touchLocation.y == null ? null : { x: comparison.baseline.touchLocation.x, y: comparison.baseline.touchLocation.y, sampleSize: comparison.baseline.touchLocation.sampleSize }, exposureMinutes: comparison.baseline.exposureMinutes, matchCount: comparison.baseline.evidence.matchCount }}
+                ariaLabel={`${profile.playerName} paired touch territory comparison`}
+              /> : locatedTouchCount ? <PortraitPitch densityCells={profile.touchGrid} densityStyle="smooth" markers={profile.averageTouchLocation ? [{ id: 'average-touch', coordinate: profile.averageTouchLocation, kind: 'jersey', ariaLabel: `Average touch location from ${profile.averageTouchLocation.sampleSize} located touches`, label: 'Avg touch', tone: 'accent' }] : []} ariaLabel={`${profile.playerName} touch-only heatmap with average touch overlay. Attacking left to right.`} /> : <EventMapNotice kind="empty" title="No located touches recorded" />}
             </MapStage>
           </EventMapCard>
           <aside className="flex flex-col justify-between border border-line-bright bg-panel p-3 lg:col-span-4">
-            <div>
-              <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink-dim">Observed profile</p>
-              <p className="mt-2 font-mono text-2xl text-ink">{locatedTouchCount.toLocaleString()}</p>
+            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink-dim">Touch evidence</p>
+            {comparison ? <div className="mt-3 space-y-3">
+              <StateEvidenceCard label={selectedStateLabel} state={comparison.stateLens.selected.state}>
+                <EvidenceRow label="Located touches" value={comparison.selected.touchLocation.sampleSize.toLocaleString()} />
+                <EvidenceRow label="Average position" value={comparison.selected.touchLocation.x == null || comparison.selected.touchLocation.y == null ? '—' : `${comparison.selected.touchLocation.x.toFixed(1)} × ${comparison.selected.touchLocation.y.toFixed(1)}`} />
+                <EvidenceRow label="Exposure" value={`${comparison.selected.exposureMinutes.toFixed(0)} min`} />
+              </StateEvidenceCard>
+              {comparison.baseline ? <StateEvidenceCard label={baselineStateLabel} state={comparison.stateLens.comparison.baseline?.state ?? 'all'}>
+                <EvidenceRow label="Located touches" value={comparison.baseline.touchLocation.sampleSize.toLocaleString()} />
+                <EvidenceRow label="Average position" value={comparison.baseline.touchLocation.x == null || comparison.baseline.touchLocation.y == null ? '—' : `${comparison.baseline.touchLocation.x.toFixed(1)} × ${comparison.baseline.touchLocation.y.toFixed(1)}`} />
+                <EvidenceRow label="Exposure" value={`${comparison.baseline.exposureMinutes.toFixed(0)} min`} />
+              </StateEvidenceCard> : null}
+            </div> : <div className="mt-3">
+              <p className="font-mono text-2xl text-ink">{locatedTouchCount.toLocaleString()}</p>
               <p className="text-[10px] text-ink-dim">located touches</p>
-            </div>
-            {profile.averageTouchLocation ? <p className="mt-4 text-[10px] leading-relaxed text-ink-dim">Average position <span className="font-mono text-ink">{profile.averageTouchLocation.x.toFixed(1)} × {profile.averageTouchLocation.y.toFixed(1)}</span></p> : null}
+              {profile.averageTouchLocation ? <p className="mt-4 text-[10px] leading-relaxed text-ink-dim">Average position <span className="font-mono text-ink">{profile.averageTouchLocation.x.toFixed(1)} × {profile.averageTouchLocation.y.toFixed(1)}</span></p> : null}
+            </div>}
             {locatedTouchCount < 100 ? <p className="mt-3 border-l-2 border-gold pl-2 text-[9px] leading-relaxed text-gold">Small sample; read as directional context.</p> : null}
           </aside>
         </div>
       ) : null}
 
-      {analysisMode === 'overview' ? (
+      {!stateTransitionLoading && analysisMode === 'overview' ? (
         <section aria-label="Player context analysis" className="mb-3 space-y-3">
           {comparisonQuery.isLoading ? <EventMapNotice kind="loading" title="Loading verified player comparison" /> : comparisonQuery.isError || !comparison ? (
             <EventMapNotice kind="error" title="Player state comparison failed to load" onRetry={() => comparisonQuery.refetch()}>
@@ -776,7 +761,7 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
                   {(['touches', 'pass_attempts', 'progressive_actions', 'shots', 'defensive_actions', 'carries', 'box_entries', 'take_ons'] as const).map(key => (
                     <div key={key} className="flex items-baseline justify-between gap-2 border-t border-line-bright pt-2 text-[10px]">
                       <span className="text-ink-dim">{key.replaceAll('_', ' ')}</span>
-                      <span className="font-mono text-ink">{formatCohortMetric(comparison.selected, key, rateMode)} {rateMode === 'per90' ? <span className="text-[8px] text-ink-muted">/90</span> : null}{comparison.baseline ? <span className={formatComparisonMetric(comparison, key, rateMode).startsWith('+') ? 'text-mint' : formatComparisonMetric(comparison, key, rateMode).startsWith('-') ? 'text-ember' : 'text-ink-muted'}> ({formatComparisonMetric(comparison, key, rateMode)})</span> : null}</span>
+                      <span className="font-mono text-ink">{formatCohortMetric(comparison.selected, key, rateMode)}{comparison.baseline ? <span className={formatComparisonMetric(comparison, key, rateMode).startsWith('+') ? 'text-mint' : formatComparisonMetric(comparison, key, rateMode).startsWith('-') ? 'text-ember' : 'text-ink-muted'}> ({formatComparisonMetric(comparison, key, rateMode)})</span> : null}</span>
                     </div>
                   ))}
                 </div>
@@ -798,53 +783,7 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
                 </EventMapNotice> : null}
               </div>
 
-              <PlayerPossessionEvidence selected={comparison.selected} baseline={comparison.baseline} />
-
-              {touchShift ? <div className="border border-line-bright bg-panel p-3"><StateDeltaMap contract={touchShift} /></div> : null}
-
-              {comparison.responseRoles.length ? (
-                <div className="border border-line-bright bg-panel px-3 py-3" aria-label="Evidence-backed response roles">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-ink">Response observations</h3>
-                    <span className="text-[9px] uppercase tracking-[0.1em] text-electric">Not a quality score</span>
-                  </div>
-                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                    {comparison.responseRoles.map(role => <div key={role.label} className="border border-control-border bg-raised/35 px-3 py-2">
-                      <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink">{role.label} <span className="font-normal text-electric">· {role.confidence}</span></p>
-                      <p className="mt-1 text-[10px] leading-relaxed text-ink-dim">{role.formula}</p>
-                      <p className="mt-1 text-[9px] text-ink-muted">{role.reliability.verified_exposure_seconds.toLocaleString()} verified seconds · {role.reliability.matches} matches · {role.reliability.events} actions</p>
-                      <details className="mt-2 border-t border-line-bright pt-2 text-[9px] leading-relaxed text-ink-dim">
-                        <summary className="cursor-pointer font-bold uppercase tracking-[0.08em] text-electric">Show supporting observations</summary>
-                        <div className="mt-2 space-y-1">
-                          <p>Player touches: {formatCohortMetric(comparison.selected, 'touches', rateMode)}{rateMode === 'per90' ? ' /90' : ''} selected vs {comparison.baseline ? formatCohortMetric(comparison.baseline, 'touches', rateMode) : '—'} baseline; progressive actions: {formatCohortMetric(comparison.selected, 'progressive_actions', rateMode)} vs {comparison.baseline ? formatCohortMetric(comparison.baseline, 'progressive_actions', rateMode) : '—'}{rateMode === 'per90' ? ' /90' : ''}.</p>
-                          <p>Matched team progressive-action share: {comparison.selected.teamActionShares.progressive_actions?.share == null ? '—' : formatPercent(comparison.selected.teamActionShares.progressive_actions.share)} selected vs {comparison.baseline?.teamActionShares.progressive_actions?.share == null ? '—' : formatPercent(comparison.baseline.teamActionShares.progressive_actions.share)} baseline.</p>
-                          <p>Average touch movement: {comparison.comparison?.movement.player.x == null || comparison.comparison.movement.player.y == null ? 'unsupported' : `${comparison.comparison.movement.player.x >= 0 ? '+' : ''}${comparison.comparison.movement.player.x.toFixed(1)} x · ${comparison.comparison.movement.player.y >= 0 ? '+' : ''}${comparison.comparison.movement.player.y.toFixed(1)} y pitch points`}; position group {comparison.positionGroup}.</p>
-                          <p>Minimum evidence: {role.reliability.evidence_type ?? 'actions'} {role.reliability.evidence_count ?? '—'} / {role.reliability.minimum_evidence_count ?? '—'}; observations are directional and do not imply quality or causality.</p>
-                        </div>
-                      </details>
-                    </div>)}
-                  </div>
-                </div>
-              ) : comparison.baseline ? (
-                <div className="border border-control-border bg-raised/30 px-3 py-2 text-[10px] leading-relaxed text-ink-dim">
-                  No stable response role is assigned. Role labels require both verified cohorts, minimum events and matches, matched team evidence, and compatible observations.
-                </div>
-              ) : null}
-              {comparison.baseline ? <details className="border border-control-border bg-raised/20 px-3 py-2 text-[9px] leading-relaxed text-ink-dim">
-                <summary className="cursor-pointer font-bold uppercase tracking-[0.1em] text-electric">Role rules and thresholds</summary>
-                <ul className="mt-2 space-y-1">
-                  {comparison.roleFormulae.map(rule => {
-                    const label = typeof rule.label === 'string' ? rule.label : 'Unnamed role'
-                    const formula = typeof rule.formula === 'string' ? rule.formula : 'Formula unavailable'
-                    const evidenceType = typeof rule.minimum_evidence_type === 'string' ? rule.minimum_evidence_type : 'evidence'
-                    const evidenceCount = typeof rule.minimum_evidence_count === 'number' ? rule.minimum_evidence_count : '—'
-                    const minimumEvents = typeof rule.minimum_events === 'number' ? rule.minimum_events : '—'
-                    const positions = Array.isArray(rule.eligible_positions) ? rule.eligible_positions.join(', ') : '—'
-                    return <li key={label}><span className="font-bold text-ink">{label}:</span> {formula} · {evidenceType} ≥ {evidenceCount} · actions ≥ {minimumEvents} · positions {positions}.</li>
-                  })}
-                </ul>
-                <p className="mt-2 text-ink-muted">All roles require at least 15 verified minutes, two matches, both cohorts, and matched-team context. Shot-specific rules use a separate low-count threshold; labels describe observed response patterns, not player quality or causality.</p>
-              </details> : null}
+              {touchShift ? <details className="border border-line-bright bg-panel px-3 py-2 text-[9px] text-ink-dim"><summary className="cursor-pointer text-control-fg">Change evidence</summary><div className="mt-2"><StateDeltaMap contract={touchShift} compact /></div></details> : null}
                 </div>
               </details>
             </>
@@ -852,7 +791,7 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
         </section>
       ) : null}
 
-      {analysisMode === 'defending' ? (
+      {!stateTransitionLoading && analysisMode === 'defending' ? (
         <div className="mb-3 grid gap-3 lg:grid-cols-12">
           <EventMapCard className="lg:col-span-8" expanded={expanded === 'actions'} onExpandedChange={next => setExpanded(next ? 'actions' : null)} title="Defensive territory" description="Located defensive actions, normalized within each verified player state cohort." controls={<DefensiveActionSelector selected={defensiveFamilies} onChange={setDefensiveFamilies} />} exportContext={mapExportContext([{ label: 'Defensive actions', value: defensiveFamilies.length === ALL_DEFENSIVE_ACTION_FAMILIES.length ? 'All action types' : `${defensiveFamilies.length} selected types` }])} footer={(
             <div className="space-y-2 text-[10px] leading-relaxed text-ink-dim">
@@ -861,24 +800,35 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
             </div>
           )}>
             <MapStage map="actions" expanded={expanded} setExpanded={setExpanded}>
-              {defensiveShift ? <StateDeltaMap contract={defensiveShift} /> : selectedDefensiveCohort?.defensiveGrid.some(cell => cell.rawCount > 0) ? (
+              {selectedDefensiveCohort && baselineDefensiveCohort ? <PairedStatePitch
+                selected={{ state: comparison?.stateLens.selected.state ?? 'all', label: selectedStateLabel, cells: selectedDefensiveCohort.defensiveGrid, average: selectedDefensiveCohort.defensiveLocation.x == null || selectedDefensiveCohort.defensiveLocation.y == null ? null : { x: selectedDefensiveCohort.defensiveLocation.x, y: selectedDefensiveCohort.defensiveLocation.y, sampleSize: selectedDefensiveCohort.defensiveLocation.sampleSize }, exposureMinutes: selectedDefensiveCohort.exposureMinutes, matchCount: selectedDefensiveCohort.evidence.matchCount }}
+                comparison={{ state: comparison?.stateLens.comparison.baseline?.state ?? 'all', label: baselineStateLabel, cells: baselineDefensiveCohort.defensiveGrid, average: baselineDefensiveCohort.defensiveLocation.x == null || baselineDefensiveCohort.defensiveLocation.y == null ? null : { x: baselineDefensiveCohort.defensiveLocation.x, y: baselineDefensiveCohort.defensiveLocation.y, sampleSize: baselineDefensiveCohort.defensiveLocation.sampleSize }, exposureMinutes: baselineDefensiveCohort.exposureMinutes, matchCount: baselineDefensiveCohort.evidence.matchCount }}
+                unit="share of located defensive actions"
+                ariaLabel={`${profile.playerName} paired defensive territory comparison`}
+              /> : selectedDefensiveCohort?.defensiveGrid.some(cell => cell.rawCount > 0) ? (
                 <PortraitPitch densityCells={selectedDefensiveCohort.defensiveGrid} densityStyle="smooth" ariaLabel={`${profile.playerName} located defensive action territory. Event-backed location only.`} />
               ) : <EventMapNotice kind="empty" title="No located defensive actions in this scope" />}
             </MapStage>
+            {defensiveShift ? <details className="border-t border-line-bright px-3 py-2 text-[9px] text-ink-dim"><summary className="cursor-pointer text-control-fg">Change evidence</summary><div className="mt-2"><StateDeltaMap contract={defensiveShift} compact /></div></details> : null}
           </EventMapCard>
           <div className="lg:col-span-4 border border-line-bright bg-panel p-3">
             <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-ink">Defensive evidence</h3>
-            {selectedDefensiveCohort ? <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[10px] text-ink-dim">
-              <div><dt>Selected actions</dt><dd className="font-mono text-ink">{rateMode === 'per90' ? selectedDefensiveCohort.exposureMinutes > 0 ? ((selectedDefensiveCohort.summary.defensive_actions * 90) / selectedDefensiveCohort.exposureMinutes).toFixed(2) : '—' : selectedDefensiveCohort.summary.defensive_actions.toLocaleString()}{rateMode === 'per90' ? ' / 90' : ''}</dd></div>
-              <div><dt>Located</dt><dd className="font-mono text-ink">{selectedDefensiveCohort.defensiveLocation.sampleSize.toLocaleString()}</dd></div>
-              <div className="col-span-2 border-t border-line-bright pt-2"><dt>Action height</dt><dd className="font-mono text-ink">{selectedDefensiveCohort.defensiveHeight.median == null ? selectedDefensiveCohort.defensiveHeight.mean == null ? '—' : `${selectedDefensiveCohort.defensiveHeight.mean.toFixed(1)}% mean` : `${selectedDefensiveCohort.defensiveHeight.median.toFixed(1)}% median`} <span className="text-[8px] text-ink-muted">event location</span></dd></div>
-            </dl> : <p className="mt-2 text-[10px] text-ink-dim">Loading verified defensive evidence…</p>}
+            {selectedDefensiveCohort ? <div className="mt-3 space-y-3">
+              {[
+                { label: selectedStateLabel, state: comparison?.stateLens.selected.state ?? 'all', cohort: selectedDefensiveCohort },
+                ...(baselineDefensiveCohort ? [{ label: baselineStateLabel, state: comparison?.stateLens.comparison.baseline?.state ?? 'all', cohort: baselineDefensiveCohort }] : []),
+              ].map(item => <StateEvidenceCard key={`${item.state}-${item.label}`} label={item.label} state={item.state}>
+                <EvidenceRow label="Actions" value={rateMode === 'per90' ? item.cohort.exposureMinutes > 0 ? ((item.cohort.summary.defensive_actions * 90) / item.cohort.exposureMinutes).toFixed(2) : '—' : item.cohort.summary.defensive_actions.toLocaleString()} />
+                <EvidenceRow label="Located" value={item.cohort.defensiveLocation.sampleSize.toLocaleString()} />
+                <EvidenceRow label="Action height" value={item.cohort.defensiveHeight.median == null ? item.cohort.defensiveHeight.mean == null ? '—' : `${item.cohort.defensiveHeight.mean.toFixed(1)}% mean` : `${item.cohort.defensiveHeight.median.toFixed(1)}% median`} />
+              </StateEvidenceCard>)}
+            </div> : <p className="mt-2 text-[10px] text-ink-dim">Loading verified defensive evidence…</p>}
           </div>
         </div>
       ) : null}
 
       <div className="grid gap-3 lg:grid-cols-12">
-        {analysisMode === 'passing' && profile.modules.passMap.available ? (
+        {!stateTransitionLoading && analysisMode === 'passing' && profile.modules.passMap.available ? (
           <EventMapCard className={isGoalkeeper ? 'lg:col-span-12' : 'lg:col-span-6'} expanded={expanded === 'passes'} onExpandedChange={next => setExpanded(next ? 'passes' : null)} title="Pass & carry map" description={passMapDescription} exportContext={mapExportContext([
             { label: 'Layers', value: PASS_MAP_LAYERS.find(layer => layer.value === passMapLayer)?.label ?? passMapLayer },
             { label: 'Category', value: PASS_FILTERS.find(filter => filter.value === passFilter)?.label ?? passFilter },
@@ -897,7 +847,8 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
           )} footer={(
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[8px] font-bold uppercase tracking-[0.1em] text-ink-dim" aria-label="Pass map legend">
-                {passMapLayer !== 'carries' ? <span className="inline-flex items-center gap-1.5"><span className="h-px w-4 bg-electric" aria-hidden /> Pass</span> : null}
+                <span className="inline-flex items-center gap-1.5"><span className="h-px w-4" style={{ backgroundColor: selectedRouteColor }} aria-hidden /> {selectedStateLabel}</span>
+                {baselinePassQuery.data ? <span className="inline-flex items-center gap-1.5"><span className="h-px w-4" style={{ backgroundColor: baselineRouteColor }} aria-hidden /> {baselineStateLabel}</span> : null}
                 {passMapLayer !== 'passes' ? <span className="inline-flex items-center gap-1.5 text-gold"><span className="inline-block h-px w-4 border-t border-dashed border-gold" aria-hidden /> Derived carry</span> : null}
               </div>
               {passQuery.data?.truncated && passMapLayer !== 'carries' ? (
@@ -913,19 +864,9 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
               <div className="w-full">
                 <div className="mb-2 flex flex-wrap justify-end gap-1.5" aria-label="Pass and carry filters">
                   {passMapLayer !== 'carries' ? (
-                    <span className="relative inline-flex">
-                      <select aria-label="Pass outcome" value={passOutcome} onChange={event => { setSelection(null); setPassOutcome(event.target.value as PlayerPassOutcome) }} className="h-9 max-w-40 appearance-none border border-control-border bg-raised py-0 pl-2.5 pr-9 text-[9px] font-bold uppercase tracking-[0.08em] text-control-fg outline-none focus:border-electric">
-                        {PASS_OUTCOMES.map(outcome => <option key={outcome.value} value={outcome.value}>{outcome.label}</option>)}
-                      </select>
-                      <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-control-fg" aria-hidden="true" />
-                    </span>
+                    <ProfileSelectControl ariaLabel="Pass outcome" value={passOutcome} options={PASS_OUTCOMES} onChange={next => { setSelection(null); setPassOutcome(next as PlayerPassOutcome) }} className="w-40" />
                   ) : null}
-                  <span className="relative inline-flex">
-                    <select aria-label="Pass and carry category" value={passFilter} onChange={event => { setSelection(null); setPassFilter(event.target.value as PlayerPassFilter) }} className="h-9 max-w-40 appearance-none border border-control-border bg-raised py-0 pl-2.5 pr-9 text-[9px] font-bold uppercase tracking-[0.08em] text-control-fg outline-none focus:border-electric">
-                      {categoryFilters.map(filter => <option key={filter.value} value={filter.value}>{filter.label}</option>)}
-                    </select>
-                    <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-control-fg" aria-hidden="true" />
-                  </span>
+                  <ProfileSelectControl ariaLabel="Pass and carry category" value={passFilter} options={categoryFilters} onChange={next => { setSelection(null); setPassFilter(next as PlayerPassFilter) }} className="w-40" />
                 </div>
                 {passQuery.isLoading ? <EventMapNotice kind="loading" title="Loading pass rows" /> : passQuery.isError || !passQuery.data ? (
                   <EventMapNotice kind="error" title="Pass map failed to load" onRetry={() => passQuery.refetch()} />
@@ -937,11 +878,11 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
           </EventMapCard>
         ) : null}
 
-        {analysisMode === 'passing' ? <div className="lg:col-span-6">
+        {!stateTransitionLoading && analysisMode === 'passing' ? <div className="lg:col-span-6">
           {comparisonQuery.isLoading ? <EventMapNotice kind="loading" title="Loading passing and carrying evidence" /> : comparisonQuery.isError || !comparison ? <EventMapNotice kind="error" title="Passing and carrying evidence failed to load" onRetry={() => comparisonQuery.refetch()} /> : <PlayerPassingEvidence comparison={comparison} rateMode={rateMode} />}
         </div> : null}
 
-        {analysisMode === 'shooting' && profile.modules.shotMap.available ? (
+        {!stateTransitionLoading && analysisMode === 'shooting' && profile.modules.shotMap.available ? (
           <EventMapCard className="lg:col-span-6" expanded={expanded === 'shots'} onExpandedChange={next => setExpanded(next ? 'shots' : null)} title="Shot map" description={shotMapDescription} exportContext={mapExportContext([
             { label: 'Outcome', value: SHOT_OUTCOME_FILTERS.find(outcome => outcome.value === shotOutcome)?.label ?? shotOutcome },
             { label: 'Chance', value: SHOT_CHANCE_FILTERS.find(chance => chance.value === shotChance)?.label ?? shotChance },
@@ -964,7 +905,7 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
           </EventMapCard>
         ) : null}
 
-        {analysisMode === 'shooting' && !isGoalkeeper && profile.modules.shotMap.available ? (
+        {!stateTransitionLoading && analysisMode === 'shooting' && !isGoalkeeper && profile.modules.shotMap.available ? (
           <EventMapCard className="lg:col-span-6" expanded={expanded === 'zones'} onExpandedChange={next => setExpanded(next ? 'zones' : null)} title="Shooting zones" description={`Where ${profile.playerName}'s on-target shots end up in the goal, split into a 3×2 grid. Blocked and off-target shots are excluded.`} exportContext={mapExportContext([
             { label: 'Shot scope', value: PENALTY_OPTIONS.find(option => option.value === shotPenalties)?.label ?? shotPenalties },
           ])} controls={(
@@ -993,7 +934,7 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
           </EventMapCard>
         ) : null}
 
-        {analysisMode === 'shooting' && isGoalkeeper ? (
+        {!stateTransitionLoading && analysisMode === 'shooting' && isGoalkeeper ? (
           <EventMapCard className="lg:col-span-6" expanded={expanded === 'gk-zones'} onExpandedChange={next => setExpanded(next ? 'gk-zones' : null)} title="Shot-facing zones" description="Where opponents' on-target shots were aimed at this goalkeeper's goal, with save rates per zone." exportContext={mapExportContext([
             { label: 'Shot scope', value: PENALTY_OPTIONS.find(option => option.value === shotPenalties)?.label ?? shotPenalties },
           ])} controls={(
@@ -1033,7 +974,7 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
 
       </div>
 
-      {analysisMode === 'shooting' ? (
+      {!stateTransitionLoading && analysisMode === 'shooting' ? (
         comparisonQuery.isLoading ? <EventMapNotice kind="loading" title="Loading shooting evidence" /> : comparisonQuery.isError || !comparison ? (
           <EventMapNotice kind="error" title="Shooting evidence failed to load" onRetry={() => comparisonQuery.refetch()} />
         ) : <PlayerShootingEvidence comparison={comparison} rateMode={rateMode} />

@@ -17,6 +17,7 @@ import {
   EventPitchStage, EventSelectionDetails, ShotMapLegend,
 } from './EventMapUi'
 import { StateLensControls } from './StateLensControls'
+import { ProfileSelectControl } from '../profile/ProfileScopeSelector'
 import { TeamPassStateFlow } from './TeamPassStateFlow'
 import { stateLensRequest } from '../../lib/eventMaps/stateLensUrl'
 import { DefensiveTerritoryMap } from './DefensiveTerritoryMap'
@@ -116,7 +117,7 @@ export function TeamEventMaps({ teamId, competition, season, rateMode }: {
   const [penaltyMode, setPenaltyMode] = useState<ShotPressurePenaltyMode>('exclude')
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('shooting')
   const [interpretationMode, setInterpretationMode] = useState<InterpretationMode>('style')
-  const [styleView, setStyleView] = useState<TeamStyleShapeView>('profile')
+  const [styleView, setStyleView] = useState<TeamStyleShapeView>('states')
   const profileQuery = useQuery({
     queryKey: ['team-event-profile', teamId, competition, season, matchRef, lensRequest],
     queryFn: () => fetchTeamEventProfile(teamId, competition, season, matchRef, lensRequest),
@@ -130,6 +131,7 @@ export function TeamEventMaps({ teamId, competition, season, rateMode }: {
     enabled: analysisMode === 'defending',
   })
   const profile = profileQuery.data
+  const stateTransitionLoading = profileQuery.isFetching && !profileQuery.isLoading
   const shotPressureQuery = useQuery({
     queryKey: ['team-shot-pressure', teamId, competition, season, matchRef, lensRequest, penaltyMode],
     queryFn: () => fetchTeamShotPressure(teamId, competition, season, matchRef, lensRequest, penaltyMode),
@@ -138,7 +140,7 @@ export function TeamEventMaps({ teamId, competition, season, rateMode }: {
   })
   const styleShapeQuery = useQuery({
     queryKey: ['team-style-shape', teamId, competition, season, matchRef, lensRequest, styleView],
-    queryFn: () => fetchTeamStyleShape(teamId, competition, season, matchRef, lensRequest, undefined, styleView === 'states'),
+    queryFn: () => fetchTeamStyleShape(teamId, competition, season, matchRef, lensRequest, undefined, true),
     staleTime: 10 * 60 * 1000,
     enabled: analysisMode === 'interpretation' && interpretationMode === 'style',
   })
@@ -264,17 +266,18 @@ export function TeamEventMaps({ teamId, competition, season, rateMode }: {
       {analysisMode === 'shooting' ? (
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2 border-b border-line-bright pb-2">
           <p className="text-[10px] leading-relaxed text-ink-dim">Penalty treatment applies to both shot maps and all supporting shooting statistics.</p>
-          <select className="event-lens-control w-auto min-w-48" aria-label="Shooting penalty treatment" value={penaltyMode} onChange={event => { setPenaltyMode(event.target.value as ShotPressurePenaltyMode); setSelection(null) }}><option value="exclude">Excluding penalties</option><option value="include">Including penalties</option><option value="only">Penalties only</option></select>
+          <ProfileSelectControl compact ariaLabel="Shooting penalty treatment" value={penaltyMode} onChange={value => { setPenaltyMode(value as ShotPressurePenaltyMode); setSelection(null) }} className="min-w-48" options={[{ value: 'exclude', label: 'Excluding penalties' }, { value: 'include', label: 'Including penalties' }, { value: 'only', label: 'Penalties only' }]} />
         </div>
       ) : null}
 
       <div className="mb-2 flex flex-wrap items-center gap-x-6 gap-y-2 py-2">
-        {analysisMode !== 'interpretation' ? headlineStats.map(([label, value]) => <p key={label} className="text-[10px] text-ink-dim"><span className="mr-1.5 uppercase tracking-[0.1em]">{label}</span><strong className="font-mono text-[13px] font-normal text-ink">{value}</strong></p>) : null}
+        {analysisMode !== 'interpretation' && analysisMode !== 'shooting' ? headlineStats.map(([label, value]) => <p key={label} className="text-[10px] text-ink-dim"><span className="mr-1.5 uppercase tracking-[0.1em]">{label}</span><strong className="font-mono text-[13px] font-normal text-ink">{value}</strong></p>) : null}
         <span className="ml-auto"><EventCoverageLine coverage={profile.coverage} minutes={profile.coverage.minutes} /></span>
       </div>
 
       <div className="space-y-3">
-        {analysisMode === 'shooting' ? <>
+        {stateTransitionLoading ? <EventMapNotice kind="loading" title="Loading team state evidence">The previous state's maps and metrics are hidden while this context loads.</EventMapNotice> : null}
+        {!stateTransitionLoading && analysisMode === 'shooting' ? <>
           <div className="grid items-start gap-3 lg:grid-cols-2">
             {shotCard('for', shotsFor, 'shots-for')}
             {shotCard('against', shotsAgainst, 'shots-against')}
@@ -291,7 +294,7 @@ export function TeamEventMaps({ teamId, competition, season, rateMode }: {
           />
         </> : null}
 
-        {analysisMode === 'passing' ? <TeamPassStateFlow
+        {!stateTransitionLoading && analysisMode === 'passing' ? <TeamPassStateFlow
           teamId={teamId}
           teamName={profile.teamName}
           competition={competition}
@@ -304,7 +307,7 @@ export function TeamEventMaps({ teamId, competition, season, rateMode }: {
           onExpandedChange={next => setExpanded(next ? 'flow' : null)}
         /> : null}
 
-        {analysisMode === 'defending' ? <DefensiveTerritoryMap
+        {!stateTransitionLoading && analysisMode === 'defending' ? <DefensiveTerritoryMap
           payload={defensiveQuery.data}
           loading={defensiveQuery.isLoading}
           error={defensiveQuery.error?.message}
@@ -314,7 +317,7 @@ export function TeamEventMaps({ teamId, competition, season, rateMode }: {
           onExpandedChange={next => setExpanded(next ? 'defensive-territory' : null)}
         /> : null}
 
-        {analysisMode === 'interpretation' && interpretationMode === 'style' ? <TeamStyleShapePanel
+        {!stateTransitionLoading && analysisMode === 'interpretation' && interpretationMode === 'style' ? <TeamStyleShapePanel
           payload={styleShapeQuery.data}
           loading={styleShapeQuery.isLoading}
           error={styleShapeQuery.error?.message}
@@ -333,21 +336,21 @@ export function TeamEventMaps({ teamId, competition, season, rateMode }: {
           onViewChange={setStyleView}
         /> : null}
 
-        {analysisMode === 'interpretation' && interpretationMode === 'lead' ? <LeadControlPanel
+        {!stateTransitionLoading && analysisMode === 'interpretation' && interpretationMode === 'lead' ? <LeadControlPanel
           payload={leadControlQuery.data}
           loading={leadControlQuery.isLoading}
           error={leadControlQuery.error?.message}
           onRetry={() => leadControlQuery.refetch()}
         /> : null}
 
-        {analysisMode === 'interpretation' && interpretationMode === 'response' ? <ResponseHalfLifePanel
+        {!stateTransitionLoading && analysisMode === 'interpretation' && interpretationMode === 'response' ? <ResponseHalfLifePanel
           payload={responseHalfLifeQuery.data}
           loading={responseHalfLifeQuery.isLoading}
           error={responseHalfLifeQuery.error?.message}
           onRetry={() => responseHalfLifeQuery.refetch()}
         /> : null}
 
-        {analysisMode === 'interpretation' && interpretationMode === 'transitions' ? <TransitionLeveragePanel
+        {!stateTransitionLoading && analysisMode === 'interpretation' && interpretationMode === 'transitions' ? <TransitionLeveragePanel
           payload={transitionLeverageQuery.data}
           loading={transitionLeverageQuery.isLoading}
           error={transitionLeverageQuery.error?.message}

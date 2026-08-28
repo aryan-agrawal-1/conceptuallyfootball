@@ -19,6 +19,8 @@ import {
   defensiveActionFamilyLabel,
 } from './defensiveActionFamilies'
 import { DefensiveActionSelector } from './DefensiveActionSelector'
+import { PairedStatePitch } from './PairedStatePitch'
+import { statePresentation } from '../../lib/eventMaps/statePresentation'
 
 function pitchHeight(value: number | null) {
   return value == null ? '—' : `${value.toFixed(1)}%`
@@ -271,8 +273,13 @@ export function DefensiveTerritoryMap({
       <EventPitchStage expanded={expanded} onExpandedChange={onExpandedChange}>
         <div className="grid w-full max-w-[1120px] items-start gap-4 lg:grid-cols-[minmax(0,760px)_minmax(280px,1fr)]">
           <div>
-            {deltaContract ? (
-              <StateDeltaMap contract={deltaContract} compact />
+            {payload.baseline && baselineSummary ? (
+              <PairedStatePitch
+                selected={{ state: payload.stateLens.selected.state, label: payload.stateLens.selected.state === 'all' ? 'All states' : payload.stateLens.selected.state, cells: selectedGrid, average: selectedSummary.meanHeight == null ? null : { x: selectedSummary.meanHeight, y: 50, sampleSize: selectedSummary.located }, exposureMinutes: payload.stateLens.evidence.exposureMinutes, matchCount: payload.stateLens.evidence.matchCount }}
+                comparison={{ state: payload.stateLens.comparison.baseline?.state ?? 'all', label: payload.stateLens.comparison.baseline?.state ?? 'All states', cells: combineGrid(payload.baseline, selectedFamilies), average: baselineSummary.meanHeight == null ? null : { x: baselineSummary.meanHeight, y: 50, sampleSize: baselineSummary.located }, exposureMinutes: payload.stateLens.comparison.baselineEvidence?.exposureMinutes ?? 0, matchCount: payload.stateLens.comparison.baselineEvidence?.matchCount ?? 0 }}
+                unit="share of located defensive actions"
+                ariaLabel={`${payload.teamName} paired defensive territory comparison`}
+              />
             ) : selectedSummary.located ? (
               <PortraitPitch
                 densityCells={selectedGrid}
@@ -280,23 +287,29 @@ export function DefensiveTerritoryMap({
                 ariaLabel={`${payload.teamName} selected defensive action territory. Own goal at zero, opponent goal at one hundred.`}
               />
             ) : <EventMapNotice kind="empty" title="No located defensive actions in this state" />}
+            {deltaContract ? <details className="mt-3 border border-line-bright px-3 py-2 text-[9px] text-ink-dim"><summary className="cursor-pointer text-control-fg">Change evidence</summary><div className="mt-2"><StateDeltaMap contract={deltaContract} compact /></div></details> : null}
           </div>
           <aside className="space-y-3 border-t border-line-bright pt-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0" aria-label="Defensive territory evidence">
-            <div className="grid grid-cols-2 gap-3 text-[12px] leading-relaxed lg:grid-cols-1">
-              <p><span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-ink-dim">Average action position</span>{pitchHeight(selectedSummary.meanHeight)}</p>
-              <p><span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-ink-dim">Actions per minute</span>{rate(selectedSummary.rate)}</p>
-              <p className="col-span-2 text-[11px] text-ink-dim lg:col-span-1">Average distance from the team's own goal for the selected actions.</p>
-            </div>
-            <p className="text-[11px] leading-relaxed text-ink-dim">Brighter blue cells mean more actions · {selectedSummary.located} located · {selectedSummary.unlocated} unlocated.</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-dim">Game-state comparison</p>
+            {[
+              { label: payload.stateLens.selected.state === 'all' ? 'All states' : payload.stateLens.selected.state, state: payload.stateLens.selected.state, summary: selectedSummary },
+              ...(baselineSummary ? [{ label: payload.stateLens.comparison.baseline?.state ?? 'All states', state: payload.stateLens.comparison.baseline?.state ?? 'all', summary: baselineSummary }] : []),
+            ].map(item => {
+              const presentation = statePresentation(item.state)
+              return <section key={`${item.state}-${item.label}`} className="border border-line/60 bg-paper/40 px-3 py-2" style={{ borderTopColor: presentation.color }}>
+                <p className="text-[9px] font-bold uppercase tracking-[0.08em]" style={{ color: presentation.color }}>{item.label}</p>
+                <dl className="mt-2 space-y-2 text-[10px]">
+                  <div className="flex items-baseline justify-between gap-3 border-t border-line-bright pt-2"><dt className="text-ink-dim">Average action position</dt><dd className="font-mono text-ink">{pitchHeight(item.summary.meanHeight)}</dd></div>
+                  <div className="flex items-baseline justify-between gap-3 border-t border-line-bright pt-2"><dt className="text-ink-dim">Actions per minute</dt><dd className="font-mono text-ink">{rate(item.summary.rate)}</dd></div>
+                  <div className="flex items-baseline justify-between gap-3 border-t border-line-bright pt-2"><dt className="text-ink-dim">Located · unlocated</dt><dd className="font-mono text-ink">{item.summary.located} · {item.summary.unlocated}</dd></div>
+                </dl>
+              </section>
+            })}
+            <p className="text-[11px] leading-relaxed text-ink-dim">Average position is measured from the team's own goal. Brighter blue cells mean more actions within that cohort.</p>
             {selectedSummary.located < evidence.evidence.sparseThreshold ? (
               <EventMapNotice kind="sparse" title="Sparse location sample">
                 {selectedSummary.located} located actions; interpret the territory pattern cautiously below {evidence.evidence.sparseThreshold}.
               </EventMapNotice>
-            ) : null}
-            {baselineSummary ? (
-              <p className="text-[11px] leading-relaxed text-ink-dim">
-                Baseline average position {pitchHeight(baselineSummary.meanHeight)} · comparison average {pitchHeight(selectedSummary.meanHeight)}. Both scopes use identical 12×8 bins for State Delta Map comparison.
-              </p>
             ) : null}
             <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] uppercase tracking-[0.08em] text-ink-dim" aria-label="Defensive event family composition">
               {evidence.familyComposition.flatMap(row => (

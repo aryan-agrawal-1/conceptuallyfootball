@@ -16,6 +16,7 @@ export type DenseLayerOptions = {
   successfulColor?: string
   unsuccessfulColor?: string
   densityColor?: string
+  densityDomainMax?: number
   flowColor?: string
   flowDensityColor?: string
   carryColor?: string
@@ -59,9 +60,10 @@ export function drawDensityLayer(
   transform: PitchTransform,
   color = defaultLayerOptions.densityColor,
   style: 'cells' | 'smooth' = 'cells',
+  domainMaximum?: number,
 ) {
-  let maximumShare = 0
-  for (const cell of cells) maximumShare = Math.max(maximumShare, cell.share)
+  let maximumShare = domainMaximum ?? 0
+  if (domainMaximum == null) for (const cell of cells) maximumShare = Math.max(maximumShare, cell.share)
   if (maximumShare === 0) return
   const columnCount = Math.max(1, ...cells.map(cell => cell.column + 1))
   const rowCount = Math.max(1, ...cells.map(cell => cell.row + 1))
@@ -134,8 +136,9 @@ export function drawPassLayer(
     context.beginPath()
     context.moveTo(start.x, start.y)
     context.lineTo(end.x, end.y)
-    context.strokeStyle =
+    context.strokeStyle = pass.color ?? (
       pass.outcome === 'successful' ? colors.successfulColor : colors.unsuccessfulColor
+    )
     context.globalAlpha = selected ? 1 : hasSelection ? 0.2 : densityOpacity
     context.lineWidth = selected ? (pass.keyPass ? 2.1 : 1.65) : pass.keyPass ? 1.35 : 0.95
     context.stroke()
@@ -179,7 +182,7 @@ export function drawCarryLayer(
     context.beginPath()
     context.moveTo(start.x, start.y)
     context.lineTo(end.x, end.y)
-    context.strokeStyle = colors.carryColor ?? '#F0A832'
+    context.strokeStyle = carry.color ?? colors.carryColor ?? '#F0A832'
     context.globalAlpha = selected ? 1 : hasSelection ? 0.24 : 0.9
     context.lineWidth = selected ? 2.5 : 1.5
     context.stroke()
@@ -328,7 +331,7 @@ export function drawDensePitchLayers(
   context.save()
   if (pitchView === 'attacking-half') context.translate(-viewport.width, 0)
   if (layers.densityCells?.length) {
-    drawDensityLayer(context, layers.densityCells, transform, options.densityColor, options.densityStyle)
+    drawDensityLayer(context, layers.densityCells, transform, options.densityColor, options.densityStyle, options.densityDomainMax)
   }
   if (layers.flows?.length) {
     drawFlowLayer(context, layers.flows, transform, options)

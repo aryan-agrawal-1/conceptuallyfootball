@@ -54,6 +54,7 @@ export type PitchMarker = {
   ariaLabel: string
   label?: string
   tone?: 'neutral' | 'accent' | 'warning'
+  color?: string
 }
 
 type PortraitPitchProps = {
@@ -601,6 +602,7 @@ export const PortraitPitch = memo(function PortraitPitch({
                 aria-label={marker.ariaLabel}
                 transform={`translate(${point.x - 18} ${point.y - 17})`}
                 className={`${markerClasses(marker.tone)} pointer-events-none`}
+                style={marker.color ? { color: marker.color, fill: marker.color, stroke: marker.color } : undefined}
               >
                 {marker.label ? (
                   <text

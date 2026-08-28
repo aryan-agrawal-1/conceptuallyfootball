@@ -5,6 +5,9 @@ import { buildDeltaCell, buildDeltaGrid, type StateDeltaMapContract } from '../.
 import type { ShotPressureMetric, TeamShotPressurePayload } from '../../types/eventMaps'
 import { EventMapCard, EventMapNotice, EventPitchStage } from './EventMapUi'
 import { StateDeltaMap } from './StateDeltaMap'
+import { PairedStatePitch } from './PairedStatePitch'
+import type { ActionGridCell, PitchCoordinate, ShotPressureCohort } from '../../types/eventMaps'
+import { statePresentation } from '../../lib/eventMaps/statePresentation'
 
 const BREAKDOWNS = [
   ['open_play', 'Open play'],
@@ -100,7 +103,7 @@ function shotDeltaContract(
     subject: { type: 'team', id: payload.teamId, name: payload.teamName },
     metric: {
       label: `Shots ${perspective} territory delta`,
-      unit: 'shots / 90 state min',
+      unit: 'normalized shot rate',
       mode: 'absolute-rate',
       smoothing: 'none',
       description: 'Zone rates compare the supplied exposure-normalised shot surface. Individual shot dots are intentionally not subtracted.',
@@ -144,6 +147,24 @@ function shotDeltaContract(
   }
 }
 
+function shotPitchCohort(cohort: ShotPressureCohort, perspective: 'for' | 'against') {
+  const surface = cohort.location[perspective]
+  const cells: ActionGridCell[] = surface.cells.map(cell => ({
+    column: cell.column,
+    row: cell.row,
+    rawCount: cell.shotCount,
+    per90Count: cell.shotsPer90 ?? 0,
+    share: cell.locationShare ?? 0,
+  }))
+  const total = cells.reduce((sum, cell) => sum + cell.rawCount, 0)
+  const average: (PitchCoordinate & { sampleSize: number }) | null = total ? {
+    x: cells.reduce((sum, cell) => sum + ((cell.column + 0.5) / surface.columns) * 100 * cell.rawCount, 0) / total,
+    y: cells.reduce((sum, cell) => sum + ((cell.row + 0.5) / surface.rows) * 100 * cell.rawCount, 0) / total,
+    sampleSize: total,
+  } : null
+  return { cells, average }
+}
+
 function Evidence({ payload }: { payload: TeamShotPressurePayload }) {
   const evidence = payload.selected.evidence
   return (
@@ -164,22 +185,34 @@ function BreakdownTable({ payload, perspective, displayMode }: {
   perspective: 'for' | 'against'
   displayMode: ShotDisplayMode
 }) {
-  const frequency = payload.selected.frequency[perspective]
-  const outcomes = payload.selected.outcomes[perspective]
+  const cohorts = [
+    { label: scopeLabel(payload.stateLens.selected), state: payload.stateLens.selected.state, cohort: payload.selected },
+    ...(payload.comparison.baseline ? [{ label: scopeLabel(payload.stateLens.comparison.baseline), state: payload.stateLens.comparison.baseline?.state ?? 'all', cohort: payload.comparison.baseline }] : []),
+  ]
   return (
-    <div className="grid gap-y-4 sm:grid-cols-2 sm:gap-x-12">
-      <div>
-        <h4 className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-ink">Frequency</h4>
-        <div className="space-y-1.5 font-mono text-[11px] text-ink-dim">
-          {BREAKDOWNS.map(([key, label]) => <div key={key} className="flex justify-between gap-3"><span>{label}</span><span>{metricValue(frequency[key], displayMode)}</span></div>)}
-        </div>
-      </div>
-      <div>
-        <h4 className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-ink">Observed outcomes</h4>
-        <div className="space-y-1.5 font-mono text-[11px] text-ink-dim">
-          {OUTCOMES.map(([key, label]) => <div key={key} className="flex justify-between gap-3"><span>{label}</span><span>{metricValue(outcomes[key], displayMode)}</span></div>)}
-        </div>
-      </div>
+    <div className={`grid gap-3 ${cohorts.length > 1 ? 'sm:grid-cols-2' : ''}`}>
+      {cohorts.map(item => {
+        const presentation = statePresentation(item.state)
+        const frequency = item.cohort.frequency[perspective]
+        const outcomes = item.cohort.outcomes[perspective]
+        return <section key={`${item.state}-${item.label}`} className="border border-line/60 bg-paper/40 px-3 py-2" style={{ borderTopColor: presentation.color }}>
+          <h4 className="text-[9px] font-bold uppercase tracking-[0.1em]" style={{ color: presentation.color }}>{item.label}</h4>
+          <div className="mt-3 grid gap-4 sm:grid-cols-2">
+            <div>
+              <p className="mb-1 text-[9px] font-bold uppercase tracking-[0.12em] text-ink-dim">Frequency</p>
+              <div className="space-y-1.5 font-mono text-[10px] text-ink-dim">
+                {BREAKDOWNS.map(([key, label]) => <div key={key} className="flex justify-between gap-3"><span>{label}</span><span className="text-ink">{metricValue(frequency[key], displayMode)}</span></div>)}
+              </div>
+            </div>
+            <div>
+              <p className="mb-1 text-[9px] font-bold uppercase tracking-[0.12em] text-ink-dim">Observed outcomes</p>
+              <div className="space-y-1.5 font-mono text-[10px] text-ink-dim">
+                {OUTCOMES.map(([key, label]) => <div key={key} className="flex justify-between gap-3"><span>{label}</span><span className="text-ink">{metricValue(outcomes[key], displayMode)}</span></div>)}
+              </div>
+            </div>
+          </div>
+        </section>
+      })}
     </div>
   )
 }
@@ -201,6 +234,8 @@ export function ShotPressurePanel({ payload, loading, error, onRetry, exportCont
   const cohort = payload.selected
   const first = cohort.firstShot[perspective]
   const deltaContract = shotDeltaContract(payload, perspective)
+  const selectedPitch = shotPitchCohort(payload.selected, perspective)
+  const baselinePitch = payload.comparison.baseline ? shotPitchCohort(payload.comparison.baseline, perspective) : null
   return (
     <article className="py-3" aria-label="State-conditioned shot pressure">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
@@ -215,10 +250,10 @@ export function ShotPressurePanel({ payload, loading, error, onRetry, exportCont
       </div>
       <div className="space-y-3">
         <BreakdownTable payload={payload} perspective={perspective} displayMode={displayMode} />
-        {deltaContract ? (
+        {payload.comparison.baseline && baselinePitch ? (
           <EventMapCard
-            title={`Shots ${perspective} territory delta`}
-            description="Compare state-minute shot territory without subtracting individual shot markers."
+            title={`Shots ${perspective} territory comparison`}
+            description="Paired state density with a shared scale; subtractive change remains secondary evidence."
             expanded={expanded}
             onExpandedChange={onExpandedChange}
             exportContext={{
@@ -226,13 +261,19 @@ export function ShotPressurePanel({ payload, loading, error, onRetry, exportCont
               filters: [
                 ...exportContext.filters,
                 { label: 'Shot perspective', value: perspective === 'for' ? 'Shots for' : 'Shots against' },
-                { label: 'Display', value: displayMode === 'per90' ? 'Per 90 state minutes' : 'Total supporting statistics' },
+                { label: 'Display', value: displayMode === 'per90' ? 'Rate view' : 'Total supporting statistics' },
               ],
             }}
           >
             <EventPitchStage expanded={expanded} onExpandedChange={onExpandedChange}>
-              <StateDeltaMap contract={deltaContract} compact />
+              <PairedStatePitch
+                selected={{ state: payload.stateLens.selected.state, label: scopeLabel(payload.stateLens.selected), cells: selectedPitch.cells, average: selectedPitch.average, exposureMinutes: payload.selected.evidence.exposureMinutes, matchCount: payload.selected.evidence.matchCount }}
+                comparison={{ state: payload.stateLens.comparison.baseline?.state ?? 'all', label: scopeLabel(payload.stateLens.comparison.baseline), cells: baselinePitch.cells, average: baselinePitch.average, exposureMinutes: payload.comparison.baseline.evidence.exposureMinutes, matchCount: payload.comparison.baseline.evidence.matchCount }}
+                unit="share of located shots"
+                ariaLabel={`${payload.teamName} paired shots ${perspective} territory comparison`}
+              />
             </EventPitchStage>
+            {deltaContract ? <details className="border-t border-line-bright px-3 py-2 text-[9px] text-ink-dim"><summary className="cursor-pointer text-control-fg">Change evidence</summary><div className="mt-2"><StateDeltaMap contract={deltaContract} compact /></div></details> : null}
           </EventMapCard>
         ) : payload.comparison.enabled ? (
           <EventMapNotice kind="unavailable" title="Shot territory comparison unavailable">
