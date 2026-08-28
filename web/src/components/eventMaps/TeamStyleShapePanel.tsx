@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { EventMapExportContext } from '../../lib/eventMaps/exportContext'
 import type {
   TeamStyleAxis,
@@ -13,6 +13,8 @@ import type {
 import { radarLabelLines } from '../../lib/profileMetrics'
 import { EventMapCard, EventMapNotice } from './EventMapUi'
 import { STATE_PRESENTATION } from '../../lib/eventMaps/statePresentation'
+import { COMPARISON_SLOT_STROKES } from '../../lib/comparisonConstants'
+import { CompareMarkerIcon, CompareSvgMarker } from '../comparisons/CompareMarkerShape'
 
 const CATEGORY_ORDER: TeamStyleAxisCategory[] = [
   'build_up',
@@ -159,35 +161,33 @@ function SvgLabel({
 
 function ChartLegend({ series }: { series: ChartSeries[] }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-ink-dim" aria-label="Style chart legend">
+    <div className="flex flex-wrap justify-center gap-2" aria-label="Style chart legend">
       {series.map(item => (
-        <span key={item.key} className="inline-flex items-center gap-1.5">
-          <span className={`inline-block size-2 ${item.shape === 'circle' ? 'rounded-full' : item.shape === 'square' ? 'rounded-[1px]' : 'rotate-45'}`} style={{ backgroundColor: item.color }} aria-hidden />
-          {item.label}
+        <span key={item.key} className="inline-flex items-center gap-2 border border-electric/20 bg-panel/55 px-3 py-2 text-[12px] font-medium text-ink">
+          <CompareMarkerIcon color={item.color} />
+          <span>{item.label}</span>
         </span>
       ))}
     </div>
   )
 }
 
-function stateSeriesColor(state: string | undefined, fallback: string) {
-  return STATE_CONFIG.find(item => item.key === state)?.color ?? fallback
-}
-
 function radarSeries(payload: TeamStyleShapePayload): ChartSeries[] {
   if (payload.comparison.enabled && payload.baseline) {
     return [
-      { key: 'selected', label: scopeLabel(payload.selected.scope), color: stateSeriesColor(payload.selected.scope.state, '#4A9EF5'), shape: 'circle', cohort: payload.selected },
-      { key: 'comparison', label: scopeLabel(payload.baseline.scope), color: stateSeriesColor(payload.baseline.scope.state, '#E6B85C'), shape: 'square', cohort: payload.baseline },
+      { key: 'selected', label: scopeLabel(payload.selected.scope), color: COMPARISON_SLOT_STROKES[0], shape: 'square', cohort: payload.selected },
+      { key: 'comparison', label: scopeLabel(payload.baseline.scope), color: COMPARISON_SLOT_STROKES[1], shape: 'square', cohort: payload.baseline },
     ]
   }
   if (payload.selected.scope.state !== 'all') {
-    return [{ key: 'selected', label: scopeLabel(payload.selected.scope), color: stateSeriesColor(payload.selected.scope.state, '#4A9EF5'), shape: 'circle', cohort: payload.selected }]
+    return [{ key: 'selected', label: scopeLabel(payload.selected.scope), color: COMPARISON_SLOT_STROKES[0], shape: 'square', cohort: payload.selected }]
   }
-  return [{ key: 'overall', label: 'All states', color: '#4A9EF5', shape: 'diamond', cohort: payload.overall }]
+  return [{ key: 'overall', label: 'All states', color: COMPARISON_SLOT_STROKES[0], shape: 'square', cohort: payload.overall }]
 }
 
 function StyleComparisonRadar({ payload, axes }: { payload: TeamStyleShapePayload; axes: TeamStyleAxis[] }) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [tip, setTip] = useState<{ axisIndex: number; x: number; y: number } | null>(null)
   const center = 200
   const radius = 124
   const count = Math.max(axes.length, 1)
@@ -211,7 +211,7 @@ function StyleComparisonRadar({ payload, axes }: { payload: TeamStyleShapePayloa
   }))
 
   return (
-    <div className="mx-auto w-full max-w-[520px]">
+    <div ref={wrapRef} className="relative mx-auto w-full max-w-[720px]">
       <svg viewBox="0 0 400 400" className="h-auto w-full overflow-visible" role="img" aria-labelledby="team-style-radar-title team-style-radar-description">
         <title id="team-style-radar-title">Team style comparison radar</title>
         <desc id="team-style-radar-description">The radar follows the selected State Lens cohorts. Distance from the centre is position within the competition-season all-state typical range, not quality.</desc>
@@ -232,15 +232,43 @@ function StyleComparisonRadar({ payload, axes }: { payload: TeamStyleShapePayloa
           {points.map(value => {
             const sparse = value.stateAxis?.reliability === 'sparse' || value.stateAxis?.reliability === 'unavailable' || !value.normalized
             const description = `${item.label} · ${value.axis.label}: ${value.stateAxis ? formatValue(value.axis, value.stateAxis.value) : 'unavailable'}`
-            return <g key={`${item.key}-${value.axis.key}`} tabIndex={0} role="img" aria-label={description}>
+            return <g key={`${item.key}-${value.axis.key}`} role="img" aria-label={description}>
               <title>{description}</title>
-              <StateMarker x={value.coordinate.x} y={value.coordinate.y} color={item.color} shape={item.shape} size={4} hollow={sparse} opacity={sparse ? 0.4 : 1} />
+              <circle
+                cx={value.coordinate.x}
+                cy={value.coordinate.y}
+                r="13"
+                fill="transparent"
+                className="cursor-crosshair outline-none"
+                tabIndex={0}
+                onMouseEnter={event => {
+                  const bounds = wrapRef.current?.getBoundingClientRect()
+                  if (bounds) setTip({ axisIndex: axes.findIndex(axis => axis.key === value.axis.key), x: event.clientX - bounds.left, y: event.clientY - bounds.top })
+                }}
+                onMouseMove={event => {
+                  const bounds = wrapRef.current?.getBoundingClientRect()
+                  if (bounds) setTip(current => current ? { ...current, x: event.clientX - bounds.left, y: event.clientY - bounds.top } : current)
+                }}
+                onMouseLeave={() => setTip(null)}
+                onFocus={() => setTip({ axisIndex: axes.findIndex(axis => axis.key === value.axis.key), x: (value.coordinate.x / 400) * (wrapRef.current?.clientWidth ?? 400), y: (value.coordinate.y / 400) * (wrapRef.current?.clientWidth ?? 400) })}
+                onBlur={() => setTip(null)}
+              />
+              {sparse ? <StateMarker x={value.coordinate.x} y={value.coordinate.y} color={item.color} shape="square" size={4} hollow opacity={0.4} /> : <CompareSvgMarker x={value.coordinate.x} y={value.coordinate.y} color={item.color} size={4} />}
             </g>
           })}
         </g>)}
       </svg>
       <ChartLegend series={series} />
       <p className="mt-2 text-center text-[9px] text-ink-muted">Distance from centre = position within the all-state competition-season P10–P90 range · not a quality score</p>
+      {tip && axes[tip.axisIndex] ? <div className="pointer-events-none absolute z-50 min-w-[210px] -translate-x-1/2 -translate-y-[calc(100%+10px)] border border-electric/40 bg-panel/95 px-2.5 py-2 text-[10px] shadow-xl" style={{ left: tip.x, top: tip.y }}>
+        <p className="mb-1 text-[9px] font-bold uppercase tracking-[0.16em] text-ink-muted">{axes[tip.axisIndex].label}</p>
+        <div className="space-y-1 font-mono">
+          {series.map(item => {
+            const axis = item.cohort.axes[axes[tip.axisIndex].key]
+            return <p key={item.key} className="flex items-baseline justify-between gap-4"><span style={{ color: item.color }}>{item.label}</span><span className="text-ink">{axis ? formatValue(axis) : '—'}</span></p>
+          })}
+        </div>
+      </div> : null}
     </div>
   )
 }
@@ -303,6 +331,8 @@ function StateComparisonChart({
   payload: TeamStyleShapePayload
   axes: TeamStyleAxis[]
 }) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [tip, setTip] = useState<{ description: string; x: number; y: number } | null>(null)
   const series: ChartSeries[] = [
     { key: 'overall', label: 'All states', color: REFERENCE, shape: 'diamond', cohort: payload.overall },
     ...STATE_CONFIG.flatMap(state => {
@@ -329,7 +359,7 @@ function StateComparisonChart({
   }
 
   return (
-    <div className="space-y-2">
+    <div ref={wrapRef} className="relative space-y-2">
       <div className="overflow-x-auto">
         <svg
           viewBox={`0 0 ${width} ${height}`}
@@ -373,9 +403,26 @@ function StateComparisonChart({
                   const sparse = !stateAxis || stateAxis.reliability === 'sparse' || stateAxis.reliability === 'unavailable'
                   const description = `${point.item.label} · ${axis.label}: ${rawValue} · ${stateAxis?.reliability ?? 'unavailable'}${point.normalized?.direction ? ` · outside ${point.normalized.direction === 'low' ? 'P10' : 'P90'}` : ''}`
                   return (
-                    <g key={point.item.key} tabIndex={0} role="img" aria-label={description}>
+                    <g
+                      key={point.item.key}
+                      tabIndex={0}
+                      role="img"
+                      aria-label={description}
+                      className="cursor-crosshair outline-none"
+                      onMouseEnter={event => {
+                        const bounds = wrapRef.current?.getBoundingClientRect()
+                        if (bounds) setTip({ description, x: event.clientX - bounds.left, y: event.clientY - bounds.top })
+                      }}
+                      onMouseMove={event => {
+                        const bounds = wrapRef.current?.getBoundingClientRect()
+                        if (bounds) setTip({ description, x: event.clientX - bounds.left, y: event.clientY - bounds.top })
+                      }}
+                      onMouseLeave={() => setTip(null)}
+                      onFocus={() => setTip({ description, x: x == null ? left : x, y })}
+                      onBlur={() => setTip(null)}
+                    >
                       <title>{description}</title>
-                      {x == null ? null : <StateMarker x={x} y={y} color={point.item.color} shape={point.item.shape} hollow={sparse} opacity={sparse ? 0.4 : 1} />}
+                      {x == null ? null : sparse ? <StateMarker x={x} y={y} color={point.item.color} shape="square" hollow opacity={0.4} /> : <CompareSvgMarker x={x} y={y} color={point.item.color} />}
                       {x != null && point.normalized?.direction ? <EdgeIndicator x={x} y={y} direction={point.normalized.direction} color={point.item.color} /> : null}
                       <text x={valuesLeft + series.findIndex(item => item.key === point.item.key) * valueColumnWidth} y={y + 3} textAnchor="middle" fill={sparse ? '#65759E' : point.item.color} fontSize="9" fontWeight="600">{rawValue}</text>
                     </g>
@@ -388,6 +435,9 @@ function StateComparisonChart({
       </div>
       <ChartLegend series={series} />
       <p className="text-[9px] leading-relaxed text-ink-muted">All four cohorts stay visible regardless of the active State Lens. Position is a linear location within each metric's all-state P10–P90 range, not a percentile or quality score; sparse observations are hollow.</p>
+      {tip ? <div className="pointer-events-none absolute z-50 min-w-[220px] -translate-x-1/2 -translate-y-[calc(100%+10px)] border border-electric/40 bg-panel/95 px-2.5 py-2 text-[10px] leading-relaxed text-ink shadow-xl" style={{ left: tip.x, top: tip.y }}>
+        {tip.description}
+      </div> : null}
     </div>
   )
 }
@@ -562,6 +612,7 @@ export function TeamStyleShapePanel({
     [activeDefinitions, payload],
   )
   const [localView, setLocalView] = useState<TeamStyleShapeView>('profile')
+  const [statesExpanded, setStatesExpanded] = useState(false)
 
   if (loading) return <EventMapNotice kind="loading" title="Loading team style shape" />
   if (error || !payload) return <EventMapNotice kind="error" title="Team style shape failed to load" onRetry={onRetry}>{error ?? 'The Team Style Shape service returned no data.'}</EventMapNotice>
@@ -580,10 +631,17 @@ export function TeamStyleShapePanel({
   void onViewChange
   void onGameStateViewRequest
 
+  const sharedFilters = [
+    ...resolvedExportContext.filters,
+    { label: 'Style axes', value: `${activeAxes.length} selected` },
+    { label: 'Percentile cohort', value: payload.cohort.percentilesAvailable ? `${payload.cohort.teamCount} competition-season teams` : 'Raw evidence only' },
+  ]
+
   return (
+    <div className="space-y-3">
     <EventMapCard
-      title="Team Style Shape"
-      description="Selected-state style shape with an all-state reference and a three-state comparison. Percentiles are not quality grades."
+      title="State Lens radar"
+      description="The active State Lens rendered through the shared comparison-chart visual language. Distance from the centre is typical-range position, not quality."
       controls={(
         <AxisPicker definitions={payload.axisDefinitions} selected={activeAxisKeys} onChange={setAxisSelection} />
       )}
@@ -591,30 +649,29 @@ export function TeamStyleShapePanel({
       onExpandedChange={onExpandedChange}
       exportContext={{
         ...resolvedExportContext,
-        filters: [
-          ...resolvedExportContext.filters,
-          { label: 'Style axes', value: `${activeAxes.length} selected` },
-          { label: 'Percentile cohort', value: payload.cohort.percentilesAvailable ? `${payload.cohort.teamCount} competition-season teams` : 'Raw evidence only' },
-        ],
+        filters: sharedFilters,
       }}
     >
-      <div className="w-full max-w-[1180px] space-y-3" aria-label="Team Style Shape evidence">
-        <section className="border border-line-bright bg-panel p-3" aria-labelledby="style-radar-heading">
-          <div>
-            <h4 id="style-radar-heading" className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink">State Lens radar</h4>
-            <p className="mt-1 text-[10px] leading-relaxed text-ink-dim">{payload.canonicalTeamName} · {payload.baseline ? `${scopeLabel(payload.selected.scope)} compared with ${scopeLabel(payload.baseline.scope)}` : scopeLabel(payload.selected.scope)}.</p>
-          </div>
-          <div className="mt-3"><StyleComparisonRadar payload={payload} axes={activeAxes} /></div>
-        </section>
+      <div className="w-full max-w-[1180px] p-2 sm:p-3" aria-label="State Lens radar evidence">
+        <p className="mb-3 text-[10px] leading-relaxed text-ink-dim">{payload.canonicalTeamName} · {payload.baseline ? `${scopeLabel(payload.selected.scope)} compared with ${scopeLabel(payload.baseline.scope)}` : scopeLabel(payload.selected.scope)}.</p>
+        <StyleComparisonRadar payload={payload} axes={activeAxes} />
+      </div>
+    </EventMapCard>
 
-        <section className="border border-line-bright bg-panel p-3" aria-labelledby="style-states-heading">
-          <div>
-            <h4 id="style-states-heading" className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink">All-state comparison</h4>
-            <p className="mt-1 text-[10px] leading-relaxed text-ink-dim">All States, Winning, Drawing and Losing remain visible regardless of the active State Lens.</p>
-          </div>
-          <div className="mt-3"><StateComparisonChart payload={payload} axes={activeAxes} /></div>
-        </section>
+    <EventMapCard
+      title="All-state comparison"
+      description="All States, Winning, Drawing and Losing remain visible regardless of the active State Lens. Position is typical-range context, not a quality score."
+      expanded={statesExpanded}
+      onExpandedChange={setStatesExpanded}
+      exportContext={{ ...resolvedExportContext, filters: sharedFilters }}
+    >
+      <div className="w-full max-w-[1180px] p-2 sm:p-3" aria-label="All-state style comparison evidence">
+        <p className="mb-3 text-[10px] leading-relaxed text-ink-dim">All States, Winning, Drawing and Losing remain visible regardless of the active State Lens.</p>
+        <StateComparisonChart payload={payload} axes={activeAxes} />
+      </div>
+    </EventMapCard>
 
+      <div className="border border-line-bright bg-panel" aria-label="Team style methodology">
         <details className="group border border-line-bright bg-panel">
           <summary className="cursor-pointer list-none px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.12em] text-control-fg hover:text-ink">Evidence & methodology <span className="ml-2 font-normal normal-case tracking-normal text-ink-muted">{payload.selected.exposure.matchCount} matches · {payload.cohort.teamCount} team cohort</span></summary>
           <div className="space-y-3 border-t border-line-bright p-3">
@@ -633,11 +690,11 @@ export function TeamStyleShapePanel({
           </div>
         </details>
         {payload.selected.reliability.sparseAxes.length || (payload.baseline?.reliability.sparseAxes.length ?? 0) ? (
-          <EventMapNotice kind="sparse" title="Comparison contains sparse axes">
+          <div className="p-3"><EventMapNotice kind="sparse" title="Comparison contains sparse axes">
             Raw selected and baseline evidence remains available. State positions are withheld for axes below their family-specific minimum evidence rule.
-          </EventMapNotice>
+          </EventMapNotice></div>
         ) : null}
       </div>
-    </EventMapCard>
+    </div>
   )
 }
