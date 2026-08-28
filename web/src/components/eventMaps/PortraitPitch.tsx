@@ -39,6 +39,7 @@ import {
   type SelectablePitchEvent,
 } from '../../lib/eventMaps/selection'
 import { PitchMarkings } from './PitchMarkings'
+import { HudTooltipSurface } from '../hud/HudTooltip'
 
 export type PitchLabel = {
   id: string
@@ -72,8 +73,9 @@ type PortraitPitchProps = {
   layerOptions?: DenseLayerOptions
   pitchView?: 'full' | 'attacking-half'
   densityStyle?: 'cells' | 'smooth'
-  selectedFlowId?: string | null
-  onSelectedFlowChange?: (flow: TeamPassFlow | null) => void
+  selectedFlowBin?: string | null
+  onSelectedFlowBinChange?: (bin: string | null) => void
+  flowCohorts?: Array<{ state: TeamPassFlow['gameState']; label: string; color: string }>
   eventSelectionMode?: 'hover' | 'click'
 }
 
@@ -154,6 +156,10 @@ function flowAriaLabel(flow: TeamPassFlow) {
   return attempts == null
     ? `${state}${flow.completedCount} completed passes from this area, mean length ${flow.meanLength.toFixed(1)} metres`
     : `${state}${attempts} attempted passes from this area, ${flow.completedCount} completed, mean length ${flow.meanLength.toFixed(1)} metres`
+}
+
+function flowBinKey(flow: TeamPassFlow) {
+  return `${flow.bin.column}-${flow.bin.row}`
 }
 
 function createSelectableEvents(passes: EventPass[], carries: EventCarry[], shots: EventShot[]) {
@@ -331,8 +337,9 @@ export const PortraitPitch = memo(function PortraitPitch({
   layerOptions,
   pitchView = 'full',
   densityStyle = 'cells',
-  selectedFlowId,
-  onSelectedFlowChange,
+  selectedFlowBin,
+  onSelectedFlowBinChange,
+  flowCohorts = [],
   eventSelectionMode = 'hover',
 }: PortraitPitchProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -355,7 +362,19 @@ export const PortraitPitch = memo(function PortraitPitch({
   )
   const selectedEvent =
     selectableEvents.find((event) => event.id === selectedEventId) ?? null
-  const selectedFlow = flows.find(flow => flow.id === selectedFlowId) ?? null
+  const flowBins = useMemo(() => {
+    const bins = new Map<string, TeamPassFlow[]>()
+    flows.forEach(flow => {
+      const key = flowBinKey(flow)
+      const rows = bins.get(key) ?? []
+      rows.push(flow)
+      bins.set(key, rows)
+    })
+    return [...bins.entries()].map(([key, rows]) => ({ key, rows }))
+  }, [flows])
+  const selectedFlows = selectedFlowBin == null ? [] : flowBins.find(bin => bin.key === selectedFlowBin)?.rows ?? []
+  const selectedFlow = selectedFlows[0] ?? null
+  const selectedFlowId = selectedFlowBin == null ? null : `bin:${selectedFlowBin}`
   const hasSelection = selectedEvent !== null
 
   const selectEvent = useCallback(
@@ -454,25 +473,24 @@ export const PortraitPitch = memo(function PortraitPitch({
         />
         {selectedFlow ? (
           <div
-            className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2 border border-gold/60 bg-panel/95 px-2.5 py-2 font-mono text-[8px] leading-relaxed text-ink-dim shadow-[0_10px_28px_rgba(0,0,0,0.45)] backdrop-blur-sm"
+            className="pointer-events-none absolute z-20 w-[min(22rem,72%)] -translate-x-1/2 -translate-y-1/2"
             style={{
               left: `${Math.min(82, Math.max(18, selectedFlow.origin.x))}%`,
               top: `${Math.min(80, Math.max(20, selectedFlow.origin.y))}%`,
             }}
             role="status"
           >
-            {selectedFlow.gameState ? (
-              <><span className="font-bold uppercase" style={{ color: selectedFlow.color }}>{selectedFlow.gameState}</span><span className="mx-1.5 text-gold/70">·</span></>
-            ) : null}
-            <span className="font-bold text-ink">
-              {selectedFlow.attemptedCount == null
-                ? `${selectedFlow.completedCount.toLocaleString()} completed`
-                : `${selectedFlow.attemptedCount.toLocaleString()} attempted · ${selectedFlow.completedCount.toLocaleString()} completed`}
-            </span>
-            <span className="mx-1.5 text-gold/70">·</span>
-            {selectedFlow.meanLength.toFixed(1)}m mean
-            <span className="mx-1.5 text-gold/70">·</span>
-            {(selectedFlow.share * 100).toFixed(1)}%
+            <HudTooltipSurface title={`Pass origin tile ${selectedFlow.bin.column + 1} · ${selectedFlow.bin.row + 1}`} description={(
+              <div className="space-y-2">
+                {(flowCohorts.length ? flowCohorts : selectedFlows.map(flow => ({ state: flow.gameState, label: flow.gameState ?? 'Selected', color: flow.color ?? '#4A9EF5' }))).map(cohort => {
+                  const flow = selectedFlows.find(candidate => candidate.gameState === cohort.state) ?? (flowCohorts.length === 1 ? selectedFlows[0] : null)
+                  return <div key={`${cohort.state ?? 'selected'}-${cohort.label}`} className="border-t border-electric/15 pt-1.5 first:border-t-0 first:pt-0">
+                    <p className="font-bold uppercase tracking-[0.08em]" style={{ color: cohort.color }}>{cohort.label}</p>
+                    {flow ? <p className="mt-0.5 font-mono text-ink-dim"><span className="text-ink">{flow.attemptedCount?.toLocaleString() ?? '—'}</span> attempted · <span className="text-ink">{flow.completedCount.toLocaleString()}</span> completed · <span className="text-ink">{flow.completionRate == null ? '—' : `${(flow.completionRate * 100).toFixed(1)}%`}</span> completion<br />{flow.meanLength.toFixed(1)}m mean length · {(flow.share * 100).toFixed(1)}% share</p> : <p className="mt-0.5 text-ink-muted">No located passes from this tile.</p>}
+                  </div>
+                })}
+              </div>
+            )} />
           </div>
         ) : null}
         <svg
@@ -490,7 +508,8 @@ export const PortraitPitch = memo(function PortraitPitch({
         >
           <PitchMarkings />
 
-          {flows.map(flow => {
+          {flowBins.map(bin => {
+            const flow = bin.rows[0]
             const topLeft = logicalTransform.toScreen({
               x: (flow.bin.column / 6) * 100,
               y: (flow.bin.row / 4) * 100,
@@ -499,33 +518,30 @@ export const PortraitPitch = memo(function PortraitPitch({
               x: ((flow.bin.column + 1) / 6) * 100,
               y: ((flow.bin.row + 1) / 4) * 100,
             })
-            const laneHeight = (bottomRight.y - topLeft.y) / 3
-            const laneY = flow.gameState
-              ? topLeft.y + ((flow.comparisonLane ?? 0) + 1) * laneHeight
-              : topLeft.y
+            const description = bin.rows.map(flowAriaLabel).join('; ')
             return (
               <g
-                key={flow.id}
+                key={bin.key}
                 role="button"
                 tabIndex={0}
-                aria-label={flowAriaLabel(flow)}
+                aria-label={description}
                 className="cursor-crosshair outline-none"
-                onFocus={() => onSelectedFlowChange?.(flow)}
-                onBlur={() => onSelectedFlowChange?.(null)}
-                onPointerEnter={event => { event.stopPropagation(); onSelectedFlowChange?.(flow) }}
+                onFocus={() => onSelectedFlowBinChange?.(bin.key)}
+                onBlur={() => onSelectedFlowBinChange?.(null)}
+                onPointerEnter={event => { event.stopPropagation(); onSelectedFlowBinChange?.(bin.key) }}
                 onPointerLeave={event => {
-                  if (event.pointerType !== 'touch') onSelectedFlowChange?.(null)
+                  if (event.pointerType !== 'touch') onSelectedFlowBinChange?.(null)
                 }}
                 onPointerDown={event => {
                   event.stopPropagation()
-                  onSelectedFlowChange?.(selectedFlowId === flow.id ? null : flow)
+                  onSelectedFlowBinChange?.(selectedFlowBin === bin.key ? null : bin.key)
                 }}
               >
                 <rect
                   x={topLeft.x}
-                  y={laneY}
+                  y={topLeft.y}
                   width={bottomRight.x - topLeft.x}
-                  height={flow.gameState ? laneHeight : bottomRight.y - topLeft.y}
+                  height={bottomRight.y - topLeft.y}
                   fill="transparent"
                   stroke="transparent"
                 />
@@ -644,7 +660,7 @@ export const PortraitPitch = memo(function PortraitPitch({
           Use the arrow keys to inspect nearby events. Press Escape to clear the selection.
         </span>
         <span id={accessibleSelectionId} aria-live="polite">
-          {selectedEvent?.ariaLabel ?? (selectedFlow ? flowAriaLabel(selectedFlow) : 'No event selected.')}
+          {selectedEvent?.ariaLabel ?? (selectedFlows.length ? selectedFlows.map(flowAriaLabel).join('; ') : 'No event selected.')}
         </span>
       </figcaption>
     </figure>

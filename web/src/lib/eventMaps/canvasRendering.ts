@@ -224,7 +224,7 @@ export function drawFlowLayer(
   context.lineCap = 'round'
   context.lineJoin = 'round'
 
-  for (const bin of bins.values()) {
+  for (const [key, bin] of bins) {
     if (bin.volume === 0) continue
     const flow = bin.flows[0]
     const xMin = (flow.bin.column / 6) * 100
@@ -234,7 +234,7 @@ export function drawFlowLayer(
     const topLeft = transform.toScreen({ x: xMin, y: yMin })
     const bottomRight = transform.toScreen({ x: xMax, y: yMax })
     const volume = Math.sqrt(bin.volume / maximumVolume)
-    const selected = bin.flows.some(candidate => candidate.id === options.selectedFlowId)
+    const selected = options.selectedFlowId === `bin:${key}` || bin.flows.some(candidate => candidate.id === options.selectedFlowId)
     const hasSelection = Boolean(options.selectedFlowId)
 
     context.fillStyle = densityColor
@@ -263,7 +263,7 @@ export function drawFlowLayer(
     if (volumeCount === 0) continue
 
     const color = flow.color ?? options.flowColor ?? defaultLayerOptions.flowColor
-    const selected = flow.id === options.selectedFlowId
+    const selected = flow.id === options.selectedFlowId || options.selectedFlowId === `bin:${flow.bin.column}-${flow.bin.row}`
     const hasSelection = Boolean(options.selectedFlowId)
     const laneOffset = (flow.comparisonLane ?? 0) * (transform.bounds.height / 4) * 0.2
     const origin = transform.toScreen(flow.origin)

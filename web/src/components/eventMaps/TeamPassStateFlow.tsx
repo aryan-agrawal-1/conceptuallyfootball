@@ -18,6 +18,7 @@ import type {
 import { PortraitPitch } from './PortraitPitch'
 import { EventMapCard, EventMapNotice, EventPitchStage } from './EventMapUi'
 import { StateDeltaMap } from './StateDeltaMap'
+import { statePresentation } from '../../lib/eventMaps/statePresentation'
 
 function percent(value: number | null) {
   return value == null ? '—' : `${(value * 100).toFixed(1)}%`
@@ -196,7 +197,7 @@ export function TeamPassStateFlow({
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
 }) {
-  const [selectedFlow, setSelectedFlow] = useState<TeamPassFlow | null>(null)
+  const [selectedFlowBin, setSelectedFlowBin] = useState<string | null>(null)
   const comparisonEnabled = Object.keys(stateLens).some(key => key.startsWith('baseline_'))
   const query = useQuery({
     queryKey: ['team-pass-state', teamId, competition, season, matchRef, stateLens],
@@ -217,8 +218,8 @@ export function TeamPassStateFlow({
   const selectedState = stateLens.state ?? 'all'
   const baselineState = stateLens.baseline_state ?? 'all'
   const comparisons = [
-    { key: 'selected', state: selectedState, label: labelForState(selectedState), color: '#4A9EF5', lane: -1, evidence },
-    { key: 'baseline', state: baselineState, label: labelForState(baselineState), color: '#EF5C66', lane: 1, evidence: payload.baseline },
+    { key: 'selected', state: selectedState, label: labelForState(selectedState), color: statePresentation(selectedState).color, lane: -1, evidence },
+    { key: 'baseline', state: baselineState, label: labelForState(baselineState), color: statePresentation(baselineState).color, lane: 1, evidence: payload.baseline },
   ]
   const comparisonFlows = comparisons.flatMap(cohort => (
     cohort.evidence?.flows.map(flow => ({
@@ -248,7 +249,7 @@ export function TeamPassStateFlow({
       onExpandedChange={onExpandedChange}
       title="Pass flow by game state"
       description={comparisonEnabled
-        ? 'Compare the selected State Lens cohort with its explicit baseline in the same origin zones.'
+        ? `${labelForState(selectedState)} and ${labelForState(baselineState)} routes in their actual direction, using verified state exposure.`
         : 'Attempt volume and mean pass shape in each origin zone for the selected State Lens.'}
       exportContext={{
         ...exportContext,
@@ -267,15 +268,14 @@ export function TeamPassStateFlow({
               <EventMapNotice kind="unavailable" title="Baseline evidence unavailable">
                 Select a valid baseline cohort with verified State Lens exposure before interpreting pass movement.
               </EventMapNotice>
-            ) : deltaContract ? (
-              <StateDeltaMap contract={deltaContract} compact />
             ) : visibleFlows.length ? (
               <PortraitPitch
                 flows={visibleFlows}
-                selectedFlowId={selectedFlow?.id ?? null}
-                onSelectedFlowChange={setSelectedFlow}
+                selectedFlowBin={selectedFlowBin}
+                onSelectedFlowBinChange={setSelectedFlowBin}
+                flowCohorts={comparisons.filter(cohort => comparisonEnabled || cohort.key === 'selected').map(cohort => ({ state: comparisonGameState(cohort.state), label: cohort.label, color: cohort.color }))}
                 ariaLabel={comparisonEnabled
-                  ? `${teamName} pass flow comparison. Blue arrows show ${labelForState(selectedState)}; red arrows show the ${labelForState(baselineState)} baseline; origin shade shows combined state-minute pass volume.`
+                  ? `${teamName} pass flow comparison. State-coloured arrows show actual ${labelForState(selectedState)} and ${labelForState(baselineState)} routes; arrowheads show direction.`
                   : `${teamName} selected-state pass flow. Origin shade shows attempted pass volume; arrows show attempted mean direction and length.`}
               />
             ) : <EventMapNotice kind="empty" title="No located passes in this state scope" />}
@@ -290,6 +290,7 @@ export function TeamPassStateFlow({
                 </span>
               ))}
             </div> : null}
+            {deltaContract ? <details className="mt-3 border border-line-bright px-3 py-2 text-[9px] text-ink-dim"><summary className="cursor-pointer text-control-fg">Change evidence</summary><div className="mt-2"><StateDeltaMap contract={deltaContract} compact /></div></details> : null}
           </div>
           <aside className="space-y-4 border-t border-line-bright pt-5 lg:border-t-0 lg:pt-0" aria-label="Passing evidence">
             {comparisonEnabled ? <>
@@ -305,12 +306,14 @@ export function TeamPassStateFlow({
                         <span>{cohort.evidence ? metres(cohort.evidence.summary.meanLengthMetres) : '—'} avg length</span>
                       </div>
                       <p className="mt-1 text-[9px] text-ink-muted">{cohort.evidence ? `${cohort.evidence.exposureMinutes.toFixed(0)} min · ${cohort.evidence.summary.attempts.toLocaleString()} attempted` : '—'}</p>
+                      {cohort.evidence ? <div className="mt-3 space-y-3 border-t border-line-bright pt-2">
+                        <EvidenceBands title="Direction" rows={cohort.evidence.directions} />
+                        <EvidenceBands title="Length" rows={cohort.evidence.lengthBands} />
+                      </div> : null}
                     </div>
                   ))}
                 </div>
               </div>
-              <EvidenceBands title="Selected direction" rows={evidence.directions} />
-              <EvidenceBands title="Selected length" rows={evidence.lengthBands} />
             </> : <>
               <p className="text-[10px] leading-relaxed text-ink-dim">Each arrow shows attempted mean direction and length. Brighter origin zones represent more attempted passes in the selected state.</p>
               <div className="grid grid-cols-3 gap-3 text-[12px] leading-relaxed lg:grid-cols-1">
