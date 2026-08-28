@@ -32,7 +32,7 @@ export function EventMatchFilter({
   const rows = Object.values(matches).sort((left, right) =>
     left.matchDate.localeCompare(right.matchDate) || left.matchId.localeCompare(right.matchId),
   )
-  return <ProfileSelectControl label="Match" ariaLabel="Match" value={value ?? ''} options={[
+  return <ProfileSelectControl compact ariaLabel="Match" value={value ?? ''} options={[
     { value: '', label: 'All season matches' },
     ...rows.map(match => ({ value: match.matchId, label: `${match.opponent} (${match.venue === 'home' ? 'H' : match.venue === 'away' ? 'A' : 'N'})` })),
   ]} onChange={next => onChange(next || null)} className="w-full sm:w-64" />
@@ -75,8 +75,20 @@ export function EventMapCard({
       <div className="flex min-h-0 flex-1 items-center justify-center bg-mat p-2 sm:p-2.5">
         {children}
       </div>
-      <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-line-bright px-3 py-2">
-        <details className="group min-w-0 flex-1 text-[10px] text-ink-dim">
+      <footer className="border-t border-line-bright">
+        <div className="flex flex-wrap items-center justify-end gap-2 px-3 py-2">
+          <ChartShareCard
+            title={`${exportContext.subjectName} · ${title}`}
+            subtitle={description}
+            contextLabel={`${exportContext.subjectType} Event Map · ${exportContext.competition} · ${exportContext.season}`}
+            fileName={`${exportContext.subjectName}-${title}-${exportContext.competition}-${exportContext.season}`}
+            contextDetails={exportContext.filters}
+            copyUrl={typeof window === 'undefined' ? undefined : window.location.href}
+            renderContent={() => <div className="w-full">{children}</div>}
+            renderExportLegend={footer ? () => <div className="px-2">{footer}</div> : undefined}
+          />
+        </div>
+        <details className="group min-w-0 border-t border-line-bright px-3 py-2 text-[10px] text-ink-dim">
           <summary className="flex cursor-pointer list-none items-center gap-1.5 font-bold uppercase tracking-[0.12em] text-control-fg hover:text-ink">
             <Info size={12} aria-hidden="true" /> Details
             <ChevronRight size={12} className="transition-transform group-open:rotate-90" aria-hidden="true" />
@@ -86,16 +98,6 @@ export function EventMapCard({
             {footer ? <div className="mb-3">{footer}</div> : null}
           </div>
         </details>
-        <ChartShareCard
-          title={`${exportContext.subjectName} · ${title}`}
-          subtitle={description}
-          contextLabel={`${exportContext.subjectType} Event Map · ${exportContext.competition} · ${exportContext.season}`}
-          fileName={`${exportContext.subjectName}-${title}-${exportContext.competition}-${exportContext.season}`}
-          contextDetails={exportContext.filters}
-          copyUrl={typeof window === 'undefined' ? undefined : window.location.href}
-          renderContent={() => <div className="w-full">{children}</div>}
-          renderExportLegend={footer ? () => <div className="px-2">{footer}</div> : undefined}
-        />
       </footer>
     </article>
   )

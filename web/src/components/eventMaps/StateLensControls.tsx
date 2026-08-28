@@ -1,6 +1,9 @@
-import { ChevronDown, SlidersHorizontal } from 'lucide-react'
+import { ChevronDown, Info, SlidersHorizontal } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import type { StateLensMetadata } from '../../types/eventMaps'
+import { ProfileSelectControl } from '../profile/ProfileScopeSelector'
+import { HudActionButton } from '../hud/Hud'
+import { HudTooltip } from '../hud/HudTooltip'
 
 const STATE_FIELDS = [
   'state', 'goal_difference', 'phase', 'draw_provenance',
@@ -90,65 +93,57 @@ export function StateLensControls({ metadata, searchParams, onChange, compact = 
       {panelOpen ? <fieldset className="border-t border-line-bright p-3">
         <legend className="sr-only">Game-state context</legend>
         <div className="flex flex-wrap items-end gap-3">
-          <Control text="State" className="w-40">
-            <select aria-label="Game state" value={selectedState} onChange={event => update('state', event.target.value)} className="event-lens-control">
-              <option value="all">All states</option>
-              {(['drawing', 'winning', 'losing'] as const).map(value => <option key={value} value={value} disabled={Boolean(refinements && !refinements.states.includes(value) && selectedState !== value)}>{displayLabel(value)}</option>)}
-            </select>
-          </Control>
-          <Control text="Compare to" className="w-48">
-            <select aria-label="Select a state to compare to" value={baselineState} onChange={event => {
+          <ProfileSelectControl compact label="State" ariaLabel="Game state" value={selectedState} onChange={value => update('state', value)} options={[
+            { value: 'all', label: 'All states' },
+            ...(['drawing', 'winning', 'losing'] as const)
+              .filter(value => !refinements || refinements.states.includes(value) || selectedState === value)
+              .map(value => ({ value, label: displayLabel(value) })),
+          ]} className="w-48" />
+          <ProfileSelectControl compact label="Compare to" ariaLabel="Select a state to compare to" value={baselineState} onChange={value => {
               setDraft(current => {
                 const next = new URLSearchParams(current)
                 STATE_FIELDS.forEach(field => next.delete(`baseline_${field}`))
-                if (event.target.value) next.set('baseline_state', event.target.value)
+                if (value) next.set('baseline_state', value)
                 return next
               })
-            }} className="event-lens-control">
-              <option value="">No comparison</option>
-              {['all', 'drawing', 'winning', 'losing'].filter(value => value !== selectedState).map(value => <option key={value} value={value}>{value === 'all' ? 'All states' : displayLabel(value)}</option>)}
-            </select>
-          </Control>
-          <button type="button" aria-expanded={advancedOpen} onClick={() => setAdvancedOpen(open => !open)} className="event-lens-control w-auto whitespace-nowrap">{advancedOpen ? 'Hide advanced controls' : 'Advanced controls'}</button>
+            }} className="w-56" options={[
+              { value: '', label: 'No comparison' },
+              ...['all', 'drawing', 'winning', 'losing'].filter(value => value !== selectedState).map(value => ({ value, label: value === 'all' ? 'All states' : displayLabel(value) })),
+            ]} />
+          <button type="button" aria-expanded={advancedOpen} onClick={() => setAdvancedOpen(open => !open)} className="relative flex h-8 items-center whitespace-nowrap border border-control-border px-3 text-[9px] font-medium uppercase tracking-[0.15em] text-control-fg transition-colors hover:border-electric hover:text-control-fg-hover active:bg-electric/10">{advancedOpen ? 'Hide advanced controls' : 'Advanced controls'}</button>
         </div>
 
-        {advancedOpen ? <div className="mt-3 grid gap-3 border-t border-line-bright pt-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-          <Control text="Exact goal difference">
-            <select aria-label="Exact goal difference" value={selectedDifference} onChange={event => update('goal_difference', event.target.value)} className="event-lens-control">
-              <option value="">Any</option>
-              {withCurrent(refinements?.goalDifferences, selectedDifference).sort((a, b) => Number(a) - Number(b)).map(value => <option key={value} value={value}>{Number(value) > 0 ? `+${value}` : value}</option>)}
-            </select>
-          </Control>
-          <Control text="Match phase">
-            <select aria-label="Match phase" value={selectedPhase} onChange={event => update('phase', event.target.value)} className="event-lens-control">
-              <option value="">Any phase</option>
-              {withCurrent(refinements?.phases, selectedPhase).map(value => <option key={value} value={value}>{displayLabel(String(value))}</option>)}
-            </select>
-          </Control>
-          <Control text="State provenance">
-            <select aria-label="State provenance" value={selectedProvenance} onChange={event => update('draw_provenance', event.target.value)} className="event-lens-control">
-              <option value="">Any provenance</option>
-              {withCurrent(refinements?.drawProvenances, selectedProvenance).map(value => <option key={value} value={value}>{displayLabel(String(value))}</option>)}
-            </select>
-          </Control>
-          <Control text="From this time in state">
-            <input aria-label="From this many seconds after the state began" inputMode="numeric" type="number" min={0} value={draft.get('minimum_state_age_seconds') ?? ''} onChange={event => update('minimum_state_age_seconds', event.target.value)} className="event-lens-control" placeholder="Seconds after state began" />
-          </Control>
-          <Control text="Until this time in state">
-            <input aria-label="Until this many seconds after the state began" inputMode="numeric" type="number" min={0} value={draft.get('maximum_state_age_seconds') ?? ''} onChange={event => update('maximum_state_age_seconds', event.target.value)} className="event-lens-control" placeholder={refinements?.stateAgeSeconds.maximum?.toString() ?? 'No limit'} />
-          </Control>
-          <p className="text-[9px] leading-relaxed text-ink-muted sm:col-span-2 lg:col-span-3 xl:col-span-5">These limits select events by time elapsed since the score entered this state; they do not filter by the state episode’s eventual total duration.</p>
+        {advancedOpen ? <div className="mt-3 grid gap-3 border-t border-line-bright pt-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[repeat(3,minmax(0,1fr))_minmax(150px,0.72fr)_minmax(150px,0.72fr)_auto]">
+          <ProfileSelectControl compact label="Goal difference" ariaLabel="Exact goal difference" value={selectedDifference} onChange={value => update('goal_difference', value)} options={[
+            { value: '', label: 'Any' },
+            ...withCurrent(refinements?.goalDifferences, selectedDifference).sort((a, b) => Number(a) - Number(b)).map(value => ({ value: String(value), label: Number(value) > 0 ? `+${value}` : String(value) })),
+          ]} />
+          <ProfileSelectControl compact label="Phase" ariaLabel="Match phase" value={selectedPhase} onChange={value => update('phase', value)} options={[
+            { value: '', label: 'Any phase' },
+            ...withCurrent(refinements?.phases, selectedPhase).map(value => ({ value: String(value), label: displayLabel(String(value)) })),
+          ]} />
+          <ProfileSelectControl compact label="Provenance" ariaLabel="State provenance" value={selectedProvenance} onChange={value => update('draw_provenance', value)} options={[
+            { value: '', label: 'Any provenance' },
+            ...withCurrent(refinements?.drawProvenances, selectedProvenance).map(value => ({ value: String(value), label: displayLabel(String(value)) })),
+          ]} />
+          <input aria-label="From this many seconds after the state began" inputMode="numeric" type="number" min={0} value={draft.get('minimum_state_age_seconds') ?? ''} onChange={event => update('minimum_state_age_seconds', event.target.value)} className="event-lens-control" placeholder="At least (sec)" />
+          <input aria-label="Until this many seconds after the state began" inputMode="numeric" type="number" min={0} value={draft.get('maximum_state_age_seconds') ?? ''} onChange={event => update('maximum_state_age_seconds', event.target.value)} className="event-lens-control" placeholder={refinements?.stateAgeSeconds.maximum == null ? 'At most (sec)' : `At most · ${refinements.stateAgeSeconds.maximum}s`} />
+          <HudTooltip label="Explain state elapsed-time limits" title="Elapsed time in state" description="These limits select events by seconds elapsed since the score entered this state. They do not filter by the state episode’s eventual total duration." className="flex size-8 items-center justify-center self-center border border-control-border text-control-fg hover:border-electric hover:text-ink">
+            <Info size={12} aria-hidden="true" />
+          </HudTooltip>
         </div> : null}
 
-        <div className="mt-4 flex items-center justify-between gap-3 border-t border-line-bright pt-3">
-          <button type="button" onClick={() => setDraft(clearContext(searchParams))} className="text-[9px] font-bold uppercase tracking-[0.12em] text-control-fg hover:text-ink">Reset</button>
-          <button type="button" disabled={!dirty} onClick={apply} className="h-9 border border-electric bg-electric/15 px-4 text-[9px] font-bold uppercase tracking-[0.12em] text-electric transition-colors hover:bg-electric/25 disabled:cursor-not-allowed disabled:border-control-border disabled:bg-transparent disabled:text-control-disabled sm:min-w-36">Apply context</button>
+        <div className="mt-4 flex items-center justify-end gap-2 border-t border-line-bright pt-3">
+          <button type="button" onClick={() => {
+            const next = clearContext(searchParams)
+            setDraft(next)
+            onChange(next)
+            setPanelOpen(false)
+            setAdvancedOpen(false)
+          }} className="relative flex h-9 items-center border border-control-border px-3 text-[9px] font-medium uppercase tracking-[0.15em] text-control-fg transition-colors hover:border-electric hover:text-control-fg-hover active:bg-electric/10">Reset</button>
+          <HudActionButton disabled={!dirty} onClick={apply} className="h-9 px-4 py-0 text-[9px] sm:min-w-32">Apply</HudActionButton>
         </div>
       </fieldset> : null}
     </div>
   )
-}
-
-function Control({ text, children, className }: { text: string; children: ReactNode; className?: string }) {
-  return <label className={`min-w-0 text-[8px] font-bold uppercase tracking-[0.12em] text-ink-dim ${className ?? ''}`}><span className="mb-1 block">{text}</span>{children}</label>
 }

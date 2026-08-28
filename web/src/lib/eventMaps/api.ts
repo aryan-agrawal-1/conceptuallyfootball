@@ -395,6 +395,13 @@ type ApiPlayerStateComparison = {
   canonical_team_id: number | null
   canonical_team_name: string | null
   position_group: string
+  season_role: import('../../types/api').SeasonRole
+  state_evidence: {
+    selected: Record<string, { count: number; per_state_minute: number | null; per_90: number | null }>
+    baseline: Record<string, { count: number; per_state_minute: number | null; per_90: number | null }> | null
+    selected_scope: Record<string, unknown>
+    baseline_scope: Record<string, unknown> | null
+  }
   state_lens: ApiStateLens
   selected: ApiPlayerStateCohort
   baseline: ApiPlayerStateCohort | null
@@ -1035,6 +1042,13 @@ export async function fetchPlayerStateComparison(
     teamId: raw.canonical_team_id,
     teamName: raw.canonical_team_name,
     positionGroup: raw.position_group,
+    seasonRole: raw.season_role,
+    stateEvidence: {
+      selected: raw.state_evidence.selected,
+      baseline: raw.state_evidence.baseline,
+      selectedScope: raw.state_evidence.selected_scope,
+      baselineScope: raw.state_evidence.baseline_scope,
+    },
     stateLens: mapStateLens(raw.state_lens),
     selected: mapPlayerStateCohort(raw.selected),
     baseline: raw.baseline ? mapPlayerStateCohort(raw.baseline) : null,

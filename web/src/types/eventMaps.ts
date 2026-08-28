@@ -1,3 +1,5 @@
+import type { SeasonRole } from './api'
+
 export type PitchCoordinate = {
   x: number
   y: number
@@ -31,6 +33,7 @@ export type EventPass = {
   keyPass: boolean
   cross: boolean
   longBall: boolean
+  color?: string
 }
 
 export type EventCarry = {
@@ -46,6 +49,7 @@ export type EventCarry = {
   finalThirdEntry: boolean
   boxEntry: boolean
   lowConfidence: boolean
+  color?: string
 }
 
 export type ShotOutcome = 'goal' | 'saved' | 'blocked' | 'off_target' | 'woodwork'
@@ -499,6 +503,13 @@ export type PlayerStateComparisonPayload = {
   teamId: number | null
   teamName: string | null
   positionGroup: string
+  seasonRole: SeasonRole
+  stateEvidence: {
+    selected: Record<string, { count: number; per_state_minute: number | null; per_90: number | null }>
+    baseline: Record<string, { count: number; per_state_minute: number | null; per_90: number | null }> | null
+    selectedScope: Record<string, unknown>
+    baselineScope: Record<string, unknown> | null
+  }
   stateLens: StateLensMetadata
   selected: PlayerStateCohort
   baseline: PlayerStateCohort | null

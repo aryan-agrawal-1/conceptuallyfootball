@@ -15,17 +15,19 @@ export function ProfileSelectControl({
   options,
   onChange,
   className,
+  compact = false,
 }: {
-  label: string
+  label?: string
   ariaLabel: string
   value: string
   options: Array<{ value: string; label: string }>
   onChange: (value: string) => void
   className?: string
+  compact?: boolean
 }) {
   return (
-    <label className={cn('flex h-8 max-w-full items-center gap-1.5 border border-electric/30 bg-mat/60 px-2', className)}>
-      <span className="shrink-0 text-[9px] font-mono uppercase tracking-[0.18em] text-ink-dim">{label}</span>
+    <label className={cn('flex max-w-full items-center gap-1.5 border border-electric/30 bg-mat/60 px-2', compact ? 'h-8' : 'h-9', className)}>
+      {label ? <span className="shrink-0 text-[9px] font-mono uppercase tracking-[0.18em] text-ink-dim">{label}</span> : null}
       <select aria-label={ariaLabel} value={value} onChange={event => onChange(event.target.value)} className="min-w-0 flex-1 bg-transparent text-[10px] font-mono uppercase tracking-[0.08em] text-electric/90 outline-none">
         {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>

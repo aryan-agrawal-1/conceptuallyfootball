@@ -216,6 +216,7 @@ export interface MatrixResponse {
 /** `GET /player-seasons/derived-stats/:id` — player row + optional grouped sections + meta. */
 export interface PlayerDetailResponse extends PlayerRow {
   event_profile: EventProfileFlag
+  season_role: SeasonRole
   meta?: StatMeta
   sections?: ProfileSectionsPayload
   profile_distributions?: ProfileDistributionPayload
@@ -227,6 +228,32 @@ export interface PlayerDetailResponse extends PlayerRow {
   comparison_percentiles?: Record<string, number | null>
   comparison_profile_distributions?: ProfileDistributionPayload
   comparison_eligibility?: Eligibility
+}
+
+export interface SeasonRole {
+  primary_role: string | null
+  primary_score?: number | null
+  runner_up_role?: string | null
+  runner_up_score?: number | null
+  score_margin?: number | null
+  confidence: 'pending' | 'insufficient' | 'provisional' | 'established' | 'mixed' | string
+  freshness: 'not_materialized' | 'current' | 'stale' | string
+  state_coverage?: Record<string, { exposure_seconds: number; minutes: number; matches: number; episodes: number }>
+  verified_exposure_seconds?: number
+  team_context_quality?: string
+  calculated_through?: string | null
+  calculation_version?: string
+  meaning?: string | null
+  explanation: string
+  role_scores?: Array<{
+    role: string
+    score: number | null
+    eligible: boolean
+    components: Record<string, number>
+    unsupported_reason?: string | null
+  }>
+  state_signals?: Record<string, Record<string, unknown>>
+  goal_evidence?: Record<string, number>
 }
 
 interface ProfileSectionsPayload {
