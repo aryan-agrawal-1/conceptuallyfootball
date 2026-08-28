@@ -225,17 +225,9 @@ def materialize_event_profiles(
             if competition_season.is_published and not public_complete and not internal_pilot:
                 raise ValueError("Published event profiles require mapped teams and complete WhoScored coverage.")
             result = _publish(competition_season, run, all_events, player_ids, team_ids)
-            from ingestion.services.player_season_roles import materialize_player_season_roles
-
-            role_result = materialize_player_season_roles(
-                competition_season,
-                affected_player_ids=player_ids if affected_player_ids is not None else None,
-                affected_team_ids=team_ids if affected_team_ids is not None else None,
-            )
             stats = run.stats | {
                 "player_profiles": result.player_rows,
                 "team_profiles": result.team_rows,
-                "player_season_roles": role_result,
                 "affected_player_ids": sorted(player_ids),
                 "affected_team_ids": sorted(team_ids),
             }

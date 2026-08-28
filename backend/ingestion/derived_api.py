@@ -45,7 +45,7 @@ from ingestion.models import (
     PlayerSeasonEventProfile,
     PlayerSeasonRole,
 )
-from ingestion.services.player_season_roles import serialize_season_role
+from ingestion.services.player_season_roles import serialized_player_roles
 from ingestion.profile_modes import (
     comparison_source_code,
     comparison_scope_options,
@@ -573,12 +573,10 @@ class DerivedPlayerSeasonDetailApi(APIView):
             competition_season,
             canonical_player_id,
         )
-        payload["season_role"] = serialize_season_role(
-            PlayerSeasonRole.objects.filter(
-                competition_season=competition_season,
-                player_id=canonical_player_id,
-                is_current=True,
-            ).first()
+        payload["season_role"], payload["season_roles"] = serialized_player_roles(
+            competition_season,
+            canonical_player_id,
+            row.canonical_display_team_id,
         )
         _attach_comparison_context(
             request,

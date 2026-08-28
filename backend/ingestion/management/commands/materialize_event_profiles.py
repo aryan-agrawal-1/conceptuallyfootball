@@ -4,6 +4,7 @@ from django.core.management.base import BaseCommand, CommandError
 from ingestion.competition_scope import resolve_active_competition_season
 from ingestion.models import CompetitionSeason, IngestionKind, IngestionRun, IngestionRunStatus, Provider, ProviderMatch
 from ingestion.services.event_profiles import materialize_event_profiles
+from ingestion.services.player_season_roles import materialize_player_season_roles
 
 
 class Command(BaseCommand):
@@ -61,4 +62,11 @@ class Command(BaseCommand):
         run.refresh_from_db()
         if run.status != IngestionRunStatus.SUCCESS:
             raise CommandError(run.error_detail or "Event profile materialization failed")
+        role_result = materialize_player_season_roles(
+            competition_season,
+            affected_player_ids=players or None,
+            affected_team_ids=teams or None,
+        )
+        run.stats = run.stats | {"player_season_roles": role_result}
+        run.save(update_fields=["stats"])
         self.stdout.write(self.style.SUCCESS(f"Event profiles run {run.id} succeeded ({run.stats})"))

@@ -9,7 +9,7 @@ from ingestion.models import (
     CanonicalPlayer, CanonicalTeam, Competition, CompetitionSeason, EventProfileSplitType,
     IngestionKind, IngestionRun, IngestionRunStatus, MaterializedApiPayload,
     MatchEventShotOutcome, MatchEventType, PlayerSeasonDerivedStats,
-    PlayerSeasonEventProfile, PlayerSeasonRole, Provider, ProviderMatch, ProviderMatchEvent,
+    PlayerSeasonEventProfile, Provider, ProviderMatch, ProviderMatchEvent,
     ProviderMatchStatus, Season, TeamSeasonEventProfile,
 )
 from ingestion.services.event_profiles import event_profile_availability, materialize_event_profiles
@@ -125,16 +125,8 @@ class EventProfileMaterializationTests(TestCase):
 
     def test_rebuild_is_deterministic_and_affected_rebuild_preserves_unaffected(self):
         self.seed_hand_calculated_fixture(); self.materialize()
-        first_role = PlayerSeasonRole.objects.get(player=self.player, is_current=True)
         first_a = TeamSeasonEventProfile.objects.get(team=self.a, is_current=True); first_b = TeamSeasonEventProfile.objects.get(team=self.b, is_current=True)
         self.materialize(); second_a = TeamSeasonEventProfile.objects.get(team=self.a, is_current=True); second_b = TeamSeasonEventProfile.objects.get(team=self.b, is_current=True)
-        second_role = PlayerSeasonRole.objects.get(player=self.player, is_current=True)
-        self.assertNotEqual(first_role.id, second_role.id)
-        self.assertFalse(PlayerSeasonRole.objects.get(pk=first_role.id).is_current)
-        self.assertEqual(PlayerSeasonRole.objects.filter(player=self.player, is_current=True).count(), 1)
-        self.assertEqual(second_role.source_event_version, "event_profiles_v3")
-        self.assertTrue(second_role.source_state_version)
-        self.assertTrue(second_role.source_participation_version)
         self.assertEqual(first_a.action_grid, second_a.action_grid); self.assertEqual(first_a.pass_flow, second_a.pass_flow)
         self.assertEqual(TeamSeasonEventProfile.objects.filter(competition_season=self.cs, team=self.a, is_current=True).count(), 1)
         ProviderMatchEvent.objects.filter(provider_match=self.m1, event_index=1).update(outcome_successful=False)

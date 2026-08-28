@@ -165,8 +165,9 @@ class PlayerStateComparisonApi(PlayerEventProfileMixin, APIView):
         season_role = PlayerSeasonRole.objects.filter(
             competition_season=profile.competition_season,
             player_id=profile.player_id,
+            team_id=profile.team_id,
             is_current=True,
-        ).first()
+        ).select_related("team", "feature_snapshot").first()
         return comparison | {
             "season_role": serialize_season_role(season_role),
             "state_evidence": {

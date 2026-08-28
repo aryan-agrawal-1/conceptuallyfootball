@@ -54,9 +54,6 @@ from ingestion.state_lens import (
 
 
 PLAYER_STATE_COMPARISON_VERSION = "player_state_comparison_v3"
-PLAYER_ROLE_MIN_EXPOSURE_SECONDS = 900
-PLAYER_ROLE_MIN_EVENTS = 5
-PLAYER_ROLE_MIN_MATCHES = 2
 PLAYER_TRANSITION_EVIDENCE_LIMIT = 25
 DEFENSIVE_ACTION_FAMILIES = tuple(dict.fromkeys(FAMILY_BY_TYPE.values()))
 
@@ -1063,232 +1060,6 @@ def position_group(profile) -> str:
     return "UNK"
 
 
-def role_formulae() -> list[dict]:
-    return [
-        {
-            "label": "Unlocker",
-            "formula": "progressive_actions_per_90_change >= 20% and matched_team_progressive_action_share_change >= +3pp",
-            "eligible_positions": ["FWD", "MID", "DEF", "UNK"],
-            "minimum_verified_exposure_seconds": PLAYER_ROLE_MIN_EXPOSURE_SECONDS,
-            "minimum_events": PLAYER_ROLE_MIN_EVENTS,
-            "minimum_matches": PLAYER_ROLE_MIN_MATCHES,
-            "minimum_evidence_type": "progressive actions",
-            "minimum_evidence_count": PLAYER_ROLE_MIN_EVENTS,
-            "requires_team_context": True,
-        },
-        {
-            "label": "Progression Carrier",
-            "formula": "progressive_carries_per_90_change >= 20% and matched_team_progressive_action_share_change >= +2pp",
-            "eligible_positions": ["FWD", "MID", "DEF", "UNK"],
-            "minimum_verified_exposure_seconds": PLAYER_ROLE_MIN_EXPOSURE_SECONDS,
-            "minimum_events": PLAYER_ROLE_MIN_EVENTS,
-            "minimum_matches": PLAYER_ROLE_MIN_MATCHES,
-            "minimum_evidence_type": "progressive carries",
-            "minimum_evidence_count": 3,
-            "requires_team_context": True,
-        },
-        {
-            "label": "Stabiliser",
-            "formula": "pass_completion_change >= 0 and absolute progressive_action_rate_change < 20%",
-            "eligible_positions": ["FWD", "MID", "DEF", "GK", "UNK"],
-            "minimum_verified_exposure_seconds": PLAYER_ROLE_MIN_EXPOSURE_SECONDS,
-            "minimum_events": PLAYER_ROLE_MIN_EVENTS,
-            "minimum_matches": PLAYER_ROLE_MIN_MATCHES,
-            "minimum_evidence_type": "passes",
-            "minimum_evidence_count": PLAYER_ROLE_MIN_EVENTS,
-            "requires_team_context": True,
-        },
-        {
-            "label": "Territory Anchor",
-            "formula": "absolute player average-touch movement <= 5 percentage points and touch share does not fall by >3pp",
-            "eligible_positions": ["FWD", "MID", "DEF", "GK", "UNK"],
-            "minimum_verified_exposure_seconds": PLAYER_ROLE_MIN_EXPOSURE_SECONDS,
-            "minimum_events": PLAYER_ROLE_MIN_EVENTS,
-            "minimum_matches": PLAYER_ROLE_MIN_MATCHES,
-            "minimum_evidence_type": "located touches",
-            "minimum_evidence_count": 5,
-            "requires_team_context": True,
-        },
-        {
-            "label": "Closer",
-            "formula": "shots_per_90_change >= 30% and selected state is winning",
-            "eligible_positions": ["FWD", "MID", "DEF", "UNK"],
-            "minimum_verified_exposure_seconds": PLAYER_ROLE_MIN_EXPOSURE_SECONDS,
-            "minimum_events": 2,
-            "minimum_matches": PLAYER_ROLE_MIN_MATCHES,
-            "minimum_evidence_type": "shots",
-            "minimum_evidence_count": 2,
-            "requires_team_context": True,
-        },
-        {
-            "label": "Outlet",
-            "formula": "touch share change >= +3pp and pass attempts_per_90_change >= 20%",
-            "eligible_positions": ["FWD", "MID", "DEF", "GK", "UNK"],
-            "minimum_verified_exposure_seconds": PLAYER_ROLE_MIN_EXPOSURE_SECONDS,
-            "minimum_events": PLAYER_ROLE_MIN_EVENTS,
-            "minimum_matches": PLAYER_ROLE_MIN_MATCHES,
-            "minimum_evidence_type": "touches",
-            "minimum_evidence_count": PLAYER_ROLE_MIN_EVENTS,
-            "requires_team_context": True,
-        },
-        {
-            "label": "Role Migrant",
-            "formula": "player movement minus matched team movement has magnitude >= 8 percentage points",
-            "eligible_positions": ["FWD", "MID", "DEF", "GK", "UNK"],
-            "minimum_verified_exposure_seconds": PLAYER_ROLE_MIN_EXPOSURE_SECONDS,
-            "minimum_events": PLAYER_ROLE_MIN_EVENTS,
-            "minimum_matches": PLAYER_ROLE_MIN_MATCHES,
-            "minimum_evidence_type": "located touches",
-            "minimum_evidence_count": 5,
-            "requires_team_context": True,
-        },
-        {
-            "label": "State Constant",
-            "formula": "absolute rate changes < 15% and matched-team share changes < 3pp",
-            "eligible_positions": ["FWD", "MID", "DEF", "GK", "UNK"],
-            "minimum_verified_exposure_seconds": PLAYER_ROLE_MIN_EXPOSURE_SECONDS,
-            "minimum_events": PLAYER_ROLE_MIN_EVENTS,
-            "minimum_matches": PLAYER_ROLE_MIN_MATCHES,
-            "minimum_evidence_type": "actions",
-            "minimum_evidence_count": 20,
-            "requires_team_context": True,
-        },
-    ]
-
-
-def role_evidence(
-    profile,
-    lens: StateLens,
-    selected: dict,
-    baseline: dict | None,
-    team_selected: dict,
-    team_baseline: dict | None,
-    team_context_available: bool,
-    selected_evidence: dict,
-    baseline_evidence: dict | None,
-) -> list[dict]:
-    formulae = role_formulae()
-    if (
-        not baseline
-        or not lens.comparison_enabled
-        or not team_context_available
-        or lens.selected == lens.baseline
-    ):
-        return []
-    selected_exposure = selected["exposure_seconds"]
-    baseline_exposure = baseline["exposure_seconds"]
-    selected_events = selected["summary"]["actions"]
-    baseline_events = baseline["summary"]["actions"]
-    if min(selected_exposure, baseline_exposure) < PLAYER_ROLE_MIN_EXPOSURE_SECONDS:
-        return []
-    selected_match_count = selected_evidence["match_count"]
-    baseline_match_count = baseline_evidence["match_count"] if baseline_evidence else 0
-    if min(selected_match_count, baseline_match_count) < PLAYER_ROLE_MIN_MATCHES:
-        return []
-    if not team_baseline:
-        return []
-    selected_rate = selected["rates"]
-    baseline_rate = baseline["rates"]
-    selected_shares = selected["team_action_shares"]
-    baseline_shares = baseline["team_action_shares"]
-    player_position = selected["touch_location"]
-    baseline_position = baseline["touch_location"]
-    team_position = team_selected["touch_location"]
-    team_baseline_position = team_baseline["touch_location"]
-    position_supported = all(
-        location[coordinate_name] is not None
-        for location in (
-            player_position,
-            baseline_position,
-            team_position,
-            team_baseline_position,
-        )
-        for coordinate_name in ("x", "y")
-    )
-    player_delta_x = delta_value(player_position["x"], baseline_position["x"])
-    player_delta_y = delta_value(player_position["y"], baseline_position["y"])
-    team_delta_x = delta_value(team_position["x"], team_baseline_position["x"])
-    team_delta_y = delta_value(team_position["y"], team_baseline_position["y"])
-    relative_movement = max(
-        abs((player_delta_x or 0) - (team_delta_x or 0)),
-        abs((player_delta_y or 0) - (team_delta_y or 0)),
-    )
-    roles = []
-    progressive_rate_delta = relative_delta(selected_rate["progressive_actions"]["per_90"], baseline_rate["progressive_actions"]["per_90"])
-    carry_rate_delta = relative_delta(selected_rate["progressive_carries"]["per_90"], baseline_rate["progressive_carries"]["per_90"])
-    pass_accuracy_selected = percentage(selected["summary"]["pass_completions"], selected["summary"]["pass_attempts"])
-    pass_accuracy_baseline = percentage(baseline["summary"]["pass_completions"], baseline["summary"]["pass_attempts"])
-    share_delta = {
-        key: delta_value(selected_shares[key]["share"], baseline_shares[key]["share"])
-        for key in selected_shares
-    }
-    conditions = {
-        "Unlocker": progressive_rate_delta is not None and progressive_rate_delta >= 0.2 and share_delta["progressive_actions"] is not None and share_delta["progressive_actions"] >= 0.03,
-        "Progression Carrier": carry_rate_delta is not None and carry_rate_delta >= 0.2 and share_delta["progressive_actions"] is not None and share_delta["progressive_actions"] >= 0.02,
-        "Stabiliser": (pass_accuracy_selected is not None and pass_accuracy_baseline is not None and pass_accuracy_selected >= pass_accuracy_baseline and abs(progressive_rate_delta or 0) < 0.2),
-        "Territory Anchor": position_supported and max(abs(player_delta_x or 0), abs(player_delta_y or 0)) <= 5 and share_delta["touches"] is not None and share_delta["touches"] >= -0.03,
-        "Closer": lens.selected.state == "winning" and relative_delta(selected_rate["shots"]["per_90"], baseline_rate["shots"]["per_90"]) is not None and relative_delta(selected_rate["shots"]["per_90"], baseline_rate["shots"]["per_90"]) >= 0.3,
-        "Outlet": share_delta["touches"] is not None and share_delta["touches"] >= 0.03 and (relative_delta(selected_rate["pass_attempts"]["per_90"], baseline_rate["pass_attempts"]["per_90"]) or 0) >= 0.2,
-        "Role Migrant": position_supported and relative_movement >= 8,
-        "State Constant": max(
-            abs(progressive_rate_delta or 0),
-            abs(relative_delta(selected_rate["touches"]["per_90"], baseline_rate["touches"]["per_90"]) or 0),
-        ) < 0.15 and all(value is not None for value in share_delta.values()) and max(abs(value) for value in share_delta.values() if value is not None) < 0.03,
-    }
-    evidence_counts = {
-        "progressive actions": min(
-            selected["summary"]["progressive_actions"],
-            baseline["summary"]["progressive_actions"],
-        ),
-        "progressive carries": min(
-            selected["summary"]["progressive_carries"],
-            baseline["summary"]["progressive_carries"],
-        ),
-        "passes": min(
-            selected["summary"]["pass_attempts"],
-            baseline["summary"]["pass_attempts"],
-        ),
-        "located touches": min(
-            selected["touch_location"]["sample_size"],
-            baseline["touch_location"]["sample_size"],
-        ),
-        "shots": min(selected["summary"]["shots"], baseline["summary"]["shots"]),
-        "touches": min(selected["summary"]["touches"], baseline["summary"]["touches"]),
-        "actions": min(selected_events, baseline_events),
-    }
-    player_position_group = position_group(profile)
-    for formula in formulae:
-        label = formula["label"]
-        evidence_count = evidence_counts.get(formula["minimum_evidence_type"], 0)
-        if (
-            player_position_group in formula["eligible_positions"]
-            and min(selected_events, baseline_events) >= formula["minimum_events"]
-            and evidence_count >= formula["minimum_evidence_count"]
-            and conditions[label]
-        ):
-            roles.append({
-                "label": label,
-                "confidence": "directional",
-                "formula": formula["formula"],
-                "observations": {
-                    "selected": selected,
-                    "baseline": baseline,
-                    "matched_team_selected": team_selected,
-                    "matched_team_baseline": team_baseline,
-                    "relative_movement": {"x": delta_value(player_delta_x, team_delta_x), "y": delta_value(player_delta_y, team_delta_y)},
-                },
-                "reliability": {
-                    "verified_exposure_seconds": min(selected_exposure, baseline_exposure),
-                    "matches": min(selected_match_count, baseline_match_count),
-                    "events": min(selected_events, baseline_events),
-                    "evidence_type": formula["minimum_evidence_type"],
-                    "evidence_count": evidence_count,
-                    "minimum_evidence_count": formula["minimum_evidence_count"],
-                    "position_group": player_position_group,
-                    "sparse": False,
-                },
-            })
-    return roles
 
 
 def build_player_state_comparison(profile, lens: StateLens, match_ids: Iterable[int], *, team_context_required: bool = True) -> dict:
@@ -1387,17 +1158,10 @@ def build_player_state_comparison(profile, lens: StateLens, match_ids: Iterable[
                 else {}
             ),
         }
-        roles = role_evidence(
-            profile,
-            lens,
-            selected_player,
-            baseline_player,
-            selected_team,
-            baseline_team,
-            team_context_required,
-            selected_evidence,
-            baseline_evidence,
-        )
+        # The unpublished response-role experiment mixed state comparisons
+        # with season archetypes. Stable identity now comes exclusively from
+        # the player-team-season role materialization.
+        roles = []
     return {
         "contract_version": PLAYER_STATE_COMPARISON_VERSION,
         "canonical_player_id": profile.player_id,
@@ -1411,7 +1175,7 @@ def build_player_state_comparison(profile, lens: StateLens, match_ids: Iterable[
         # Compatibility-only selected-lens evidence. The stable header role is
         # supplied separately by the season-role materialization.
         "response_roles": roles,
-        "role_formulae": role_formulae(),
+        "role_formulae": [],
         "team_context": {
             "available": team_context_required,
             "matching": "same team, matches, state cohort, and verified player on-pitch intervals",

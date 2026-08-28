@@ -157,8 +157,10 @@ def task_materialize_player_season_roles(
     competition_season_id: int,
     affected_player_ids: list[int] | None = None,
     affected_team_ids: list[int] | None = None,
+    score_only: bool = False,
+    score_events_only: bool = False,
 ) -> dict:
-    """Refresh stable season roles after verified state and event outputs exist."""
+    """Refresh role snapshots and scores after event-profile publication commits."""
 
     from ingestion.services.player_season_roles import materialize_player_season_roles
 
@@ -169,6 +171,8 @@ def task_materialize_player_season_roles(
             competition_season,
             affected_player_ids=affected_player_ids,
             affected_team_ids=affected_team_ids,
+            score_only=score_only,
+            score_events_only=score_events_only,
         ),
     }
 

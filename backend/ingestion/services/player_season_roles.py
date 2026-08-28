@@ -1,534 +1,623 @@
-"""Materialize stable, explainable player roles from verified season state evidence."""
+"""Cohort-relative scoring for versioned player-team-season role snapshots."""
 
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass
-from math import hypot
+from math import sqrt
 from typing import Iterable
 
-from django.db import transaction
-from django.db.models import Max
+from django.db import models, transaction
 from django.utils import timezone
 
-from ingestion.models import (
-    EventProfileSplitType,
-    MatchEventGameState,
-    MatchEventShotOutcome,
-    PlayerSeasonEventProfile,
-    PlayerSeasonRole,
-    ProviderMatch,
-    ProviderMatchEvent,
-    ProviderMatchPlayerStateExposure,
-    ProviderMatchTeamGameStateEpisode,
+from ingestion.models import PlayerSeasonRole, PlayerSeasonRoleFeatureSnapshot
+from ingestion.services.player_role_definitions import (
+    ARCHETYPE_DEFINITIONS,
+    ESTABLISHED_EXPOSURE_SECONDS,
+    HYBRID_MARGIN,
+    MINIMUM_PRIMARY_FIT,
+    MINIMUM_SECONDARY_FIT,
+    PROVISIONAL_EXPOSURE_SECONDS,
+    ROLE_SCORING_VERSION,
+    TRAIT_DEFINITIONS,
 )
-from ingestion.services.event_profiles import FORMULA_VERSION as EVENT_PROFILE_VERSION
-from ingestion.services.game_state import GAME_STATE_CALCULATION_VERSION
-from ingestion.services.player_state_comparison import (
-    action_context,
-    player_state_evidence,
-    position_group,
-    state_event_rows,
-    team_matched_context,
-    team_relative_shares,
-)
-from ingestion.state_lens import StateLensScope
-
-
-PLAYER_SEASON_ROLE_VERSION = "player_season_roles_v1"
-PARTICIPATION_SOURCE_VERSION = "verified_player_intervals_v1"
-PROVISIONAL_TOTAL_SECONDS = 450 * 60
-ESTABLISHED_TOTAL_SECONDS = 900 * 60
-PROVISIONAL_STATE_SECONDS = 90 * 60
-ESTABLISHED_STATE_SECONDS = 180 * 60
-MIN_ROLE_SCORE = 0.5
-CLOSE_ROLE_MARGIN = 0.08
-RATE_PRIOR_SECONDS = 30 * 60
-STATE_NAMES = ("losing", "drawing", "winning")
-STABILITY_ROLES = {"Territory Anchor", "State Constant"}
-
-ROLE_MEANINGS = {
-    "Unlocker": "Increases the team's ability to progress when the scoreline requires initiative.",
-    "Progression Carrier": "Moves the team forward through carrying across changing game states.",
-    "Stabiliser": "Preserves passing reliability and useful progression across scorelines.",
-    "Territory Anchor": "Continues operating in similar areas of the pitch regardless of state.",
-    "Closer": "Converts or extends a lead while the team is already winning.",
-    "Clutch response": "Scores the goals that move the team from losing to drawing or drawing to winning.",
-    "Outlet": "Provides a reliable attacking release point when the team is losing.",
-    "Role Migrant": "Changes territory relative to teammates as the scoreline changes.",
-    "State Constant": "Keeps broad output stable across winning, drawing, and losing states.",
-}
+from ingestion.services.player_role_features import materialize_player_role_features, refresh_score_event_features
 
 
 @dataclass(frozen=True, slots=True)
-class RoleCandidate:
+class RawCandidate:
     label: str
-    score: float | None
     eligible: bool
-    components: dict
-    reason: str | None = None
+    components: dict[str, float | None]
+    unsupported_reason: str | None = None
 
 
-def clamp(value: float | None, lower: float = 0.0, upper: float = 1.0) -> float:
-    if value is None:
-        return 0.0
-    return max(lower, min(upper, value))
+def ratio(numerator: int | float, denominator: int | float) -> float | None:
+    return numerator / denominator if denominator else None
 
 
-def smooth_rate(count: int, exposure_seconds: int, prior_rate: float, prior_seconds: int = RATE_PRIOR_SECONDS) -> float | None:
-    if exposure_seconds <= 0:
+def value(row: dict, *path: str, default=None):
+    current = row
+    for key in path:
+        if not isinstance(current, dict):
+            return default
+        current = current.get(key)
+    return default if current is None else current
+
+
+def percentile_rank(target: float | None, cohort: list[float]) -> float | None:
+    if target is None or not cohort:
         return None
-    return (count + prior_rate * prior_seconds / 5400) * 5400 / (exposure_seconds + prior_seconds)
+    if len(cohort) == 1:
+        return 0.5
+    lower = sum(item < target for item in cohort)
+    equal = sum(item == target for item in cohort)
+    return round((lower + max(equal - 1, 0) / 2) / max(len(cohort) - 1, 1), 6)
 
 
-def relative_slope(low: float | None, high: float | None) -> float | None:
-    if low is None or high is None:
+def weighted_score(components: dict[str, float | None], weights: dict[str, float]) -> float | None:
+    observed = [(components.get(key), weight) for key, weight in weights.items() if components.get(key) is not None]
+    observed_weight = sum(weight for _component, weight in observed)
+    if observed_weight < 0.65:
         return None
-    denominator = max(abs(low), 0.25)
-    return (high - low) / denominator
+    return round(sum(component * weight for component, weight in observed) / observed_weight, 4)
 
 
-def weighted_average(values: Iterable[tuple[float | None, int]]) -> float | None:
-    observed = [(value, weight) for value, weight in values if value is not None and weight > 0]
-    total = sum(weight for value, weight in observed)
-    return sum(value * weight for value, weight in observed) / total if total else None
+def per90(count: int | float, exposure_seconds: int) -> float | None:
+    return count * 5400 / exposure_seconds if exposure_seconds else None
 
 
-def coefficient_stability(values: Iterable[float | None]) -> float:
-    observed = [value for value in values if value is not None]
+def central_plausibility(features: dict) -> bool:
+    group = value(features, "position", "group", default="UNK")
+    location = value(features, "position", "average_touch", default={})
+    x = location.get("x")
+    y = location.get("y")
+    central = y is None or 20 <= y <= 80
+    ordinary_playmaker_pool = group in {"MID", "FWD", "UNK"}
+    defender_position_override = group == "DEF" and x is not None and x >= 52
+    return central and (ordinary_playmaker_pool or defender_position_override)
+
+
+def deep_plausibility(features: dict) -> bool:
+    group = value(features, "position", "group", default="UNK")
+    x = value(features, "position", "average_touch", "x")
+    return group in {"DEF", "MID", "UNK"} or x is None or x <= 52
+
+
+def advanced_plausibility(features: dict) -> bool:
+    group = value(features, "position", "group", default="UNK")
+    x = value(features, "position", "average_touch", "x")
+    return group in {"FWD", "MID", "UNK"} or (x is not None and x >= 52)
+
+
+def raw_candidates(features: dict) -> list[RawCandidate]:
+    exposure = value(features, "exposure", "verified_seconds", default=0)
+    group = value(features, "position", "group", default="UNK")
+    goalkeeper = group == "GK"
+    geometry = value(features, "overall", "geometry", default={})
+    team_geometry = value(features, "overall", "team_geometry", default={})
+    summary = value(features, "overall", "summary", default={})
+    passing = value(features, "overall", "passing", default={})
+    carrying = value(features, "overall", "carrying", default={})
+    shares = value(features, "overall", "team_action_shares", default={})
+    transitions = value(features, "transitions", default={})
+
+    def rate(metric: str) -> float | None:
+        return value(geometry, "rates_per90", metric)
+
+    def share(metric: str) -> float | None:
+        return value(shares, metric, "share")
+
+    progressive_passes = summary.get("progressive_passes", 0)
+    progressive_carries = summary.get("progressive_carries", 0)
+    carry_attempts = summary.get("carries", 0)
+    carry_entries = carrying.get("final_third_entries", 0) + carrying.get("box_entries", 0)
+    transition_actions = transitions.get("advancement_actions", 0) + transitions.get("escape_actions", 0)
+    line_breaks = geometry.get("line_breaking_passes", 0)
+    defensive_actions = geometry.get("defensive_actions", 0)
+    ball_wins = geometry.get("ball_wins", 0)
+    deep_actions = geometry.get("deep_defensive_actions", 0)
+    protective = geometry.get("protective_interventions", 0)
+    candidates = [
+        RawCandidate(
+            "Connector",
+            not goalkeeper and central_plausibility(features) and geometry.get("passes", 0) >= 80 and geometry.get("central_touches", 0) >= 40,
+            {
+                "pass_involvement": share("passes"),
+                "central_touch_share": geometry.get("central_touch_share"),
+                "completion": geometry.get("pass_completion"),
+                "zone_connectivity": per90(geometry.get("dangerous_entries", 0) + line_breaks, exposure),
+            },
+            "Needs central territory, 80 open-play passes and 40 central touches.",
+        ),
+        RawCandidate(
+            "Deep-Lying Playmaker",
+            not goalkeeper and central_plausibility(features) and deep_plausibility(features)
+            and geometry.get("build_up_passes", 0) >= 60 and progressive_passes >= 12,
+            {
+                "deep_pass_volume": per90(geometry.get("build_up_passes", 0), exposure),
+                "build_up_origin_share": ratio(geometry.get("build_up_passes", 0), geometry.get("passes", 0)),
+                "build_up_progression": per90(geometry.get("build_up_progressive_passes", 0), exposure),
+                "build_up_progression_share": ratio(geometry.get("build_up_progressive_passes", 0), progressive_passes),
+                "progressive_pass_share": share("progressive_actions"),
+            },
+            "Needs central/deep plausibility, 60 build-up passes and 12 progressive passes.",
+        ),
+        RawCandidate(
+            "Line-Breaking Playmaker",
+            not goalkeeper and central_plausibility(features) and geometry.get("passes", 0) >= 60 and line_breaks >= 10,
+            {
+                "line_break_volume": per90(line_breaks, exposure),
+                "line_break_frequency": geometry.get("line_break_frequency"),
+                "central_progression": per90(geometry.get("central_progressive_passes", 0), exposure),
+                "dangerous_entries": per90(geometry.get("dangerous_entries", 0), exposure),
+            },
+            "Needs broad central plausibility, 60 open-play passes and 10 successful line-breaking passes.",
+        ),
+        RawCandidate(
+            "Ball-Playing Defender",
+            not goalkeeper and deep_plausibility(features) and geometry.get("build_up_passes", 0) >= 50
+            and geometry.get("build_up_progressive_passes", 0) >= 10 and defensive_actions >= 20,
+            {
+                "build_up_progression": per90(geometry.get("build_up_progressive_passes", 0), exposure),
+                "build_up_pass_volume": per90(geometry.get("build_up_passes", 0), exposure),
+                "defensive_work": rate("defensive_actions"),
+                "progressive_share": share("progressive_actions"),
+            },
+            "Needs deep/build-up plausibility, 50 build-up passes, 10 progressive build-up passes and 20 defensive actions.",
+        ),
+        RawCandidate(
+            "Ball-Carrying Progressor",
+            not goalkeeper and progressive_carries >= 12 and carry_attempts >= 30,
+            {
+                "progressive_carry_volume": per90(progressive_carries, exposure),
+                "progressive_carry_share": share("progressive_carries"),
+                "forward_carry_distance": carrying.get("mean_forward_metres"),
+                "carry_entries": per90(carry_entries, exposure),
+            },
+            "Needs 30 carries and 12 progressive carries.",
+        ),
+        RawCandidate(
+            "Advanced Creator",
+            not goalkeeper and advanced_plausibility(features)
+            and geometry.get("key_passes", 0) >= 8 and geometry.get("advanced_actions", 0) >= 20,
+            {
+                "key_pass_volume": rate("key_passes"),
+                "shot_assist_share": ratio(geometry.get("key_passes", 0), team_geometry.get("key_passes", 0)),
+                "box_entry_creation": per90(geometry.get("dangerous_entries", 0), exposure),
+                "advanced_involvement": per90(geometry.get("advanced_actions", 0), exposure),
+            },
+            "Needs advanced plausibility, eight open-play key passes/shot assists and 20 advanced actions.",
+        ),
+        RawCandidate(
+            "Transition Outlet",
+            not goalkeeper and (advanced_plausibility(features) or (geometry.get("advanced_touch_share") or 0) >= 0.30)
+            and geometry.get("advanced_touches", 0) >= 30 and transitions.get("involved_possessions", 0) >= 10,
+            {
+                "transition_involvement": ratio(transitions.get("involved_possessions", 0), transitions.get("opportunities", 0)),
+                "advanced_touch_share": geometry.get("advanced_touch_share"),
+                "transition_advancement": per90(transition_actions, exposure),
+                "direct_carry_threat": per90(progressive_carries + carry_entries, exposure),
+            },
+            "Needs advanced/outlet territory, 30 advanced touches and ten verified transition possessions.",
+        ),
+        RawCandidate(
+            "Box Threat",
+            not goalkeeper and advanced_plausibility(features) and geometry.get("box_touches", 0) >= 20 and geometry.get("shots", 0) >= 12,
+            {
+                "box_touch_volume": rate("box_touches"),
+                "shot_volume": rate("shots"),
+                "box_touch_share": ratio(geometry.get("box_touches", 0), team_geometry.get("box_touches", 0)),
+                "shot_share": share("shots"),
+            },
+            "Needs advanced plausibility, 20 open-play box touches and 12 open-play shots.",
+        ),
+        RawCandidate(
+            "Ball Winner",
+            not goalkeeper and ball_wins >= 35 and geometry.get("tackles_interceptions", 0) >= 10,
+            {
+                "ball_win_volume": rate("ball_wins"),
+                "ball_win_share": ratio(ball_wins, team_geometry.get("ball_wins", 0)),
+                "active_defensive_height": geometry.get("defensive_height"),
+                "tackle_interception_mix": ratio(geometry.get("tackles_interceptions", 0), ball_wins),
+            },
+            "Needs 35 ball-winning actions and ten tackles/interceptions.",
+        ),
+        RawCandidate(
+            "Deep Protector",
+            not goalkeeper and deep_plausibility(features) and deep_actions >= 30 and protective >= 12,
+            {
+                "deep_defensive_volume": rate("deep_defensive_actions"),
+                "protective_interventions": per90(protective, exposure),
+                "defensive_share": share("defensive_actions"),
+                "deep_action_share": ratio(deep_actions, defensive_actions),
+            },
+            "Needs deep plausibility, 30 deep defensive actions and 12 protective interventions.",
+        ),
+        RawCandidate(
+            "Sweeper Keeper",
+            goalkeeper and geometry.get("sweeper_actions", 0) >= 8,
+            {
+                "sweeper_actions": rate("sweeper_actions"),
+                "sweeper_height": geometry.get("sweeper_height"),
+                "outside_box_share": ratio(geometry.get("sweeper_actions", 0), geometry.get("open_play_events", 0)),
+            },
+            "Goalkeepers only; needs eight verified sweeper actions.",
+        ),
+        RawCandidate(
+            "Goalkeeper Distributor",
+            goalkeeper and geometry.get("passes", 0) >= 80 and geometry.get("long_progressive_passes", 0) >= 10,
+            {
+                "distribution_volume": rate("passes"),
+                "progressive_distribution": per90(progressive_passes, exposure),
+                "long_distribution": per90(geometry.get("long_progressive_passes", 0), exposure),
+                "distribution_completion": geometry.get("pass_completion"),
+            },
+            "Goalkeepers only; needs 80 open-play passes and ten progressive/long distributions.",
+        ),
+        RawCandidate(
+            "Shot Stopper",
+            goalkeeper and geometry.get("saves", 0) >= 20,
+            {
+                "save_volume": rate("saves"),
+                "save_workload_share": ratio(
+                    geometry.get("saves", 0),
+                    geometry.get("saves", 0) + geometry.get("passes", 0) + geometry.get("sweeper_actions", 0),
+                ),
+                "close_range_interventions": per90(geometry.get("close_range_saves", 0), exposure),
+            },
+            "Goalkeepers only; needs 20 recorded saves.",
+        ),
+    ]
+    return [candidate if candidate.eligible else RawCandidate(candidate.label, False, candidate.components, candidate.unsupported_reason) for candidate in candidates]
+
+
+def score_candidate_cohort(feature_rows: list[dict]) -> list[list[dict]]:
+    raw_rows = [raw_candidates(features) for features in feature_rows]
+    cohorts: dict[tuple[str, str], list[float]] = {}
+    for candidates in raw_rows:
+        for candidate in candidates:
+            if not candidate.eligible:
+                continue
+            for component, component_value in candidate.components.items():
+                if component_value is not None:
+                    cohorts.setdefault((candidate.label, component), []).append(component_value)
+    scored_rows = []
+    for candidates in raw_rows:
+        scored = []
+        for candidate in candidates:
+            percentiles = {
+                component: percentile_rank(component_value, cohorts.get((candidate.label, component), []))
+                for component, component_value in candidate.components.items()
+            }
+            fit = weighted_score(percentiles, ARCHETYPE_DEFINITIONS[candidate.label]["components"]) if candidate.eligible else None
+            scored.append({
+                "archetype": candidate.label,
+                "eligible": candidate.eligible,
+                "fit": fit,
+                "components": {
+                    key: {"raw": round(raw, 6) if raw is not None else None, "percentile": percentiles[key]}
+                    for key, raw in candidate.components.items()
+                },
+                "unsupported_reason": None if candidate.eligible else candidate.unsupported_reason,
+            })
+        scored_rows.append(scored)
+    return scored_rows
+
+
+def coefficient_stability(values: list[float | None]) -> float | None:
+    observed = [item for item in values if item is not None]
     if len(observed) < 2:
-        return 0.0
+        return None
     centre = sum(observed) / len(observed)
     if abs(centre) < 0.01:
-        return 0.0
-    variance = sum((value - centre) ** 2 for value in observed) / len(observed)
-    return clamp(1 - (variance ** 0.5 / abs(centre)))
-
-
-def heatmap_similarity(first: list[dict], second: list[dict]) -> float | None:
-    if not first or not second or len(first) != len(second):
         return None
-    difference = sum(abs(a.get("share", 0.0) - b.get("share", 0.0)) for a, b in zip(first, second))
-    return clamp(1 - difference / 2)
+    variance = sum((item - centre) ** 2 for item in observed) / len(observed)
+    return max(0.0, 1 - sqrt(variance) / abs(centre))
 
 
-def score_role_candidates(features: dict, priors: dict | None = None) -> list[RoleCandidate]:
-    """Score every role; unsupported inputs remain explicit instead of becoming zero."""
-
-    priors = priors or {}
-    states = features["states"]
-    observed_states = [name for name in STATE_NAMES if states[name]["exposure_seconds"] >= PROVISIONAL_STATE_SECONDS]
-    total_seconds = sum(states[name]["exposure_seconds"] for name in STATE_NAMES)
-    outfield = features.get("position_group") != "GK"
-
-    def rate(state: str, metric: str) -> float | None:
-        cohort = states[state]
-        count = cohort["summary"].get(metric)
-        if count is None:
-            return None
-        return smooth_rate(count, cohort["exposure_seconds"], priors.get(state, {}).get(metric, 0.0))
-
-    def share(state: str, metric: str) -> float | None:
-        return states[state]["team_action_shares"].get(metric, {}).get("share")
-
-    losing_progression = rate("losing", "progressive_actions")
-    drawing_progression = rate("drawing", "progressive_actions")
-    winning_progression = rate("winning", "progressive_actions")
-    progression_slope = weighted_average([
-        (relative_slope(losing_progression, drawing_progression), states["drawing"]["exposure_seconds"]),
-        (relative_slope(drawing_progression, winning_progression), states["winning"]["exposure_seconds"]),
-    ])
-    progression_share = weighted_average([(share(name, "progressive_actions"), states[name]["exposure_seconds"]) for name in STATE_NAMES])
-    unlocker_components = {
-        "progressive_volume": clamp((weighted_average([(rate(name, "progressive_actions"), states[name]["exposure_seconds"]) for name in STATE_NAMES]) or 0) / 8),
-        "positive_state_slope": clamp((progression_slope or 0) / 0.35),
-        "matched_team_share": clamp((progression_share or 0) / 0.22),
-    }
-
-    losing_carries = rate("losing", "progressive_carries")
-    winning_carries = rate("winning", "progressive_carries")
-    carry_share = weighted_average([(share(name, "progressive_carries"), states[name]["exposure_seconds"]) for name in STATE_NAMES])
-    forward_carry = weighted_average([(states[name]["carrying"].get("mean_forward_metres"), states[name]["summary"].get("carries", 0)) for name in STATE_NAMES])
-    carrier_components = {
-        "progressive_carry_volume": clamp((weighted_average([(rate(name, "progressive_carries"), states[name]["exposure_seconds"]) for name in STATE_NAMES]) or 0) / 4),
-        "progressive_carry_share": clamp((carry_share or 0) / 0.25),
-        "forward_carry_distance": clamp((forward_carry or 0) / 10),
-        "positive_state_slope": clamp((relative_slope(losing_carries, winning_carries) or 0) / 0.35),
-    }
-
-    pass_rates = [rate(name, "pass_attempts") for name in STATE_NAMES]
-    completion_rates = [states[name]["passing"].get("completion_rate") for name in STATE_NAMES]
-    progression_rates = [rate(name, "progressive_actions") for name in STATE_NAMES]
-    stabiliser_components = {
-        "completion_stability": coefficient_stability(completion_rates),
-        "progression_stability": coefficient_stability(progression_rates),
-        "pass_volume": clamp((weighted_average([(value, states[name]["exposure_seconds"]) for name, value in zip(STATE_NAMES, pass_rates)]) or 0) / 35),
-    }
-
-    centroids = [states[name]["touch_location"] for name in STATE_NAMES]
-    centroid_distances = [
-        hypot(first["x"] - second["x"], first["y"] - second["y"])
-        for first, second in zip(centroids, centroids[1:])
-        if first.get("x") is not None and first.get("y") is not None and second.get("x") is not None and second.get("y") is not None
-    ]
-    heatmap_scores = [heatmap_similarity(states[first]["touch_grid"], states[second]["touch_grid"]) for first, second in zip(STATE_NAMES, STATE_NAMES[1:])]
-    territory_components = {
-        "centroid_stability": clamp(1 - (sum(centroid_distances) / len(centroid_distances) if centroid_distances else 100) / 14),
-        "heatmap_overlap": weighted_average([(value, 1) for value in heatmap_scores]) or 0.0,
-        "touch_share_retention": coefficient_stability([share(name, "touches") for name in STATE_NAMES]),
-    }
-
-    winning = states["winning"]
-    closer_components = {
-        "winning_goals": clamp(features["winning_goals"] / 4),
-        "winning_goal_share": clamp(features["winning_goals"] / max(features["total_goals"], 1)),
-        "winning_shot_process": clamp((rate("winning", "shots") or 0) / 4),
-    }
-    clutch_components = {
-        "state_changing_goals": clamp(features["state_changing_goals"] / 4),
-        "transition_goal_rate": clamp(features["state_changing_goals"] * 5400 / max(features["transition_exposure_seconds"], 1) / 1.2),
-        "transition_process": clamp(((rate("losing", "shots") or 0) + (rate("drawing", "shots") or 0)) / 7),
-    }
-
-    losing = states["losing"]
-    outlet_components = {
-        "losing_touch_share": clamp((share("losing", "touches") or 0) / 0.16),
-        "losing_involvement": clamp(((rate("losing", "pass_attempts") or 0) + (rate("losing", "carries") or 0)) / 45),
-        "forward_actions": clamp(((rate("losing", "progressive_actions") or 0) / 8)),
-    }
-
-    relative_movements = []
-    for first, second in zip(STATE_NAMES, STATE_NAMES[1:]):
-        player_first, player_second = states[first]["touch_location"], states[second]["touch_location"]
-        team_first, team_second = states[first]["team_touch_location"], states[second]["team_touch_location"]
-        if all(row.get(axis) is not None for row in (player_first, player_second, team_first, team_second) for axis in ("x", "y")):
-            relative_movements.append(hypot(
-                (player_second["x"] - player_first["x"]) - (team_second["x"] - team_first["x"]),
-                (player_second["y"] - player_first["y"]) - (team_second["y"] - team_first["y"]),
-            ))
-    migrant_components = {
-        "relative_centroid_movement": clamp((sum(relative_movements) / len(relative_movements) if relative_movements else 0) / 12),
-        "distribution_divergence": clamp(1 - (weighted_average([(value, 1) for value in heatmap_scores]) or 1)),
-        "movement_consistency": clamp(1 - ((max(relative_movements) - min(relative_movements)) / 12 if len(relative_movements) > 1 else 1)),
-    }
-
-    broad_metrics = ("touches", "pass_attempts", "progressive_actions", "shots", "defensive_actions")
-    metric_stabilities = [coefficient_stability([rate(name, metric) for name in STATE_NAMES]) for metric in broad_metrics]
-    share_stabilities = [coefficient_stability([share(name, metric) for name in STATE_NAMES]) for metric in ("touches", "passes", "progressive_actions", "shots", "defensive_actions")]
-    constant_components = {
-        "rate_stability": sum(metric_stabilities) / len(metric_stabilities),
-        "team_share_stability": sum(share_stabilities) / len(share_stabilities),
-        "spatial_support": territory_components["heatmap_overlap"],
-    }
-
-    role_rows = [
-        ("Unlocker", unlocker_components, outfield and min(states["losing"]["summary"]["progressive_actions"], states["winning"]["summary"]["progressive_actions"]) >= 5, "Needs progressive actions in losing and winning states."),
-        ("Progression Carrier", carrier_components, outfield and min(states["losing"]["summary"]["progressive_carries"], states["winning"]["summary"]["progressive_carries"]) >= 3, "Needs carry-specific evidence in losing and winning states."),
-        ("Stabiliser", stabiliser_components, sum(states[name]["summary"]["pass_attempts"] for name in STATE_NAMES) >= 100, "Needs meaningful pass volume."),
-        ("Territory Anchor", territory_components, len(observed_states) == 3 and min(states[name]["touch_location"]["sample_size"] for name in STATE_NAMES) >= 20, "Needs located touches in all three states."),
-        ("Closer", closer_components, outfield and features["winning_goals"] >= 2 and winning["summary"]["shots"] >= 6, "Needs at least two actual winning-state goals and meaningful shot evidence."),
-        ("Clutch response", clutch_components, outfield and features["state_changing_goals"] >= 2, "Needs at least two actual losing-to-drawing or drawing-to-winning goals."),
-        ("Outlet", outlet_components, losing["exposure_seconds"] >= PROVISIONAL_STATE_SECONDS and losing["summary"]["touches"] >= 25, "Needs meaningful losing-state exposure and touches."),
-        ("Role Migrant", migrant_components, len(observed_states) >= 2 and len(relative_movements) >= 1 and min(states[name]["touch_location"]["sample_size"] for name in observed_states) >= 15, "Needs located-touch movement relative to the matched team."),
-        ("State Constant", constant_components, len(observed_states) == 3 and sum(states[name]["summary"]["actions"] for name in STATE_NAMES) >= 100, "Needs broad action evidence in all three states."),
-    ]
-    evidence_confidence = clamp(total_seconds / ESTABLISHED_TOTAL_SECONDS)
-    coverage_confidence = clamp(len(observed_states) / 3)
-    candidates = []
-    for label, components, eligible, reason in role_rows:
-        weights = 1 / len(components)
-        score = round(sum(value * weights for value in components.values()) * evidence_confidence * coverage_confidence, 4) if eligible else None
-        candidates.append(RoleCandidate(label, score, eligible, {key: round(value, 4) for key, value in components.items()}, None if eligible else reason))
-    return candidates
-
-
-def assign_role(features: dict, priors: dict | None = None) -> dict:
-    candidates = score_role_candidates(features, priors)
-    ranked = sorted((candidate for candidate in candidates if candidate.score is not None), key=lambda candidate: candidate.score, reverse=True)
-    coverage = features["state_coverage"]
-    total_seconds = sum(item["exposure_seconds"] for item in coverage.values())
-    provisional_states = sum(item["exposure_seconds"] >= PROVISIONAL_STATE_SECONDS for item in coverage.values())
-    established_states = sum(item["exposure_seconds"] >= ESTABLISHED_STATE_SECONDS for item in coverage.values())
-    top = ranked[0] if ranked and ranked[0].score >= MIN_ROLE_SCORE else None
-    runner = ranked[1] if top and len(ranked) > 1 else None
-    confidence = "insufficient"
-    if top:
-        required_established_states = 3 if top.label in STABILITY_ROLES else 2
-        established = total_seconds >= ESTABLISHED_TOTAL_SECONDS and established_states >= required_established_states
-        provisional = total_seconds >= PROVISIONAL_TOTAL_SECONDS and provisional_states >= 2
-        confidence = "established" if established else "provisional" if provisional else "insufficient"
-        if runner and top.score - runner.score < CLOSE_ROLE_MARGIN:
-            confidence = "mixed"
-    explanation = (
-        f"{ROLE_MEANINGS[top.label]} The season score is {top.score:.2f}."
-        if top and confidence != "insufficient"
-        else "Role not established: verified season evidence does not yet clear the exposure and role-specific evidence gates."
-    )
-    if top and runner:
-        explanation += f" {runner.label} is the runner-up at {runner.score:.2f}."
-    return {
-        "primary_role": top.label if top and confidence != "insufficient" else None,
-        "primary_score": top.score if top and confidence != "insufficient" else None,
-        "runner_up_role": runner.label if top and runner and confidence != "insufficient" else None,
-        "runner_up_score": runner.score if top and runner and confidence != "insufficient" else None,
-        "score_margin": round(top.score - runner.score, 4) if top and runner and confidence != "insufficient" else None,
-        "confidence": confidence,
-        "explanation": explanation,
-        "scores": [
-            {"role": candidate.label, "score": candidate.score, "eligible": candidate.eligible, "components": candidate.components, "unsupported_reason": candidate.reason}
-            for candidate in candidates
-        ],
-    }
-
-
-def aggregate_state_context(profile: PlayerSeasonEventProfile, state: str, match_ids: list[int]) -> dict:
-    scope = StateLensScope(state=state)
-    player_events, team_events, carries, team_carries, events, segments = state_event_rows(profile, scope, match_ids)
-    evidence = player_state_evidence(profile, match_ids, scope)
-    player = action_context(player_events, carries, evidence["exposure_seconds"], include_defensive_families=False)
-    team = team_matched_context(team_events, team_carries, segments, evidence["exposure_seconds"])
-    player["team_action_shares"] = team_relative_shares(player["summary"], team["summary"])
-    player["team_action_shares"]["progressive_carries"] = {
-        "player_count": player["summary"]["progressive_carries"],
-        "team_count": team["summary"]["progressive_carries"],
-        "share": player["summary"]["progressive_carries"] / team["summary"]["progressive_carries"] if team["summary"]["progressive_carries"] else None,
-        "unit": "share_of_matched_team_actions",
-    }
-    player["team_touch_location"] = team["touch_location"]
-    player["evidence"] = evidence
-    return player
-
-
-def player_goal_evidence(profile: PlayerSeasonEventProfile) -> dict:
-    goals = ProviderMatchEvent.objects.filter(
-        provider_match__competition_season=profile.competition_season,
-        player_id=profile.player_id,
-        shot_outcome=MatchEventShotOutcome.GOAL,
-        is_goal_disallowed=False,
-        is_deleted_event=False,
-    )
-    if profile.team_id is not None:
-        goals = goals.filter(team_id=profile.team_id)
-    total_goals = goals.count()
-    winning_goals = goals.filter(game_state_before=MatchEventGameState.WINNING).count()
-    transition_episodes = ProviderMatchTeamGameStateEpisode.objects.filter(
-        provider_match__competition_season=profile.competition_season,
-        entry_event__player_id=profile.player_id,
-        entry_event__shot_outcome=MatchEventShotOutcome.GOAL,
-        entry_event__is_goal_disallowed=False,
-        entry_event__is_deleted_event=False,
-    )
-    if profile.team_id is not None:
-        transition_episodes = transition_episodes.filter(focal_team_id=profile.team_id)
-    state_changing_goals = transition_episodes.filter(
-        previous_state=MatchEventGameState.LOSING,
-        state=MatchEventGameState.DRAWING,
-    ).count() + transition_episodes.filter(
-        previous_state=MatchEventGameState.DRAWING,
-        state=MatchEventGameState.WINNING,
-    ).count()
-    return {"total_goals": total_goals, "winning_goals": winning_goals, "state_changing_goals": state_changing_goals}
-
-
-def build_player_features(profile: PlayerSeasonEventProfile, match_ids: list[int]) -> dict:
-    states = {state: aggregate_state_context(profile, state, match_ids) for state in STATE_NAMES}
-    stint_profiles = list(
-        PlayerSeasonEventProfile.objects.filter(
-            competition_season=profile.competition_season,
-            player_id=profile.player_id,
-            split_type=EventProfileSplitType.TEAM,
-            is_current=True,
-        ).select_related("team", "player", "competition_season")
-    )
-    if len(stint_profiles) > 1:
-        for state in STATE_NAMES:
-            stint_contexts = [aggregate_state_context(stint, state, match_ids) for stint in stint_profiles]
-            share_keys = set().union(*(context["team_action_shares"] for context in stint_contexts))
-            for key in share_keys:
-                value = weighted_average([
-                    (context["team_action_shares"].get(key, {}).get("share"), context["exposure_seconds"])
-                    for context in stint_contexts
-                ])
-                states[state]["team_action_shares"].setdefault(key, {})["share"] = round(value, 4) if value is not None else None
-                states[state]["team_action_shares"][key]["unit"] = "exposure_weighted_stint_share"
-            states[state]["team_touch_location"] = {
-                "x": weighted_average([(context["team_touch_location"].get("x"), context["exposure_seconds"]) for context in stint_contexts]),
-                "y": weighted_average([(context["team_touch_location"].get("y"), context["exposure_seconds"]) for context in stint_contexts]),
-                "sample_size": sum(context["team_touch_location"].get("sample_size", 0) for context in stint_contexts),
-            }
-            states[state]["stint_evidence"] = [
-                {"team_id": stint.team_id, "exposure_seconds": context["exposure_seconds"]}
-                for stint, context in zip(stint_profiles, stint_contexts)
-            ]
-    goals = player_goal_evidence(profile)
-    return {
-        "position_group": position_group(profile),
-        "states": states,
-        "state_coverage": {
-            state: {
-                "exposure_seconds": states[state]["exposure_seconds"],
-                "minutes": states[state]["exposure_minutes"],
-                "matches": states[state]["evidence"]["match_count"],
-                "episodes": states[state]["evidence"]["episode_count"],
-            }
-            for state in STATE_NAMES
+def trait_raw(features: dict) -> dict[str, dict]:
+    exposure = value(features, "exposure", "verified_seconds", default=0)
+    geometry = value(features, "overall", "geometry", default={})
+    team_geometry = value(features, "overall", "team_geometry", default={})
+    summary = value(features, "overall", "summary", default={})
+    shares = value(features, "overall", "team_action_shares", default={})
+    score_events = value(features, "score_events", default={})
+    spatial = value(features, "state_spatial", default={})
+    states = value(features, "states", default={})
+    observed = spatial.get("observed_states", [])
+    state_rates = []
+    for metric in ("touches", "pass_attempts", "progressive_actions", "defensive_actions"):
+        state_rates.append(coefficient_stability([
+            value(states, state, "rates", metric, "per_90") for state in observed
+        ]))
+    observed_stabilities = [item for item in state_rates if item is not None]
+    rate_stability = sum(observed_stabilities) / len(observed_stabilities) if observed_stabilities else None
+    completion = geometry.get("pass_completion")
+    turnover_rate = value(geometry, "rates_per90", "turnovers")
+    ball_secure = completion - min((turnover_rate or 0) / 10, 0.5) if completion is not None else None
+    clutch_points = score_events.get("state_changing_goals", 0) * 2 + score_events.get("state_changing_assists", 0)
+    extender_points = score_events.get("winning_state_goals", 0) * 2 + score_events.get("winning_state_assists", 0)
+    clutch_contributions = score_events.get("state_changing_goals", 0) + score_events.get("state_changing_assists", 0)
+    extender_contributions = score_events.get("winning_state_goals", 0) + score_events.get("winning_state_assists", 0)
+    contracts = {
+        "Clutch": {"raw": clutch_points, "eligible": clutch_contributions >= 4 and clutch_points >= 7, "evidence": score_events},
+        "Lead Extender": {"raw": extender_points, "eligible": extender_contributions >= 3 and extender_points >= 5, "evidence": score_events},
+        "State-resilient": {
+            "raw": None if rate_stability is None else (rate_stability + (spatial.get("mean_heatmap_overlap") or 0)) / 2,
+            "eligible": len(observed) >= 2 and spatial.get("location_samples", 0) >= 40,
+            "evidence": {"rate_stability": rate_stability, "heatmap_overlap": spatial.get("mean_heatmap_overlap"), "observed_states": observed},
         },
-        "transition_exposure_seconds": states["losing"]["exposure_seconds"] + states["drawing"]["exposure_seconds"],
-        **goals,
+        "Adaptive": {
+            "raw": spatial.get("mean_relative_movement"),
+            "eligible": len(observed) >= 2 and spatial.get("location_samples", 0) >= 40,
+            "evidence": {"relative_movement": spatial.get("mean_relative_movement"), "observed_states": observed},
+        },
+        "High-volume": {
+            "raw": (value(shares, "touches", "share", default=0) + value(shares, "passes", "share", default=0)) / 2,
+            "eligible": geometry.get("touches", 0) >= 100,
+            "evidence": {"touch_share": value(shares, "touches", "share"), "pass_share": value(shares, "passes", "share")},
+        },
+        "Direct": {
+            "raw": per90(summary.get("progressive_actions", 0) + geometry.get("long_progressive_passes", 0), exposure),
+            "eligible": summary.get("progressive_actions", 0) >= 15,
+            "evidence": {"progressive_actions": summary.get("progressive_actions", 0), "long_or_progressive_passes": geometry.get("long_progressive_passes", 0)},
+        },
+        "Ball secure": {
+            "raw": ball_secure,
+            "eligible": geometry.get("passes", 0) >= 80 and geometry.get("touches", 0) >= 100,
+            "evidence": {"pass_completion": completion, "turnovers_per90": turnover_rate},
+        },
+        "Aerial specialist": {
+            "raw": ratio(geometry.get("aerials", 0), team_geometry.get("aerials", 0)),
+            "eligible": geometry.get("aerials", 0) >= 25,
+            "evidence": {"aerials": geometry.get("aerials", 0), "team_aerials": team_geometry.get("aerials", 0)},
+        },
+        "Set-piece specialist": {
+            "raw": ratio(geometry.get("set_piece_actions", 0), team_geometry.get("set_piece_actions", 0)),
+            "eligible": geometry.get("set_piece_actions", 0) >= 15 and geometry.get("set_piece_creation", 0) >= 3,
+            "evidence": {"set_piece_actions": geometry.get("set_piece_actions", 0), "set_piece_creation": geometry.get("set_piece_creation", 0)},
+        },
     }
+    if exposure < PROVISIONAL_EXPOSURE_SECONDS:
+        for contract in contracts.values():
+            contract["eligible"] = False
+    return contracts
 
 
-def season_priors(feature_rows: dict[int, dict]) -> dict:
-    totals = {state: defaultdict(int) for state in STATE_NAMES}
-    exposure = {state: 0 for state in STATE_NAMES}
-    for features in feature_rows.values():
-        for state in STATE_NAMES:
-            cohort = features["states"][state]
-            exposure[state] += cohort["exposure_seconds"]
-            for key, value in cohort["summary"].items():
-                if isinstance(value, int):
-                    totals[state][key] += value
+def score_traits(feature_rows: list[dict]) -> list[list[dict]]:
+    raw_rows = [trait_raw(features) for features in feature_rows]
+    cohorts = {
+        label: [row[label]["raw"] for row in raw_rows if row[label]["eligible"] and row[label]["raw"] is not None]
+        for label in TRAIT_DEFINITIONS
+    }
+    results = []
+    for raw in raw_rows:
+        traits = []
+        for label, contract in raw.items():
+            fixed_threshold = 2 if label in {"Clutch", "Lead Extender"} else None
+            score = (
+                min(contract["raw"] / 6, 1.0)
+                if contract["eligible"] and fixed_threshold is not None
+                else percentile_rank(contract["raw"], cohorts[label]) if contract["eligible"] else None
+            )
+            assigned = contract["eligible"] and (
+                contract["raw"] >= fixed_threshold if fixed_threshold is not None else score is not None and score >= 0.80
+            )
+            if assigned:
+                traits.append({
+                    "trait": label,
+                    "score": round(score, 4) if score is not None else 1.0,
+                    "meaning": TRAIT_DEFINITIONS[label],
+                    "evidence": contract["evidence"],
+                })
+        results.append(sorted(traits, key=lambda item: (-item["score"], item["trait"])))
+    return results
+
+
+def assign_classification(features: dict, candidates: list[dict], traits: list[dict]) -> dict:
+    exposure = value(features, "exposure", "verified_seconds", default=0)
+    evidence_confidence = (
+        "established" if exposure >= ESTABLISHED_EXPOSURE_SECONDS
+        else "provisional" if exposure >= PROVISIONAL_EXPOSURE_SECONDS
+        else "insufficient"
+    )
+    ranked = sorted(
+        (candidate for candidate in candidates if candidate["fit"] is not None),
+        key=lambda candidate: (-candidate["fit"], candidate["archetype"]),
+    )
+    primary = ranked[0] if ranked and ranked[0]["fit"] >= MINIMUM_PRIMARY_FIT and evidence_confidence != "insufficient" else None
+    secondary = ranked[1] if primary and len(ranked) > 1 and ranked[1]["fit"] >= MINIMUM_SECONDARY_FIT else None
+    hybrid = bool(secondary and primary["fit"] - secondary["fit"] <= HYBRID_MARGIN)
+    if not hybrid:
+        secondary = None
+    shape = "hybrid" if hybrid else "clear" if primary else "unclassified"
+    if primary:
+        explanation = ARCHETYPE_DEFINITIONS[primary["archetype"]]["meaning"]
+        if secondary:
+            explanation += f" The evidence also strongly supports {secondary['archetype']}."
+    elif evidence_confidence == "insufficient":
+        explanation = "No archetype yet: this stint has fewer than 450 verified minutes."
+    else:
+        explanation = "No archetype cleared both its football-specific evidence gate and the minimum cohort-relative fit."
     return {
-        state: {key: value * 5400 / exposure[state] if exposure[state] else 0.0 for key, value in totals[state].items()}
-        for state in STATE_NAMES
+        "primary_archetype": primary["archetype"] if primary else None,
+        "primary_fit": primary["fit"] if primary else None,
+        "secondary_archetype": secondary["archetype"] if secondary else None,
+        "secondary_fit": secondary["fit"] if secondary else None,
+        "classification_shape": shape,
+        "evidence_confidence": evidence_confidence,
+        "traits": traits,
+        "explanation": explanation,
     }
 
 
 @transaction.atomic
-def materialize_player_season_roles(
+def score_player_season_roles(
     competition_season,
     *,
     affected_player_ids: Iterable[int] | None = None,
     affected_team_ids: Iterable[int] | None = None,
 ) -> dict:
-    """Replace current role rows for a full season or the affected team/player union."""
+    """Score a complete season cohort, then publish only the requested slice."""
 
-    profiles = PlayerSeasonEventProfile.objects.filter(
+    snapshots = list(PlayerSeasonRoleFeatureSnapshot.objects.filter(
         competition_season=competition_season,
-        split_type=EventProfileSplitType.SEASON_TOTAL,
         is_current=True,
-    ).select_related("player", "competition_season")
-    target_ids = set(affected_player_ids or [])
-    if affected_team_ids:
-        target_ids.update(
-            PlayerSeasonEventProfile.objects.filter(
-                competition_season=competition_season,
-                split_type=EventProfileSplitType.TEAM,
-                team_id__in=set(affected_team_ids),
-                is_current=True,
-            ).values_list("player_id", flat=True)
+    ).select_related("player", "team").order_by("player_id", "team_id"))
+    feature_rows = [snapshot.features for snapshot in snapshots]
+    candidate_rows = score_candidate_cohort(feature_rows)
+    trait_rows = score_traits(feature_rows)
+    assignments = [
+        assign_classification(features, candidates, traits)
+        for features, candidates, traits in zip(feature_rows, candidate_rows, trait_rows)
+    ]
+    target_player_ids = set(affected_player_ids) if affected_player_ids is not None else None
+    target_team_ids = set(affected_team_ids) if affected_team_ids is not None else None
+    selected = [
+        (snapshot, candidates, assignment)
+        for snapshot, candidates, assignment in zip(snapshots, candidate_rows, assignments)
+        if (
+            target_player_ids is None and target_team_ids is None
+            or target_player_ids is not None and snapshot.player_id in target_player_ids
+            or target_team_ids is not None and snapshot.team_id in target_team_ids
         )
-    if affected_player_ids is not None or affected_team_ids is not None:
-        profiles = profiles.filter(player_id__in=target_ids)
-    profiles = list(profiles)
-    retirement_ids = set(target_ids) if (affected_player_ids is not None or affected_team_ids is not None) else set(
-        PlayerSeasonRole.objects.filter(
-            competition_season=competition_season,
-            is_current=True,
-        ).values_list("player_id", flat=True)
-    )
-    retirement_ids.update(profile.player_id for profile in profiles)
-    match_ids = list(ProviderMatch.objects.filter(competition_season=competition_season).values_list("id", flat=True))
-    feature_rows = {profile.player_id: build_player_features(profile, match_ids) for profile in profiles}
-    priors = season_priors(feature_rows)
-    latest_match = ProviderMatch.objects.filter(competition_season=competition_season).order_by("-kickoff_at", "-id").first()
-    state_source_version = ProviderMatchTeamGameStateEpisode.objects.filter(
-        provider_match__competition_season=competition_season,
-    ).aggregate(value=Max("calculation_version"))["value"] or GAME_STATE_CALCULATION_VERSION
-    participation_source_version = ProviderMatchPlayerStateExposure.objects.filter(
-        player_interval__participation__provider_match__competition_season=competition_season,
-    ).aggregate(value=Max("formula_version"))["value"] or PARTICIPATION_SOURCE_VERSION
-    created = []
-    for profile in profiles:
-        features = feature_rows[profile.player_id]
-        assignment = assign_role(features, priors)
-        team_ids = list(
-            PlayerSeasonEventProfile.objects.filter(
-                competition_season=competition_season,
-                player_id=profile.player_id,
-                split_type=EventProfileSplitType.TEAM,
-                is_current=True,
-            ).values_list("team_id", flat=True)
-        )
-        created.append(PlayerSeasonRole(
-            competition_season=competition_season,
-            player_id=profile.player_id,
-            team_context=team_ids,
-            team_context_quality="multi_team_weighted" if len(team_ids) > 1 else "single_team",
-            primary_role=assignment["primary_role"],
-            primary_score=assignment["primary_score"],
-            runner_up_role=assignment["runner_up_role"],
-            runner_up_score=assignment["runner_up_score"],
-            score_margin=assignment["score_margin"],
-            confidence=assignment["confidence"],
-            state_coverage=features["state_coverage"],
-            verified_exposure_seconds=sum(item["exposure_seconds"] for item in features["state_coverage"].values()),
-            evidence={
-                "meaning": ROLE_MEANINGS.get(assignment["primary_role"]),
-                "explanation": assignment["explanation"],
-                "role_scores": assignment["scores"],
-                "state_signals": {state: {
-                    "progressive_actions_per_90": features["states"][state]["rates"]["progressive_actions"]["per_90"],
-                    "progressive_carries_per_90": features["states"][state]["rates"]["progressive_carries"]["per_90"],
-                    "shots_per_90": features["states"][state]["rates"]["shots"]["per_90"],
-                    "touch_location": features["states"][state]["touch_location"],
-                } for state in STATE_NAMES},
-                "goal_evidence": {
-                    "winning_state_goals": features["winning_goals"],
-                    "state_changing_goals": features["state_changing_goals"],
-                    "total_goals": features["total_goals"],
-                },
-            },
-            calculation_version=PLAYER_SEASON_ROLE_VERSION,
-            source_event_version=EVENT_PROFILE_VERSION,
-            source_state_version=state_source_version,
-            source_participation_version=participation_source_version,
-            calculated_through_match=latest_match,
-            calculated_through_date=latest_match.kickoff_at.date() if latest_match else None,
-            is_current=False,
-        ))
-    PlayerSeasonRole.objects.bulk_create(created, batch_size=500)
-    player_ids = [profile.player_id for profile in profiles]
-    now = timezone.now()
-    PlayerSeasonRole.objects.filter(
+    ]
+    rows = [PlayerSeasonRole(
         competition_season=competition_season,
-        player_id__in=retirement_ids,
-        is_current=True,
-    ).exclude(pk__in=[row.pk for row in created if row.pk]).update(is_current=False, superseded_at=now)
-    new_ids = [row.pk for row in created if row.pk]
-    PlayerSeasonRole.objects.filter(pk__in=new_ids).update(is_current=True)
+        player_id=snapshot.player_id,
+        team_id=snapshot.team_id,
+        feature_snapshot=snapshot,
+        primary_archetype=assignment["primary_archetype"],
+        primary_fit=assignment["primary_fit"],
+        secondary_archetype=assignment["secondary_archetype"],
+        secondary_fit=assignment["secondary_fit"],
+        classification_shape=assignment["classification_shape"],
+        evidence_confidence=assignment["evidence_confidence"],
+        traits=assignment["traits"],
+        candidates=candidates,
+        evidence={
+            "explanation": assignment["explanation"],
+            "position": snapshot.features.get("position", {}),
+            "exposure": snapshot.features.get("exposure", {}),
+            "score_events": snapshot.features.get("score_events", {}),
+            "state_spatial": snapshot.features.get("state_spatial", {}),
+        },
+        scoring_version=ROLE_SCORING_VERSION,
+        is_current=False,
+    ) for snapshot, candidates, assignment in selected]
+    PlayerSeasonRole.objects.bulk_create(rows, batch_size=250)
+    current = PlayerSeasonRole.objects.filter(competition_season=competition_season, is_current=True)
+    if target_player_ids is not None or target_team_ids is not None:
+        target_scope = models.Q()
+        if target_player_ids is not None:
+            target_scope |= models.Q(player_id__in=target_player_ids)
+        if target_team_ids is not None:
+            target_scope |= models.Q(team_id__in=target_team_ids)
+        current = current.filter(target_scope)
+    current.exclude(pk__in=[row.pk for row in rows]).update(is_current=False, superseded_at=timezone.now())
+    PlayerSeasonRole.objects.filter(pk__in=[row.pk for row in rows]).update(is_current=True)
+    distribution = {}
+    confidence = {}
+    classified = 0
+    for _snapshot, _candidates, assignment in selected:
+        label = assignment["primary_archetype"] or "Unclassified"
+        distribution[label] = distribution.get(label, 0) + 1
+        confidence[assignment["evidence_confidence"]] = confidence.get(assignment["evidence_confidence"], 0) + 1
+        classified += assignment["primary_archetype"] is not None
+    eligible = sum(assignment["evidence_confidence"] != "insufficient" for _snapshot, _candidates, assignment in selected)
     return {
-        "calculation_version": PLAYER_SEASON_ROLE_VERSION,
-        "players": len(created),
-        "affected_player_ids": sorted(player_ids),
-        "affected_team_ids": sorted(set(affected_team_ids or [])),
+        "scoring_version": ROLE_SCORING_VERSION,
+        "cohort_snapshots": len(snapshots),
+        "published_roles": len(rows),
+        "eligible_stints": eligible,
+        "classified_stints": classified,
+        "eligible_coverage": round(classified / eligible, 4) if eligible else None,
+        "distribution": distribution,
+        "evidence_confidence": confidence,
     }
+
+
+def materialize_player_season_roles(
+    competition_season,
+    *,
+    affected_player_ids: Iterable[int] | None = None,
+    affected_team_ids: Iterable[int] | None = None,
+    score_only: bool = False,
+    score_events_only: bool = False,
+) -> dict:
+    if score_only and score_events_only:
+        raise ValueError("score_only and score_events_only are mutually exclusive.")
+    feature_result = None
+    if score_events_only:
+        feature_result = refresh_score_event_features(
+            competition_season,
+            affected_player_ids=affected_player_ids,
+            affected_team_ids=affected_team_ids,
+        )
+    elif not score_only:
+        feature_result = materialize_player_role_features(
+            competition_season,
+            affected_player_ids=affected_player_ids,
+            affected_team_ids=affected_team_ids,
+        )
+    scoring_result = score_player_season_roles(
+        competition_season,
+        affected_player_ids=affected_player_ids,
+        affected_team_ids=affected_team_ids,
+    )
+    return {"features": feature_result, "scoring": scoring_result}
 
 
 def serialize_season_role(row: PlayerSeasonRole | None) -> dict:
     if row is None:
         return {
+            "primary_archetype": None,
             "primary_role": None,
+            "classification_shape": "unclassified",
+            "evidence_confidence": "pending",
             "confidence": "pending",
+            "traits": [],
             "freshness": "not_materialized",
-            "explanation": "Role not established because the season role materialization is not available yet.",
+            "explanation": "Role evidence has not been materialized for this player-team stint yet.",
         }
+    snapshot = row.feature_snapshot
+    meaning = ARCHETYPE_DEFINITIONS.get(row.primary_archetype, {}).get("meaning")
     return {
-        "primary_role": row.primary_role,
-        "primary_score": row.primary_score,
-        "runner_up_role": row.runner_up_role,
-        "runner_up_score": row.runner_up_score,
-        "score_margin": row.score_margin,
-        "confidence": row.confidence,
-        "freshness": "current" if row.is_current else "stale",
-        "state_coverage": row.state_coverage,
-        "verified_exposure_seconds": row.verified_exposure_seconds,
-        "team_context_quality": row.team_context_quality,
-        "calculated_through": row.calculated_through_date.isoformat() if row.calculated_through_date else None,
-        "calculation_version": row.calculation_version,
-        "meaning": row.evidence.get("meaning"),
+        "team": {"id": row.team_id, "name": row.team.name},
+        "primary_archetype": row.primary_archetype,
+        "primary_role": row.primary_archetype,
+        "primary_fit": row.primary_fit,
+        "primary_score": row.primary_fit,
+        "secondary_archetype": row.secondary_archetype,
+        "runner_up_role": row.secondary_archetype,
+        "secondary_fit": row.secondary_fit,
+        "runner_up_score": row.secondary_fit,
+        "fit_margin": round(row.primary_fit - row.secondary_fit, 4) if row.primary_fit is not None and row.secondary_fit is not None else None,
+        "classification_shape": row.classification_shape,
+        "evidence_confidence": row.evidence_confidence,
+        "confidence": row.evidence_confidence,
+        "traits": row.traits,
+        "candidates": row.candidates,
+        "freshness": "current" if row.is_current and snapshot.is_current else "stale",
+        "verified_exposure_seconds": snapshot.verified_exposure_seconds,
+        "calculated_through": snapshot.calculated_through_date.isoformat() if snapshot.calculated_through_date else None,
+        "feature_version": snapshot.feature_version,
+        "scoring_version": row.scoring_version,
+        "meaning": meaning,
         "explanation": row.evidence.get("explanation"),
-        "role_scores": row.evidence.get("role_scores", []),
-        "state_signals": row.evidence.get("state_signals", {}),
-        "goal_evidence": row.evidence.get("goal_evidence", {}),
+        "position_evidence": row.evidence.get("position", {}),
+        "state_evidence": row.evidence.get("state_spatial", {}),
+        "score_event_evidence": row.evidence.get("score_events", {}),
     }
+
+
+def serialized_player_roles(competition_season, player_id: int, preferred_team_id: int | None = None) -> tuple[dict, list[dict]]:
+    rows = list(PlayerSeasonRole.objects.filter(
+        competition_season=competition_season,
+        player_id=player_id,
+        is_current=True,
+    ).select_related("team", "feature_snapshot").order_by("team__name", "team_id"))
+    preferred = next((row for row in rows if row.team_id == preferred_team_id), None)
+    if preferred is None and len(rows) == 1:
+        preferred = rows[0]
+    return serialize_season_role(preferred), [serialize_season_role(row) for row in rows]
