@@ -547,14 +547,17 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
     () => profile?.touchGrid.reduce((total, cell) => total + cell.rawCount, 0) ?? 0,
     [profile?.touchGrid],
   )
+  const hasPassComparison = Boolean(baselinePassQuery.data)
   const selectedRouteColor = statePresentation(comparisonQuery.data?.stateLens.selected.state).color
   const baselineRouteColor = statePresentation(comparisonQuery.data?.stateLens.comparison.baseline?.state).color
+  const selectedPassColor = hasPassComparison ? selectedRouteColor : '#4A9EF5'
+  const selectedCarryColor = hasPassComparison ? selectedRouteColor : '#F0A832'
   const visiblePasses = passMapLayer === 'carries' ? [] : [
-    ...(passQuery.data?.passes ?? []).map(pass => ({ ...pass, id: `selected-${pass.id}`, color: selectedRouteColor })),
+    ...(passQuery.data?.passes ?? []).map(pass => ({ ...pass, id: `selected-${pass.id}`, color: selectedPassColor })),
     ...(baselinePassQuery.data?.passes ?? []).map(pass => ({ ...pass, id: `baseline-${pass.id}`, color: baselineRouteColor })),
   ]
   const visibleCarries = passMapLayer === 'passes' ? [] : [
-    ...(passQuery.data?.carries ?? []).map(carry => ({ ...carry, id: `selected-${carry.id}`, color: selectedRouteColor })),
+    ...(passQuery.data?.carries ?? []).map(carry => ({ ...carry, id: `selected-${carry.id}`, color: selectedCarryColor })),
     ...(baselinePassQuery.data?.carries ?? []).map(carry => ({ ...carry, id: `baseline-${carry.id}`, color: baselineRouteColor })),
   ]
   const categoryFilters = passMapLayer === 'carries' ? CARRY_FILTERS : PASS_FILTERS
@@ -847,8 +850,13 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
           )} footer={(
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[8px] font-bold uppercase tracking-[0.1em] text-ink-dim" aria-label="Pass map legend">
-                <span className="inline-flex items-center gap-1.5"><span className="h-px w-4" style={{ backgroundColor: selectedRouteColor }} aria-hidden /> {selectedStateLabel}</span>
-                {baselinePassQuery.data ? <span className="inline-flex items-center gap-1.5"><span className="h-px w-4" style={{ backgroundColor: baselineRouteColor }} aria-hidden /> {baselineStateLabel}</span> : null}
+                {hasPassComparison ? <>
+                  <span className="inline-flex items-center gap-1.5"><span className="h-px w-4" style={{ backgroundColor: selectedRouteColor }} aria-hidden /> {selectedStateLabel}</span>
+                  <span className="inline-flex items-center gap-1.5"><span className="h-px w-4" style={{ backgroundColor: baselineRouteColor }} aria-hidden /> {baselineStateLabel}</span>
+                </> : <>
+                  {passMapLayer !== 'carries' ? <span className="inline-flex items-center gap-1.5"><span className="h-px w-4 bg-electric" aria-hidden /> Pass</span> : null}
+                  {passMapLayer !== 'passes' ? <span className="inline-flex items-center gap-1.5"><span className="h-px w-4 bg-gold" aria-hidden /> Carry</span> : null}
+                </>}
                 {passMapLayer !== 'passes' ? <span className="inline-flex items-center gap-1.5 text-gold"><span className="inline-block h-px w-4 border-t border-dashed border-gold" aria-hidden /> Derived carry</span> : null}
               </div>
               {passQuery.data?.truncated && passMapLayer !== 'carries' ? (
