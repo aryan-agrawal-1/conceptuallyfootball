@@ -166,7 +166,7 @@ function EvidenceBands({ title, rows }: { title: string; rows: PassStateCategory
           <div key={row.category} className="rounded border border-line/60 bg-paper/40 px-2 py-1.5">
             <p className="text-[10px] font-bold uppercase text-ink-dim">{row.category}</p>
             <p className="font-mono text-[12px] text-ink">{percent(row.attemptShare)} choice</p>
-            <p className="whitespace-nowrap font-mono text-[11px] text-ink-dim">{percent(row.completionRate)} completion</p>
+            <p className="font-mono text-[11px] leading-snug text-ink-dim">{percent(row.completionRate)} completion</p>
           </div>
         ))}
       </div>
@@ -262,8 +262,8 @@ export function TeamPassStateFlow({
       }}
     >
       <EventPitchStage expanded={expanded} onExpandedChange={onExpandedChange}>
-        <div className="grid w-full items-start gap-8 lg:grid-cols-[minmax(0,1.45fr)_minmax(400px,0.75fr)]">
-          <div>
+        <div className="w-full space-y-5">
+          <div className="mx-auto w-full max-w-[1120px]">
             {comparisonEnabled && !payload.baseline ? (
               <EventMapNotice kind="unavailable" title="Baseline evidence unavailable">
                 Select a valid baseline cohort with verified State Lens exposure before interpreting pass movement.
@@ -292,16 +292,16 @@ export function TeamPassStateFlow({
             </div> : null}
             {deltaContract ? <details className="mt-3 border border-line-bright px-3 py-2 text-[9px] text-ink-dim"><summary className="cursor-pointer text-control-fg">Change evidence</summary><div className="mt-2"><StateDeltaMap contract={deltaContract} compact /></div></details> : null}
           </div>
-          <aside className="space-y-4 border-t border-line-bright pt-5 lg:border-t-0 lg:pt-0" aria-label="Passing evidence">
+          <aside className="space-y-4 border-t border-line-bright pt-5" aria-label="Passing evidence">
             {comparisonEnabled ? <>
               <div>
                 <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-dim">Game-state comparison</p>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid gap-3 xl:grid-cols-2">
                   {comparisons.map(cohort => (
                     <div key={cohort.key} className="border border-line/60 bg-paper/40 px-2 py-2" style={{ borderTopColor: cohort.color }}>
                       <p className="text-[9px] font-bold uppercase tracking-[0.08em]" style={{ color: cohort.color }}>{cohort.label}{cohort.key === 'baseline' ? ' baseline' : ''}</p>
                       <p className="mt-1 font-mono text-[13px] text-ink">{cohort.evidence?.summary.attemptsPerStateMinute?.toFixed(2) ?? '—'}<span className="ml-1 text-[9px] text-ink-dim">passes/min</span></p>
-                      <div className="mt-1 grid grid-cols-2 gap-x-2 text-[9px] text-ink-dim">
+                      <div className="mt-1 grid gap-1 text-[9px] text-ink-dim sm:grid-cols-2">
                         <span>{cohort.evidence ? percent(cohort.evidence.summary.completionRate) : '—'} complete</span>
                         <span>{cohort.evidence ? metres(cohort.evidence.summary.meanLengthMetres) : '—'} avg length</span>
                       </div>
@@ -316,7 +316,7 @@ export function TeamPassStateFlow({
               </div>
             </> : <>
               <p className="text-[10px] leading-relaxed text-ink-dim">Each arrow shows attempted mean direction and length. Brighter origin zones represent more attempted passes in the selected state.</p>
-              <div className="grid grid-cols-3 gap-3 text-[12px] leading-relaxed lg:grid-cols-1">
+              <div className="grid grid-cols-3 gap-3 text-[12px] leading-relaxed">
                 <p><span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-ink-dim">Passes per minute</span>{summary.attemptsPerStateMinute?.toFixed(2) ?? '—'}</p>
                 <p><span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-ink-dim">Pass completion</span>{percent(summary.completionRate)}</p>
                 <p><span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-ink-dim">Mean pass length</span>{metres(summary.meanLengthMetres)}</p>

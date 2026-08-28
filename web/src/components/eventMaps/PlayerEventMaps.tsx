@@ -802,17 +802,19 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
               {selectedDefensiveCohort ? <p>{selectedDefensiveCohort.defensiveHeight.sampleSize.toLocaleString()} located defensive actions · {selectedDefensiveCohort.defensiveHeight.median == null ? 'combined median unavailable' : `median height ${selectedDefensiveCohort.defensiveHeight.median.toFixed(1)}%`}.</p> : null}
             </div>
           )}>
-            <MapStage map="actions" expanded={expanded} setExpanded={setExpanded}>
-              {selectedDefensiveCohort && baselineDefensiveCohort ? <PairedStatePitch
-                selected={{ state: comparison?.stateLens.selected.state ?? 'all', label: selectedStateLabel, cells: selectedDefensiveCohort.defensiveGrid, average: selectedDefensiveCohort.defensiveLocation.x == null || selectedDefensiveCohort.defensiveLocation.y == null ? null : { x: selectedDefensiveCohort.defensiveLocation.x, y: selectedDefensiveCohort.defensiveLocation.y, sampleSize: selectedDefensiveCohort.defensiveLocation.sampleSize }, exposureMinutes: selectedDefensiveCohort.exposureMinutes, matchCount: selectedDefensiveCohort.evidence.matchCount }}
-                comparison={{ state: comparison?.stateLens.comparison.baseline?.state ?? 'all', label: baselineStateLabel, cells: baselineDefensiveCohort.defensiveGrid, average: baselineDefensiveCohort.defensiveLocation.x == null || baselineDefensiveCohort.defensiveLocation.y == null ? null : { x: baselineDefensiveCohort.defensiveLocation.x, y: baselineDefensiveCohort.defensiveLocation.y, sampleSize: baselineDefensiveCohort.defensiveLocation.sampleSize }, exposureMinutes: baselineDefensiveCohort.exposureMinutes, matchCount: baselineDefensiveCohort.evidence.matchCount }}
-                unit="share of located defensive actions"
-                ariaLabel={`${profile.playerName} paired defensive territory comparison`}
-              /> : selectedDefensiveCohort?.defensiveGrid.some(cell => cell.rawCount > 0) ? (
-                <PortraitPitch densityCells={selectedDefensiveCohort.defensiveGrid} densityStyle="smooth" ariaLabel={`${profile.playerName} located defensive action territory. Event-backed location only.`} />
-              ) : <EventMapNotice kind="empty" title="No located defensive actions in this scope" />}
-            </MapStage>
-            {defensiveShift ? <details className="border-t border-line-bright px-3 py-2 text-[9px] text-ink-dim"><summary className="cursor-pointer text-control-fg">Change evidence</summary><div className="mt-2"><StateDeltaMap contract={defensiveShift} compact /></div></details> : null}
+            <div className="w-full">
+              <MapStage map="actions" expanded={expanded} setExpanded={setExpanded}>
+                {selectedDefensiveCohort && baselineDefensiveCohort ? <PairedStatePitch
+                  selected={{ state: comparison?.stateLens.selected.state ?? 'all', label: selectedStateLabel, cells: selectedDefensiveCohort.defensiveGrid, average: selectedDefensiveCohort.defensiveLocation.x == null || selectedDefensiveCohort.defensiveLocation.y == null ? null : { x: selectedDefensiveCohort.defensiveLocation.x, y: selectedDefensiveCohort.defensiveLocation.y, sampleSize: selectedDefensiveCohort.defensiveLocation.sampleSize }, exposureMinutes: selectedDefensiveCohort.exposureMinutes, matchCount: selectedDefensiveCohort.evidence.matchCount }}
+                  comparison={{ state: comparison?.stateLens.comparison.baseline?.state ?? 'all', label: baselineStateLabel, cells: baselineDefensiveCohort.defensiveGrid, average: baselineDefensiveCohort.defensiveLocation.x == null || baselineDefensiveCohort.defensiveLocation.y == null ? null : { x: baselineDefensiveCohort.defensiveLocation.x, y: baselineDefensiveCohort.defensiveLocation.y, sampleSize: baselineDefensiveCohort.defensiveLocation.sampleSize }, exposureMinutes: baselineDefensiveCohort.exposureMinutes, matchCount: baselineDefensiveCohort.evidence.matchCount }}
+                  unit="share of located defensive actions"
+                  ariaLabel={`${profile.playerName} paired defensive territory comparison`}
+                /> : selectedDefensiveCohort?.defensiveGrid.some(cell => cell.rawCount > 0) ? (
+                  <PortraitPitch densityCells={selectedDefensiveCohort.defensiveGrid} densityStyle="smooth" ariaLabel={`${profile.playerName} located defensive action territory. Event-backed location only.`} />
+                ) : <EventMapNotice kind="empty" title="No located defensive actions in this scope" />}
+              </MapStage>
+              {defensiveShift ? <details className="mt-3 border border-line-bright px-3 py-2 text-[9px] text-ink-dim"><summary className="cursor-pointer text-control-fg">Change evidence</summary><div className="mt-2"><StateDeltaMap contract={defensiveShift} compact /></div></details> : null}
+            </div>
           </EventMapCard>
           <div className="lg:col-span-4 border border-line-bright bg-panel p-3">
             <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-ink">Defensive evidence</h3>
