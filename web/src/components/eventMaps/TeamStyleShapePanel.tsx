@@ -30,6 +30,18 @@ const CATEGORY_LABELS: Record<TeamStyleAxisCategory, string> = {
   transitions: 'Possession-derived transitions',
 }
 
+const CATEGORY_COLORS: Record<TeamStyleAxisCategory, string> = {
+  build_up: '#8A95B8',
+  progression_attack: '#67D7FF',
+  defence: '#72E6A5',
+  transitions: '#F6C95F',
+}
+
+const CHART_CATEGORY_LABELS: Record<TeamStyleAxisCategory, string> = {
+  ...CATEGORY_LABELS,
+  transitions: 'Transitions',
+}
+
 const REFERENCE = '#7E8FB8'
 
 const STATE_CONFIG: Array<{
@@ -367,6 +379,7 @@ function StateComparisonChart({
         >
           <title id="team-style-states-title">Team style by game state</title>
           <desc id="team-style-states-description">Every row always compares All States, Winning, Drawing and Losing against the all-state competition-season tenth to ninetieth percentile range. Each raw value is printed with its node.</desc>
+          <text x="12" y="16" fill="#65759E" fontSize="9" fontWeight="600" letterSpacing="1.2">METRIC</text>
           <text x={left} y="16" fill="#8A95B8" fontSize="9" fontWeight="600" letterSpacing="0.35">LOWER IN TYPICAL RANGE</text>
           <text x={left + plotWidth} y="16" textAnchor="end" fill="#8A95B8" fontSize="9" fontWeight="600" letterSpacing="0.35">HIGHER IN TYPICAL RANGE</text>
           {[0, 50, 100].map(position => (
@@ -378,6 +391,8 @@ function StateComparisonChart({
           {axes.map((axis, index) => {
             const y = top + index * rowHeight + 16
             const labelLines = radarLabelLines(axis.label)
+            const labelTop = y - (labelLines.length > 1 ? 8 : 2)
+            const categoryColor = CATEGORY_COLORS[axis.category]
             const distribution = payload.distributions.overall[axis.key]
             const points = series.map(item => {
               const stateAxis = item.cohort.axes[axis.key]
@@ -401,7 +416,24 @@ function StateComparisonChart({
             })
             return (
               <g key={axis.key}>
-                <SvgLabel x={12} y={y + 3} lines={labelLines} fill="#E4EAF8" fontSize={9} />
+                <rect
+                  x="12"
+                  y={labelTop - 11}
+                  width="4"
+                  height={labelLines.length > 1 ? 24 : 18}
+                  fill={categoryColor}
+                />
+                <SvgLabel x={25} y={labelTop} lines={labelLines} fill="#E4EAF8" fontSize={11} />
+                <text
+                  x="12"
+                  y={y + 25}
+                  fill={categoryColor}
+                  fontSize="8"
+                  fontWeight="600"
+                  letterSpacing="1"
+                >
+                  {CHART_CATEGORY_LABELS[axis.category].toUpperCase()}
+                </text>
                 <line x1={left} y1={y} x2={left + plotWidth} y2={y} stroke="#1B2034" strokeWidth="1" />
                 {min != null && max != null ? <line x1={xFor(min)} y1={y} x2={xFor(max)} y2={y} stroke="#56617F" strokeWidth="2" strokeLinecap="round" opacity="0.8" /> : null}
                 {points.map(point => {
