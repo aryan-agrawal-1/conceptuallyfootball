@@ -883,6 +883,16 @@ export function PlayerEventMaps({ playerId, competition, season, teams, position
                 ) : visiblePasses.length || visibleCarries.length ? (
                   <PortraitPitch passes={visiblePasses} carries={visibleCarries} eventSelectionMode="click" selectedEventId={selection?.kind === 'pass' || selection?.kind === 'carry' ? selection.id : null} onSelectedEventChange={setSelection} ariaLabel={`${profile.playerName} ${passMapLayer === 'all' ? 'pass and carry' : passMapLayer} map. Attacking left to right.`} />
                 ) : <EventMapNotice kind="empty" title={`No ${passMapLayer === 'all' ? 'passes or carries' : passMapLayer} match this scope`} />}
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-line-bright pt-2 text-[8px] font-bold uppercase tracking-[0.1em] text-ink-dim" aria-label="Visible pass map key">
+                  {hasPassComparison ? <>
+                    <span className="inline-flex items-center gap-1.5"><span className="h-px w-4" style={{ backgroundColor: selectedRouteColor }} aria-hidden /> {selectedStateLabel}</span>
+                    <span className="inline-flex items-center gap-1.5"><span className="h-px w-4" style={{ backgroundColor: baselineRouteColor }} aria-hidden /> {baselineStateLabel}</span>
+                  </> : <>
+                    {passMapLayer !== 'carries' ? <span className="inline-flex items-center gap-1.5"><span className="h-px w-4 bg-electric" aria-hidden /> Pass</span> : null}
+                    {passMapLayer !== 'passes' ? <span className="inline-flex items-center gap-1.5"><span className="h-px w-4 bg-gold" aria-hidden /> Carry</span> : null}
+                  </>}
+                  {passMapLayer !== 'passes' ? <span className="inline-flex items-center gap-1.5 text-gold"><span className="inline-block h-px w-4 border-t border-dashed border-gold" aria-hidden /> Derived carry</span> : null}
+                </div>
               </div>
             </MapStage>
           </EventMapCard>
