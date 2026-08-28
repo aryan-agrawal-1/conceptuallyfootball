@@ -329,7 +329,7 @@ class TeamStyleShapeApiTests(TestCase):
         self.assertEqual(set(payload["game_states"]), {"winning", "drawing", "losing"})
         self.assertEqual(payload["game_states"]["winning"]["scope"]["state"], "winning")
         self.assertEqual(payload["game_states"]["drawing"]["scope"]["state"], "drawing")
-        self.assertEqual(payload["axis_definitions"][3]["label"], "Pass completion")
+        self.assertEqual(payload["axis_definitions"][3]["label"], "Completed pass rate")
         self.assertEqual(payload["axis_definitions"][12]["label"], "Counter starts")
 
     def test_axis_selection_validation_and_materialized_cache_are_deterministic(self):

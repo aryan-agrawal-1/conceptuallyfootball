@@ -12,6 +12,7 @@ import type {
 } from '../../types/teamStyleShape'
 import { radarLabelLines } from '../../lib/profileMetrics'
 import { EventMapCard, EventMapNotice } from './EventMapUi'
+import { STATE_PRESENTATION } from '../../lib/eventMaps/statePresentation'
 
 const CATEGORY_ORDER: TeamStyleAxisCategory[] = [
   'build_up',
@@ -27,9 +28,6 @@ const CATEGORY_LABELS: Record<TeamStyleAxisCategory, string> = {
   transitions: 'Possession-derived transitions',
 }
 
-const POSITIVE = '#1FD17C'
-const NEGATIVE = '#EF5C66'
-const ZERO = '#65759E'
 const REFERENCE = '#7E8FB8'
 
 const STATE_CONFIG: Array<{
@@ -38,9 +36,9 @@ const STATE_CONFIG: Array<{
   color: string
   shape: 'circle' | 'diamond' | 'square'
 }> = [
-  { key: 'winning', label: 'Winning', color: POSITIVE, shape: 'circle' },
-  { key: 'drawing', label: 'Drawing', color: '#E6B85C', shape: 'diamond' },
-  { key: 'losing', label: 'Losing', color: NEGATIVE, shape: 'square' },
+  { key: 'winning', ...STATE_PRESENTATION.winning },
+  { key: 'drawing', ...STATE_PRESENTATION.drawing },
+  { key: 'losing', ...STATE_PRESENTATION.losing },
 ]
 
 function scopeLabel(scope: TeamStyleShapePayload['selected']['scope'] | null) {
@@ -159,52 +157,41 @@ function SvgLabel({
   )
 }
 
-function RadialLegend({ comparison }: { comparison: boolean }) {
+function ChartLegend({ series }: { series: ChartSeries[] }) {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-ink-dim" aria-label="Style chart legend">
-      {comparison ? <>
-        <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full" style={{ backgroundColor: '#4A9EF5' }} aria-hidden /> Selected</span>
-        <span className="inline-flex items-center gap-1.5"><span className="size-2 rotate-45" style={{ backgroundColor: '#E6B85C' }} aria-hidden /> Comparison</span>
-      </> : STATE_CONFIG.map(state => (
-        <span key={state.key} className="inline-flex items-center gap-1.5">
-          <span className={`inline-block size-2 ${state.shape === 'circle' ? 'rounded-full' : state.shape === 'square' ? 'rounded-[1px]' : 'rotate-45'}`} style={{ backgroundColor: state.color }} aria-hidden />
-          {state.label}
+      {series.map(item => (
+        <span key={item.key} className="inline-flex items-center gap-1.5">
+          <span className={`inline-block size-2 ${item.shape === 'circle' ? 'rounded-full' : item.shape === 'square' ? 'rounded-[1px]' : 'rotate-45'}`} style={{ backgroundColor: item.color }} aria-hidden />
+          {item.label}
         </span>
       ))}
-      <span className="inline-flex items-center gap-1.5"><span className="inline-block size-2 rotate-45 border border-dashed border-[#7E8FB8]" aria-hidden /> All-state reference</span>
     </div>
   )
 }
 
-function ProfileLegend() {
-  return (
-    <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[10px] text-ink-dim" aria-label="Style profile legend">
-      <span className="inline-flex items-center gap-1.5"><span className="inline-block size-2 rounded-full bg-[#4A9EF5]" aria-hidden /> Selected profile</span>
-      <span className="inline-flex items-center gap-1.5"><span className="inline-block size-2 rotate-45 border border-[#7E8FB8]" aria-hidden /> All-state reference</span>
-    </div>
-  )
+function stateSeriesColor(state: string | undefined, fallback: string) {
+  return STATE_CONFIG.find(item => item.key === state)?.color ?? fallback
 }
 
-function polygonForAxes(
-  axes: TeamStyleAxis[],
-  radius: number,
-  center: number,
-  percentileForAxis: (axis: TeamStyleAxis) => number | null,
-) {
-  const count = Math.max(axes.length, 1)
-  return axes.map((axis, index) => {
-    const percentileValue = percentileForAxis(axis)
-    const percentile = percentileValue == null ? 0 : Math.max(0, Math.min(100, percentileValue))
-    const angle = -Math.PI / 2 + index * ((Math.PI * 2) / count)
-    const distance = radius * (0.18 + (percentile / 100) * 0.82)
-    return `${center + Math.cos(angle) * distance},${center + Math.sin(angle) * distance}`
-  }).join(' ')
+function radarSeries(payload: TeamStyleShapePayload): ChartSeries[] {
+  if (payload.comparison.enabled && payload.baseline) {
+    return [
+      { key: 'selected', label: scopeLabel(payload.selected.scope), color: stateSeriesColor(payload.selected.scope.state, '#4A9EF5'), shape: 'circle', cohort: payload.selected },
+      { key: 'comparison', label: scopeLabel(payload.baseline.scope), color: stateSeriesColor(payload.baseline.scope.state, '#E6B85C'), shape: 'square', cohort: payload.baseline },
+    ]
+  }
+  if (payload.selected.scope.state !== 'all') {
+    return [{ key: 'selected', label: scopeLabel(payload.selected.scope), color: stateSeriesColor(payload.selected.scope.state, '#4A9EF5'), shape: 'circle', cohort: payload.selected }]
+  }
+  return [{ key: 'overall', label: 'All states', color: '#4A9EF5', shape: 'diamond', cohort: payload.overall }]
 }
 
-function PrevalenceRadial({ axes, overallAxes }: { axes: TeamStyleAxis[]; overallAxes: Record<string, TeamStyleAxis> }) {
+function StyleComparisonRadar({ payload, axes }: { payload: TeamStyleShapePayload; axes: TeamStyleAxis[] }) {
   const center = 200
   const radius = 124
   const count = Math.max(axes.length, 1)
+  const series = radarSeries(payload)
   const point = (index: number, fraction: number) => {
     const angle = -Math.PI / 2 + index * ((Math.PI * 2) / count)
     return {
@@ -213,13 +200,21 @@ function PrevalenceRadial({ axes, overallAxes }: { axes: TeamStyleAxis[]; overal
       angle,
     }
   }
-  const polygon = polygonForAxes(axes, radius, center, axis => axis.percentile)
+  const seriesPoints = series.map(item => ({
+    item,
+    points: axes.map((axis, index) => {
+      const stateAxis = item.cohort.axes[axis.key]
+      const normalized = normalizedPosition(stateAxis?.value ?? null, payload.distributions.overall[axis.key])
+      const coordinate = point(index, 0.18 + ((normalized?.position ?? 0) / 100) * 0.82)
+      return { axis, stateAxis, normalized, coordinate }
+    }),
+  }))
 
   return (
     <div className="mx-auto w-full max-w-[520px]">
-      <svg viewBox="0 0 400 400" className="h-auto w-full overflow-visible" role="img" aria-labelledby="team-style-prevalence-title team-style-prevalence-description">
-        <title id="team-style-prevalence-title">Team style prevalence profile</title>
-        <desc id="team-style-prevalence-description">A radial profile showing how prevalent each selected behaviour is relative to teams in the same competition and season. Distance from the centre represents percentile, not quality.</desc>
+      <svg viewBox="0 0 400 400" className="h-auto w-full overflow-visible" role="img" aria-labelledby="team-style-radar-title team-style-radar-description">
+        <title id="team-style-radar-title">Team style comparison radar</title>
+        <desc id="team-style-radar-description">The radar follows the selected State Lens cohorts. Distance from the centre is position within the competition-season all-state typical range, not quality.</desc>
         {[0.25, 0.5, 0.75, 1].map(fraction => (
           <circle key={fraction} cx={center} cy={center} r={radius * fraction} fill="none" stroke="#2A3050" strokeWidth="1" strokeDasharray={fraction === 1 ? undefined : '3 5'} />
         ))}
@@ -232,24 +227,20 @@ function PrevalenceRadial({ axes, overallAxes }: { axes: TeamStyleAxis[]; overal
             <SvgLabel x={label.x} y={label.y} lines={radarLabelLines(axis.label)} anchor={anchor} />
           </g>
         })}
-        <polygon points={polygon} fill="rgba(74,158,245,0.20)" stroke="#4A9EF5" strokeWidth="2" />
-        {axes.map((axis, index) => {
-          const percentile = axis.percentile == null ? 0 : Math.max(0, Math.min(100, axis.percentile))
-          const coordinate = point(index, 0.18 + (percentile / 100) * 0.82)
-          return <circle key={axis.key} cx={coordinate.x} cy={coordinate.y} r="4" fill={axis.percentile == null ? ZERO : '#4A9EF5'}><title>{axis.label}: {axis.percentile == null ? 'percentile unavailable' : `P${Math.round(axis.percentile)}`}</title></circle>
-        })}
-        {axes.map((axis, index) => {
-          const overall = overallAxes[axis.key]
-          if (!overall || overall.percentile == null) return null
-          const coordinate = point(index, 0.18 + (overall.percentile / 100) * 0.82)
-          return <g key={`overall-${axis.key}`} role="img" aria-label={`${axis.label} all-state reference P${Math.round(overall.percentile)}`}>
-            <title>{`${axis.label}: all-state reference P${Math.round(overall.percentile)}`}</title>
-            <StateMarker x={coordinate.x} y={coordinate.y} color={REFERENCE} shape="diamond" size={4} opacity={0.8} />
-          </g>
-        })}
+        {seriesPoints.map(({ item, points }) => <g key={item.key}>
+          <polygon points={points.map(value => `${value.coordinate.x},${value.coordinate.y}`).join(' ')} fill={item.color} fillOpacity="0.12" stroke={item.color} strokeWidth="2" />
+          {points.map(value => {
+            const sparse = value.stateAxis?.reliability === 'sparse' || value.stateAxis?.reliability === 'unavailable' || !value.normalized
+            const description = `${item.label} · ${value.axis.label}: ${value.stateAxis ? formatValue(value.axis, value.stateAxis.value) : 'unavailable'}`
+            return <g key={`${item.key}-${value.axis.key}`} tabIndex={0} role="img" aria-label={description}>
+              <title>{description}</title>
+              <StateMarker x={value.coordinate.x} y={value.coordinate.y} color={item.color} shape={item.shape} size={4} hollow={sparse} opacity={sparse ? 0.4 : 1} />
+            </g>
+          })}
+        </g>)}
       </svg>
-      <ProfileLegend />
-      <p className="text-center text-[9px] text-ink-muted">Distance from centre = same competition-season percentile · prevalence, not quality</p>
+      <ChartLegend series={series} />
+      <p className="mt-2 text-center text-[9px] text-ink-muted">Distance from centre = position within the all-state competition-season P10–P90 range · not a quality score</p>
     </div>
   )
 }
@@ -312,20 +303,18 @@ function StateComparisonChart({
   payload: TeamStyleShapePayload
   axes: TeamStyleAxis[]
 }) {
-  const comparison = payload.comparison.enabled && payload.baseline != null
-  const series: ChartSeries[] = comparison
-    ? [
-        { key: 'selected', label: 'Selected', color: '#4A9EF5', shape: 'circle', cohort: payload.selected },
-        { key: 'comparison', label: 'Comparison', color: '#E6B85C', shape: 'square', cohort: payload.baseline as TeamStyleCohort },
-      ]
-    : STATE_CONFIG.flatMap(state => {
-        const cohort = payload.gameStates?.[state.key]
-        return cohort ? [{ key: state.key, label: state.label, color: state.color, shape: state.shape, cohort }] : []
-      })
-  const width = 960
-  const left = 236
-  const right = 34
-  const plotWidth = width - left - right
+  const series: ChartSeries[] = [
+    { key: 'overall', label: 'All states', color: REFERENCE, shape: 'diamond', cohort: payload.overall },
+    ...STATE_CONFIG.flatMap(state => {
+      const cohort = payload.gameStates?.[state.key]
+      return cohort ? [{ key: state.key, label: state.label, color: state.color, shape: state.shape, cohort }] : []
+    }),
+  ]
+  const width = 1120
+  const left = 220
+  const plotWidth = 540
+  const valuesLeft = 800
+  const valueColumnWidth = 78
   const top = 50
   const rowHeight = 46
   const height = top + Math.max(axes.length, 1) * rowHeight + 30
@@ -334,7 +323,7 @@ function StateComparisonChart({
   if (!series.length) {
     return (
       <div className="border border-dashed border-line-bright bg-raised/30 px-4 py-8 text-center text-[10px] leading-relaxed text-ink-dim">
-        State observations are not loaded for this view yet. Select <span className="text-ink">By game state</span> again to request the compact state series.
+        State observations are not loaded for this view yet.
       </div>
     )
   }
@@ -349,9 +338,10 @@ function StateComparisonChart({
           aria-labelledby="team-style-states-title team-style-states-description"
         >
           <title id="team-style-states-title">Team style by game state</title>
-          <desc id="team-style-states-description">Each row positions state values against the all-state competition-season tenth to ninetieth percentile range. The all-state reference is a diamond. Sparse observations are hollow and faded.</desc>
+          <desc id="team-style-states-description">Every row always compares All States, Winning, Drawing and Losing against the all-state competition-season tenth to ninetieth percentile range. Raw values are printed in the columns to the right.</desc>
           <text x={left} y="16" fill="#8A95B8" fontSize="9" fontWeight="600" letterSpacing="0.35">LOWER IN TYPICAL RANGE</text>
           <text x={left + plotWidth} y="16" textAnchor="end" fill="#8A95B8" fontSize="9" fontWeight="600" letterSpacing="0.35">HIGHER IN TYPICAL RANGE</text>
+          {series.map((item, index) => <text key={`heading-${item.key}`} x={valuesLeft + index * valueColumnWidth} y="16" textAnchor="middle" fill={item.color} fontSize="8" fontWeight="700" letterSpacing="0.3">{item.label.toUpperCase()}</text>)}
           {[0, 50, 100].map(position => (
             <g key={position}>
               <line x1={xFor(position)} y1={top - 13} x2={xFor(position)} y2={height - 18} stroke="#252B43" strokeWidth="1" strokeDasharray={position === 50 ? '2 5' : undefined} />
@@ -362,7 +352,6 @@ function StateComparisonChart({
             const y = top + index * rowHeight + 16
             const labelLines = radarLabelLines(axis.label)
             const distribution = payload.distributions.overall[axis.key]
-            const overallValue = normalizedPosition(payload.overall.axes[axis.key]?.value ?? null, distribution)
             const points = series.map(item => {
               const stateAxis = item.cohort.axes[axis.key]
               const normalized = normalizedPosition(stateAxis?.value ?? null, distribution)
@@ -377,21 +366,18 @@ function StateComparisonChart({
                 <SvgLabel x={12} y={y + 3} lines={labelLines} fill="#E4EAF8" fontSize={9} />
                 <line x1={left} y1={y} x2={left + plotWidth} y2={y} stroke="#1B2034" strokeWidth="1" />
                 {min != null && max != null ? <line x1={xFor(min)} y1={y} x2={xFor(max)} y2={y} stroke="#56617F" strokeWidth="2" strokeLinecap="round" opacity="0.8" /> : null}
-                {overallValue ? <g aria-label={`${axis.label} all-state reference`}>
-                  <StateMarker x={xFor(overallValue.position)} y={y} color={REFERENCE} shape="diamond" size={4.5} opacity={0.75} />
-                  <title>{`${axis.label}: all-state reference ${formatValue(axis, payload.overall.axes[axis.key]?.value ?? null)}`}</title>
-                </g> : null}
                 {points.map(point => {
                   const stateAxis = point.stateAxis
-                  if (!point.normalized || !stateAxis) return null
-                  const x = xFor(point.normalized.position)
-                  const sparse = stateAxis.reliability === 'sparse' || stateAxis.reliability === 'unavailable'
-                  const description = `${point.item.label} · ${axis.label}: ${formatValue(axis, stateAxis.value)} · ${stateAxis.reliability}${point.normalized.direction ? ` · outside ${point.normalized.direction === 'low' ? 'P10' : 'P90'}` : ''}`
+                  const rawValue = stateAxis ? formatValue(axis, stateAxis.value) : '—'
+                  const x = point.normalized ? xFor(point.normalized.position) : null
+                  const sparse = !stateAxis || stateAxis.reliability === 'sparse' || stateAxis.reliability === 'unavailable'
+                  const description = `${point.item.label} · ${axis.label}: ${rawValue} · ${stateAxis?.reliability ?? 'unavailable'}${point.normalized?.direction ? ` · outside ${point.normalized.direction === 'low' ? 'P10' : 'P90'}` : ''}`
                   return (
                     <g key={point.item.key} tabIndex={0} role="img" aria-label={description}>
                       <title>{description}</title>
-                      <StateMarker x={x} y={y} color={point.item.color} shape={point.item.shape} hollow={sparse} opacity={sparse ? 0.4 : 1} />
-                      {point.normalized.direction ? <EdgeIndicator x={x} y={y} direction={point.normalized.direction} color={point.item.color} /> : null}
+                      {x == null ? null : <StateMarker x={x} y={y} color={point.item.color} shape={point.item.shape} hollow={sparse} opacity={sparse ? 0.4 : 1} />}
+                      {x != null && point.normalized?.direction ? <EdgeIndicator x={x} y={y} direction={point.normalized.direction} color={point.item.color} /> : null}
+                      <text x={valuesLeft + series.findIndex(item => item.key === point.item.key) * valueColumnWidth} y={y + 3} textAnchor="middle" fill={sparse ? '#65759E' : point.item.color} fontSize="9" fontWeight="600">{rawValue}</text>
                     </g>
                   )
                 })}
@@ -400,8 +386,8 @@ function StateComparisonChart({
           })}
         </svg>
       </div>
-      <RadialLegend comparison={comparison} />
-      <p className="text-[9px] leading-relaxed text-ink-muted">Position is a linear location within this metric's all-state P10–P90 range, not a percentile or quality score. The diamond is the all-state reference; sparse observations are shown hollow.</p>
+      <ChartLegend series={series} />
+      <p className="text-[9px] leading-relaxed text-ink-muted">All four cohorts stay visible regardless of the active State Lens. Position is a linear location within each metric's all-state P10–P90 range, not a percentile or quality score; sparse observations are hollow.</p>
     </div>
   )
 }
@@ -477,8 +463,8 @@ function AxisRows({
 const STYLE_METHOD_NOTES = [
   {
     title: 'State exposure',
-    description: 'Each cohort is divided by verified seconds spent in its selected game state. A rate uses that exposure as its denominator, so a short state sample is not treated like a full match.',
-    formula: 'per90 rate = count × 5400 / verified state exposure seconds',
+    description: 'Each cohort is divided by verified playing time. When All states is selected, that means all verified minutes; for one state, it means only the verified minutes spent in that state.',
+    formula: 'normalized rate = count × 5400 / verified state exposure seconds',
   },
   {
     title: 'Defensive-action height',
@@ -588,19 +574,16 @@ export function TeamStyleShapePanel({
     filters: [{ label: 'Game state', value: scopeLabel(payload.selected.scope) }],
   }
   const shifts = payload.comparison.selectedMinusBaseline
-  const comparisonView = payload.comparison.enabled && payload.baseline != null
-  const requestedView = controlledView ?? localView
-  const activeView = comparisonView ? 'states' : requestedView
-  const changeView = (nextView: TeamStyleShapeView) => {
-    setLocalView(nextView)
-    onViewChange?.(nextView)
-    if (nextView === 'states' && !payload.gameStates && !comparisonView) onGameStateViewRequest?.()
-  }
+  void controlledView
+  void localView
+  void setLocalView
+  void onViewChange
+  void onGameStateViewRequest
 
   return (
     <EventMapCard
       title="Team Style Shape"
-      description="A prevalence profile across passing, progression, defence and possession-derived transitions. Percentiles are not quality grades."
+      description="Selected-state style shape with an all-state reference and a three-state comparison. Percentiles are not quality grades."
       controls={(
         <AxisPicker definitions={payload.axisDefinitions} selected={activeAxisKeys} onChange={setAxisSelection} />
       )}
@@ -616,38 +599,20 @@ export function TeamStyleShapePanel({
       }}
     >
       <div className="w-full max-w-[1180px] space-y-3" aria-label="Team Style Shape evidence">
-        <section className="border border-line-bright bg-panel p-3" aria-labelledby="style-view-heading">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h4 id="style-view-heading" className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink">{activeView === 'states' ? 'Style by game state' : 'Style profile'}</h4>
-              <p className="mt-1 text-[10px] leading-relaxed text-ink-dim">{payload.canonicalTeamName} · {scopeLabel(payload.selected.scope)}</p>
-            </div>
-            <div className="inline-flex border border-control-border bg-raised p-0.5" role="tablist" aria-label="Style chart view">
-              {([
-                ['profile', 'Profile'],
-                ['states', 'By game state'],
-              ] as const).map(([key, label]) => {
-                const selected = activeView === key
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    role="tab"
-                    aria-selected={selected}
-                    className={`px-2.5 py-1 text-[9px] font-semibold transition-colors ${selected ? 'bg-control text-control-fg' : 'text-ink-dim hover:text-ink'}`}
-                    onClick={() => {
-                      changeView(key)
-                    }}
-                  >{label}</button>
-                )
-              })}
-            </div>
+        <section className="border border-line-bright bg-panel p-3" aria-labelledby="style-radar-heading">
+          <div>
+            <h4 id="style-radar-heading" className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink">State Lens radar</h4>
+            <p className="mt-1 text-[10px] leading-relaxed text-ink-dim">{payload.canonicalTeamName} · {payload.baseline ? `${scopeLabel(payload.selected.scope)} compared with ${scopeLabel(payload.baseline.scope)}` : scopeLabel(payload.selected.scope)}.</p>
           </div>
-          <div className="mt-3">
-            {activeView === 'states'
-              ? <StateComparisonChart payload={payload} axes={activeAxes} />
-              : <PrevalenceRadial axes={activeAxes} overallAxes={payload.overall.axes} />}
+          <div className="mt-3"><StyleComparisonRadar payload={payload} axes={activeAxes} /></div>
+        </section>
+
+        <section className="border border-line-bright bg-panel p-3" aria-labelledby="style-states-heading">
+          <div>
+            <h4 id="style-states-heading" className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink">All-state comparison</h4>
+            <p className="mt-1 text-[10px] leading-relaxed text-ink-dim">All States, Winning, Drawing and Losing remain visible regardless of the active State Lens.</p>
           </div>
+          <div className="mt-3"><StateComparisonChart payload={payload} axes={activeAxes} /></div>
         </section>
 
         <details className="group border border-line-bright bg-panel">

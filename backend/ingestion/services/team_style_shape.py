@@ -86,7 +86,7 @@ AXIS_DEFINITIONS: tuple[dict[str, Any], ...] = (
     {
         "key": "circulation_security",
         "category": "build_up",
-        "label": "Pass completion",
+        "label": "Completed pass rate",
         "description": "The share of attempted passes completed by the acting team.",
         "formula": "completed_passes / pass_attempts",
         "unit": "share of passes",
