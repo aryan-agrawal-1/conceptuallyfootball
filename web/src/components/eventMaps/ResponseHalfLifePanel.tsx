@@ -3,9 +3,10 @@ import { EventMapNotice } from './EventMapUi'
 
 function seconds(value: number | null) {
   if (value == null) return '—'
-  if (value === 0) return '0s'
-  const minutes = Math.floor(value / 60)
-  const remainder = value % 60
+  const rounded = Math.round(value)
+  if (rounded === 0) return '0s'
+  const minutes = Math.floor(rounded / 60)
+  const remainder = rounded % 60
   return minutes ? `${minutes}m ${remainder}s` : `${remainder}s`
 }
 
@@ -79,7 +80,7 @@ export function ResponseHalfLifePanel({ payload, loading, error, onRetry }: {
         <p className="mt-1 text-[11px] leading-relaxed text-ink-dim">How quickly a team settles into its usual behaviour for the new scoreline after the opposition scores.</p>
       </header>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-y border-line-bright py-2 text-[10px] text-ink-dim">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-ink-dim">
         <span className={`font-bold uppercase tracking-[0.12em] ${reliabilityTone(cohort.reliability)}`}>{cohort.reliability}</span>
         <span>The headline time shows when the team has moved halfway from its immediate reaction towards its usual behaviour in that match situation.</span>
       </div>
