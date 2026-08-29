@@ -1,24 +1,14 @@
 import { useState } from 'react'
-import type {
-  TransitionDirection,
-  TransitionDirectionStats,
-  TransitionLeveragePayload,
-  TransitionObservation,
-  TransitionPlayerRow,
-} from '../../types/transitionLeverage'
+import type { TransitionDirection, TransitionDirectionStats, TransitionLeveragePayload } from '../../types/transitionLeverage'
 import { EventMapNotice } from './EventMapUi'
-
-function label(value: string) {
-  return value.replaceAll('_', ' ').replace(/^./, character => character.toUpperCase())
-}
 
 function rate(value: number | null) {
   return value == null ? '—' : `${(value * 100).toFixed(1)}%`
 }
 
-function seconds(value: number | null) {
-  if (value == null) return '—'
-  return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`
+function stateLabel(value: string | null | undefined) {
+  if (!value || value === 'all') return 'All states'
+  return value.replaceAll('_', ' ').replace(/^./, character => character.toUpperCase())
 }
 
 function ScopeEvidence({ payload }: { payload: TransitionLeveragePayload }) {
@@ -32,169 +22,63 @@ function ScopeEvidence({ payload }: { payload: TransitionLeveragePayload }) {
       {coverage.matchesExcluded ? <span className="text-gold">{coverage.matchesExcluded.toLocaleString()} excluded</span> : null}
       {coverage.ambiguousPossessionCount ? <span className="text-gold">{coverage.ambiguousPossessionCount.toLocaleString()} ambiguous</span> : null}
       {coverage.sparse ? <span className="text-gold">sparse sample (&lt;{coverage.sparseThreshold})</span> : null}
-      {coverage.evidenceTruncated ? <span className="text-gold">showing first {coverage.evidenceLimit}</span> : null}
     </div>
   )
 }
 
-function ComparisonTable({ stats, baseline, delta, direction }: {
+function ComparisonTable({ stats, baseline, delta, direction, selectedState, comparisonState }: {
   stats: TransitionDirectionStats
-  baseline: TransitionDirectionStats | null
-  delta: Record<string, number | null> | null
+  baseline: TransitionDirectionStats
+  delta: Record<string, number | null>
   direction: TransitionDirection
+  selectedState: string
+  comparisonState: string
 }) {
-  const baselineRows = new Map(baseline?.outcomeLadder.map(row => [row.key, row]))
+  const baselineRows = new Map(baseline.outcomeLadder.map(row => [row.key, row]))
+  const opportunityOwner = direction === 'attacking' ? 'team' : 'opponent'
+  const grid = 'grid-cols-[minmax(150px,1fr)_96px_88px_88px_80px]'
   return (
-    <div className="border border-line-bright bg-panel">
-      <div className="flex items-baseline justify-between gap-3 border-b border-line-bright px-3 py-2">
+    <section className="overflow-hidden border border-line-bright bg-panel" aria-label={direction === 'attacking' ? 'Transition creation comparison' : 'Transition vulnerability comparison'}>
+      <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-line-bright px-3 py-2">
         <div>
           <h4 className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink">
             {direction === 'attacking' ? 'Transition creation' : 'Transition vulnerability'}
           </h4>
-          <p className="mt-1 text-[10px] leading-relaxed text-ink-dim">
-            The share of transition possessions that reach each outcome, compared with the selected State Lens baseline.
-          </p>
+          <p className="mt-1 text-[10px] leading-relaxed text-ink-dim">The share of qualifying transition possessions that reach each outcome.</p>
         </div>
-        <span className="font-mono text-[10px] text-ink-dim">{stats.opportunities.toLocaleString()} team possessions</span>
+        <span className="font-mono text-[10px] text-ink-dim">{stats.opportunities.toLocaleString()} {opportunityOwner} transition possessions</span>
       </div>
-      <div className="grid grid-cols-[minmax(0,1fr)_64px_72px_64px] border-b border-line-bright px-3 py-2 text-[8px] font-bold uppercase tracking-[0.13em] text-ink-muted sm:grid-cols-[minmax(0,1fr)_90px_90px_90px]">
-        <span>Outcome reached</span><span className="text-right">Team</span><span className="text-right">Comparison</span><span className="text-right">Change</span>
-      </div>
-      <div className="divide-y divide-line px-3">
-        {stats.outcomeLadder.map(row => {
-          const comparisonRow = baselineRows.get(row.key)
-          const change = delta?.[row.key] ?? null
-          return (
-            <div key={row.key} className="grid grid-cols-[minmax(0,1fr)_64px_72px_64px] items-center py-2.5 text-[10px] sm:grid-cols-[minmax(0,1fr)_90px_90px_90px]">
-              <div className="min-w-0 pr-3">
-                <span className="text-ink">{row.label}</span>
-                <span className="ml-2 font-mono text-[9px] text-ink-muted">{row.count.toLocaleString()}</span>
-              </div>
-              <span className="text-right font-mono tabular-nums text-ink">{rate(row.ratePerOpportunity)}</span>
-              <span className="text-right font-mono tabular-nums text-ink-dim">{rate(comparisonRow?.ratePerOpportunity ?? null)}</span>
-              <span className={`text-right font-mono tabular-nums ${change == null ? 'text-ink-muted' : change > 0 ? (direction === 'attacking' ? 'text-mint' : 'text-ember') : change < 0 ? (direction === 'attacking' ? 'text-ember' : 'text-mint') : 'text-ink-dim'}`}>
-                {change == null ? '—' : `${change > 0 ? '+' : ''}${(change * 100).toFixed(1)}pp`}
-              </span>
-            </div>
-          )
-        })}
-      </div>
-      <p className="border-t border-line-bright px-3 py-2 text-[9px] leading-relaxed text-ink-muted">Percentages use transition possessions as the denominator. Counts beside each outcome provide sample context; Change is team minus comparison.</p>
-    </div>
-  )
-}
-
-function TransitionSummary({ observation }: { observation: TransitionObservation }) {
-  const transition = observation.stateTransition
-  if (!transition.actual) return <span className="text-ink-muted">No score-state change</span>
-  const before = transition.before ?? 'unknown'
-  const after = transition.after ?? 'unknown'
-  return <span className={transition.perspective === 'against' ? 'text-ember' : 'text-mint'}>{label(transition.classification)} · {before} → {after}</span>
-}
-
-function Trace({ observation }: { observation: TransitionObservation }) {
-  return (
-    <ol className="mt-2 space-y-1 border-l border-line-bright pl-3">
-      {observation.possessionTrace.map(action => (
-        <li key={`${observation.possessionId}-${action.sequence}`} className="relative text-[10px] leading-relaxed text-ink-dim">
-          <span className="mr-2 font-mono text-ink-muted">{action.sequence + 1}.</span>
-          <strong className="font-medium text-ink">{action.playerName ?? 'Unresolved player'}</strong>
-          <span className="mx-1">·</span>
-          <span>{action.eventType.replaceAll('_', ' ')}</span>
-          <span className="mx-1">·</span>
-          <span className="text-electric">{action.roleLabel}</span>
-          <span className="mx-1">·</span>
-          <span>{seconds(action.matchSeconds)}</span>
-          {action.roleEvidence.length ? <span className="ml-1 text-ink-muted">[{action.roleEvidence.join(', ')}]</span> : null}
-        </li>
-      ))}
-    </ol>
-  )
-}
-
-function ObservationList({ observations }: { observations: TransitionObservation[] }) {
-  return (
-    <div className="space-y-1">
-      {observations.length ? observations.map(observation => (
-        <details key={observation.possessionId} className="border border-line bg-panel px-3 py-2 open:border-line-bright">
-          <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-ink-dim">
-            <span className="font-mono text-ink-muted">#{observation.matchRef} · {seconds(observation.startSecond)}</span>
-            <strong className="font-medium text-ink">{label(observation.outcomeTier)}</strong>
-            <span>{observation.possessionTrace.length} actions</span>
-            <TransitionSummary observation={observation} />
-          </summary>
-          <div className="mt-2 border-t border-line pt-2">
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-ink-dim">
-              <span>{observation.direction === 'for' ? 'Attacking' : 'Opponent'} possession</span>
-              <span>{observation.launchType.replaceAll('_', ' ')}</span>
-              <span>{observation.terminationReason.replaceAll('_', ' ')}</span>
-              {observation.rapidTransition.isCounterLaunch ? <span className="text-electric">Rapid turnover launch{observation.rapidTransition.elapsedSeconds != null ? ` · ${observation.rapidTransition.elapsedSeconds}s` : ''}</span> : null}
-              {observation.score.situation ? <span className="text-gold">Penalty</span> : null}
-              {observation.score.goalType === 'own_goal' ? <span className="text-ember">Own goal</span> : null}
-            </div>
-            <Trace observation={observation} />
+      <p className="px-3 pt-2 text-[9px] leading-relaxed text-ink-muted">These counts cover qualifying transition possessions in {selectedState}; they are not the team’s season totals.</p>
+      <div className="overflow-x-auto">
+        <div className="min-w-[570px]">
+          <div className={`grid ${grid} border-b border-line-bright px-3 py-2 text-[8px] font-bold uppercase tracking-[0.11em] text-ink-muted`}>
+            <span>Outcome reached</span>
+            <span className="text-right">Transition possessions</span>
+            <span className="text-right">{selectedState}</span>
+            <span className="text-right">{comparisonState}</span>
+            <span className="text-right">Change</span>
           </div>
-        </details>
-      )) : <EventMapNotice kind="empty" title="No possession observations in this scope" />}
-    </div>
-  )
-}
-
-function PlayerList({ players, observations }: {
-  players: TransitionPlayerRow[]
-  observations: TransitionObservation[]
-}) {
-  const [expanded, setExpanded] = useState<number | null>(null)
-  return (
-    <div className="space-y-1">
-      {players.length ? players.map(player => {
-        const id = player.canonicalPlayerId ?? -1
-        const isExpanded = expanded === id
-        return (
-          <div key={`${id}-${player.canonicalTeamId}`} className="border border-line bg-panel">
-            <button type="button" className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-raised" aria-expanded={isExpanded} onClick={() => setExpanded(isExpanded ? null : id)}>
-              <span className="min-w-0 flex-1 truncate text-[11px] text-ink">{player.canonicalPlayerName ?? 'Unresolved player'}</span>
-              <span className="font-mono text-[10px] text-ink-dim">{player.involvedPossessions}/{player.opportunities} possessions</span>
-              <span className="w-12 text-right font-mono text-[11px] text-electric">{rate(player.involvementRate)}</span>
-            </button>
-            {isExpanded ? (
-              <div className="space-y-2 border-t border-line px-3 py-2">
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-ink-dim">
-                  <span>{player.coverage.selectedVerifiedMinutes.toLocaleString()} verified state min</span>
-                  <span>{player.coverage.includedMatchCount} matches</span>
-                  {player.coverage.excludedMatchCount ? <span className="text-gold">{player.coverage.excludedMatchCount} excluded</span> : null}
-                  <span className={player.coverage.confidence === 'verified' ? 'text-mint' : 'text-gold'}>{player.coverage.confidence}</span>
+          <div className="divide-y divide-line px-3">
+            {stats.outcomeLadder.map(row => {
+              const comparisonRow = baselineRows.get(row.key)
+              const change = delta[row.key] ?? null
+              return (
+                <div key={row.key} className={`grid ${grid} items-center py-2.5 text-[10px]`}>
+                  <span className="min-w-0 pr-3 text-ink">{row.label}</span>
+                  <span className="text-right font-mono tabular-nums text-ink-muted">{row.count.toLocaleString()}</span>
+                  <span className="text-right font-mono tabular-nums text-ink">{rate(row.ratePerOpportunity)}</span>
+                  <span className="text-right font-mono tabular-nums text-ink-dim">{rate(comparisonRow?.ratePerOpportunity ?? null)}</span>
+                  <span className={`text-right font-mono tabular-nums ${change == null ? 'text-ink-muted' : change > 0 ? (direction === 'attacking' ? 'text-mint' : 'text-ember') : change < 0 ? (direction === 'attacking' ? 'text-ember' : 'text-mint') : 'text-ink-dim'}`}>
+                    {change == null ? '—' : `${change > 0 ? '+' : ''}${(change * 100).toFixed(1)}pp`}
+                  </span>
                 </div>
-                <div className="grid gap-1 sm:grid-cols-2">
-                  {Object.entries(player.sequenceStages).filter(([, stage]) => stage.actions > 0).map(([role, stage]) => (
-                    <div key={role} className="flex justify-between bg-raised px-2 py-1 text-[10px] text-ink-dim"><span>{label(role)}</span><span className="font-mono text-ink">{stage.actions} actions</span></div>
-                  ))}
-                </div>
-                {player.evidence.length ? (
-                  <div className="space-y-1">
-                    <p className="text-[10px] uppercase tracking-[0.1em] text-ink-muted">Shared possession traces</p>
-                    {player.evidence.map(item => {
-                      const observation = observations.find(candidate => candidate.observationRef === item.observationRef)
-                      return (
-                        <details key={item.observationRef} className="border border-line bg-raised px-2 py-1.5">
-                          <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-ink-dim">
-                            <span className="font-mono text-ink-muted">#{item.matchRef} · {item.possessionId.slice(0, 8)}</span>
-                            <strong className="font-medium text-ink">{label(item.outcomeTier)}</strong>
-                            <span>{item.actionStages.map(label).join(' · ')}</span>
-                          </summary>
-                          {observation ? <Trace observation={observation} /> : <p className="mt-2 text-[10px] text-gold">The bounded trace is unavailable in this response window.</p>}
-                        </details>
-                      )
-                    })}
-                    {player.evidenceTruncated ? <p className="text-[10px] text-gold">Additional player opportunities are counted but not repeated here; inspect the shared possession list for bounded traces.</p> : null}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
+              )
+            })}
           </div>
-        )
-      }) : <EventMapNotice kind="empty" title="No verified player opportunities in this scope" />}
-    </div>
+        </div>
+      </div>
+      <p className="border-t border-line-bright px-3 py-2 text-[9px] leading-relaxed text-ink-muted">Each percentage is the share of transition possessions that reached that outcome. Change is {selectedState} minus {comparisonState}.</p>
+    </section>
   )
 }
 
@@ -207,33 +91,31 @@ export function TransitionLeveragePanel({ payload, loading, error, onRetry }: {
   const [direction, setDirection] = useState<TransitionDirection>('attacking')
   if (loading) return <EventMapNotice kind="loading" title="Loading transition leverage" />
   if (error || !payload) return <EventMapNotice kind="error" title="Transition leverage failed to load" onRetry={onRetry}>{error}</EventMapNotice>
+
   const stats = payload.selected[direction]
   const baseline = payload.comparison.baseline?.[direction] ?? null
   const delta = payload.comparison.delta?.[direction] ?? null
+  const selectedState = stateLabel(payload.stateLens.selected.state)
+  const comparisonState = stateLabel(payload.stateLens.comparison.baseline?.state)
+
   return (
-    <article className="space-y-3 py-3" aria-label="Inspectable transition leverage">
+    <article className="space-y-3 py-3" aria-label="Transition leverage">
       <header className="max-w-3xl">
         <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-ink">Transition leverage</h3>
         <p className="mt-1 text-[11px] leading-relaxed text-ink-dim">How often the team’s transition possessions become dangerous attacks, compared with the selected baseline.</p>
       </header>
-      <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 border-y border-line-bright py-2">
+      <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
         <p className="text-[10px] uppercase tracking-[0.1em] text-ink-dim">Possession opportunities <strong className="ml-1 font-mono text-[15px] font-normal text-ink">{stats.opportunities.toLocaleString()}</strong></p>
         <div className="ml-auto"><ScopeEvidence payload={payload} /></div>
       </div>
       <div className="flex gap-4 border-b border-line-bright" role="group" aria-label="Transition leverage perspective">
         {(['attacking', 'concession'] as const).map(value => <button key={value} type="button" aria-pressed={direction === value} onClick={() => setDirection(value)} className={`border-b-2 px-1 py-2 text-[10px] uppercase tracking-[0.12em] ${direction === value ? (value === 'attacking' ? 'border-electric text-electric' : 'border-ember text-ember') : 'border-transparent text-ink-dim hover:text-ink'}`}>{value === 'attacking' ? 'Creation for' : 'Vulnerability against'}</button>)}
       </div>
-      {baseline && delta ? <ComparisonTable stats={stats} baseline={baseline} delta={delta} direction={direction} /> : (
+      {baseline && delta ? (
+        <ComparisonTable stats={stats} baseline={baseline} delta={delta} direction={direction} selectedState={selectedState} comparisonState={comparisonState} />
+      ) : (
         <EventMapNotice kind="unavailable" title="Choose a comparison state">Transition Leverage needs a State Lens comparison to show what is distinctive about this team.</EventMapNotice>
       )}
-      <details className="border border-line-bright bg-raised/40 px-3 py-2 text-[10px] leading-relaxed text-ink-dim">
-        <summary className="cursor-pointer text-control-fg hover:text-ink">Verified player involvement</summary>
-        <div className="mt-2 space-y-2"><p>Rates use only team possession opportunities with an event inside that player’s verified on-pitch interval. Transfer/team spells stay separate; excluded or ambiguous intervals remain visible.</p><PlayerList players={payload.selected.playerInvolvement} observations={payload.selected.observations} /></div>
-      </details>
-      <details className="border border-line-bright bg-raised/40 px-3 py-2 text-[10px] leading-relaxed text-ink-dim">
-        <summary className="cursor-pointer text-control-fg hover:text-ink">Inspect possession traces ({payload.selected.observations.length})</summary>
-        <div className="mt-2"><ObservationList observations={payload.selected.observations} /></div>
-      </details>
       <details className="border border-line-bright bg-raised/40 px-3 py-2 text-[10px] leading-relaxed text-ink-dim">
         <summary className="cursor-pointer text-control-fg hover:text-ink">How this is calculated</summary>
         <p className="mt-2">Each verified transition possession is checked for a territorial entry, box entry, shot, big chance and goal. A possession can reach several outcomes, so the rows are conversion checkpoints rather than separate categories. The comparison uses the baseline selected in the State Lens.</p>
