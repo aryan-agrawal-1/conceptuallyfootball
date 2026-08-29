@@ -6,16 +6,13 @@ import type {
   TransitionObservation,
   TransitionPlayerRow,
 } from '../../types/transitionLeverage'
-import { EventMapNotice, EventMapViewTabs } from './EventMapUi'
-
-type DisplayMode = 'rate' | 'count'
+import { EventMapNotice } from './EventMapUi'
 
 function label(value: string) {
   return value.replaceAll('_', ' ').replace(/^./, character => character.toUpperCase())
 }
 
-function rate(value: number | null, mode: DisplayMode) {
-  if (mode === 'count') return value == null ? '0' : value.toLocaleString()
+function rate(value: number | null) {
   return value == null ? '—' : `${(value * 100).toFixed(1)}%`
 }
 
@@ -30,7 +27,7 @@ function ScopeEvidence({ payload }: { payload: TransitionLeveragePayload }) {
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] text-ink-dim">
       <span>{coverage.matchesIncluded.toLocaleString()} matches</span>
-      <span>{coverage.possessionCount.toLocaleString()} possessions</span>
+      <span>{coverage.possessionCount.toLocaleString()} possessions across both directions</span>
       <span>{stateEvidence.exposureMinutes.toLocaleString()} state min</span>
       {coverage.matchesExcluded ? <span className="text-gold">{coverage.matchesExcluded.toLocaleString()} excluded</span> : null}
       {coverage.ambiguousPossessionCount ? <span className="text-gold">{coverage.ambiguousPossessionCount.toLocaleString()} ambiguous</span> : null}
@@ -40,40 +37,49 @@ function ScopeEvidence({ payload }: { payload: TransitionLeveragePayload }) {
   )
 }
 
-function Ladder({ stats, mode, direction }: {
+function ComparisonTable({ stats, baseline, delta, direction }: {
   stats: TransitionDirectionStats
-  mode: DisplayMode
+  baseline: TransitionDirectionStats | null
+  delta: Record<string, number | null> | null
   direction: TransitionDirection
 }) {
+  const baselineRows = new Map(baseline?.outcomeLadder.map(row => [row.key, row]))
   return (
     <div className="border border-line-bright bg-panel">
       <div className="flex items-baseline justify-between gap-3 border-b border-line-bright px-3 py-2">
         <div>
           <h4 className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink">
-            {direction === 'attacking' ? 'Creation ladder' : 'Concession vulnerability'}
+            {direction === 'attacking' ? 'Transition creation' : 'Transition vulnerability'}
           </h4>
           <p className="mt-1 text-[10px] leading-relaxed text-ink-dim">
-            {stats.opportunities.toLocaleString()} {stats.opportunityBasis.replaceAll('_', ' ')}
+            The share of transition possessions that reach each outcome, compared with the selected State Lens baseline.
           </p>
         </div>
-        <span className="font-mono text-[10px] text-ink-dim">{stats.stateTransitions.count} state changes</span>
+        <span className="font-mono text-[10px] text-ink-dim">{stats.opportunities.toLocaleString()} team possessions</span>
+      </div>
+      <div className="grid grid-cols-[minmax(0,1fr)_64px_72px_64px] border-b border-line-bright px-3 py-2 text-[8px] font-bold uppercase tracking-[0.13em] text-ink-muted sm:grid-cols-[minmax(0,1fr)_90px_90px_90px]">
+        <span>Outcome reached</span><span className="text-right">Team</span><span className="text-right">Comparison</span><span className="text-right">Change</span>
       </div>
       <div className="divide-y divide-line px-3">
-        {stats.outcomeLadder.map(row => (
-          <div key={row.key} className="flex items-center gap-3 py-2">
-            <span className="w-32 shrink-0 text-[10px] uppercase tracking-[0.08em] text-ink-dim">{row.label}</span>
-            <div className="h-1.5 min-w-0 flex-1 overflow-hidden bg-line" aria-hidden="true">
-              <div className={`h-full ${direction === 'attacking' ? 'bg-electric' : 'bg-ember'}`} style={{ width: `${Math.min(100, (row.ratePerOpportunity ?? 0) * 100)}%` }} />
+        {stats.outcomeLadder.map(row => {
+          const comparisonRow = baselineRows.get(row.key)
+          const change = delta?.[row.key] ?? null
+          return (
+            <div key={row.key} className="grid grid-cols-[minmax(0,1fr)_64px_72px_64px] items-center py-2.5 text-[10px] sm:grid-cols-[minmax(0,1fr)_90px_90px_90px]">
+              <div className="min-w-0 pr-3">
+                <span className="text-ink">{row.label}</span>
+                <span className="ml-2 font-mono text-[9px] text-ink-muted">{row.count.toLocaleString()}</span>
+              </div>
+              <span className="text-right font-mono tabular-nums text-ink">{rate(row.ratePerOpportunity)}</span>
+              <span className="text-right font-mono tabular-nums text-ink-dim">{rate(comparisonRow?.ratePerOpportunity ?? null)}</span>
+              <span className={`text-right font-mono tabular-nums ${change == null ? 'text-ink-muted' : change > 0 ? (direction === 'attacking' ? 'text-mint' : 'text-ember') : change < 0 ? (direction === 'attacking' ? 'text-ember' : 'text-mint') : 'text-ink-dim'}`}>
+                {change == null ? '—' : `${change > 0 ? '+' : ''}${(change * 100).toFixed(1)}pp`}
+              </span>
             </div>
-            <span className="w-16 text-right font-mono text-[11px] tabular-nums text-ink">{rate(mode === 'count' ? row.count : row.ratePerOpportunity, mode)}</span>
-          </div>
-        ))}
+          )
+        })}
       </div>
-      <div className="grid grid-cols-3 border-t border-line-bright px-3 py-2 text-[10px] text-ink-dim">
-        <span>Goals <strong className="ml-1 font-mono font-normal text-ink">{stats.scores.goals}</strong></span>
-        <span>Own goals <strong className="ml-1 font-mono font-normal text-ink">{stats.scores.ownGoals}</strong></span>
-        <span>Transition rate <strong className="ml-1 font-mono font-normal text-ink">{rate(stats.stateTransitions.ratePerOpportunity, mode)}</strong></span>
-      </div>
+      <p className="border-t border-line-bright px-3 py-2 text-[9px] leading-relaxed text-ink-muted">Percentages use transition possessions as the denominator. Counts beside each outcome provide sample context; Change is team minus comparison.</p>
     </div>
   )
 }
@@ -149,7 +155,7 @@ function PlayerList({ players, observations }: {
             <button type="button" className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-raised" aria-expanded={isExpanded} onClick={() => setExpanded(isExpanded ? null : id)}>
               <span className="min-w-0 flex-1 truncate text-[11px] text-ink">{player.canonicalPlayerName ?? 'Unresolved player'}</span>
               <span className="font-mono text-[10px] text-ink-dim">{player.involvedPossessions}/{player.opportunities} possessions</span>
-              <span className="w-12 text-right font-mono text-[11px] text-electric">{rate(player.involvementRate, 'rate')}</span>
+              <span className="w-12 text-right font-mono text-[11px] text-electric">{rate(player.involvementRate)}</span>
             </button>
             {isExpanded ? (
               <div className="space-y-2 border-t border-line px-3 py-2">
@@ -199,35 +205,27 @@ export function TransitionLeveragePanel({ payload, loading, error, onRetry }: {
   onRetry: () => void
 }) {
   const [direction, setDirection] = useState<TransitionDirection>('attacking')
-  const [mode, setMode] = useState<DisplayMode>('rate')
   if (loading) return <EventMapNotice kind="loading" title="Loading transition leverage" />
   if (error || !payload) return <EventMapNotice kind="error" title="Transition leverage failed to load" onRetry={onRetry}>{error}</EventMapNotice>
   const stats = payload.selected[direction]
-  const transitionRows = Object.entries(stats.stateTransitions.byClassification)
+  const baseline = payload.comparison.baseline?.[direction] ?? null
+  const delta = payload.comparison.delta?.[direction] ?? null
   return (
     <article className="space-y-3 py-3" aria-label="Inspectable transition leverage">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-ink">Transition leverage</h3>
-          <p className="mt-1 max-w-3xl text-[11px] leading-relaxed text-ink-dim">A possession-backed outcome ladder. Each action is shown in sequence; proximity to a goal is not treated as causation.</p>
-        </div>
-        <EventMapViewTabs
-          value={mode}
-          onChange={setMode}
-          label="Transition leverage display"
-          options={[{ value: 'rate', label: 'Rate' }, { value: 'count', label: 'Count' }]}
-        />
-      </div>
+      <header className="max-w-3xl">
+        <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-ink">Transition leverage</h3>
+        <p className="mt-1 text-[11px] leading-relaxed text-ink-dim">How often the team’s transition possessions become dangerous attacks, compared with the selected baseline.</p>
+      </header>
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 border-y border-line-bright py-2">
         <p className="text-[10px] uppercase tracking-[0.1em] text-ink-dim">Possession opportunities <strong className="ml-1 font-mono text-[15px] font-normal text-ink">{stats.opportunities.toLocaleString()}</strong></p>
-        <p className="text-[10px] uppercase tracking-[0.1em] text-ink-dim">State changes <strong className="ml-1 font-mono text-[15px] font-normal text-ink">{stats.stateTransitions.count.toLocaleString()}</strong></p>
         <div className="ml-auto"><ScopeEvidence payload={payload} /></div>
       </div>
       <div className="flex gap-4 border-b border-line-bright" role="group" aria-label="Transition leverage perspective">
         {(['attacking', 'concession'] as const).map(value => <button key={value} type="button" aria-pressed={direction === value} onClick={() => setDirection(value)} className={`border-b-2 px-1 py-2 text-[10px] uppercase tracking-[0.12em] ${direction === value ? (value === 'attacking' ? 'border-electric text-electric' : 'border-ember text-ember') : 'border-transparent text-ink-dim hover:text-ink'}`}>{value === 'attacking' ? 'Creation for' : 'Vulnerability against'}</button>)}
       </div>
-      <Ladder stats={stats} mode={mode} direction={direction} />
-      {transitionRows.length ? <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-ink-dim">{transitionRows.map(([name, count]) => <span key={name}>{label(name)} <strong className="ml-1 font-mono font-normal text-ink">{count}</strong></span>)}</div> : null}
+      {baseline && delta ? <ComparisonTable stats={stats} baseline={baseline} delta={delta} direction={direction} /> : (
+        <EventMapNotice kind="unavailable" title="Choose a comparison state">Transition Leverage needs a State Lens comparison to show what is distinctive about this team.</EventMapNotice>
+      )}
       <details className="border border-line-bright bg-raised/40 px-3 py-2 text-[10px] leading-relaxed text-ink-dim">
         <summary className="cursor-pointer text-control-fg hover:text-ink">Verified player involvement</summary>
         <div className="mt-2 space-y-2"><p>Rates use only team possession opportunities with an event inside that player’s verified on-pitch interval. Transfer/team spells stay separate; excluded or ambiguous intervals remain visible.</p><PlayerList players={payload.selected.playerInvolvement} observations={payload.selected.observations} /></div>
@@ -236,7 +234,10 @@ export function TransitionLeveragePanel({ payload, loading, error, onRetry }: {
         <summary className="cursor-pointer text-control-fg hover:text-ink">Inspect possession traces ({payload.selected.observations.length})</summary>
         <div className="mt-2"><ObservationList observations={payload.selected.observations} /></div>
       </details>
-      {payload.comparison.enabled ? <p className="text-[10px] text-ink-dim">Comparison baseline is available; ladder deltas remain component-level and do not form a composite score.</p> : null}
+      <details className="border border-line-bright bg-raised/40 px-3 py-2 text-[10px] leading-relaxed text-ink-dim">
+        <summary className="cursor-pointer text-control-fg hover:text-ink">How this is calculated</summary>
+        <p className="mt-2">Each verified transition possession is checked for a territorial entry, box entry, shot, big chance and goal. A possession can reach several outcomes, so the rows are conversion checkpoints rather than separate categories. The comparison uses the baseline selected in the State Lens.</p>
+      </details>
     </article>
   )
 }
