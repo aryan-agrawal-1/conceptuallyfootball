@@ -65,13 +65,6 @@ function deltaValue(metric: LeadControlMetric, rateMode: ProfileRateMode) {
   return metric.deltaPer90 == null ? '—' : `${metric.deltaPer90 > 0 ? '+' : ''}${metric.deltaPer90.toFixed(2)}`
 }
 
-function unitLabel(metric: LeadControlMetric, rateMode: ProfileRateMode) {
-  if (metric.kind === 'height') return '0 own goal – 100 opposition goal'
-  if (metric.kind === 'share') return 'Share of actions'
-  if (metric.kind === 'time') return 'Minutes:seconds'
-  return rateMode === 'full' ? 'Total actions' : 'Per 90 lead minutes'
-}
-
 function scopeName(value: string | null | undefined) {
   if (!value) return 'All phases'
   return value.replaceAll('_', ' ').replace(/^./, character => character.toUpperCase())
@@ -80,7 +73,7 @@ function scopeName(value: string | null | undefined) {
 function EvidenceStrip({ payload, surface }: { payload: LeadControlPayload; surface: LeadControlSurface }) {
   const reliability = surface.reliability
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-y border-line-bright py-2 font-mono text-[10px] text-ink-dim">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] text-ink-dim">
       <span>{surface.exposureMinutes.toLocaleString()} lead minutes</span>
       <span>{surface.episodeCount.toLocaleString()} lead periods</span>
       <span>{surface.matchCount.toLocaleString()} matches</span>
@@ -95,11 +88,10 @@ function MetricRow({ metric, rateMode }: { metric: LeadControlMetric; rateMode: 
     <div className="grid grid-cols-[minmax(0,1fr)_48px_56px_56px] items-center gap-1.5 border-b border-line/70 py-2 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_72px_72px_72px] sm:gap-2">
       <div className="min-w-0">
         <p className="truncate text-[10px] text-ink">{metric.label}</p>
-        <p className="mt-0.5 truncate text-[9px] text-ink-muted">{unitLabel(metric, rateMode)} · {metric.count.toLocaleString()} recorded</p>
       </div>
-      <span className="font-mono text-[10px] tabular-nums text-ink">{metricValue(metric, rateMode)}</span>
+      <span className="text-right font-mono text-[10px] tabular-nums text-ink">{metricValue(metric, rateMode)}</span>
       <span className="text-right font-mono text-[10px] tabular-nums text-ink-dim">{baselineValue(metric, rateMode)}</span>
-      <span className={`font-mono text-[10px] tabular-nums ${metric.delta == null ? 'text-ink-muted' : metric.delta < 0 ? 'text-ember' : 'text-mint'}`}>{deltaValue(metric, rateMode)}</span>
+      <span className={`text-right font-mono text-[10px] tabular-nums ${metric.delta == null ? 'text-ink-muted' : metric.delta < 0 ? 'text-ember' : 'text-mint'}`}>{deltaValue(metric, rateMode)}</span>
     </div>
   )
 }
@@ -109,26 +101,18 @@ function ComponentTable({ surface, rateMode, panel }: { surface: LeadControlSurf
   const components = panel === 'gravity'
     ? surface.gravity.components as unknown as Record<string, LeadControlMetric>
     : surface.ownership.components as unknown as Record<string, LeadControlMetric>
-  const direction = panel === 'gravity' ? surface.gravity.components.passDirection : null
   return (
     <section className="border border-line-bright bg-panel" aria-label={panel === 'gravity' ? 'Lead Gravity components' : 'Lead Ownership components'}>
       <div className="border-b border-line-bright px-3 py-3">
         <h4 className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink">{panel === 'gravity' ? 'Lead Gravity' : 'Lead Ownership'}</h4>
         <p className="mt-1 text-[10px] leading-relaxed text-ink-dim">{panel === 'gravity' ? 'How the team’s behaviour changes after taking a lead.' : 'How well the team controls play while ahead.'}</p>
+        {panel === 'gravity' ? <p className="mt-1 text-[9px] leading-relaxed text-ink-muted">Field position: 0 = own goal line · 50 = halfway · 100 = opposition goal line.</p> : null}
       </div>
       <header className="grid grid-cols-[minmax(0,1fr)_48px_56px_56px] gap-1.5 border-b border-line-bright px-3 py-2 text-[8px] font-bold uppercase tracking-[0.1em] text-ink-muted sm:grid-cols-[minmax(0,1fr)_72px_72px_72px] sm:gap-2 sm:tracking-[0.14em]">
         <span>Metric</span><span className="text-right">Lead</span><span className="text-right">Draw</span><span className="text-right">Change</span>
       </header>
       <div className="px-3">
         {rows.map(row => <MetricRow key={row.key} metric={{ ...components[row.key], label: row.label }} rateMode={rateMode} />)}
-        {direction ? (
-          <div className="border-t border-line-bright py-2">
-            <p className="mb-1 text-[9px] uppercase tracking-[0.12em] text-ink-dim">Pass direction · located pass share</p>
-            <div className="grid gap-x-4 gap-y-1 sm:grid-cols-3">
-              {(['forward', 'lateral', 'backward'] as const).map(value => <MetricRow key={value} metric={direction[value]} rateMode={rateMode} />)}
-            </div>
-          </div>
-        ) : null}
       </div>
       <footer className="border-t border-line-bright px-3 py-2 text-[9px] leading-relaxed text-ink-muted">
         Change is the lead period minus comparable drawing periods from similar stages of matches. A dash means no reliable comparison is available.
