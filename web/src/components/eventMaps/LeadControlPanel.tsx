@@ -92,13 +92,13 @@ function EvidenceStrip({ payload, surface }: { payload: LeadControlPayload; surf
 
 function MetricRow({ metric, rateMode }: { metric: LeadControlMetric; rateMode: ProfileRateMode }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2 border-b border-line/70 py-2 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_72px_72px_72px]">
+    <div className="grid grid-cols-[minmax(0,1fr)_48px_56px_56px] items-center gap-1.5 border-b border-line/70 py-2 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_72px_72px_72px] sm:gap-2">
       <div className="min-w-0">
         <p className="truncate text-[10px] text-ink">{metric.label}</p>
         <p className="mt-0.5 truncate text-[9px] text-ink-muted">{unitLabel(metric, rateMode)} · {metric.count.toLocaleString()} recorded</p>
       </div>
       <span className="font-mono text-[10px] tabular-nums text-ink">{metricValue(metric, rateMode)}</span>
-      <span className="hidden font-mono text-[10px] tabular-nums text-ink-dim sm:block">{baselineValue(metric, rateMode)}</span>
+      <span className="text-right font-mono text-[10px] tabular-nums text-ink-dim">{baselineValue(metric, rateMode)}</span>
       <span className={`font-mono text-[10px] tabular-nums ${metric.delta == null ? 'text-ink-muted' : metric.delta < 0 ? 'text-ember' : 'text-mint'}`}>{deltaValue(metric, rateMode)}</span>
     </div>
   )
@@ -116,8 +116,8 @@ function ComponentTable({ surface, rateMode, panel }: { surface: LeadControlSurf
         <h4 className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink">{panel === 'gravity' ? 'Lead Gravity' : 'Lead Ownership'}</h4>
         <p className="mt-1 text-[10px] leading-relaxed text-ink-dim">{panel === 'gravity' ? 'How the team’s behaviour changes after taking a lead.' : 'How well the team controls play while ahead.'}</p>
       </div>
-      <header className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2 border-b border-line-bright px-3 py-2 text-[8px] font-bold uppercase tracking-[0.14em] text-ink-muted sm:grid-cols-[minmax(0,1fr)_72px_72px_72px]">
-        <span>Metric</span><span>Lead</span><span className="hidden sm:block">Draw period</span><span>Change</span>
+      <header className="grid grid-cols-[minmax(0,1fr)_48px_56px_56px] gap-1.5 border-b border-line-bright px-3 py-2 text-[8px] font-bold uppercase tracking-[0.1em] text-ink-muted sm:grid-cols-[minmax(0,1fr)_72px_72px_72px] sm:gap-2 sm:tracking-[0.14em]">
+        <span>Metric</span><span className="text-right">Lead</span><span className="text-right">Draw</span><span className="text-right">Change</span>
       </header>
       <div className="px-3">
         {rows.map(row => <MetricRow key={row.key} metric={{ ...components[row.key], label: row.label }} rateMode={rateMode} />)}
