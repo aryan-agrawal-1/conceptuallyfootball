@@ -341,6 +341,7 @@ export function TeamEventMaps({ teamId, competition, season, rateMode }: {
           loading={leadControlQuery.isLoading}
           error={leadControlQuery.error?.message}
           onRetry={() => leadControlQuery.refetch()}
+          rateMode={rateMode}
         /> : null}
 
         {!stateTransitionLoading && analysisMode === 'interpretation' && interpretationMode === 'response' ? <ResponseHalfLifePanel
