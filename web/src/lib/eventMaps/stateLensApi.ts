@@ -21,6 +21,7 @@ export type ApiStateLensEvidence = {
   exclusion_reasons: Record<string, number>
   formula_version: string
   empty: boolean
+  reliability?: Record<string, boolean | string | number>
 }
 
 export type ApiStateLens = {
@@ -72,6 +73,7 @@ export function mapStateLensEvidence(value: ApiStateLensEvidence): StateLensMeta
     exclusionReasons: value.exclusion_reasons,
     formulaVersion: value.formula_version,
     empty: value.empty,
+    reliability: value.reliability,
   }
 }
 

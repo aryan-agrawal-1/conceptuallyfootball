@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { getGroupHeaderTooltip, getStatHeaderTooltip } from '../../lib/statTooltips'
-import { HudCornerMarks } from '../hud/Hud'
+import { HudTooltipSurface } from '../hud/HudTooltip'
 
 type TipAnchor = { left: number; top: number; width: number; height: number }
 
@@ -129,17 +129,7 @@ function MatrixHeaderTooltipFloater({ active }: { active: ActiveTip }) {
         transform: 'translate(calc(-50% + var(--tooltip-dx, 0px)), calc(-100% - 6px))',
       }}
     >
-      <div className="relative border border-electric/30 bg-panel/95 backdrop-blur-md shadow-[0_12px_40px_-8px_rgba(74,158,245,0.45)] text-left">
-        <HudCornerMarks />
-        <div className="px-3 py-2">
-          <p className="text-[11px] font-semibold text-ink leading-tight tracking-wide">
-            {tip.fullName}
-          </p>
-          <p className="mt-1 text-[10px] text-ink-dim leading-snug">
-            {tip.description}
-          </p>
-        </div>
-      </div>
+      <HudTooltipSurface title={tip.fullName} description={tip.description} />
     </div>
   )
 }

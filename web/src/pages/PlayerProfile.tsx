@@ -13,6 +13,7 @@ import { ProfileStatBars } from '../components/profile/ProfileStatBars'
 import { ProfilePizzaSection } from '../components/profile/ProfilePizzaSection'
 import { ProfileEligibilityBanner } from '../components/profile/ProfileEligibilityBanner'
 import { ProfileScopeSelector } from '../components/profile/ProfileScopeSelector'
+import { PlayerSeasonRole } from '../components/profile/PlayerSeasonRole'
 import { ProfileSimilarPlayers } from '../components/profile/ProfileSimilarPlayers'
 import { ProfileContentTabs, type ProfileContentTab } from '../components/profile/ProfileContentTabs'
 import type { ProfileRateMode } from '../lib/profileMetrics'
@@ -306,6 +307,7 @@ function ProfileLayout({
             {' '}
             · {player.minutes != null ? player.minutes.toLocaleString() : '—'} min
           </p>
+          <PlayerSeasonRole role={player.season_role} />
           <p className="mt-2 text-[11px] text-ink-dim leading-relaxed">
             <span className="text-electric/80 font-mono uppercase tracking-[0.15em] mr-2">
               Note
@@ -440,6 +442,7 @@ function ProfileLayout({
             season={player.season_label}
             teams={eventMapTeams}
             positionGroup={player.position_group}
+            rateMode={rateMode}
           />
         </Suspense>
       )}

@@ -216,6 +216,8 @@ export interface MatrixResponse {
 /** `GET /player-seasons/derived-stats/:id` — player row + optional grouped sections + meta. */
 export interface PlayerDetailResponse extends PlayerRow {
   event_profile: EventProfileFlag
+  season_role: SeasonRole
+  season_roles: SeasonRole[]
   meta?: StatMeta
   sections?: ProfileSectionsPayload
   profile_distributions?: ProfileDistributionPayload
@@ -227,6 +229,45 @@ export interface PlayerDetailResponse extends PlayerRow {
   comparison_percentiles?: Record<string, number | null>
   comparison_profile_distributions?: ProfileDistributionPayload
   comparison_eligibility?: Eligibility
+}
+
+export interface SeasonRole {
+  team?: { id: number; name: string }
+  primary_archetype: string | null
+  primary_role: string | null
+  primary_fit?: number | null
+  primary_score?: number | null
+  secondary_archetype?: string | null
+  runner_up_role?: string | null
+  secondary_fit?: number | null
+  runner_up_score?: number | null
+  fit_margin?: number | null
+  classification_shape: 'unclassified' | 'clear' | 'hybrid' | string
+  evidence_confidence: 'pending' | 'insufficient' | 'provisional' | 'established' | string
+  confidence: 'pending' | 'insufficient' | 'provisional' | 'established' | string
+  traits: Array<{
+    trait: string
+    score: number
+    meaning: string
+    evidence: Record<string, unknown>
+  }>
+  candidates?: Array<{
+    archetype: string
+    fit: number | null
+    eligible: boolean
+    components: Record<string, { raw: number | null; percentile: number | null }>
+    unsupported_reason?: string | null
+  }>
+  freshness: 'not_materialized' | 'current' | 'stale' | string
+  verified_exposure_seconds?: number
+  calculated_through?: string | null
+  feature_version?: string
+  scoring_version?: string
+  meaning?: string | null
+  explanation: string
+  position_evidence?: Record<string, unknown>
+  state_evidence?: Record<string, unknown>
+  score_event_evidence?: Record<string, number>
 }
 
 interface ProfileSectionsPayload {

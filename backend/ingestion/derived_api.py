@@ -43,7 +43,9 @@ from ingestion.models import (
     CompetitionSeason,
     PlayerSeasonDerivedStats,
     PlayerSeasonEventProfile,
+    PlayerSeasonRole,
 )
+from ingestion.services.player_season_roles import serialized_player_roles
 from ingestion.profile_modes import (
     comparison_source_code,
     comparison_scope_options,
@@ -491,10 +493,14 @@ class DerivedPlayerSeasonDetailApi(APIView):
                 PlayerSeasonEventProfile,
                 {"is_current": True, "player_id": canonical_player_id},
             ),
+            model_version(
+                PlayerSeasonRole,
+                {"is_current": True, "player_id": canonical_player_id},
+            ),
             model_version(CompetitionSeason),
         )
         try:
-            payload, _ = get_or_build_payload(
+            payload, cached = get_or_build_payload(
                 cache_key=cache_key,
                 source_version=source_version,
                 builder=lambda: self._build_payload(request, canonical_player_id),
@@ -503,7 +509,9 @@ class DerivedPlayerSeasonDetailApi(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except PlayerSeasonDerivedStats.DoesNotExist:
             return Response({"detail": "Derived player-season not found."}, status=status.HTTP_404_NOT_FOUND)
-        return Response(payload)
+        response = Response(payload)
+        response["X-Materialized-Payload"] = "hit" if cached else "miss"
+        return response
 
     def _build_payload(self, request, canonical_player_id: int) -> dict:
         try:
@@ -566,6 +574,11 @@ class DerivedPlayerSeasonDetailApi(APIView):
         payload["event_profile"] = player_event_profile_flag(
             competition_season,
             canonical_player_id,
+        )
+        payload["season_role"], payload["season_roles"] = serialized_player_roles(
+            competition_season,
+            canonical_player_id,
+            row.canonical_display_team_id,
         )
         _attach_comparison_context(
             request,

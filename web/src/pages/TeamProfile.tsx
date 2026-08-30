@@ -247,6 +247,7 @@ function TeamLayout({
             teamId={team.canonical_team_id}
             competition={team.competition_code}
             season={team.season_label}
+            rateMode={rateMode}
           />
         </Suspense>
       )}

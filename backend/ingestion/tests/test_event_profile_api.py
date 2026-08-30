@@ -414,6 +414,7 @@ class EventProfileApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["canonical_team_name"], "Home")
+        self.assertEqual(payload["coverage"]["observed_event_minutes"], 20)
         self.assertEqual(len(payload["pass_flow"]), 1)
         self.assertEqual(payload["pass_flow"][0]["completed_count"], 1)
         self.assertEqual(payload["pass_flow"][0]["column"], 0)

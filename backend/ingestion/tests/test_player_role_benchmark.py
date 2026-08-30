@@ -1,0 +1,92 @@
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from django.db import connection
+from django.test import SimpleTestCase, TransactionTestCase
+
+from ingestion.services.player_role_benchmark import (
+    BenchmarkWriteError,
+    FLOAT_ABSOLUTE_TOLERANCE,
+    REQUIRED_CORPUS_CLASSES,
+    compare_values,
+    load_corpus,
+    read_only_queries,
+)
+
+
+class PlayerRoleBenchmarkContractTests(SimpleTestCase):
+    def test_corpus_covers_every_required_evidence_class(self):
+        rows = [
+            {
+                "player_id": 10,
+                "team_id": 20,
+                "label": "goalkeeper",
+                "covers": ["goalkeeper", "all_game_states"],
+            },
+            {
+                "player_id": 11,
+                "team_id": 20,
+                "label": "outfield",
+                "covers": ["high_minute_outfield", "goals_assists"],
+            },
+            {
+                "player_id": 12,
+                "team_id": 21,
+                "label": "substitute",
+                "covers": ["low_minute_substitute", "sparse_exposure"],
+            },
+            {
+                "player_id": 13,
+                "team_id": 22,
+                "label": "transfer",
+                "covers": ["transfer_multiple_team", "transition_involvement"],
+            },
+        ]
+        with TemporaryDirectory() as directory:
+            corpus_path = Path(directory) / "corpus.json"
+            corpus_path.write_text(json.dumps({"profiles": rows}))
+            entries = load_corpus(corpus_path)
+        covered = {category for entry in entries for category in entry.covers}
+        self.assertEqual(covered, REQUIRED_CORPUS_CLASSES)
+        substitute = next(entry for entry in entries if "low_minute_substitute" in entry.covers)
+        self.assertEqual((substitute.player_id, substitute.team_id), (12, 21))
+
+    def test_comparator_allows_only_the_documented_float_tolerance(self):
+        expected = {"exact": [1, "role", True, None], "value": 0.5}
+        within_tolerance = {"exact": [1, "role", True, None], "value": 0.5 + FLOAT_ABSOLUTE_TOLERANCE / 2}
+        outside_tolerance = {"exact": [1, "role", True, None], "value": 0.5 + FLOAT_ABSOLUTE_TOLERANCE * 2}
+
+        self.assertEqual(compare_values(expected, within_tolerance), [])
+        self.assertEqual(len(compare_values(expected, outside_tolerance)), 1)
+        self.assertEqual(len(compare_values(expected, expected | {"exact": [1, "other", True, None]})), 1)
+        self.assertEqual(len(compare_values({"value": 1}, {"value": 1.0})), 1)
+
+    def test_invalid_corpus_reports_missing_coverage(self):
+        with TemporaryDirectory() as directory:
+            corpus_path = Path(directory) / "invalid-corpus.json"
+            corpus_path.write_text(
+                json.dumps(
+                    {
+                        "profiles": [
+                            {
+                                "player_id": 1,
+                                "team_id": 2,
+                                "label": "incomplete",
+                                "covers": ["goalkeeper"],
+                            }
+                        ]
+                    }
+                )
+            )
+            with self.assertRaisesRegex(ValueError, "Corpus does not cover"):
+                load_corpus(corpus_path)
+
+
+class PlayerRoleBenchmarkReadOnlyTests(TransactionTestCase):
+    def test_database_write_guard_allows_reads_and_rejects_writes(self):
+        with read_only_queries(), connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            self.assertEqual(cursor.fetchone(), (1,))
+            with self.assertRaises(BenchmarkWriteError):
+                cursor.execute("CREATE TEMPORARY TABLE benchmark_write_probe (id integer)")

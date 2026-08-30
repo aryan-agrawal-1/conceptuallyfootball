@@ -16,11 +16,16 @@ from ingestion.gk_api import (
     GkDerivedPlayerSeasonDetailApi,
     GkDerivedPlayerSeasonListApi,
 )
+from ingestion.lead_control_api import TeamLeadControlApi
 from ingestion.player_state_api import PlayerStateExposureApi
+from ingestion.player_state_comparison_api import PlayerStateComparisonApi
 from ingestion.possession_context_api import TeamPossessionContextApi
 from ingestion.pass_state_api import TeamPassStateApi
 from ingestion.team_api import TeamSeasonDetailApi, TeamSeasonListApi, TeamSquadApi
+from ingestion.team_style_shape_api import TeamStyleShapeApi
+from ingestion.transition_leverage_api import TeamTransitionLeverageApi
 from ingestion.regression_api import RegressionLabFitApi
+from ingestion.response_half_life_api import TeamResponseHalfLifeApi
 from ingestion.search_api import SearchEntitiesApi
 from ingestion.shot_zones_api import PlayerGkShotZonesApi, PlayerShotZonesApi
 from ingestion.shot_pressure_api import TeamShotPressureApi
@@ -59,10 +64,18 @@ urlpatterns = [
         "player-seasons/state-exposure/<int:canonical_player_id>",
         PlayerStateExposureApi.as_view(),
     ),
+    path(
+        "player-seasons/event-profile/<int:canonical_player_id>/state-comparison",
+        PlayerStateComparisonApi.as_view(),
+    ),
     path("galaxy", GalaxyApi.as_view()),
     path("galaxy/similar", GalaxySimilarApi.as_view()),
     path("team-seasons/stats", TeamSeasonListApi.as_view()),
     path("team-seasons/stats/<int:canonical_team_id>", TeamSeasonDetailApi.as_view()),
+    path(
+        "team-seasons/style-shape/<int:canonical_team_id>",
+        TeamStyleShapeApi.as_view(),
+    ),
     path(
         "team-seasons/event-profile/<int:canonical_team_id>",
         TeamEventProfileApi.as_view(),
@@ -79,10 +92,22 @@ urlpatterns = [
         "team-seasons/shot-pressure/<int:canonical_team_id>",
         TeamShotPressureApi.as_view(),
     ),
+    path(
+        "team-seasons/lead-control/<int:canonical_team_id>",
+        TeamLeadControlApi.as_view(),
+    ),
+    path(
+        "team-seasons/response-half-life/<int:canonical_team_id>",
+        TeamResponseHalfLifeApi.as_view(),
+    ),
     path("team-seasons/squad/<int:canonical_team_id>", TeamSquadApi.as_view()),
     path(
         "team-seasons/possession-context/<int:canonical_team_id>",
         TeamPossessionContextApi.as_view(),
+    ),
+    path(
+        "team-seasons/transition-leverage/<int:canonical_team_id>",
+        TeamTransitionLeverageApi.as_view(),
     ),
     path("labs/regression/fit", RegressionLabFitApi.as_view()),
 ]

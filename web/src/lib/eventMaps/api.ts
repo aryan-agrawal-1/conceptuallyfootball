@@ -7,6 +7,12 @@ import type {
   GkShotZonesPayload,
   PitchCoordinate,
   PlayerEventProfilePayload,
+  PlayerDefensiveFamily,
+  PlayerStateComparisonPayload,
+  PlayerStateCohort,
+  PlayerTransitionLeverage,
+  PlayerTransitionEvidence,
+  PlayerTransitionAction,
   PlayerPassFilter,
   PlayerPassOutcome,
   PlayerPassMapPayload,
@@ -17,8 +23,9 @@ import type {
   ShotZoneVariant,
   TeamEventProfilePayload,
   TeamPassFlow,
+  DefensiveActionFamily,
 } from '../../types/eventMaps'
-import { appendStateLens, mapStateLens, type ApiStateLens, type StateLensRequest } from './stateLensApi'
+import { appendStateLens, mapStateLens, mapStateLensEvidence, type ApiStateLens, type ApiStateLensEvidence, type StateLensRequest } from './stateLensApi'
 
 export const BASE = '/api/v1'
 export const FLOW_GRID_ROWS = 4
@@ -141,6 +148,7 @@ type ApiPlayerShotZones = {
   shot_count: number
   variants: ApiShotZoneVariants
   matches: ApiMatch[]
+  state_lens?: ApiStateLens
 }
 
 type ApiGkShotZones = {
@@ -155,6 +163,7 @@ type ApiGkShotZones = {
   shots_faced: number
   variants: ApiShotZoneVariants
   matches: ApiMatch[]
+  state_lens?: ApiStateLens
 }
 
 type ApiGridCell = {
@@ -200,6 +209,7 @@ type ApiPlayerProfile = {
   touch_grid?: ApiGridCell[]
   shots: ApiShot[]
   matches: ApiMatch[]
+  state_lens?: ApiStateLens
 }
 
 type ApiPlayerPasses = {
@@ -216,6 +226,211 @@ type ApiPlayerPasses = {
   passes: ApiPass[]
   carries?: ApiCarry[]
   matches: ApiMatch[]
+  state_lens?: ApiStateLens
+}
+
+type ApiPlayerStateMetric = {
+  count: number
+  per_state_minute: number | null
+  per_90: number | null
+}
+
+type ApiPlayerStateGridCell = {
+  column: number
+  row: number
+  raw_count: number
+  per_state_minute: number | null
+  per_90?: number | null
+  share: number
+}
+
+type ApiPlayerDefensiveFamily = {
+  count: number
+  located_count: number
+  rate_per_state_minute: number | null
+  height: {
+    sample_size: number
+    mean: number | null
+    median: number | null
+  }
+  grid: ApiPlayerStateGridCell[]
+}
+
+type ApiPlayerTransitionState = {
+  state: string | null
+  goal_difference: number | null
+  phase: string | null
+  draw_provenance: string | null
+  state_age_seconds: number | null
+  episode_index: number | null
+}
+
+type ApiPlayerTransitionStateChange = {
+  actual: boolean
+  classification: string
+  before: string | null
+  after: string | null
+  perspective: string | null
+}
+
+type ApiPlayerTransitionAction = {
+  sequence: number
+  event_type: string
+  match_seconds: number | null
+  player_id: number | null
+  player_name: string | null
+  role: string
+  role_label: string
+}
+
+type ApiPlayerTransitionEvidence = {
+  match_ref: number
+  possession_id: string
+  team_id: number | null
+  state: ApiPlayerTransitionState
+  state_transition: ApiPlayerTransitionStateChange
+  outcome_tier: string
+  rapid_transition: {
+    is_counter_launch: boolean
+    qualifies_forward_progress: boolean
+    elapsed_seconds: number | null
+    forward_metres: number | null
+    speed_mps: number | null
+    outcome: string | null
+  }
+  action_stages: string[]
+  action_event_indexes: number[]
+  verified_player_action_sequences: number[]
+  possession_trace: ApiPlayerTransitionAction[]
+}
+
+type ApiPlayerTransitionLeverage = {
+  available: boolean
+  verified: boolean
+  contract_version: string
+  formula_version: string
+  opportunities: number
+  involved_possessions: number
+  counter_possessions: number
+  shot_producing_possessions: number
+  box_entry_possessions: number
+  final_third_possessions: number
+  big_chance_possessions: number
+  goal_possessions: number
+  state_changing_possessions: number
+  sequence_stages: Record<string, {
+    actions: number
+    possessions: number
+    rate_per_opportunity: number | null
+  }>
+  sequence_evidence: ApiPlayerTransitionEvidence[]
+  evidence_truncated: boolean
+  ambiguous_excluded: number
+  exclusions: Record<string, number>
+  matching: Record<string, boolean | string>
+}
+
+type ApiPlayerStateCohort = {
+  exposure_seconds: number
+  exposure_minutes: number
+  summary: Record<string, number>
+  rates: Record<string, ApiPlayerStateMetric>
+  passing: {
+    attempts: number
+    completed: number
+    completion_rate: number | null
+    progressive: number
+    key_passes: number
+    final_third_entries: number
+    box_entries: number
+    crosses: number
+    long_balls: number
+    mean_length_metres: number | null
+    mean_forward_metres: number | null
+    forward_share: number | null
+  }
+  carrying: {
+    attempts: number
+    progressive: number
+    final_third_entries: number
+    box_entries: number
+    mean_length_metres: number | null
+    mean_forward_metres: number | null
+    forward_share: number | null
+  }
+  touch_location: { x: number | null; y: number | null; sample_size: number }
+  action_location: { x: number | null; y: number | null; sample_size: number }
+  defensive_location: { x: number | null; y: number | null; sample_size: number }
+  touch_grid: ApiPlayerStateGridCell[]
+  defensive_grid: ApiPlayerStateGridCell[]
+  defensive_by_family?: Partial<Record<DefensiveActionFamily, ApiPlayerDefensiveFamily>>
+  defensive_height: { sample_size: number; mean: number | null; median: number | null }
+  team_action_shares?: Record<string, {
+    player_count: number
+    team_count: number
+    share: number | null
+    unit: string
+  }>
+  possession?: {
+    available: boolean
+    verified: boolean
+    involved_possessions: number
+    counter_possessions: number
+    shot_producing_possessions: number
+    box_entry_possessions: number
+    final_third_possessions: number
+    ambiguous_excluded: number
+    big_chance_possessions?: number
+    goal_possessions?: number
+    state_changing_possessions?: number
+    transition_leverage?: ApiPlayerTransitionLeverage
+  }
+  evidence?: ApiStateLensEvidence
+}
+
+type ApiPlayerStateComparison = {
+  contract_version: string
+  canonical_player_id: number
+  canonical_player_name: string
+  canonical_team_id: number | null
+  canonical_team_name: string | null
+  position_group: string
+  season_role: import('../../types/api').SeasonRole
+  state_evidence: {
+    selected: Record<string, { count: number; per_state_minute: number | null; per_90: number | null }>
+    baseline: Record<string, { count: number; per_state_minute: number | null; per_90: number | null }> | null
+    selected_scope: Record<string, unknown>
+    baseline_scope: Record<string, unknown> | null
+  }
+  state_lens: ApiStateLens
+  selected: ApiPlayerStateCohort
+  baseline: ApiPlayerStateCohort | null
+  comparison: {
+    enabled: boolean
+    selected_minus_baseline: Record<string, { absolute: number | null; relative: number | null; unit: string }>
+    movement: {
+      player: { x: number | null; y: number | null }
+      matched_team: { x: number | null; y: number | null } | null
+    }
+    action_share_change: Record<string, number | null>
+  } | null
+  response_roles: Array<{
+    label: string
+    confidence: string
+    formula: string
+    observations: Record<string, unknown>
+    reliability: Record<string, boolean | string | number>
+  }>
+  role_formulae: Array<Record<string, unknown>>
+  team_context: {
+    available: boolean
+    selection_required?: boolean
+    selection_note?: string | null
+    matching: string
+    selected: ApiPlayerStateCohort | null
+    baseline: ApiPlayerStateCohort | null
+  }
+  exclusions: Record<string, boolean>
 }
 
 type ApiTeamProfile = {
@@ -223,7 +438,12 @@ type ApiTeamProfile = {
   canonical_team_name: string
   competition_code: string
   season_label: string
-  coverage: { observed_matches: number; expected_matches: number; ratio: number | null }
+  coverage: {
+    observed_matches: number
+    expected_matches: number
+    observed_event_minutes: number
+    ratio: number | null
+  }
   materialization: ApiMaterialization
   summary: Record<string, number>
   pass_flow: Array<{
@@ -324,6 +544,216 @@ function mapGrid(cells: ApiGridCell[]): ActionGridCell[] {
   }))
 }
 
+function mapPlayerStateGrid(cells: ApiPlayerStateGridCell[]): ActionGridCell[] {
+  return cells.map(cell => ({
+    column: cell.column,
+    row: invertRow(cell.row, ACTION_GRID_ROWS),
+    rawCount: cell.raw_count,
+    per90Count: cell.per_90 ?? (cell.per_state_minute == null ? 0 : cell.per_state_minute * 90),
+    share: cell.share,
+  }))
+}
+
+function mapPlayerDefensiveFamilies(
+  value: ApiPlayerStateCohort['defensive_by_family'],
+): Partial<Record<DefensiveActionFamily, PlayerDefensiveFamily>> {
+  return Object.fromEntries(
+    Object.entries(value ?? {}).map(([family, evidence]) => [family, {
+      count: evidence.count,
+      locatedCount: evidence.located_count,
+      ratePerStateMinute: evidence.rate_per_state_minute,
+      height: {
+        sampleSize: evidence.height.sample_size,
+        mean: evidence.height.mean,
+        median: evidence.height.median,
+      },
+      grid: mapPlayerStateGrid(evidence.grid),
+    }]),
+  ) as Partial<Record<DefensiveActionFamily, PlayerDefensiveFamily>>
+}
+
+function mapPlayerTransitionAction(value: ApiPlayerTransitionAction): PlayerTransitionAction {
+  return {
+    sequence: value.sequence,
+    eventType: value.event_type,
+    matchSeconds: value.match_seconds,
+    playerId: value.player_id,
+    playerName: value.player_name,
+    role: value.role,
+    roleLabel: value.role_label,
+  }
+}
+
+function mapPlayerTransitionEvidence(value: ApiPlayerTransitionEvidence): PlayerTransitionEvidence {
+  return {
+    matchRef: value.match_ref,
+    possessionId: value.possession_id,
+    teamId: value.team_id,
+    state: {
+      state: value.state.state,
+      goalDifference: value.state.goal_difference,
+      phase: value.state.phase,
+      drawProvenance: value.state.draw_provenance,
+      stateAgeSeconds: value.state.state_age_seconds,
+      episodeIndex: value.state.episode_index,
+    },
+    stateTransition: {
+      actual: value.state_transition.actual,
+      classification: value.state_transition.classification,
+      before: value.state_transition.before,
+      after: value.state_transition.after,
+      perspective: value.state_transition.perspective,
+    },
+    outcomeTier: value.outcome_tier,
+    rapidTransition: {
+      isCounterLaunch: value.rapid_transition.is_counter_launch,
+      qualifiesForwardProgress: value.rapid_transition.qualifies_forward_progress,
+      elapsedSeconds: value.rapid_transition.elapsed_seconds,
+      forwardMetres: value.rapid_transition.forward_metres,
+      speedMps: value.rapid_transition.speed_mps,
+      outcome: value.rapid_transition.outcome,
+    },
+    actionStages: value.action_stages,
+    actionEventIndexes: value.action_event_indexes,
+    verifiedPlayerActionSequences: value.verified_player_action_sequences,
+    possessionTrace: value.possession_trace.map(mapPlayerTransitionAction),
+  }
+}
+
+function mapPlayerTransitionLeverage(value?: ApiPlayerTransitionLeverage): PlayerTransitionLeverage {
+  if (!value) {
+    return {
+      available: false,
+      verified: true,
+      contractVersion: 'transition_leverage_unavailable',
+      formulaVersion: 'unavailable',
+      opportunities: 0,
+      involvedPossessions: 0,
+      counterPossessions: 0,
+      shotProducingPossessions: 0,
+      boxEntryPossessions: 0,
+      finalThirdPossessions: 0,
+      bigChancePossessions: 0,
+      goalPossessions: 0,
+      stateChangingPossessions: 0,
+      sequenceStages: {},
+      sequenceEvidence: [],
+      evidenceTruncated: false,
+      ambiguousExcluded: 0,
+      exclusions: {},
+      matching: {},
+    }
+  }
+  return {
+    available: value.available,
+    verified: value.verified,
+    contractVersion: value.contract_version,
+    formulaVersion: value.formula_version,
+    opportunities: value.opportunities,
+    involvedPossessions: value.involved_possessions,
+    counterPossessions: value.counter_possessions,
+    shotProducingPossessions: value.shot_producing_possessions,
+    boxEntryPossessions: value.box_entry_possessions,
+    finalThirdPossessions: value.final_third_possessions,
+    bigChancePossessions: value.big_chance_possessions,
+    goalPossessions: value.goal_possessions,
+    stateChangingPossessions: value.state_changing_possessions,
+    sequenceStages: Object.fromEntries(Object.entries(value.sequence_stages).map(([key, stage]) => [key, {
+      actions: stage.actions,
+      possessions: stage.possessions,
+      ratePerOpportunity: stage.rate_per_opportunity,
+    }])),
+    sequenceEvidence: value.sequence_evidence.map(mapPlayerTransitionEvidence),
+    evidenceTruncated: value.evidence_truncated,
+    ambiguousExcluded: value.ambiguous_excluded,
+    exclusions: value.exclusions,
+    matching: value.matching,
+  }
+}
+
+function mapPlayerStateCohort(value: ApiPlayerStateCohort): PlayerStateCohort {
+  const mapLocation = (location: ApiPlayerStateCohort['touch_location']) => ({
+    x: location.x,
+    y: location.y == null ? null : 100 - location.y,
+    sampleSize: location.sample_size,
+  })
+  return {
+    exposureSeconds: value.exposure_seconds,
+    exposureMinutes: value.exposure_minutes,
+    summary: value.summary,
+    rates: Object.fromEntries(Object.entries(value.rates).map(([key, metric]) => [key, {
+      count: metric.count,
+      perStateMinute: metric.per_state_minute,
+      per90: metric.per_90,
+    }])),
+    passing: {
+      attempts: value.passing.attempts,
+      completed: value.passing.completed,
+      completionRate: value.passing.completion_rate,
+      progressive: value.passing.progressive,
+      keyPasses: value.passing.key_passes,
+      finalThirdEntries: value.passing.final_third_entries,
+      boxEntries: value.passing.box_entries,
+      crosses: value.passing.crosses,
+      longBalls: value.passing.long_balls,
+      meanLengthMetres: value.passing.mean_length_metres,
+      meanForwardMetres: value.passing.mean_forward_metres,
+      forwardShare: value.passing.forward_share,
+    },
+    carrying: {
+      attempts: value.carrying.attempts,
+      progressive: value.carrying.progressive,
+      finalThirdEntries: value.carrying.final_third_entries,
+      boxEntries: value.carrying.box_entries,
+      meanLengthMetres: value.carrying.mean_length_metres,
+      meanForwardMetres: value.carrying.mean_forward_metres,
+      forwardShare: value.carrying.forward_share,
+    },
+    touchLocation: mapLocation(value.touch_location),
+    actionLocation: mapLocation(value.action_location),
+    defensiveLocation: mapLocation(value.defensive_location),
+    touchGrid: mapPlayerStateGrid(value.touch_grid),
+    defensiveGrid: mapPlayerStateGrid(value.defensive_grid),
+    defensiveByFamily: mapPlayerDefensiveFamilies(value.defensive_by_family),
+    defensiveHeight: {
+      sampleSize: value.defensive_height.sample_size,
+      mean: value.defensive_height.mean,
+      median: value.defensive_height.median,
+    },
+    teamActionShares: Object.fromEntries(Object.entries(value.team_action_shares ?? {}).map(([key, share]) => [key, {
+      playerCount: share.player_count,
+      teamCount: share.team_count,
+      share: share.share,
+      unit: share.unit,
+    }])),
+    possession: {
+      available: value.possession?.available ?? false,
+      verified: value.possession?.verified ?? false,
+      involvedPossessions: value.possession?.involved_possessions ?? 0,
+      counterPossessions: value.possession?.counter_possessions ?? 0,
+      shotProducingPossessions: value.possession?.shot_producing_possessions ?? 0,
+      boxEntryPossessions: value.possession?.box_entry_possessions ?? 0,
+      finalThirdPossessions: value.possession?.final_third_possessions ?? 0,
+      ambiguousExcluded: value.possession?.ambiguous_excluded ?? 0,
+      bigChancePossessions: value.possession?.big_chance_possessions ?? 0,
+      goalPossessions: value.possession?.goal_possessions ?? 0,
+      stateChangingPossessions: value.possession?.state_changing_possessions ?? 0,
+      transitionLeverage: mapPlayerTransitionLeverage(value.possession?.transition_leverage),
+    },
+    evidence: value.evidence ? mapStateLensEvidence(value.evidence) : {
+      exposureSeconds: value.exposure_seconds,
+      exposureMinutes: value.exposure_minutes,
+      episodeCount: 0,
+      matchCount: 0,
+      matchesIncluded: 0,
+      matchesExcluded: 0,
+      exclusionReasons: {},
+      formulaVersion: 'matched-player-intervals',
+      empty: value.exposure_seconds <= 0,
+    },
+  }
+}
+
 function matchTeamIds(events: Array<{ match_ref: number; team_id: number | null }>) {
   const values = new Map<number, number | null>()
   for (const event of events) values.set(event.match_ref, event.team_id)
@@ -409,8 +839,10 @@ export async function fetchPlayerEventProfile(
   season: string,
   teamId?: number | null,
   matchRef?: string | null,
+  stateLens?: StateLensRequest,
 ): Promise<PlayerEventProfilePayload> {
   const params = requestParams(competition, season, teamId, matchRef)
+  appendStateLens(params, stateLens)
   const raw = await readJson<ApiPlayerProfile>(
     `${BASE}/player-seasons/event-profile/${playerId}?${params}`,
   )
@@ -450,6 +882,7 @@ export async function fetchPlayerEventProfile(
     touchGrid: mapGrid(raw.touch_grid ?? []),
     shots,
     matches: mapMatches(raw.matches, matchTeamIds(raw.shots)),
+    stateLens: raw.state_lens ? mapStateLens(raw.state_lens) : undefined,
   }
 }
 
@@ -461,8 +894,10 @@ export async function fetchPlayerPassMap(
   outcome: PlayerPassOutcome,
   teamId?: number | null,
   matchRef?: string | null,
+  stateLens?: StateLensRequest,
 ): Promise<PlayerPassMapPayload> {
   const params = requestParams(competition, season, teamId, matchRef)
+  appendStateLens(params, stateLens)
   params.set('filter', filter)
   params.set('outcome', outcome)
   const raw = await readJson<ApiPlayerPasses>(
@@ -482,6 +917,7 @@ export async function fetchPlayerPassMap(
     passes: raw.passes.map(mapPass),
     carries: (raw.carries ?? []).map(mapCarry),
     matches: mapMatches(raw.matches, matchTeamIds(raw.passes)),
+    stateLens: raw.state_lens ? mapStateLens(raw.state_lens) : undefined,
   }
 }
 
@@ -536,8 +972,10 @@ export async function fetchPlayerShotZones(
   season: string,
   teamId?: number | null,
   matchRef?: string | null,
+  stateLens?: StateLensRequest,
 ): Promise<PlayerShotZonesPayload> {
   const params = requestParams(competition, season, teamId, matchRef)
+  appendStateLens(params, stateLens)
   const raw = await readJson<ApiPlayerShotZones>(
     `${BASE}/player-seasons/event-profile/${playerId}/shot-zones?${params}`,
   )
@@ -546,6 +984,7 @@ export async function fetchPlayerShotZones(
     teamId: raw.canonical_team_id,
     teamName: raw.canonical_team_name,
     shotCount: raw.shot_count,
+    stateLens: raw.state_lens ? mapStateLens(raw.state_lens) : undefined,
   }
 }
 
@@ -554,8 +993,10 @@ export async function fetchGkShotZones(
   competition: string,
   season: string,
   matchRef?: string | null,
+  stateLens?: StateLensRequest,
 ): Promise<GkShotZonesPayload> {
   const params = requestParams(competition, season, null, matchRef)
+  appendStateLens(params, stateLens)
   const raw = await readJson<ApiGkShotZones>(
     `${BASE}/player-seasons/event-profile/${playerId}/gk-shot-zones?${params}`,
   )
@@ -566,6 +1007,63 @@ export async function fetchGkShotZones(
     attributionNote: raw.attribution_note,
     selectedMatchIncluded: raw.selected_match_included,
     shotsFaced: raw.shots_faced,
+    stateLens: raw.state_lens ? mapStateLens(raw.state_lens) : undefined,
+  }
+}
+
+export async function fetchPlayerStateComparison(
+  playerId: number,
+  competition: string,
+  season: string,
+  teamId?: number | null,
+  matchRef?: string | null,
+  stateLens?: StateLensRequest,
+): Promise<PlayerStateComparisonPayload> {
+  const params = requestParams(competition, season, teamId, matchRef)
+  appendStateLens(params, stateLens)
+  const raw = await readJson<ApiPlayerStateComparison>(
+    `${BASE}/player-seasons/event-profile/${playerId}/state-comparison?${params}`,
+  )
+  const mapComparison = raw.comparison
+    ? {
+        enabled: raw.comparison.enabled,
+        selectedMinusBaseline: raw.comparison.selected_minus_baseline,
+        movement: {
+          player: raw.comparison.movement.player,
+          matchedTeam: raw.comparison.movement.matched_team,
+        },
+        actionShareChange: raw.comparison.action_share_change,
+      }
+    : null
+  return {
+    contractVersion: raw.contract_version,
+    playerId: raw.canonical_player_id,
+    playerName: raw.canonical_player_name,
+    teamId: raw.canonical_team_id,
+    teamName: raw.canonical_team_name,
+    positionGroup: raw.position_group,
+    seasonRole: raw.season_role,
+    stateEvidence: {
+      selected: raw.state_evidence.selected,
+      baseline: raw.state_evidence.baseline,
+      selectedScope: raw.state_evidence.selected_scope,
+      baselineScope: raw.state_evidence.baseline_scope,
+    },
+    stateLens: mapStateLens(raw.state_lens),
+    selected: mapPlayerStateCohort(raw.selected),
+    baseline: raw.baseline ? mapPlayerStateCohort(raw.baseline) : null,
+    comparison: mapComparison,
+    responseRoles: raw.response_roles,
+    roleFormulae: raw.role_formulae,
+    teamContext: {
+      available: raw.team_context.available,
+      selectionRequired: raw.team_context.selection_required,
+      selectionNote: raw.team_context.selection_note,
+      matching: raw.team_context.matching,
+      selected: raw.team_context.selected ? mapPlayerStateCohort(raw.team_context.selected) : null,
+      baseline: raw.team_context.baseline ? mapPlayerStateCohort(raw.team_context.baseline) : null,
+    },
+    exclusions: raw.exclusions,
   }
 }
 
@@ -602,7 +1100,7 @@ export async function fetchTeamEventProfile(
     coverage: {
       matchesIncluded: raw.coverage.observed_matches,
       matchesExpected: raw.coverage.expected_matches,
-      minutes: raw.coverage.observed_matches * 90,
+      minutes: raw.coverage.observed_event_minutes,
       complete:
         raw.coverage.expected_matches > 0 &&
         raw.coverage.observed_matches >= raw.coverage.expected_matches,

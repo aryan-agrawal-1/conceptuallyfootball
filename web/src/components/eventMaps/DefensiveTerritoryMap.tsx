@@ -6,26 +6,21 @@ import type {
   TeamDefensiveTerritoryPayload,
 } from '../../types/eventMaps'
 import type { EventMapExportContext } from '../../lib/eventMaps/exportContext'
+import { buildDeltaCell, buildDeltaGrid, type StateDeltaMapContract } from '../../lib/eventMaps/deltaMap'
 import { PortraitPitch } from './PortraitPitch'
 import {
   EventMapCard,
   EventMapNotice,
   EventPitchStage,
 } from './EventMapUi'
-
-const ACTION_FAMILIES: Array<{ value: DefensiveActionFamily; label: string }> = [
-  { value: 'recovery', label: 'Recoveries' },
-  { value: 'tackle', label: 'Tackles' },
-  { value: 'interception', label: 'Interceptions' },
-  { value: 'blocked_pass', label: 'Blocked passes' },
-  { value: 'defensive_aerial', label: 'Defensive aerials' },
-  { value: 'defensive_challenge', label: 'Defensive challenges' },
-  { value: 'clearance', label: 'Clearances' },
-]
-const ALL_FAMILIES = ACTION_FAMILIES.map(option => option.value)
-const ACTION_FAMILY_LABELS = new Map(
-  ACTION_FAMILIES.map(({ value, label }) => [value, label]),
-)
+import { StateDeltaMap } from './StateDeltaMap'
+import {
+  ALL_DEFENSIVE_ACTION_FAMILIES,
+  defensiveActionFamilyLabel,
+} from './defensiveActionFamilies'
+import { DefensiveActionSelector } from './DefensiveActionSelector'
+import { PairedStatePitch } from './PairedStatePitch'
+import { statePresentation } from '../../lib/eventMaps/statePresentation'
 
 function pitchHeight(value: number | null) {
   return value == null ? '—' : `${value.toFixed(1)}%`
@@ -73,49 +68,156 @@ function combinedSummary(evidence: DefensiveTerritoryEvidence, selected: Defensi
     }
   })
   return {
+    included: located + unlocated,
     located,
     unlocated,
     rate: evidence.counts.included ? rate : null,
     meanHeight: heightWeight ? weightedHeight / heightWeight : null,
+    medianHeight: selected.length === 1
+      ? composition.get(selected[0])
+        ? evidence.familyEvidence[selected[0]].height.median
+        : null
+      : selected.length === ALL_DEFENSIVE_ACTION_FAMILIES.length
+        ? evidence.heights.all.median
+        : null,
   }
 }
 
-function DefensiveActionSelect({ selected, onChange }: {
-  selected: DefensiveActionFamily[]
-  onChange: (selected: DefensiveActionFamily[]) => void
-}) {
-  const allSelected = selected.length === ACTION_FAMILIES.length
-  const label = allSelected
-    ? 'All defensive actions'
-    : selected.length === 1
-      ? ACTION_FAMILY_LABELS.get(selected[0]) ?? selected[0]
-      : `${selected.length} action types`
-  const toggle = (family: DefensiveActionFamily) => {
-    if (selected.includes(family)) {
-      if (selected.length > 1) onChange(selected.filter(value => value !== family))
-    } else {
-      onChange(ALL_FAMILIES.filter(value => selected.includes(value) || value === family))
+function defensiveReliability(
+  evidence: DefensiveTerritoryEvidence,
+  lensEvidence: TeamDefensiveTerritoryPayload['stateLens']['evidence'] | null | undefined,
+) {
+  if (lensEvidence?.empty || !lensEvidence?.exposureMinutes) return 'unavailable' as const
+  if (evidence.evidence.sparse) return 'sparse' as const
+  if (lensEvidence.matchesExcluded) return 'partial' as const
+  return 'verified' as const
+}
+
+function stateLabel(value: string | undefined) {
+  if (!value || value === 'all') return 'All states'
+  return value.replaceAll('_', ' ').replace(/^./, character => character.toUpperCase())
+}
+
+function scopeLabel(scope: TeamDefensiveTerritoryPayload['stateLens']['selected'] | null | undefined) {
+  if (!scope) return 'All states'
+  const qualifiers = [
+    scope.goalDifference == null ? null : `GD ${scope.goalDifference > 0 ? '+' : ''}${scope.goalDifference}`,
+    scope.phase?.replaceAll('_', ' '),
+    scope.drawProvenance && scope.drawProvenance !== 'none' ? scope.drawProvenance : null,
+  ].filter(Boolean)
+  const label = stateLabel(scope.state)
+  return qualifiers.length ? `${label} · ${qualifiers.join(' · ')}` : label
+}
+
+function defensiveDeltaContract(
+  payload: TeamDefensiveTerritoryPayload,
+  selectedGrid: ActionGridCell[],
+  baselineGrid: ActionGridCell[],
+  selectedFamilies: DefensiveActionFamily[],
+): StateDeltaMapContract {
+  const selectedByCoordinate = new Map(selectedGrid.map(cell => [`${cell.column}:${cell.row}`, cell]))
+  const baselineByCoordinate = new Map(baselineGrid.map(cell => [`${cell.column}:${cell.row}`, cell]))
+  const selectedLensEvidence = payload.stateLens.evidence
+  const baselineLensEvidence = payload.stateLens.comparison.baselineEvidence
+  const cells = []
+  const rates: number[] = []
+  for (let row = 0; row < 8; row += 1) {
+    for (let column = 0; column < 12; column += 1) {
+      const selectedCell = selectedByCoordinate.get(`${column}:${row}`)
+      const baselineCell = baselineByCoordinate.get(`${column}:${row}`)
+      const selectedValue = selectedCell?.per90Count ?? (selectedLensEvidence.exposureMinutes > 0 ? 0 : null)
+      const baselineValue = baselineCell?.per90Count ?? (baselineLensEvidence && baselineLensEvidence.exposureMinutes > 0 ? 0 : null)
+      if (selectedValue != null) rates.push(selectedValue)
+      if (baselineValue != null) rates.push(baselineValue)
+      cells.push(buildDeltaCell({
+        column,
+        row,
+        selectedValue,
+        baselineValue,
+        selectedRawCount: selectedCell?.rawCount ?? 0,
+        baselineRawCount: baselineCell?.rawCount ?? 0,
+        selectedSupported: selectedValue != null,
+        baselineSupported: baselineValue != null,
+        selectedSparse: payload.selected.evidence.sparse,
+        baselineSparse: payload.baseline?.evidence.sparse ?? false,
+      }))
     }
   }
-  return (
-    <details className="relative">
-      <summary className="event-lens-control flex min-w-48 list-none items-center justify-between gap-3 whitespace-nowrap text-left marker:hidden">
-        <span>{label}</span><span aria-hidden className="text-electric">▾</span>
-      </summary>
-      <div className="absolute right-0 z-30 mt-1 min-w-60 border border-control-border bg-overlay p-2 shadow-2xl">
-        <label className="flex min-h-9 items-center gap-2 border-b border-line-bright px-2 text-[10px] font-bold text-ink">
-          <input type="checkbox" checked={allSelected} onChange={() => onChange(ALL_FAMILIES)} />
-          All defensive actions
-        </label>
-        {ACTION_FAMILIES.map(option => (
-          <label key={option.value} className="flex min-h-9 items-center gap-2 px-2 text-[10px] text-control-fg hover:bg-raised hover:text-ink">
-            <input type="checkbox" checked={selected.includes(option.value)} onChange={() => toggle(option.value)} />
-            {option.label}
-          </label>
-        ))}
-      </div>
-    </details>
-  )
+  const selectedSummary = combinedSummary(payload.selected, selectedFamilies)
+  const baselineSummary = payload.baseline ? combinedSummary(payload.baseline, selectedFamilies) : null
+  const selectedHeightSampleSize = selectedFamilies.length === 1
+    ? payload.selected.familyEvidence[selectedFamilies[0]].height.sampleSize
+    : payload.selected.heights.all.sampleSize
+  const baselineHeightSampleSize = payload.baseline && selectedFamilies.length === 1
+    ? payload.baseline.familyEvidence[selectedFamilies[0]].height.sampleSize
+    : payload.baseline?.heights.all.sampleSize ?? null
+  return {
+    contractVersion: 'state-delta-map/team-defensive-territory/v1',
+    subject: { type: 'team', id: payload.teamId, name: payload.teamName },
+    metric: {
+      label: 'Defensive territory delta',
+      unit: 'actions / state min',
+      mode: 'absolute-rate',
+      smoothing: 'none',
+      description: 'Cell colour compares per-minute defensive-action density. Median-height markers remain separate from the density delta.',
+      domain: Math.max(0.01, ...rates),
+    },
+    selected: {
+      label: scopeLabel(payload.stateLens.selected),
+      exposureMinutes: selectedLensEvidence.exposureMinutes,
+      matchCount: selectedLensEvidence.matchCount,
+      episodeCount: selectedLensEvidence.episodeCount,
+      eventCount: selectedSummary.included,
+      locatedEventCount: selectedSummary.located,
+      excludedEventCount: selectedSummary.unlocated,
+      excludedMatchCount: selectedLensEvidence.matchesExcluded,
+      exclusions: {
+        ...selectedLensEvidence.exclusionReasons,
+        ...payload.selected.evidence.exclusions,
+      },
+      reliability: defensiveReliability(payload.selected, selectedLensEvidence),
+    },
+    baseline: {
+      label: scopeLabel(payload.stateLens.comparison.baseline),
+      exposureMinutes: baselineLensEvidence?.exposureMinutes ?? null,
+      matchCount: baselineLensEvidence?.matchCount ?? null,
+      episodeCount: baselineLensEvidence?.episodeCount ?? null,
+      eventCount: baselineSummary?.included ?? null,
+      locatedEventCount: baselineSummary?.located ?? null,
+      excludedEventCount: baselineSummary?.unlocated ?? null,
+      excludedMatchCount: baselineLensEvidence?.matchesExcluded ?? null,
+      exclusions: {
+        ...(baselineLensEvidence?.exclusionReasons ?? {}),
+        ...(payload.baseline?.evidence.exclusions ?? {}),
+      },
+      reliability: payload.baseline
+        ? defensiveReliability(payload.baseline, baselineLensEvidence)
+        : 'unavailable',
+    },
+    grid: buildDeltaGrid({ columns: 12, rows: 8, cells }),
+    markers: {
+      selected: selectedSummary.medianHeight == null ? null : {
+        id: 'selected-median-height',
+        label: 'Selected median',
+        coordinate: { x: selectedSummary.medianHeight, y: 50 },
+        sampleSize: selectedHeightSampleSize,
+        tone: 'selected',
+        description: 'Median defensive-action height from the selected action scope.',
+      },
+      baseline: baselineSummary?.medianHeight == null ? null : {
+        id: 'baseline-median-height',
+        label: 'Baseline median',
+        coordinate: { x: baselineSummary.medianHeight, y: 50 },
+        sampleSize: baselineHeightSampleSize,
+        tone: 'baseline',
+        description: 'Median defensive-action height from the baseline action scope.',
+      },
+    },
+    notes: [
+      'Own goal is 0 and opponent goal is 100. Density uses supplied per-state-minute values; raw event totals are disclosed separately.',
+      payload.selected.disclaimer,
+    ],
+  }
 }
 
 export function DefensiveTerritoryMap({
@@ -135,7 +237,7 @@ export function DefensiveTerritoryMap({
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
 }) {
-  const [selectedFamilies, setSelectedFamilies] = useState<DefensiveActionFamily[]>(ALL_FAMILIES)
+  const [selectedFamilies, setSelectedFamilies] = useState<DefensiveActionFamily[]>(ALL_DEFENSIVE_ACTION_FAMILIES)
   if (loading) return <EventMapNotice kind="loading" title="Loading defensive territory" />
   if (error || !payload) {
     return <EventMapNotice kind="error" title="Defensive territory failed to load" onRetry={retry}>{error}</EventMapNotice>
@@ -147,19 +249,22 @@ export function DefensiveTerritoryMap({
   const baselineSummary = payload.baseline
     ? combinedSummary(payload.baseline, selectedFamilies)
     : null
+  const deltaContract = payload.baseline
+    ? defensiveDeltaContract(payload, selectedGrid, combineGrid(payload.baseline, selectedFamilies), selectedFamilies)
+    : null
 
   return (
     <EventMapCard
       title="Defensive action territory"
       description="Choose the action types to map. Positions run from the team's own goal (0) to the opponent's goal (100)."
-      controls={<DefensiveActionSelect selected={selectedFamilies} onChange={setSelectedFamilies} />}
+      controls={<DefensiveActionSelector selected={selectedFamilies} onChange={setSelectedFamilies} />}
       exportContext={{
         ...exportContext,
         filters: [...exportContext.filters, {
           label: 'Defensive actions',
-          value: selectedFamilies.length === ACTION_FAMILIES.length
+          value: selectedFamilies.length === ALL_DEFENSIVE_ACTION_FAMILIES.length
             ? 'All action types'
-            : selectedFamilies.map(family => ACTION_FAMILY_LABELS.get(family) ?? family).join(' · '),
+            : selectedFamilies.map(defensiveActionFamilyLabel).join(' · '),
         }],
       }}
       expanded={expanded}
@@ -168,35 +273,48 @@ export function DefensiveTerritoryMap({
       <EventPitchStage expanded={expanded} onExpandedChange={onExpandedChange}>
         <div className="grid w-full max-w-[1120px] items-start gap-4 lg:grid-cols-[minmax(0,760px)_minmax(280px,1fr)]">
           <div>
-            {selectedSummary.located ? (
+            {payload.baseline && baselineSummary ? (
+              <PairedStatePitch
+                selected={{ state: payload.stateLens.selected.state, label: payload.stateLens.selected.state === 'all' ? 'All states' : payload.stateLens.selected.state, cells: selectedGrid, average: selectedSummary.meanHeight == null ? null : { x: selectedSummary.meanHeight, y: 50, sampleSize: selectedSummary.located }, exposureMinutes: payload.stateLens.evidence.exposureMinutes, matchCount: payload.stateLens.evidence.matchCount }}
+                comparison={{ state: payload.stateLens.comparison.baseline?.state ?? 'all', label: payload.stateLens.comparison.baseline?.state ?? 'All states', cells: combineGrid(payload.baseline, selectedFamilies), average: baselineSummary.meanHeight == null ? null : { x: baselineSummary.meanHeight, y: 50, sampleSize: baselineSummary.located }, exposureMinutes: payload.stateLens.comparison.baselineEvidence?.exposureMinutes ?? 0, matchCount: payload.stateLens.comparison.baselineEvidence?.matchCount ?? 0 }}
+                unit="share of located defensive actions"
+                ariaLabel={`${payload.teamName} paired defensive territory comparison`}
+              />
+            ) : selectedSummary.located ? (
               <PortraitPitch
                 densityCells={selectedGrid}
                 densityStyle="cells"
                 ariaLabel={`${payload.teamName} selected defensive action territory. Own goal at zero, opponent goal at one hundred.`}
               />
             ) : <EventMapNotice kind="empty" title="No located defensive actions in this state" />}
+            {deltaContract ? <details className="mt-3 border border-line-bright px-3 py-2 text-[9px] text-ink-dim"><summary className="cursor-pointer text-control-fg">Change evidence</summary><div className="mt-2"><StateDeltaMap contract={deltaContract} compact /></div></details> : null}
           </div>
           <aside className="space-y-3 border-t border-line-bright pt-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0" aria-label="Defensive territory evidence">
-            <div className="grid grid-cols-2 gap-3 text-[12px] leading-relaxed lg:grid-cols-1">
-              <p><span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-ink-dim">Average action position</span>{pitchHeight(selectedSummary.meanHeight)}</p>
-              <p><span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-ink-dim">Actions per minute</span>{rate(selectedSummary.rate)}</p>
-              <p className="col-span-2 text-[11px] text-ink-dim lg:col-span-1">Average distance from the team's own goal for the selected actions.</p>
-            </div>
-            <p className="text-[11px] leading-relaxed text-ink-dim">Brighter blue cells mean more actions · {selectedSummary.located} located · {selectedSummary.unlocated} unlocated.</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-dim">Game-state comparison</p>
+            {[
+              { label: payload.stateLens.selected.state === 'all' ? 'All states' : payload.stateLens.selected.state, state: payload.stateLens.selected.state, summary: selectedSummary },
+              ...(baselineSummary ? [{ label: payload.stateLens.comparison.baseline?.state ?? 'All states', state: payload.stateLens.comparison.baseline?.state ?? 'all', summary: baselineSummary }] : []),
+            ].map(item => {
+              const presentation = statePresentation(item.state)
+              return <section key={`${item.state}-${item.label}`} className="border border-line/60 bg-paper/40 px-3 py-2" style={{ borderTopColor: presentation.color }}>
+                <p className="text-[9px] font-bold uppercase tracking-[0.08em]" style={{ color: presentation.color }}>{item.label}</p>
+                <dl className="mt-2 space-y-2 text-[10px]">
+                  <div className="flex items-baseline justify-between gap-3 border-t border-line-bright pt-2"><dt className="text-ink-dim">Average action position</dt><dd className="font-mono text-ink">{pitchHeight(item.summary.meanHeight)}</dd></div>
+                  <div className="flex items-baseline justify-between gap-3 border-t border-line-bright pt-2"><dt className="text-ink-dim">Actions per minute</dt><dd className="font-mono text-ink">{rate(item.summary.rate)}</dd></div>
+                  <div className="flex items-baseline justify-between gap-3 border-t border-line-bright pt-2"><dt className="text-ink-dim">Located · unlocated</dt><dd className="font-mono text-ink">{item.summary.located} · {item.summary.unlocated}</dd></div>
+                </dl>
+              </section>
+            })}
+            <p className="text-[11px] leading-relaxed text-ink-dim">Average position is measured from the team's own goal. Brighter blue cells mean more actions within that cohort.</p>
             {selectedSummary.located < evidence.evidence.sparseThreshold ? (
               <EventMapNotice kind="sparse" title="Sparse location sample">
                 {selectedSummary.located} located actions; interpret the territory pattern cautiously below {evidence.evidence.sparseThreshold}.
               </EventMapNotice>
             ) : null}
-            {baselineSummary ? (
-              <p className="text-[11px] leading-relaxed text-ink-dim">
-                Baseline average position {pitchHeight(baselineSummary.meanHeight)} · comparison average {pitchHeight(selectedSummary.meanHeight)}. Both scopes use identical 12×8 bins for State Delta Map comparison.
-              </p>
-            ) : null}
             <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] uppercase tracking-[0.08em] text-ink-dim" aria-label="Defensive event family composition">
               {evidence.familyComposition.flatMap(row => (
                 selectedFamilySet.has(row.family) && row.count > 0
-                  ? [<span key={row.family}>{ACTION_FAMILY_LABELS.get(row.family) ?? row.family} {row.count}</span>]
+                  ? [<span key={row.family}>{defensiveActionFamilyLabel(row.family)} {row.count}</span>]
                   : []
               ))}
             </div>

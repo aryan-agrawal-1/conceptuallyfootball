@@ -22,6 +22,7 @@ class IngestionKind(models.TextChoices):
     GALAXY = "galaxy", "Galaxy embeddings"
     WHOSCORED_FETCH = "whoscored_fetch", "WhoScored fetch"
     EVENT_PROFILES = "event_profiles", "Event profiles"
+    PLAYER_ROLES = "player_roles", "Player roles"
 
 
 class ProviderMatchStatus(models.TextChoices):
@@ -1792,6 +1793,123 @@ class PlayerSeasonEventProfile(models.Model):
     def __str__(self) -> str:
         scope = self.team_id if self.team_id is not None else "total"
         return f"{self.player} @ {self.competition_season} ({scope})"
+
+
+class PlayerSeasonRoleFeatureSnapshot(models.Model):
+    """Versioned evidence snapshot for one player-team-season role context."""
+
+    competition_season = models.ForeignKey(
+        CompetitionSeason,
+        on_delete=models.CASCADE,
+        related_name="player_role_feature_snapshots",
+    )
+    player = models.ForeignKey(
+        CanonicalPlayer,
+        on_delete=models.CASCADE,
+        related_name="role_feature_snapshots",
+    )
+    team = models.ForeignKey(
+        CanonicalTeam,
+        on_delete=models.PROTECT,
+        related_name="player_role_feature_snapshots",
+    )
+    feature_version = models.CharField(max_length=64, db_index=True)
+    features = models.JSONField(default=dict, blank=True)
+    verified_exposure_seconds = models.PositiveIntegerField(default=0)
+    source_event_version = models.CharField(max_length=64)
+    source_state_version = models.CharField(max_length=64)
+    source_participation_version = models.CharField(max_length=64)
+    source_possession_version = models.CharField(max_length=64)
+    calculated_through_match = models.ForeignKey(
+        ProviderMatch,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="player_role_features_calculated_through",
+    )
+    calculated_through_date = models.DateField(null=True, blank=True)
+    is_current = models.BooleanField(default=True, db_index=True)
+    superseded_at = models.DateTimeField(null=True, blank=True)
+    calculated_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["competition_season", "player", "team"],
+                condition=models.Q(is_current=True),
+                name="uniq_current_role_feature",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["competition_season", "team", "player", "is_current"],
+                name="player_role_feature_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.player} @ {self.team}, {self.competition_season} features"
+
+
+class PlayerSeasonRole(models.Model):
+    """Versioned archetype and trait classification for one player-team stint."""
+
+    competition_season = models.ForeignKey(
+        CompetitionSeason,
+        on_delete=models.CASCADE,
+        related_name="player_season_roles",
+    )
+    player = models.ForeignKey(
+        CanonicalPlayer,
+        on_delete=models.CASCADE,
+        related_name="season_roles",
+    )
+    team = models.ForeignKey(
+        CanonicalTeam,
+        on_delete=models.PROTECT,
+        related_name="player_season_roles",
+    )
+    feature_snapshot = models.ForeignKey(
+        PlayerSeasonRoleFeatureSnapshot,
+        on_delete=models.PROTECT,
+        related_name="classifications",
+    )
+    primary_archetype = models.CharField(max_length=64, null=True, blank=True)
+    primary_fit = models.FloatField(null=True, blank=True)
+    secondary_archetype = models.CharField(max_length=64, null=True, blank=True)
+    secondary_fit = models.FloatField(null=True, blank=True)
+    classification_shape = models.CharField(max_length=24)
+    evidence_confidence = models.CharField(max_length=24)
+    traits = models.JSONField(default=list, blank=True)
+    candidates = models.JSONField(default=list, blank=True)
+    evidence = models.JSONField(default=dict, blank=True)
+    scoring_version = models.CharField(max_length=64, db_index=True)
+    is_current = models.BooleanField(default=True, db_index=True)
+    superseded_at = models.DateTimeField(null=True, blank=True)
+    calculated_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["competition_season", "player", "team"],
+                condition=models.Q(is_current=True),
+                name="uniq_current_player_team_role",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["competition_season", "team", "player", "is_current"],
+                name="player_team_role_idx",
+            ),
+            models.Index(
+                fields=["competition_season", "primary_archetype", "is_current"],
+                name="primary_archetype_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        label = self.primary_archetype or "unclassified"
+        return f"{self.player} @ {self.team}, {self.competition_season}: {label}"
 
 
 class TeamSeasonEventProfile(models.Model):

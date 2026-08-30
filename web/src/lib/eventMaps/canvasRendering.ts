@@ -16,6 +16,7 @@ export type DenseLayerOptions = {
   successfulColor?: string
   unsuccessfulColor?: string
   densityColor?: string
+  densityDomainMax?: number
   flowColor?: string
   flowDensityColor?: string
   carryColor?: string
@@ -59,9 +60,10 @@ export function drawDensityLayer(
   transform: PitchTransform,
   color = defaultLayerOptions.densityColor,
   style: 'cells' | 'smooth' = 'cells',
+  domainMaximum?: number,
 ) {
-  let maximumShare = 0
-  for (const cell of cells) maximumShare = Math.max(maximumShare, cell.share)
+  let maximumShare = domainMaximum ?? 0
+  if (domainMaximum == null) for (const cell of cells) maximumShare = Math.max(maximumShare, cell.share)
   if (maximumShare === 0) return
   const columnCount = Math.max(1, ...cells.map(cell => cell.column + 1))
   const rowCount = Math.max(1, ...cells.map(cell => cell.row + 1))
@@ -122,6 +124,7 @@ export function drawPassLayer(
 ) {
   const colors = { ...defaultLayerOptions, ...options }
   const hasSelection = Boolean(options.selectedEventId)
+  const densityOpacity = passes.length > 120 ? 0.28 : passes.length > 50 ? 0.5 : 0.82
 
   context.save()
   context.lineCap = 'butt'
@@ -133,15 +136,25 @@ export function drawPassLayer(
     context.beginPath()
     context.moveTo(start.x, start.y)
     context.lineTo(end.x, end.y)
-    context.strokeStyle =
+    context.strokeStyle = pass.color ?? (
       pass.outcome === 'successful' ? colors.successfulColor : colors.unsuccessfulColor
-    context.globalAlpha = selected ? 1 : hasSelection ? 0.4 : 1
+    )
+    context.globalAlpha = selected ? 1 : hasSelection ? 0.2 : densityOpacity
     context.lineWidth = selected ? (pass.keyPass ? 2.1 : 1.65) : pass.keyPass ? 1.35 : 0.95
     context.stroke()
 
-    const endpointRadius = selected ? 2.8 : 1.2
+    const deltaX = end.x - start.x
+    const deltaY = end.y - start.y
+    const distance = Math.hypot(deltaX, deltaY)
+    if (distance < 4) continue
+    const unitX = deltaX / distance
+    const unitY = deltaY / distance
+    const arrowSize = selected ? 4.5 : passes.length > 120 ? 2.2 : 3
     context.beginPath()
-    context.arc(end.x, end.y, endpointRadius, 0, Math.PI * 2)
+    context.moveTo(end.x, end.y)
+    context.lineTo(end.x - unitX * arrowSize - unitY * arrowSize * 0.65, end.y - unitY * arrowSize + unitX * arrowSize * 0.65)
+    context.lineTo(end.x - unitX * arrowSize + unitY * arrowSize * 0.65, end.y - unitY * arrowSize - unitX * arrowSize * 0.65)
+    context.closePath()
     context.fillStyle = context.strokeStyle
     context.fill()
   }
@@ -169,7 +182,7 @@ export function drawCarryLayer(
     context.beginPath()
     context.moveTo(start.x, start.y)
     context.lineTo(end.x, end.y)
-    context.strokeStyle = colors.carryColor ?? '#F0A832'
+    context.strokeStyle = carry.color ?? colors.carryColor ?? '#F0A832'
     context.globalAlpha = selected ? 1 : hasSelection ? 0.24 : 0.9
     context.lineWidth = selected ? 2.5 : 1.5
     context.stroke()
@@ -211,7 +224,7 @@ export function drawFlowLayer(
   context.lineCap = 'round'
   context.lineJoin = 'round'
 
-  for (const bin of bins.values()) {
+  for (const [key, bin] of bins) {
     if (bin.volume === 0) continue
     const flow = bin.flows[0]
     const xMin = (flow.bin.column / 6) * 100
@@ -221,7 +234,7 @@ export function drawFlowLayer(
     const topLeft = transform.toScreen({ x: xMin, y: yMin })
     const bottomRight = transform.toScreen({ x: xMax, y: yMax })
     const volume = Math.sqrt(bin.volume / maximumVolume)
-    const selected = bin.flows.some(candidate => candidate.id === options.selectedFlowId)
+    const selected = options.selectedFlowId === `bin:${key}` || bin.flows.some(candidate => candidate.id === options.selectedFlowId)
     const hasSelection = Boolean(options.selectedFlowId)
 
     context.fillStyle = densityColor
@@ -250,7 +263,7 @@ export function drawFlowLayer(
     if (volumeCount === 0) continue
 
     const color = flow.color ?? options.flowColor ?? defaultLayerOptions.flowColor
-    const selected = flow.id === options.selectedFlowId
+    const selected = flow.id === options.selectedFlowId || options.selectedFlowId === `bin:${flow.bin.column}-${flow.bin.row}`
     const hasSelection = Boolean(options.selectedFlowId)
     const laneOffset = (flow.comparisonLane ?? 0) * (transform.bounds.height / 4) * 0.2
     const origin = transform.toScreen(flow.origin)
@@ -318,7 +331,7 @@ export function drawDensePitchLayers(
   context.save()
   if (pitchView === 'attacking-half') context.translate(-viewport.width, 0)
   if (layers.densityCells?.length) {
-    drawDensityLayer(context, layers.densityCells, transform, options.densityColor, options.densityStyle)
+    drawDensityLayer(context, layers.densityCells, transform, options.densityColor, options.densityStyle, options.densityDomainMax)
   }
   if (layers.flows?.length) {
     drawFlowLayer(context, layers.flows, transform, options)

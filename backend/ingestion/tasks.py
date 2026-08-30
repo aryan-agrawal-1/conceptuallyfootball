@@ -152,6 +152,31 @@ def task_run_team_merge(competition_season_id: int) -> dict:
     return {"ok": run.status == IngestionRunStatus.SUCCESS, "run_id": run.id, "error": run.error_detail}
 
 
+@shared_task(queue="ingestion")
+def task_materialize_player_season_roles(
+    competition_season_id: int,
+    affected_player_ids: list[int] | None = None,
+    affected_team_ids: list[int] | None = None,
+    score_only: bool = False,
+    score_events_only: bool = False,
+) -> dict:
+    """Refresh role snapshots and scores after event-profile publication commits."""
+
+    from ingestion.services.player_role_orchestration import run_player_role_materialization
+
+    competition_season = CompetitionSeason.objects.get(pk=competition_season_id)
+    return {
+        "ok": True,
+        **run_player_role_materialization(
+            competition_season,
+            affected_player_ids=affected_player_ids,
+            affected_team_ids=affected_team_ids,
+            score_only=score_only,
+            score_events_only=score_events_only,
+        ),
+    }
+
+
 @shared_task
 def task_repair_slice_materializations(competition_season_id: int) -> dict:
     cs = CompetitionSeason.objects.get(pk=competition_season_id)
