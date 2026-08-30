@@ -36,19 +36,30 @@ class ScoreEventIndex:
         return {name: values[name] for name in SCORE_EVENT_FIELDS}
 
 
-def score_exposure_index(competition_season, target_pairs: set[tuple[int, int]]) -> ExposureIntervalIndex:
+def score_exposure_index(
+    competition_season,
+    target_pairs: set[tuple[int, int]],
+    match_ids: Iterable[int] | None = None,
+) -> ExposureIntervalIndex:
     """Load only verified scalar exposure rows needed by the score index."""
 
     player_ids = {player_id for player_id, _team_id in target_pairs}
     team_ids = {team_id for _player_id, team_id in target_pairs}
-    rows = ProviderMatchPlayerStateExposure.objects.filter(
+    exposure_query = ProviderMatchPlayerStateExposure.objects.filter(
         player_interval__participation__provider_match__competition_season=competition_season,
         player_interval__participation__player_id__in=player_ids,
         player_interval__participation__team_id__in=team_ids,
         player_interval__participation__status="verified",
         player_interval__participation__confidence="verified",
         player_interval__confidence="verified",
-    ).values_list(
+    )
+    if match_ids is not None:
+        exposure_query = exposure_query.filter(
+            player_interval__participation__provider_match_id__in=tuple(
+                int(match_id) for match_id in match_ids
+            )
+        )
+    rows = exposure_query.values_list(
         "player_interval__participation__provider_match_id",
         "player_interval__participation__team_id",
         "player_interval__participation__player_id",
@@ -148,15 +159,25 @@ def score_event_index_from_rows(
     return result
 
 
-def build_score_event_index(competition_season, target_pairs: set[tuple[int, int]], goal_context) -> ScoreEventIndex:
+def build_score_event_index(
+    competition_season,
+    target_pairs: set[tuple[int, int]],
+    goal_context,
+    match_ids: Iterable[int] | None = None,
+) -> ScoreEventIndex:
     """Read compact rows once instead of scanning a season for every snapshot."""
 
     if not target_pairs:
         return ScoreEventIndex()
-    exposure_index = score_exposure_index(competition_season, target_pairs)
-    rows = ProviderMatchEvent.objects.filter(
+    exposure_index = score_exposure_index(competition_season, target_pairs, match_ids)
+    events_query = ProviderMatchEvent.objects.filter(
         provider_match__competition_season=competition_season,
-    ).values(*SCORE_EVENT_INDEX_COLUMNS).order_by(
+    )
+    if match_ids is not None:
+        events_query = events_query.filter(provider_match_id__in=tuple(
+            int(match_id) for match_id in match_ids
+        ))
+    rows = events_query.values(*SCORE_EVENT_INDEX_COLUMNS).order_by(
         "provider_match_id", "team_id", "timeline_seconds", "event_index", "id"
     ).iterator(chunk_size=2000)
     return score_event_index_from_rows(rows, exposure_index, goal_context, target_pairs)

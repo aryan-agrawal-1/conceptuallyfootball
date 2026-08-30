@@ -266,14 +266,22 @@ def aggregate_non_possession_batch(
                 add_carry_action(target.states[state].player, carry)
 
 
-def iter_non_possession_batches(competition_season, batch_size: int = DEFAULT_MATCH_BATCH_SIZE):
+def iter_non_possession_batches(
+    competition_season,
+    batch_size: int = DEFAULT_MATCH_BATCH_SIZE,
+    *,
+    match_ids: Iterable[int] | None = None,
+):
     """Yield fixed-size scalar batches and release each before reading the next."""
 
     if not 1 <= batch_size <= DEFAULT_MATCH_BATCH_SIZE:
         raise ValueError(f"match batch size must be between 1 and {DEFAULT_MATCH_BATCH_SIZE}")
-    matches = ProviderMatch.objects.filter(
+    matches_query = ProviderMatch.objects.filter(
         competition_season=competition_season, provider=Provider.WHOSCORED,
-    ).values(*MATCH_COLUMNS).order_by("kickoff_at", "id").iterator(chunk_size=batch_size)
+    )
+    if match_ids is not None:
+        matches_query = matches_query.filter(id__in=tuple(int(match_id) for match_id in match_ids))
+    matches = matches_query.values(*MATCH_COLUMNS).order_by("kickoff_at", "id").iterator(chunk_size=batch_size)
     while rows := tuple(islice(matches, batch_size)):
         match_ids = tuple(int(row["id"]) for row in rows)
         events = tuple(ProviderMatchEvent.objects.filter(

@@ -21,6 +21,7 @@ from ingestion.models import (
     PlayerSeasonEventProfile,
     PlayerSeasonRole,
     PlayerSeasonRoleFeatureSnapshot,
+    Provider,
     ProviderMatch,
     ProviderMatchCarry,
     ProviderMatchEvent,
@@ -30,6 +31,7 @@ from ingestion.models import (
     ProviderMatchPossessionParticipant,
     ProviderMatchTeamGameStateEpisode,
 )
+from ingestion.services.player_role_diagnostics import resident_memory_mb, sample_memory
 from ingestion.services.player_role_definitions import ROLE_FEATURE_VERSION, ROLE_SCORING_VERSION
 from ingestion.services.player_role_features import (
     build_feature_snapshot,
@@ -44,7 +46,18 @@ from ingestion.services.player_season_roles import (
 
 
 DEFAULT_CORPUS_PATH = Path(__file__).resolve().parents[1] / "benchmarks" / "player_role_corpus_v1.json"
+DEFAULT_BASELINE_PATH = Path(__file__).resolve().parents[1] / "benchmarks" / "player_role_baseline_2026-08-30.json"
 FLOAT_ABSOLUTE_TOLERANCE = 1e-6
+DEFAULT_SCALE_MATCH_COUNTS = (10, 50, 100)
+RAW_EVIDENCE_MODELS = (
+    ProviderMatchEvent,
+    ProviderMatchCarry,
+    ProviderMatchPlayerStateExposure,
+    ProviderMatchPossession,
+    ProviderMatchPossessionEvent,
+    ProviderMatchPossessionParticipant,
+    ProviderMatchTeamGameStateEpisode,
+)
 REQUIRED_CORPUS_CLASSES = {
     "goalkeeper",
     "high_minute_outfield",
@@ -368,3 +381,253 @@ def compare_values(expected: Any, actual: Any, *, path: str = "$", differences: 
 
 def compare_oracle(oracle: dict, candidate_profiles: dict) -> list[str]:
     return compare_values(oracle["profiles"], candidate_profiles)
+
+
+def persisted_role_output_values(row: dict) -> dict:
+    return {
+        "primary_archetype": row["primary_archetype"],
+        "primary_fit": row["primary_fit"],
+        "secondary_archetype": row["secondary_archetype"],
+        "secondary_fit": row["secondary_fit"],
+        "classification_shape": row["classification_shape"],
+        "evidence_confidence": row["evidence_confidence"],
+        "traits": row["traits"],
+        "candidates": row["candidates"],
+    }
+
+
+def current_role_output_rows(competition_season) -> tuple[list[dict], list[dict]]:
+    snapshot_rows = list(PlayerSeasonRoleFeatureSnapshot.objects.filter(
+        competition_season=competition_season,
+        is_current=True,
+    ).values("player_id", "team_id", "features").order_by("player_id", "team_id"))
+    role_rows = list(PlayerSeasonRole.objects.filter(
+        competition_season=competition_season,
+        is_current=True,
+    ).values(
+        "player_id", "team_id", "primary_archetype", "primary_fit",
+        "secondary_archetype", "secondary_fit", "classification_shape",
+        "evidence_confidence", "traits", "candidates",
+    ).order_by("player_id", "team_id"))
+    return snapshot_rows, role_rows
+
+
+def score_role_output_rows(snapshot_rows: list[dict]) -> dict[tuple[int, int], dict]:
+    feature_rows = [row["features"] for row in snapshot_rows]
+    candidate_rows = score_candidate_cohort(feature_rows)
+    trait_rows = score_traits(feature_rows)
+    return {
+        (int(row["player_id"]), int(row["team_id"])): role_output(
+            row["features"], candidates, traits
+        )
+        for row, candidates, traits in zip(snapshot_rows, candidate_rows, trait_rows)
+    }
+
+
+def raw_evidence_query_count(queries) -> int:
+    table_names = {model._meta.db_table.lower() for model in RAW_EVIDENCE_MODELS}
+    return sum(
+        any(table_name in query["sql"].lower() for table_name in table_names)
+        for query in queries
+    )
+
+
+def score_only_shadow(competition_season) -> dict:
+    started_at = perf_counter()
+    rss_at_start = resident_memory_mb()
+    with CaptureQueriesContext(connection) as queries, read_only_queries():
+        snapshot_rows, role_rows = current_role_output_rows(competition_season)
+        candidate_roles = score_role_output_rows(snapshot_rows)
+    accepted_roles = {
+        (int(row["player_id"]), int(row["team_id"])): persisted_role_output_values(row)
+        for row in role_rows
+    }
+    differences = compare_values(accepted_roles, candidate_roles)
+    return {
+        "wall_time_seconds": round(perf_counter() - started_at, 6),
+        "query_count": len(queries),
+        "raw_evidence_query_count": raw_evidence_query_count(queries),
+        "snapshot_count": len(snapshot_rows),
+        "role_differences": len(differences),
+        "rss_at_start_mb": rss_at_start,
+        "peak_rss_mb": resident_memory_mb(),
+        "difference_preview": differences[:20],
+    }
+
+
+def load_baseline(path: Path = DEFAULT_BASELINE_PATH) -> dict:
+    return json.loads(path.read_text())
+
+
+def run_player_role_scale_gate(
+    competition_season,
+    *,
+    batch_size: int = 5,
+    scale_match_counts: tuple[int, ...] | None = None,
+    baseline: dict | None = None,
+) -> dict:
+    """Run the read-only all-profile scale and equivalence gate."""
+
+    from ingestion.services.player_role_materialization import (
+        build_bounded_feature_rows,
+        feature_extraction_scope,
+    )
+
+    rss_at_start = resident_memory_mb()
+    with CaptureQueriesContext(connection) as setup_queries, read_only_queries():
+        scope = feature_extraction_scope(
+            competition_season,
+            affected_player_ids=None,
+            affected_team_ids=None,
+        )
+        snapshot_rows, role_rows = current_role_output_rows(competition_season)
+        match_ids = tuple(ProviderMatch.objects.filter(
+            competition_season=competition_season,
+            provider=Provider.WHOSCORED,
+        ).order_by("kickoff_at", "id").values_list("id", flat=True))
+
+    profile_keys = {(int(row["player_id"]), int(row["team_id"])) for row in snapshot_rows}
+    scope_keys = {(int(row["player_id"]), int(row["team_id"])) for row in scope.profiles}
+    if scope.mode != "full":
+        raise ValueError("Scale gate requires the complete current feature scope.")
+    if len(snapshot_rows) != len(role_rows) or scope_keys != profile_keys:
+        raise ValueError(
+            "Current feature and role cohorts are incomplete: "
+            f"profiles={len(scope.profiles)}, snapshots={len(snapshot_rows)}, roles={len(role_rows)}"
+        )
+    if not match_ids:
+        raise ValueError("Scale gate requires at least one WhoScored match.")
+
+    requested_counts = (
+        scale_match_counts
+        if scale_match_counts is not None
+        else tuple(min(count, len(match_ids)) for count in DEFAULT_SCALE_MATCH_COUNTS)
+    )
+    counts = sorted({int(count) for count in requested_counts} | {len(match_ids)})
+    if any(count < 1 or count > len(match_ids) for count in counts):
+        raise ValueError(f"Scale match counts must be between 1 and {len(match_ids)}.")
+
+    scale_curve = []
+    full_features = None
+    full_diagnostics = None
+    full_query_count = 0
+    full_point_started_at = None
+    for count in counts:
+        diagnostics = {"stage_timings_seconds": {}, "rows_processed": {}, "rss_samples_mb": {}}
+        sample_memory(diagnostics, "start")
+        point_started_at = perf_counter()
+        with CaptureQueriesContext(connection) as point_queries, read_only_queries():
+            feature_rows, exposure_seconds = build_bounded_feature_rows(
+                competition_season,
+                tuple(scope.profiles),
+                batch_size=batch_size,
+                match_ids=match_ids[:count],
+                diagnostics=diagnostics,
+            )
+        sample_memory(diagnostics, "complete")
+        point = {
+            "match_count": count,
+            "profile_count": len(feature_rows),
+            "verified_exposure_seconds": exposure_seconds,
+            "wall_time_seconds": round(perf_counter() - point_started_at, 6),
+            "query_count": len(point_queries),
+            "rss_at_start_mb": diagnostics["rss_samples_mb"]["start"],
+            "peak_rss_mb": diagnostics["peak_rss_mb"],
+            "peak_rss_growth_mb": round(
+                max(0.0, diagnostics["peak_rss_mb"] - diagnostics["rss_samples_mb"]["start"]),
+                3,
+            ),
+            "component_timings_seconds": diagnostics["stage_timings_seconds"],
+            "rows_processed": diagnostics["rows_processed"],
+        }
+        scale_curve.append(point)
+        if count == len(match_ids):
+            full_features = feature_rows
+            full_diagnostics = diagnostics
+            full_query_count = len(point_queries)
+            full_point_started_at = point_started_at
+
+    feature_by_key = {
+        (
+            int(features["identity"]["player_id"]),
+            int(features["identity"]["team_id"]),
+        ): features
+        for features in full_features or []
+    }
+    expected_features = {
+        (int(row["player_id"]), int(row["team_id"])): row["features"]
+        for row in snapshot_rows
+    }
+    feature_differences = compare_values(expected_features, feature_by_key)
+    candidate_roles = score_role_output_rows([
+        {**row, "features": feature_by_key[(int(row["player_id"]), int(row["team_id"]))]}
+        for row in snapshot_rows
+    ])
+    accepted_roles = {
+        (int(row["player_id"]), int(row["team_id"])): persisted_role_output_values(row)
+        for row in role_rows
+    }
+    role_differences = compare_values(accepted_roles, candidate_roles)
+    shadow_wall_time = round(perf_counter() - full_point_started_at, 6)
+    score_only = score_only_shadow(competition_season)
+    baseline = baseline or load_baseline()
+    baseline_peak = max(
+        observation.get("peak_rss_mb", 0)
+        for observation in baseline.get("observations", [])
+    )
+    full_peak = (scale_curve[-1] if scale_curve else {}).get("peak_rss_mb", resident_memory_mb())
+    warmup_peak = max(
+        (point["peak_rss_mb"] for point in scale_curve[:-1]),
+        default=full_peak,
+    )
+    scale_rss_flat = full_peak <= warmup_peak * 1.10
+    return {
+        "competition_season_id": competition_season.pk,
+        "feature_version": ROLE_FEATURE_VERSION,
+        "scoring_version": ROLE_SCORING_VERSION,
+        "batch_size": batch_size,
+        "dataset": {
+            "matches": len(match_ids),
+            "current_profiles": len(scope.profiles),
+            "current_feature_snapshots": len(snapshot_rows),
+            "current_roles": len(role_rows),
+        },
+        "shadow": {
+            "publication_performed": False,
+            "wall_time_seconds": shadow_wall_time,
+            "feature_build_seconds": scale_curve[-1]["wall_time_seconds"],
+            "query_count": len(setup_queries) + full_query_count,
+            "rss_at_start_mb": rss_at_start,
+            "peak_rss_mb": full_peak,
+            "peak_rss_growth_mb": round(max(0.0, full_peak - rss_at_start), 3),
+            "component_timings_seconds": full_diagnostics["stage_timings_seconds"],
+            "rows_processed": full_diagnostics["rows_processed"],
+            "feature_differences": len(feature_differences),
+            "role_and_trait_differences": len(role_differences),
+            "feature_difference_preview": feature_differences[:20],
+            "role_difference_preview": role_differences[:20],
+        },
+        "scale_curve": scale_curve,
+        "score_only": score_only,
+        "baseline": {
+            "path": str(DEFAULT_BASELINE_PATH),
+            "peak_rss_mb": baseline_peak,
+            "peak_rss_reduction_mb": round(baseline_peak - full_peak, 3),
+        },
+        "scale_memory": {
+            "warmup_peak_rss_mb": warmup_peak,
+            "full_peak_rss_mb": full_peak,
+            "allowed_growth_ratio": 0.10,
+            "peak_rss_flat_after_warmup": scale_rss_flat,
+        },
+        "gates": {
+            "complete_cohort": len(scope.profiles) == len(snapshot_rows) == len(role_rows),
+            "feature_equivalence": not feature_differences,
+            "role_equivalence": not role_differences,
+            "peak_rss_within_baseline": full_peak <= baseline_peak,
+            "peak_rss_flat_after_warmup": scale_rss_flat,
+            "score_only_no_raw_evidence": score_only["raw_evidence_query_count"] == 0,
+            "score_only_equivalence": score_only["role_differences"] == 0,
+            "under_fifteen_minutes": shadow_wall_time < 15 * 60,
+        },
+    }

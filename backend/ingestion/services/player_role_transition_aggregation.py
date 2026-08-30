@@ -246,14 +246,22 @@ def aggregate_transition_batch(
             )
 
 
-def iter_transition_batches(competition_season, batch_size: int = DEFAULT_MATCH_BATCH_SIZE):
+def iter_transition_batches(
+    competition_season,
+    batch_size: int = DEFAULT_MATCH_BATCH_SIZE,
+    *,
+    match_ids=None,
+):
     """Yield only a fixed match batch of compact possession graph rows."""
 
     if not 1 <= batch_size <= DEFAULT_MATCH_BATCH_SIZE:
         raise ValueError(f"match batch size must be between 1 and {DEFAULT_MATCH_BATCH_SIZE}")
-    matches = ProviderMatch.objects.filter(
+    matches_query = ProviderMatch.objects.filter(
         competition_season=competition_season, provider=Provider.WHOSCORED,
-    ).values(*MATCH_COLUMNS).order_by("kickoff_at", "id").iterator(chunk_size=batch_size)
+    )
+    if match_ids is not None:
+        matches_query = matches_query.filter(id__in=tuple(int(match_id) for match_id in match_ids))
+    matches = matches_query.values(*MATCH_COLUMNS).order_by("kickoff_at", "id").iterator(chunk_size=batch_size)
     while rows := tuple(islice(matches, batch_size)):
         match_ids = tuple(int(row["id"]) for row in rows)
         possessions = tuple(ProviderMatchPossession.objects.filter(

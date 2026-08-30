@@ -193,6 +193,7 @@ def build_bounded_feature_rows(
     profiles: tuple[dict, ...],
     *,
     batch_size: int = DEFAULT_MATCH_BATCH_SIZE,
+    match_ids: Iterable[int] | None = None,
     diagnostics: dict | None = None,
 ) -> tuple[list[dict], int]:
     """Build JSON rows while retaining only compact accumulators and one batch."""
@@ -204,7 +205,15 @@ def build_bounded_feature_rows(
     if not accumulators:
         return [], 0
     started_at = monotonic()
-    for batch in iter_non_possession_batches(competition_season, batch_size=batch_size):
+    scoped_match_ids = (
+        tuple(int(match_id) for match_id in match_ids)
+        if match_ids is not None else None
+    )
+    for batch in iter_non_possession_batches(
+        competition_season,
+        batch_size=batch_size,
+        match_ids=scoped_match_ids,
+    ):
         add_rows(
             diagnostics,
             non_possession_match_batches=1,
@@ -216,7 +225,11 @@ def build_bounded_feature_rows(
         aggregate_non_possession_batch(batch, accumulators)
     record_stage(diagnostics, "event_carry_exposure_aggregation", started_at)
     started_at = monotonic()
-    for batch in iter_transition_batches(competition_season, batch_size=batch_size):
+    for batch in iter_transition_batches(
+        competition_season,
+        batch_size=batch_size,
+        match_ids=scoped_match_ids,
+    ):
         add_rows(
             diagnostics,
             transition_match_batches=1,
@@ -238,7 +251,8 @@ def build_bounded_feature_rows(
     score_index = build_score_event_index(
         competition_season,
         target_pairs,
-        goal_transition_context(competition_season),
+        goal_transition_context(competition_season, match_ids=scoped_match_ids),
+        match_ids=scoped_match_ids,
     )
     add_rows(diagnostics, score_event_profiles=len(target_pairs))
     record_stage(diagnostics, "score_event_index", started_at)

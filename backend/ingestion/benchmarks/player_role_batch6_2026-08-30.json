@@ -1,0 +1,223 @@
+{
+  "baseline": {
+    "path": "/Users/aryan/Desktop/Projects/statballer/backend/ingestion/benchmarks/player_role_baseline_2026-08-30.json",
+    "peak_rss_mb": 3231.328,
+    "peak_rss_reduction_mb": 1896.328
+  },
+  "batch_size": 5,
+  "competition_season_id": 4,
+  "dataset": {
+    "current_feature_snapshots": 549,
+    "current_profiles": 549,
+    "current_roles": 549,
+    "matches": 380
+  },
+  "feature_version": "player_role_features_v4",
+  "gates": {
+    "complete_cohort": true,
+    "feature_equivalence": true,
+    "peak_rss_within_baseline": true,
+    "peak_rss_flat_after_warmup": true,
+    "role_equivalence": true,
+    "score_only_equivalence": true,
+    "score_only_no_raw_evidence": true,
+    "under_fifteen_minutes": true
+  },
+  "scale_curve": [
+    {
+      "component_timings_seconds": {
+        "event_carry_exposure_aggregation": 2.543,
+        "feature_json_conversion": 4.252,
+        "initialize_accumulators": 0.088,
+        "possession_transition_aggregation": 1.704,
+        "score_event_index": 0.081
+      },
+      "match_count": 10,
+      "peak_rss_growth_mb": 476.53,
+      "peak_rss_mb": 995.73,
+      "profile_count": 549,
+      "query_count": 26,
+      "rows_processed": {
+        "carries": 2803,
+        "events": 14502,
+        "feature_rows": 549,
+        "non_possession_exposures": 2211,
+        "non_possession_match_batches": 2,
+        "non_possession_matches": 10,
+        "possession_event_links": 12620,
+        "possession_participants": 8271,
+        "possessions": 3405,
+        "score_event_profiles": 549,
+        "target_profiles": 549,
+        "team_state_episodes": 128,
+        "transition_events": 12620,
+        "transition_exposures": 2211,
+        "transition_match_batches": 2,
+        "transition_matches": 10
+      },
+      "rss_at_start_mb": 519.2,
+      "verified_exposure_seconds": 1296955,
+      "wall_time_seconds": 8.708032
+    },
+    {
+      "component_timings_seconds": {
+        "event_carry_exposure_aggregation": 12.615,
+        "feature_json_conversion": 5.472,
+        "initialize_accumulators": 0.093,
+        "possession_transition_aggregation": 7.519,
+        "score_event_index": 0.356
+      },
+      "match_count": 50,
+      "peak_rss_growth_mb": 339.27,
+      "peak_rss_mb": 1335.0,
+      "profile_count": 549,
+      "query_count": 98,
+      "rows_processed": {
+        "carries": 14444,
+        "events": 74239,
+        "feature_rows": 549,
+        "non_possession_exposures": 11890,
+        "non_possession_match_batches": 10,
+        "non_possession_matches": 50,
+        "possession_event_links": 64723,
+        "possession_participants": 42509,
+        "possessions": 17375,
+        "score_event_profiles": 549,
+        "target_profiles": 549,
+        "team_state_episodes": 648,
+        "transition_events": 64723,
+        "transition_exposures": 11890,
+        "transition_match_batches": 10,
+        "transition_matches": 50
+      },
+      "rss_at_start_mb": 995.73,
+      "verified_exposure_seconds": 6590420,
+      "wall_time_seconds": 26.141851
+    },
+    {
+      "component_timings_seconds": {
+        "event_carry_exposure_aggregation": 25.436,
+        "feature_json_conversion": 5.993,
+        "initialize_accumulators": 0.113,
+        "possession_transition_aggregation": 15.582,
+        "score_event_index": 0.611
+      },
+      "match_count": 100,
+      "peak_rss_growth_mb": 0.0,
+      "peak_rss_mb": 1335.0,
+      "profile_count": 549,
+      "query_count": 188,
+      "rows_processed": {
+        "carries": 29423,
+        "events": 150757,
+        "feature_rows": 549,
+        "non_possession_exposures": 24755,
+        "non_possession_match_batches": 20,
+        "non_possession_matches": 100,
+        "possession_event_links": 131694,
+        "possession_participants": 86748,
+        "possessions": 35375,
+        "score_event_profiles": 549,
+        "target_profiles": 549,
+        "team_state_episodes": 1336,
+        "transition_events": 131694,
+        "transition_exposures": 24755,
+        "transition_match_batches": 20,
+        "transition_matches": 100
+      },
+      "rss_at_start_mb": 1335.0,
+      "verified_exposure_seconds": 13146875,
+      "wall_time_seconds": 47.830442
+    },
+    {
+      "component_timings_seconds": {
+        "event_carry_exposure_aggregation": 100.118,
+        "feature_json_conversion": 7.031,
+        "initialize_accumulators": 0.102,
+        "possession_transition_aggregation": 62.413,
+        "score_event_index": 3.14
+      },
+      "match_count": 380,
+      "peak_rss_growth_mb": 0.0,
+      "peak_rss_mb": 1335.0,
+      "profile_count": 549,
+      "query_count": 692,
+      "rows_processed": {
+        "carries": 112253,
+        "events": 577884,
+        "feature_rows": 549,
+        "non_possession_exposures": 96124,
+        "non_possession_match_batches": 76,
+        "non_possession_matches": 380,
+        "possession_event_links": 505926,
+        "possession_participants": 333090,
+        "possessions": 136511,
+        "score_event_profiles": 549,
+        "target_profiles": 549,
+        "team_state_episodes": 5130,
+        "transition_events": 505926,
+        "transition_exposures": 96124,
+        "transition_match_batches": 76,
+        "transition_matches": 380
+      },
+      "rss_at_start_mb": 1335.0,
+      "verified_exposure_seconds": 50187037,
+      "wall_time_seconds": 172.925619
+    }
+  ],
+  "score_only": {
+    "difference_preview": [],
+    "peak_rss_mb": 1335.0,
+    "query_count": 2,
+    "raw_evidence_query_count": 0,
+    "role_differences": 0,
+    "rss_at_start_mb": 1335.0,
+    "snapshot_count": 549,
+    "wall_time_seconds": 1.494631
+  },
+  "scale_memory": {
+    "allowed_growth_ratio": 0.1,
+    "full_peak_rss_mb": 1335.0,
+    "peak_rss_flat_after_warmup": true,
+    "warmup_peak_rss_mb": 1335.0
+  },
+  "scoring_version": "player_role_scoring_v4",
+  "shadow": {
+    "component_timings_seconds": {
+      "event_carry_exposure_aggregation": 100.118,
+      "feature_json_conversion": 7.031,
+      "initialize_accumulators": 0.102,
+      "possession_transition_aggregation": 62.413,
+      "score_event_index": 3.14
+    },
+    "feature_build_seconds": 172.925619,
+    "feature_difference_preview": [],
+    "feature_differences": 0,
+    "peak_rss_growth_mb": 1235.75,
+    "peak_rss_mb": 1335.0,
+    "publication_performed": false,
+    "query_count": 697,
+    "role_and_trait_differences": 0,
+    "role_difference_preview": [],
+    "rows_processed": {
+      "carries": 112253,
+      "events": 577884,
+      "feature_rows": 549,
+      "non_possession_exposures": 96124,
+      "non_possession_match_batches": 76,
+      "non_possession_matches": 380,
+      "possession_event_links": 505926,
+      "possession_participants": 333090,
+      "possessions": 136511,
+      "score_event_profiles": 549,
+      "target_profiles": 549,
+      "team_state_episodes": 5130,
+      "transition_events": 505926,
+      "transition_exposures": 96124,
+      "transition_match_batches": 76,
+      "transition_matches": 380
+    },
+    "rss_at_start_mb": 99.25,
+    "wall_time_seconds": 174.905166
+  }
+}
