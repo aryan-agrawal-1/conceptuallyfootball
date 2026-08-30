@@ -451,7 +451,6 @@ def assign_classification(features: dict, candidates: list[dict], traits: list[d
     }
 
 
-@transaction.atomic
 def score_player_season_roles(
     competition_season,
     *,

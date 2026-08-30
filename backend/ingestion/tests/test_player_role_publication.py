@@ -1,3 +1,6 @@
+from unittest.mock import patch
+
+from django.db.models.query import QuerySet
 from django.test import TestCase
 
 from ingestion.models import (
@@ -105,3 +108,30 @@ class PlayerSeasonRolePublicationTests(TestCase):
         self.assertEqual(current_roles.count(), 2)
         self.assertFalse(initial_role_ids & set(current_roles.values_list("id", flat=True)))
         self.assertNotEqual(self.ball_carrying_fit(self.players[1]), initial_fit)
+
+    def test_role_activation_failure_preserves_previous_complete_cohort(self):
+        score_player_season_roles(self.competition_season)
+        initial_ids = set(PlayerSeasonRole.objects.filter(
+            competition_season=self.competition_season,
+            is_current=True,
+        ).values_list("id", flat=True))
+        original_update = QuerySet.update
+
+        def fail_role_activation(queryset, **values):
+            if (
+                queryset.model is PlayerSeasonRole
+                and values == {"is_current": True}
+            ):
+                raise RuntimeError("role activation failed")
+            return original_update(queryset, **values)
+
+        with patch.object(QuerySet, "update", new=fail_role_activation):
+            with self.assertRaisesMessage(RuntimeError, "role activation failed"):
+                score_player_season_roles(self.competition_season)
+
+        current = PlayerSeasonRole.objects.filter(
+            competition_season=self.competition_season,
+            is_current=True,
+        )
+        self.assertEqual(set(current.values_list("id", flat=True)), initial_ids)
+        self.assertEqual(PlayerSeasonRole.objects.count(), 2)
