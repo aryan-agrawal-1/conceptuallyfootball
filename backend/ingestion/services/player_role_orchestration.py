@@ -126,6 +126,7 @@ def run_player_role_materialization(
         "rss_samples_mb": {},
     }
     started_at = monotonic()
+    query_counter = QueryCounter()
     sample_memory(diagnostics, "start")
     try:
         with competition_season_role_lock(competition_season.pk):
@@ -133,7 +134,6 @@ def run_player_role_materialization(
             run.started_at = timezone.now()
             run.stats = diagnostics
             run.save(update_fields=["status", "started_at", "stats"])
-            query_counter = QueryCounter()
             from ingestion.services.player_season_roles import materialize_player_season_roles
 
             with connection.execute_wrapper(query_counter):
@@ -156,6 +156,7 @@ def run_player_role_materialization(
             run.save(update_fields=["status", "finished_at", "error_detail", "stats"])
             return {"run_id": run.id, **result, "diagnostics": diagnostics}
     except Exception as exc:
+        diagnostics["query_count"] = query_counter.count
         diagnostics["error_type"] = type(exc).__name__
         diagnostics["error"] = str(exc)
         record_stage(diagnostics, "total", started_at)

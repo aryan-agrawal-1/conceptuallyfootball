@@ -80,6 +80,7 @@ class PlayerRoleOrchestrationTests(TestCase):
         run = IngestionRun.objects.get(kind=IngestionKind.PLAYER_ROLES)
         self.assertEqual(run.status, IngestionRunStatus.FAILED)
         self.assertEqual(run.stats["requested_mode"], "score_only")
+        self.assertEqual(run.stats["query_count"], 0)
         self.assertEqual(run.stats["error_type"], "RoleMaterializationAlreadyRunning")
         lock.assert_called_once_with(self.competition_season.pk)
 
