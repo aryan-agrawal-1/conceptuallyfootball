@@ -3,7 +3,8 @@ from django.core.management.base import BaseCommand, CommandError
 
 from ingestion.competition_scope import resolve_active_competition_season
 from ingestion.models import CompetitionSeason
-from ingestion.services.player_season_roles import materialize_player_season_roles
+from ingestion.services.player_role_aggregation import DEFAULT_MATCH_BATCH_SIZE
+from ingestion.services.player_role_orchestration import run_player_role_materialization
 
 
 class Command(BaseCommand):
@@ -24,6 +25,12 @@ class Command(BaseCommand):
             "--score-events-only",
             action="store_true",
             help="Refresh direct goal-assist evidence in snapshots, then rerun cohort scoring.",
+        )
+        parser.add_argument(
+            "--batch-size",
+            type=int,
+            default=DEFAULT_MATCH_BATCH_SIZE,
+            help=f"Fixed match batch size (1-{DEFAULT_MATCH_BATCH_SIZE}; default: {DEFAULT_MATCH_BATCH_SIZE}).",
         )
 
     def handle(self, *args, **options) -> None:
@@ -48,11 +55,17 @@ class Command(BaseCommand):
         teams = options["affected_team_id"] or None
         if options["score_only"] and options["score_events_only"]:
             raise CommandError("--score-only and --score-events-only are mutually exclusive.")
-        result = materialize_player_season_roles(
-            competition_season,
-            affected_player_ids=players,
-            affected_team_ids=teams,
-            score_only=options["score_only"],
-            score_events_only=options["score_events_only"],
-        )
+        if bool(players) != bool(teams):
+            raise CommandError("Affected rebuild requires both --affected-player-id and --affected-team-id.")
+        try:
+            result = run_player_role_materialization(
+                competition_season,
+                affected_player_ids=players,
+                affected_team_ids=teams,
+                score_only=options["score_only"],
+                score_events_only=options["score_events_only"],
+                batch_size=options["batch_size"],
+            )
+        except (ValueError, RuntimeError) as exc:
+            raise CommandError(str(exc)) from exc
         self.stdout.write(self.style.SUCCESS(f"Player-season roles succeeded ({result})"))

@@ -567,6 +567,8 @@ def materialize_player_role_features(
     *,
     affected_player_ids: Iterable[int] | None = None,
     affected_team_ids: Iterable[int] | None = None,
+    batch_size: int | None = None,
+    diagnostics: dict | None = None,
 ) -> dict:
     """Extract and atomically publish bounded current feature snapshots."""
 
@@ -574,10 +576,15 @@ def materialize_player_role_features(
         materialize_bounded_player_role_features,
     )
 
+    options = {}
+    if batch_size is not None:
+        options["batch_size"] = batch_size
     return materialize_bounded_player_role_features(
         competition_season,
         affected_player_ids=affected_player_ids,
         affected_team_ids=affected_team_ids,
+        diagnostics=diagnostics,
+        **options,
     )
 
 
@@ -586,6 +593,7 @@ def refresh_score_event_features(
     *,
     affected_player_ids: Iterable[int] | None = None,
     affected_team_ids: Iterable[int] | None = None,
+    diagnostics: dict | None = None,
 ) -> dict:
     """Publish corrected score-event evidence without repeating spatial extraction."""
 
@@ -603,6 +611,9 @@ def refresh_score_event_features(
             target_scope |= models.Q(team_id__in=target_team_ids)
         snapshots = snapshots.filter(target_scope)
     snapshots = list(snapshots.order_by("player_id", "team_id"))
+    from ingestion.services.player_role_diagnostics import add_rows
+
+    add_rows(diagnostics, score_event_snapshots=len(snapshots))
     goal_context = goal_transition_context(competition_season)
     from ingestion.services.player_role_score_events import build_score_event_index
 
@@ -638,6 +649,7 @@ def refresh_score_event_features(
             superseded_at=now,
         )
         PlayerSeasonRoleFeatureSnapshot.objects.filter(pk__in=[row.pk for row in rows]).update(is_current=True)
+    add_rows(diagnostics, published_feature_snapshots=len(rows))
     return {
         "feature_version": ROLE_FEATURE_VERSION,
         "snapshots": len(rows),

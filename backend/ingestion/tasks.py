@@ -162,12 +162,12 @@ def task_materialize_player_season_roles(
 ) -> dict:
     """Refresh role snapshots and scores after event-profile publication commits."""
 
-    from ingestion.services.player_season_roles import materialize_player_season_roles
+    from ingestion.services.player_role_orchestration import run_player_role_materialization
 
     competition_season = CompetitionSeason.objects.get(pk=competition_season_id)
     return {
         "ok": True,
-        **materialize_player_season_roles(
+        **run_player_role_materialization(
             competition_season,
             affected_player_ids=affected_player_ids,
             affected_team_ids=affected_team_ids,

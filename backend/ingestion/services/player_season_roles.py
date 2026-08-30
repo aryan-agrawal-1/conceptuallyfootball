@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import sqrt
+from time import monotonic
 from typing import Iterable
 
 from django.db import transaction
@@ -21,6 +22,7 @@ from ingestion.services.player_role_definitions import (
     TRAIT_DEFINITIONS,
 )
 from ingestion.services.player_role_features import materialize_player_role_features, refresh_score_event_features
+from ingestion.services.player_role_diagnostics import add_rows, record_stage
 
 
 @dataclass(frozen=True, slots=True)
@@ -535,25 +537,37 @@ def materialize_player_season_roles(
     affected_team_ids: Iterable[int] | None = None,
     score_only: bool = False,
     score_events_only: bool = False,
+    batch_size: int | None = None,
+    diagnostics: dict | None = None,
 ) -> dict:
     if score_only and score_events_only:
         raise ValueError("score_only and score_events_only are mutually exclusive.")
     feature_result = None
     if score_events_only:
+        started_at = monotonic()
         feature_result = refresh_score_event_features(
             competition_season,
             affected_player_ids=affected_player_ids,
             affected_team_ids=affected_team_ids,
+            diagnostics=diagnostics,
         )
+        record_stage(diagnostics, "score_event_refresh", started_at)
     elif not score_only:
+        started_at = monotonic()
         feature_result = materialize_player_role_features(
             competition_season,
             affected_player_ids=affected_player_ids,
             affected_team_ids=affected_team_ids,
+            batch_size=batch_size,
+            diagnostics=diagnostics,
         )
+        record_stage(diagnostics, "feature_extraction_and_publication", started_at)
+    started_at = monotonic()
     scoring_result = score_player_season_roles(
         competition_season,
     )
+    add_rows(diagnostics, scored_cohort=scoring_result["cohort_snapshots"], published_roles=scoring_result["published_roles"])
+    record_stage(diagnostics, "cohort_scoring_and_publication", started_at)
     return {"features": feature_result, "scoring": scoring_result}
 
 

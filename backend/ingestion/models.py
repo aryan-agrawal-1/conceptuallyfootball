@@ -22,6 +22,7 @@ class IngestionKind(models.TextChoices):
     GALAXY = "galaxy", "Galaxy embeddings"
     WHOSCORED_FETCH = "whoscored_fetch", "WhoScored fetch"
     EVENT_PROFILES = "event_profiles", "Event profiles"
+    PLAYER_ROLES = "player_roles", "Player roles"
 
 
 class ProviderMatchStatus(models.TextChoices):

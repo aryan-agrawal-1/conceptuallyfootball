@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from time import monotonic
 from typing import Iterable
 
 from django.db import models, transaction
@@ -27,6 +28,7 @@ from ingestion.services.player_role_event_aggregation import (
     aggregate_non_possession_batch,
     iter_non_possession_batches,
 )
+from ingestion.services.player_role_diagnostics import add_rows, record_stage, sample_memory
 from ingestion.services.player_role_score_events import build_score_event_index
 from ingestion.services.player_role_transition_aggregation import (
     aggregate_transition_batch,
@@ -189,25 +191,56 @@ def build_bounded_feature_rows(
     profiles: tuple[dict, ...],
     *,
     batch_size: int = DEFAULT_MATCH_BATCH_SIZE,
+    diagnostics: dict | None = None,
 ) -> tuple[list[dict], int]:
     """Build JSON rows while retaining only compact accumulators and one batch."""
 
+    started_at = monotonic()
     accumulators = feature_accumulators(competition_season, profiles)
+    add_rows(diagnostics, target_profiles=len(accumulators))
+    record_stage(diagnostics, "initialize_accumulators", started_at)
     if not accumulators:
         return [], 0
+    started_at = monotonic()
     for batch in iter_non_possession_batches(competition_season, batch_size=batch_size):
+        add_rows(
+            diagnostics,
+            non_possession_match_batches=1,
+            non_possession_matches=len(batch.matches),
+            events=len(batch.events),
+            carries=len(batch.carries),
+            non_possession_exposures=len(batch.exposures),
+        )
         aggregate_non_possession_batch(batch, accumulators)
+    record_stage(diagnostics, "event_carry_exposure_aggregation", started_at)
+    started_at = monotonic()
     for batch in iter_transition_batches(competition_season, batch_size=batch_size):
+        add_rows(
+            diagnostics,
+            transition_match_batches=1,
+            transition_matches=len(batch.matches),
+            transition_events=len(batch.events),
+            transition_exposures=len(batch.exposures),
+            team_state_episodes=len(batch.team_episodes),
+            possessions=len(batch.possessions),
+            possession_event_links=len(batch.possession_events),
+            possession_participants=len(batch.possession_participants),
+        )
         aggregate_transition_batch(batch, accumulators)
+    record_stage(diagnostics, "possession_transition_aggregation", started_at)
 
     from ingestion.services.player_role_features import goal_transition_context
 
+    started_at = monotonic()
     target_pairs = set(accumulators)
     score_index = build_score_event_index(
         competition_season,
         target_pairs,
         goal_transition_context(competition_season),
     )
+    add_rows(diagnostics, score_event_profiles=len(target_pairs))
+    record_stage(diagnostics, "score_event_index", started_at)
+    started_at = monotonic()
     total_exposure = 0
     feature_rows = []
     references = {
@@ -239,6 +272,8 @@ def build_bounded_feature_rows(
         exposure = int(features["exposure"]["verified_seconds"])
         total_exposure += exposure
         feature_rows.append(features)
+    add_rows(diagnostics, feature_rows=len(feature_rows))
+    record_stage(diagnostics, "feature_json_conversion", started_at)
     return feature_rows, total_exposure
 
 
@@ -301,21 +336,31 @@ def materialize_bounded_player_role_features(
     affected_player_ids: Iterable[int] | None = None,
     affected_team_ids: Iterable[int] | None = None,
     batch_size: int = DEFAULT_MATCH_BATCH_SIZE,
+    diagnostics: dict | None = None,
 ) -> dict:
     """Extract full or affected features, then atomically publish replacements."""
 
+    started_at = monotonic()
     scope = feature_extraction_scope(
         competition_season,
         affected_player_ids=affected_player_ids,
         affected_team_ids=affected_team_ids,
     )
+    if diagnostics is not None:
+        diagnostics["mode"] = scope.mode
+        diagnostics["affected_count"] = len(scope.profiles)
+        diagnostics["cohort_count"] = scope.cohort_count
+        diagnostics["match_batch_size"] = batch_size
+    record_stage(diagnostics, "resolve_scope", started_at)
     feature_rows, total_exposure = build_bounded_feature_rows(
         competition_season,
         scope.profiles,
         batch_size=batch_size,
+        diagnostics=diagnostics,
     )
     from ingestion.services.player_role_features import source_versions
 
+    started_at = monotonic()
     latest_match = ProviderMatch.objects.filter(
         competition_season=competition_season,
     ).order_by("-kickoff_at", "-id").first()
@@ -326,6 +371,9 @@ def materialize_bounded_player_role_features(
         latest_match=latest_match,
     )
     publish_feature_snapshots(competition_season, rows, scope)
+    add_rows(diagnostics, published_feature_snapshots=len(rows))
+    record_stage(diagnostics, "feature_publication", started_at)
+    sample_memory(diagnostics, "features_complete")
     pairs = {
         (int(features["identity"]["player_id"]), int(features["identity"]["team_id"]))
         for features in feature_rows
