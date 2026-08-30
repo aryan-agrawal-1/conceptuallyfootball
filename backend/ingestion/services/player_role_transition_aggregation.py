@@ -137,7 +137,8 @@ def aggregate_transition_batch(
     refs = match_refs or {match_id: index for index, match_id in enumerate(batch.match_ids)}
     participants = defaultdict(set)
     for row in batch.possession_participants:
-        participants[int(row["possession_id"])].add(int(row["player_id"]))
+        if row.get("player_id") is not None:
+            participants[int(row["possession_id"])].add(int(row["player_id"]))
 
     for possession_row in batch.possessions:
         possession_id = int(possession_row["id"])
@@ -165,6 +166,17 @@ def aggregate_transition_batch(
 
         links = list(possession.event_links.all())
         links.sort(key=lambda link: (int(link.sequence), int(link.event.event_index)))
+        # Participant rows are the cheap primary gate. Older possession builds
+        # can omit a participant that is still present in their already-loaded
+        # team opportunity links, so retain that compact fallback to preserve
+        # the accepted transition evidence exactly.
+        involved_players = candidate_players | {
+            int(link.event.player_id)
+            for link in links
+            if link.event.player_id is not None
+            and link.event.team_id == team_id
+            and (int(link.event.player_id), team_id) in accumulators
+        }
         team_sequences_by_player = {
             player_id: [
                 sequence for sequence, link in enumerate(links)
@@ -173,7 +185,7 @@ def aggregate_transition_batch(
             ]
             for player_id, intervals in scoped.items()
         }
-        relevant_players = set(candidate_players) | {
+        relevant_players = involved_players | {
             player_id for player_id, sequences in team_sequences_by_player.items() if sequences
         }
         if not relevant_players:
@@ -189,11 +201,12 @@ def aggregate_transition_batch(
         for player_id, sequences in team_sequences_by_player.items():
             if sequences:
                 accumulators[(player_id, team_id)].transition.counters["opportunities"] += 1
-        for player_id in candidate_players:
+        for player_id in involved_players:
             target = accumulators[(player_id, team_id)].transition
             intervals = scoped.get(player_id)
             if not intervals:
-                target.counters["state_or_team_mismatch"] += 1
+                if player_id in candidate_players:
+                    target.counters["state_or_team_mismatch"] += 1
                 continue
             player_sequences = [
                 sequence for sequence, link in enumerate(links)
@@ -202,7 +215,8 @@ def aggregate_transition_batch(
                 and inside(intervals, link.event.timeline_seconds)
             ]
             if not player_sequences:
-                target.counters["outside_verified_player_interval"] += 1
+                if player_id in candidate_players:
+                    target.counters["outside_verified_player_interval"] += 1
                 continue
             target.counters["involved_possessions"] += 1
             seen_stages = set()

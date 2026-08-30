@@ -63,7 +63,7 @@ EXPOSURE_COLUMNS = (
 TEAM_EPISODE_COLUMNS = (
     "id", "provider_match_id", "focal_team_id", "episode_index", "start_second",
     "end_second", "state", "previous_state", "goal_difference", "phase",
-    "draw_provenance", "state_entry_second", "entry_event_id",
+    "draw_provenance", "state_entry_second", "state_age_seconds_at_start", "entry_event_id",
 )
 POSSESSION_COLUMNS = (
     "id", "provider_match_id", "possession_index", "identity", "provider_team_id",
