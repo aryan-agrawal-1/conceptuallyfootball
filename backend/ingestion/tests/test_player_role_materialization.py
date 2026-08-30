@@ -80,8 +80,10 @@ class PlayerRoleMaterializationTests(TestCase):
 
         self.assertEqual(incremental.mode, "incremental")
         self.assertEqual(len(incremental.profiles), 3)
+        self.assertEqual(incremental.affected_profile_count, 3)
         self.assertEqual(full.mode, "full")
         self.assertEqual(len(full.profiles), 5)
+        self.assertEqual(full.affected_profile_count, 4)
 
     def test_only_proven_float_order_ties_reuse_accepted_rounding(self):
         candidate = {"mean": 6.76, "changed": 2.0, "rows": [{"x": 1.2346}]}

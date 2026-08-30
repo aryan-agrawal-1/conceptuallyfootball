@@ -50,6 +50,7 @@ class FeatureExtractionScope:
     profiles: tuple[dict, ...]
     affected_player_ids: frozenset[int] | None
     affected_team_ids: frozenset[int] | None
+    affected_profile_count: int = 0
 
 
 def affected_query(
@@ -105,6 +106,7 @@ def feature_extraction_scope(
         profiles=rows,
         affected_player_ids=player_ids,
         affected_team_ids=team_ids,
+        affected_profile_count=affected_count,
     )
 
 
@@ -348,7 +350,7 @@ def materialize_bounded_player_role_features(
     )
     if diagnostics is not None:
         diagnostics["mode"] = scope.mode
-        diagnostics["affected_count"] = len(scope.profiles)
+        diagnostics["affected_count"] = scope.affected_profile_count
         diagnostics["cohort_count"] = scope.cohort_count
         diagnostics["match_batch_size"] = batch_size
     record_stage(diagnostics, "resolve_scope", started_at)

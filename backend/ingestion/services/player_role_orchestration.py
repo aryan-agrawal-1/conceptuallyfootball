@@ -92,6 +92,14 @@ def run_player_role_materialization(
 
     if score_only and score_events_only:
         raise ValueError("score_only and score_events_only are mutually exclusive.")
+    affected_player_ids = (
+        tuple(int(value) for value in affected_player_ids)
+        if affected_player_ids is not None else None
+    )
+    affected_team_ids = (
+        tuple(int(value) for value in affected_team_ids)
+        if affected_team_ids is not None else None
+    )
     if run is None:
         run = IngestionRun.objects.create(
             kind=IngestionKind.PLAYER_ROLES,
