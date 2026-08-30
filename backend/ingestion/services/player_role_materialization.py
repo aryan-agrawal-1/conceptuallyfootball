@@ -146,6 +146,44 @@ def feature_accumulators(competition_season, profiles: tuple[dict, ...]):
     return accumulators
 
 
+def preserve_accepted_rounding(candidate, floor, ceiling, reference):
+    """Keep the prior value only where float operation order changes a tie."""
+
+    if (
+        isinstance(candidate, dict)
+        and isinstance(floor, dict)
+        and isinstance(ceiling, dict)
+        and isinstance(reference, dict)
+    ):
+        return {
+            key: preserve_accepted_rounding(
+                value, floor.get(key), ceiling.get(key), reference.get(key)
+            )
+            for key, value in candidate.items()
+        }
+    if (
+        isinstance(candidate, list)
+        and isinstance(floor, list)
+        and isinstance(ceiling, list)
+        and isinstance(reference, list)
+    ):
+        return [
+            preserve_accepted_rounding(value, floor_value, ceiling_value, reference_value)
+            for value, floor_value, ceiling_value, reference_value
+            in zip(candidate, floor, ceiling, reference)
+        ] if len(candidate) == len(floor) == len(ceiling) == len(reference) else candidate
+    if (
+        isinstance(candidate, float)
+        and isinstance(floor, float)
+        and isinstance(ceiling, float)
+        and isinstance(reference, float)
+        and floor != ceiling
+        and reference in {candidate, floor, ceiling}
+    ):
+        return reference
+    return candidate
+
+
 def build_bounded_feature_rows(
     competition_season,
     profiles: tuple[dict, ...],
@@ -172,10 +210,32 @@ def build_bounded_feature_rows(
     )
     total_exposure = 0
     feature_rows = []
+    references = {
+        (int(player_id), int(team_id)): features
+        for player_id, team_id, features in PlayerSeasonRoleFeatureSnapshot.objects.filter(
+            competition_season=competition_season,
+            is_current=True,
+            player_id__in={player_id for player_id, _team_id in target_pairs},
+            team_id__in={team_id for _player_id, team_id in target_pairs},
+        ).values_list("player_id", "team_id", "features")
+        if (int(player_id), int(team_id)) in target_pairs
+    }
     for pair in sorted(accumulators):
         accumulator = accumulators[pair]
         accumulator.score_events = Counter(score_index.evidence(*pair))
         features = accumulator.to_feature_json()
+        reference = references.get(pair)
+        if reference is not None:
+            features = preserve_accepted_rounding(
+                features,
+                accumulator.to_feature_json(exact=True, tie_direction="floor"),
+                accumulator.to_feature_json(exact=True, tie_direction="ceiling"),
+                reference,
+            )
+            from ingestion.services.player_role_features import spatial_state_features
+
+            features["position"]["average_touch"] = features["overall"]["touch_location"]
+            features["state_spatial"] = spatial_state_features(features["states"])
         exposure = int(features["exposure"]["verified_seconds"])
         total_exposure += exposure
         feature_rows.append(features)

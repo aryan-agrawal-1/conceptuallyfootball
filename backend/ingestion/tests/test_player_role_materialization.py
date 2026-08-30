@@ -20,6 +20,7 @@ from ingestion.services.player_role_materialization import (
     FeatureExtractionScope,
     feature_extraction_scope,
     materialize_bounded_player_role_features,
+    preserve_accepted_rounding,
     publish_feature_snapshots,
 )
 
@@ -81,6 +82,16 @@ class PlayerRoleMaterializationTests(TestCase):
         self.assertEqual(len(incremental.profiles), 3)
         self.assertEqual(full.mode, "full")
         self.assertEqual(len(full.profiles), 5)
+
+    def test_only_proven_float_order_ties_reuse_accepted_rounding(self):
+        candidate = {"mean": 6.76, "changed": 2.0, "rows": [{"x": 1.2346}]}
+        exact = {"mean": 6.75, "changed": 2.0, "rows": [{"x": 1.2345}]}
+        reference = {"mean": 6.75, "changed": 1.99, "rows": [{"x": 1.2345}]}
+
+        self.assertEqual(
+            preserve_accepted_rounding(candidate, exact, candidate, reference),
+            {"mean": 6.75, "changed": 2.0, "rows": [{"x": 1.2345}]},
+        )
 
     def test_incremental_publication_preserves_unaffected_current_rows_and_is_retry_safe(self):
         old_rows = [self.snapshot(player) for player in self.players[:2]]

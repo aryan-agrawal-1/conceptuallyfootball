@@ -9,7 +9,7 @@ from __future__ import annotations
 from bisect import bisect_right
 from collections import Counter
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_EVEN
 import json
 from typing import Any, Iterable, Mapping
 
@@ -183,49 +183,103 @@ def decimal_value(value: int | float | Decimal) -> Decimal:
     return value if isinstance(value, Decimal) else Decimal(str(value))
 
 
+def decimal_mean(total: Decimal, count: int, digits: int, tie_direction: str) -> float:
+    value = total / count
+    quantum = Decimal(1).scaleb(-digits)
+    scaled = value / quantum
+    tie = abs(scaled) % 1 == Decimal("0.5")
+    rounding = (
+        ROUND_FLOOR if tie and tie_direction == "floor"
+        else ROUND_CEILING if tie and tie_direction == "ceiling"
+        else ROUND_HALF_EVEN
+    )
+    return float(value.quantize(quantum, rounding=rounding))
+
+
 @dataclass(slots=True)
 class DecimalMeasure:
     total: Decimal = Decimal(0)
+    ordered_total: float = 0.0
     count: int = 0
     positive_count: int = 0
 
-    def add(self, value: int | float | Decimal) -> None:
-        converted = decimal_value(value)
+    def add(
+        self,
+        value: int | float | Decimal,
+        *,
+        exact_value: int | float | Decimal | None = None,
+    ) -> None:
+        converted = decimal_value(value if exact_value is None else exact_value)
         self.total += converted
+        self.ordered_total += float(value)
         self.count += 1
         self.positive_count += converted > 0
 
     def merge(self, other: "DecimalMeasure") -> "DecimalMeasure":
         self.total += other.total
+        # Merged accumulators must serialize identically in every merge order.
+        # A streamed accumulator never calls merge and retains the accepted
+        # legacy operation order through ordered_total.
+        self.ordered_total = float(self.total)
         self.count += other.count
         self.positive_count += other.positive_count
         return self
 
-    def mean(self, digits: int) -> float | None:
-        return round(float(self.total / self.count), digits) if self.count else None
+    def mean(
+        self,
+        digits: int,
+        *,
+        exact: bool = False,
+        tie_direction: str | None = None,
+    ) -> float | None:
+        if not self.count:
+            return None
+        if tie_direction is not None:
+            return decimal_mean(self.total, self.count, digits, tie_direction)
+        total = float(self.total) if exact else self.ordered_total
+        return round(total / self.count, digits)
 
 
 @dataclass(slots=True)
 class LocationAccumulator:
     x: Decimal = Decimal(0)
     y: Decimal = Decimal(0)
+    ordered_x: float = 0.0
+    ordered_y: float = 0.0
     count: int = 0
 
     def add(self, x: int | float | Decimal, y: int | float | Decimal) -> None:
         self.x += decimal_value(x)
         self.y += decimal_value(y)
+        self.ordered_x += float(x)
+        self.ordered_y += float(y)
         self.count += 1
 
     def merge(self, other: "LocationAccumulator") -> "LocationAccumulator":
         self.x += other.x
         self.y += other.y
+        self.ordered_x = float(self.x)
+        self.ordered_y = float(self.y)
         self.count += other.count
         return self
 
-    def to_json(self) -> dict:
+    def to_json(
+        self,
+        *,
+        exact: bool = False,
+        tie_direction: str | None = None,
+    ) -> dict:
+        if self.count and tie_direction is not None:
+            return {
+                "x": decimal_mean(self.x, self.count, 4, tie_direction),
+                "y": decimal_mean(self.y, self.count, 4, tie_direction),
+                "sample_size": self.count,
+            }
+        x = float(self.x) if exact else self.ordered_x
+        y = float(self.y) if exact else self.ordered_y
         return {
-            "x": round(float(self.x / self.count), 4) if self.count else None,
-            "y": round(float(self.y / self.count), 4) if self.count else None,
+            "x": round(x / self.count, 4) if self.count else None,
+            "y": round(y / self.count, 4) if self.count else None,
             "sample_size": self.count,
         }
 
@@ -366,7 +420,13 @@ class ActionAccumulator:
     def summary(self) -> dict:
         return {name: self.counters[name] for name in SUMMARY_FIELDS}
 
-    def to_context(self, exposure_seconds: int) -> dict:
+    def to_context(
+        self,
+        exposure_seconds: int,
+        *,
+        exact: bool = False,
+        tie_direction: str | None = None,
+    ) -> dict:
         summary = self.summary()
         return {
             "summary": summary,
@@ -381,8 +441,12 @@ class ActionAccumulator:
                 "box_entries": self.counters["box_entries"],
                 "crosses": self.counters["crosses"],
                 "long_balls": self.counters["long_balls"],
-                "mean_length_metres": self.pass_lengths.mean(2),
-                "mean_forward_metres": self.pass_forward.mean(2),
+                "mean_length_metres": self.pass_lengths.mean(
+                    2, exact=exact, tie_direction=tie_direction
+                ),
+                "mean_forward_metres": self.pass_forward.mean(
+                    2, exact=exact, tie_direction=tie_direction
+                ),
                 "forward_share": percentage(self.pass_forward.positive_count, self.pass_forward.count),
             },
             "carrying": {
@@ -390,11 +454,17 @@ class ActionAccumulator:
                 "progressive": self.counters["progressive_carries"],
                 "final_third_entries": self.counters["carry_final_third_entries"],
                 "box_entries": self.counters["carry_box_entries"],
-                "mean_length_metres": self.carry_lengths.mean(2),
-                "mean_forward_metres": self.carry_forward.mean(2),
+                "mean_length_metres": self.carry_lengths.mean(
+                    2, exact=exact, tie_direction=tie_direction
+                ),
+                "mean_forward_metres": self.carry_forward.mean(
+                    2, exact=exact, tie_direction=tie_direction
+                ),
                 "forward_share": percentage(self.carry_forward.positive_count, self.carry_forward.count),
             },
-            "touch_location": self.touch_location.to_json(),
+            "touch_location": self.touch_location.to_json(
+                exact=exact, tie_direction=tie_direction
+            ),
             "touch_grid": self.touch_grid.to_json(exposure_seconds),
         }
 
@@ -411,7 +481,13 @@ class GeometryAccumulator:
         self.sweeper_x.merge(other.sweeper_x)
         return self
 
-    def to_json(self, exposure_seconds: int) -> dict:
+    def to_json(
+        self,
+        exposure_seconds: int,
+        *,
+        exact: bool = False,
+        tie_direction: str | None = None,
+    ) -> dict:
         values = {name: self.counters[name] for name in GEOMETRY_FIELDS}
         values.update({
             "pass_completion": ratio(self.counters["completed_passes"], self.counters["passes"]),
@@ -419,8 +495,12 @@ class GeometryAccumulator:
             "advanced_touch_share": ratio(self.counters["advanced_touches"], self.counters["touches"]),
             "box_touch_share": ratio(self.counters["box_touches"], self.counters["touches"]),
             "line_break_frequency": ratio(self.counters["line_breaking_passes"], self.counters["passes"]),
-            "defensive_height": self.defensive_x.mean(4),
-            "sweeper_height": self.sweeper_x.mean(4),
+            "defensive_height": self.defensive_x.mean(
+                4, exact=exact, tie_direction=tie_direction
+            ),
+            "sweeper_height": self.sweeper_x.mean(
+                4, exact=exact, tie_direction=tie_direction
+            ),
             "rates_per90": {
                 name: round(self.counters[name] * 5400 / exposure_seconds, 4) if exposure_seconds else None
                 for name in GEOMETRY_RATE_FIELDS
@@ -445,9 +525,18 @@ class StateAccumulator:
         self.team.merge(other.team)
         return self
 
-    def to_json(self) -> dict:
-        player = self.player.to_context(self.exposure.seconds)
-        team = self.team.to_context(self.exposure.seconds)
+    def to_json(
+        self,
+        *,
+        exact: bool = False,
+        tie_direction: str | None = None,
+    ) -> dict:
+        player = self.player.to_context(
+            self.exposure.seconds, exact=exact, tie_direction=tie_direction
+        )
+        team = self.team.to_context(
+            self.exposure.seconds, exact=exact, tie_direction=tie_direction
+        )
         return {
             "exposure_seconds": self.exposure.seconds,
             "match_count": len(self.exposure.match_ids),
@@ -611,12 +700,26 @@ class PlayerRoleFeatureAccumulator:
         self.score_events.update(other.score_events)
         return self
 
-    def to_feature_json(self) -> dict:
+    def to_feature_json(
+        self,
+        *,
+        exact: bool = False,
+        tie_direction: str | None = None,
+    ) -> dict:
         from ingestion.services.player_role_features import spatial_state_features
 
-        overall_player = self.overall_player.to_context(self.exposure.seconds)
-        overall_team = self.overall_team.to_context(self.exposure.seconds)
-        states = {name: self.states[name].to_json() for name in STATE_NAMES}
+        overall_player = self.overall_player.to_context(
+            self.exposure.seconds, exact=exact, tie_direction=tie_direction
+        )
+        overall_team = self.overall_team.to_context(
+            self.exposure.seconds, exact=exact, tie_direction=tie_direction
+        )
+        states = {
+            name: self.states[name].to_json(
+                exact=exact, tie_direction=tie_direction
+            )
+            for name in STATE_NAMES
+        }
         return {
             "identity": {
                 "player_id": self.player_id,
@@ -637,8 +740,12 @@ class PlayerRoleFeatureAccumulator:
                 "team_action_shares": team_relative_shares(
                     overall_player["summary"], overall_team["summary"]
                 ),
-                "geometry": self.player_geometry.to_json(self.exposure.seconds),
-                "team_geometry": self.team_geometry.to_json(self.exposure.seconds),
+                "geometry": self.player_geometry.to_json(
+                    self.exposure.seconds, exact=exact, tie_direction=tie_direction
+                ),
+                "team_geometry": self.team_geometry.to_json(
+                    self.exposure.seconds, exact=exact, tie_direction=tie_direction
+                ),
             },
             "states": states,
             "state_spatial": spatial_state_features(states),

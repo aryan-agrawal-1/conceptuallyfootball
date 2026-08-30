@@ -1,4 +1,5 @@
 from copy import deepcopy
+from decimal import Decimal
 import json
 from itertools import permutations
 
@@ -31,6 +32,7 @@ from ingestion.services.player_role_aggregation import (
     SUPPORTING_METRIC_COLUMNS,
     TEAM_EPISODE_COLUMNS,
     BoundedEvidenceAccumulator,
+    DecimalMeasure,
     ExposureInterval,
     ExposureIntervalIndex,
     PlayerRoleFeatureAccumulator,
@@ -109,6 +111,14 @@ def batch_accumulator(seed: int) -> PlayerRoleFeatureAccumulator:
 
 
 class PlayerRoleAggregationContractTests(SimpleTestCase):
+    def test_exact_linear_total_identifies_both_valid_rounding_ties(self):
+        measure = DecimalMeasure()
+        measure.add(2.1150000000000007, exact_value=Decimal("2.115"))
+
+        self.assertEqual(measure.mean(2), 2.12)
+        self.assertEqual(measure.mean(2, exact=True, tie_direction="floor"), 2.11)
+        self.assertEqual(measure.mean(2, exact=True, tie_direction="ceiling"), 2.12)
+
     def test_compact_column_contracts_are_valid_scalar_queryset_projections(self):
         projections = (
             (ProviderMatch, MATCH_COLUMNS),

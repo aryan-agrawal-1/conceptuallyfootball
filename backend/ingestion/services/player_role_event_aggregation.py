@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from decimal import Decimal
 from itertools import islice
 from typing import Iterable, Mapping
 
@@ -96,7 +97,11 @@ def add_event_action(accumulator: ActionAccumulator, event: Mapping) -> None:
         if length is not None:
             accumulator.pass_lengths.add(length)
         if event.get("x") is not None and event.get("end_x") is not None:
-            accumulator.pass_forward.add((event["end_x"] - event["x"]) * 0.0105)
+            delta = event["end_x"] - event["x"]
+            accumulator.pass_forward.add(
+                delta * 0.0105,
+                exact_value=Decimal(delta) * Decimal("0.0105"),
+            )
     accumulator.counters["shots"] += event_type == MatchEventType.SHOT
     accumulator.counters["goals"] += (
         event_type == MatchEventType.SHOT
@@ -124,7 +129,11 @@ def add_carry_action(accumulator: ActionAccumulator, carry: Mapping) -> None:
     if length is not None:
         accumulator.carry_lengths.add(length)
     if carry.get("x") is not None and carry.get("end_x") is not None:
-        accumulator.carry_forward.add((carry["end_x"] - carry["x"]) * 0.0105)
+        delta = carry["end_x"] - carry["x"]
+        accumulator.carry_forward.add(
+            delta * 0.0105,
+            exact_value=Decimal(delta) * Decimal("0.0105"),
+        )
 
 
 def line_breaking_pass(event: Mapping) -> bool:
