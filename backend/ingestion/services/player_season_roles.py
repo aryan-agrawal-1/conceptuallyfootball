@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from math import sqrt
 from typing import Iterable
 
-from django.db import models, transaction
+from django.db import transaction
 from django.utils import timezone
 
 from ingestion.models import PlayerSeasonRole, PlayerSeasonRoleFeatureSnapshot
@@ -458,7 +458,11 @@ def score_player_season_roles(
     affected_player_ids: Iterable[int] | None = None,
     affected_team_ids: Iterable[int] | None = None,
 ) -> dict:
-    """Score a complete season cohort, then publish only the requested slice."""
+    """Score and atomically publish the complete current season cohort.
+
+    Affected scope applies only to feature extraction. Cohort-relative scores
+    can change for any stint whenever one feature snapshot changes.
+    """
 
     snapshots = list(PlayerSeasonRoleFeatureSnapshot.objects.filter(
         competition_season=competition_season,
@@ -471,17 +475,7 @@ def score_player_season_roles(
         assign_classification(features, candidates, traits)
         for features, candidates, traits in zip(feature_rows, candidate_rows, trait_rows)
     ]
-    target_player_ids = set(affected_player_ids) if affected_player_ids is not None else None
-    target_team_ids = set(affected_team_ids) if affected_team_ids is not None else None
-    selected = [
-        (snapshot, candidates, assignment)
-        for snapshot, candidates, assignment in zip(snapshots, candidate_rows, assignments)
-        if (
-            target_player_ids is None and target_team_ids is None
-            or target_player_ids is not None and snapshot.player_id in target_player_ids
-            or target_team_ids is not None and snapshot.team_id in target_team_ids
-        )
-    ]
+    selected = list(zip(snapshots, candidate_rows, assignments))
     rows = [PlayerSeasonRole(
         competition_season=competition_season,
         player_id=snapshot.player_id,
@@ -505,17 +499,15 @@ def score_player_season_roles(
         scoring_version=ROLE_SCORING_VERSION,
         is_current=False,
     ) for snapshot, candidates, assignment in selected]
-    PlayerSeasonRole.objects.bulk_create(rows, batch_size=250)
-    current = PlayerSeasonRole.objects.filter(competition_season=competition_season, is_current=True)
-    if target_player_ids is not None or target_team_ids is not None:
-        target_scope = models.Q()
-        if target_player_ids is not None:
-            target_scope |= models.Q(player_id__in=target_player_ids)
-        if target_team_ids is not None:
-            target_scope |= models.Q(team_id__in=target_team_ids)
-        current = current.filter(target_scope)
-    current.exclude(pk__in=[row.pk for row in rows]).update(is_current=False, superseded_at=timezone.now())
-    PlayerSeasonRole.objects.filter(pk__in=[row.pk for row in rows]).update(is_current=True)
+    with transaction.atomic():
+        PlayerSeasonRole.objects.bulk_create(rows, batch_size=250)
+        current = PlayerSeasonRole.objects.filter(
+            competition_season=competition_season, is_current=True
+        )
+        current.exclude(pk__in=[row.pk for row in rows]).update(
+            is_current=False, superseded_at=timezone.now()
+        )
+        PlayerSeasonRole.objects.filter(pk__in=[row.pk for row in rows]).update(is_current=True)
     distribution = {}
     confidence = {}
     classified = 0
@@ -562,8 +554,6 @@ def materialize_player_season_roles(
         )
     scoring_result = score_player_season_roles(
         competition_season,
-        affected_player_ids=affected_player_ids,
-        affected_team_ids=affected_team_ids,
     )
     return {"features": feature_result, "scoring": scoring_result}
 

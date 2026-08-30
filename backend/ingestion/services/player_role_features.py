@@ -663,47 +663,14 @@ def refresh_score_event_features(
             target_scope |= models.Q(team_id__in=target_team_ids)
         snapshots = snapshots.filter(target_scope)
     snapshots = list(snapshots.order_by("player_id", "team_id"))
-    profiles = {
-        (profile.player_id, profile.team_id): profile
-        for profile in PlayerSeasonEventProfile.objects.filter(
-            competition_season=competition_season,
-            split_type=EventProfileSplitType.TEAM,
-            is_current=True,
-        ).select_related("competition_season")
-    }
-    all_events = list(ProviderMatchEvent.objects.filter(
-        provider_match__competition_season=competition_season,
-    ).select_related("player", "team"))
-    resolved_assists = direct_assist_events(all_events)
     goal_context = goal_transition_context(competition_season)
-    match_ids = list(ProviderMatch.objects.filter(competition_season=competition_season).values_list("id", flat=True))
+    from ingestion.services.player_role_score_events import build_score_event_index
+
+    target_pairs = {(snapshot.player_id, snapshot.team_id) for snapshot in snapshots}
+    score_index = build_score_event_index(competition_season, target_pairs, goal_context)
     rows = []
     for snapshot in snapshots:
-        profile = profiles.get((snapshot.player_id, snapshot.team_id))
-        if profile is None:
-            continue
-        segments = exposure_segments(profile, StateLensScope(state="all"), match_ids)
-        assist_rows = [pair[0] for pair in resolved_assists.get((profile.player_id, profile.team_id), [])]
-        valid_assist_ids = {
-            event.id for event in assist_rows
-            if event_in_segments(event, segments, event.team_id)
-        }
-        verified_goals = [
-            event for event in all_events
-            if event.player_id == profile.player_id
-            and event.team_id == profile.team_id
-            and event.shot_outcome == MatchEventShotOutcome.GOAL
-            and not event.is_goal_disallowed
-            and not event.is_deleted_event
-            and event_in_segments(event, segments, event.team_id)
-        ]
-        corrected = score_event_evidence(
-            profile,
-            verified_goals,
-            resolved_assists,
-            goal_context,
-            valid_event_ids=valid_assist_ids | {goal.id for goal in verified_goals},
-        )
+        corrected = score_index.evidence(snapshot.player_id, snapshot.team_id)
         features = snapshot.features | {
             "score_events": snapshot.features.get("score_events", {}) | corrected,
         }
