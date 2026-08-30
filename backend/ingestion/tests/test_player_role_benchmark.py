@@ -1,4 +1,6 @@
+import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from django.db import connection
 from django.test import SimpleTestCase, TransactionTestCase
@@ -14,16 +16,41 @@ from ingestion.services.player_role_benchmark import (
 
 
 class PlayerRoleBenchmarkContractTests(SimpleTestCase):
-    def test_committed_corpus_covers_every_required_evidence_class(self):
-        entries = load_corpus()
+    def test_corpus_covers_every_required_evidence_class(self):
+        rows = [
+            {
+                "player_id": 10,
+                "team_id": 20,
+                "label": "goalkeeper",
+                "covers": ["goalkeeper", "all_game_states"],
+            },
+            {
+                "player_id": 11,
+                "team_id": 20,
+                "label": "outfield",
+                "covers": ["high_minute_outfield", "goals_assists"],
+            },
+            {
+                "player_id": 12,
+                "team_id": 21,
+                "label": "substitute",
+                "covers": ["low_minute_substitute", "sparse_exposure"],
+            },
+            {
+                "player_id": 13,
+                "team_id": 22,
+                "label": "transfer",
+                "covers": ["transfer_multiple_team", "transition_involvement"],
+            },
+        ]
+        with TemporaryDirectory() as directory:
+            corpus_path = Path(directory) / "corpus.json"
+            corpus_path.write_text(json.dumps({"profiles": rows}))
+            entries = load_corpus(corpus_path)
         covered = {category for entry in entries for category in entry.covers}
         self.assertEqual(covered, REQUIRED_CORPUS_CLASSES)
-        self.assertEqual(
-            [(entry.player_id, entry.team_id) for entry in entries if entry.player_id == 567],
-            [(567, 34), (567, 30)],
-        )
         substitute = next(entry for entry in entries if "low_minute_substitute" in entry.covers)
-        self.assertEqual((substitute.player_id, substitute.team_id), (1046, 43))
+        self.assertEqual((substitute.player_id, substitute.team_id), (12, 21))
 
     def test_comparator_allows_only_the_documented_float_tolerance(self):
         expected = {"exact": [1, "role", True, None], "value": 0.5}
@@ -36,9 +63,24 @@ class PlayerRoleBenchmarkContractTests(SimpleTestCase):
         self.assertEqual(len(compare_values({"value": 1}, {"value": 1.0})), 1)
 
     def test_invalid_corpus_reports_missing_coverage(self):
-        fixture = Path(__file__).resolve().parents[1] / "benchmarks" / "player_role_corpus_v1.json"
-        entries = load_corpus(fixture)
-        self.assertTrue(entries)
+        with TemporaryDirectory() as directory:
+            corpus_path = Path(directory) / "invalid-corpus.json"
+            corpus_path.write_text(
+                json.dumps(
+                    {
+                        "profiles": [
+                            {
+                                "player_id": 1,
+                                "team_id": 2,
+                                "label": "incomplete",
+                                "covers": ["goalkeeper"],
+                            }
+                        ]
+                    }
+                )
+            )
+            with self.assertRaisesRegex(ValueError, "Corpus does not cover"):
+                load_corpus(corpus_path)
 
 
 class PlayerRoleBenchmarkReadOnlyTests(TransactionTestCase):
