@@ -315,12 +315,15 @@ def direct_assist_events(all_events: list) -> dict[tuple[int, int], list[tuple[o
     return resolved
 
 
-def goal_transition_context(competition_season) -> dict[int, dict]:
+def goal_transition_context(competition_season, *, match_ids: Iterable[int] | None = None) -> dict[int, dict]:
     """Describe the draw provenance immediately before each score transition."""
 
-    episodes = list(ProviderMatchTeamGameStateEpisode.objects.filter(
+    episodes_query = ProviderMatchTeamGameStateEpisode.objects.filter(
         provider_match__competition_season=competition_season,
-    ).order_by("provider_match_id", "focal_team_id", "episode_index"))
+    )
+    if match_ids is not None:
+        episodes_query = episodes_query.filter(provider_match_id__in=match_ids)
+    episodes = list(episodes_query.order_by("provider_match_id", "focal_team_id", "episode_index"))
     by_key = {
         (episode.provider_match_id, episode.focal_team_id, episode.episode_index): episode
         for episode in episodes
