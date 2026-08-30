@@ -90,8 +90,13 @@ def score_event_index_from_rows(
     result = ScoreEventIndex({pair: Counter() for pair in target_pairs})
     assist_candidates: dict[tuple[int, int], deque[Mapping]] = {}
     used_assist_ids: set[int] = set()
+    current_match_id = None
     for event in event_rows:
         match_id = int(event["provider_match_id"])
+        if current_match_id != match_id:
+            assist_candidates.clear()
+            used_assist_ids.clear()
+            current_match_id = match_id
         team_id = event.get("team_id")
         timeline = event.get("timeline_seconds")
         if team_id is None or timeline is None or event.get("is_deleted_event"):
