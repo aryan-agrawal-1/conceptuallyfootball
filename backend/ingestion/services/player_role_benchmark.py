@@ -341,7 +341,7 @@ def compare_values(expected: Any, actual: Any, *, path: str = "$", differences: 
             differences.append(f"{path}: expected {expected!r}, got {actual!r}")
         return differences
     if isinstance(expected, float) or isinstance(actual, float):
-        if not isinstance(expected, (int, float)) or not isinstance(actual, (int, float)):
+        if not isinstance(expected, float) or not isinstance(actual, float):
             differences.append(f"{path}: expected {expected!r}, got {actual!r}")
         elif not isclose(expected, actual, rel_tol=0, abs_tol=FLOAT_ABSOLUTE_TOLERANCE):
             differences.append(f"{path}: expected {expected!r}, got {actual!r}")

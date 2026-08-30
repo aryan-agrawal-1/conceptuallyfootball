@@ -33,6 +33,7 @@ class PlayerRoleBenchmarkContractTests(SimpleTestCase):
         self.assertEqual(compare_values(expected, within_tolerance), [])
         self.assertEqual(len(compare_values(expected, outside_tolerance)), 1)
         self.assertEqual(len(compare_values(expected, expected | {"exact": [1, "other", True, None]})), 1)
+        self.assertEqual(len(compare_values({"value": 1}, {"value": 1.0})), 1)
 
     def test_invalid_corpus_reports_missing_coverage(self):
         fixture = Path(__file__).resolve().parents[1] / "benchmarks" / "player_role_corpus_v1.json"
