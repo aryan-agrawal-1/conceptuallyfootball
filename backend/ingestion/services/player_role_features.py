@@ -568,77 +568,17 @@ def materialize_player_role_features(
     affected_player_ids: Iterable[int] | None = None,
     affected_team_ids: Iterable[int] | None = None,
 ) -> dict:
-    """Extract and atomically publish current snapshots for selected stints."""
+    """Extract and atomically publish bounded current feature snapshots."""
 
-    profiles = PlayerSeasonEventProfile.objects.filter(
-        competition_season=competition_season,
-        split_type=EventProfileSplitType.TEAM,
-        team__isnull=False,
-        is_current=True,
-    ).select_related("player", "team", "competition_season")
-    target_player_ids = set(affected_player_ids) if affected_player_ids is not None else None
-    target_team_ids = set(affected_team_ids) if affected_team_ids is not None else None
-    if target_player_ids is not None or target_team_ids is not None:
-        target_scope = models.Q()
-        if target_player_ids is not None:
-            target_scope |= models.Q(player_id__in=target_player_ids)
-        if target_team_ids is not None:
-            target_scope |= models.Q(team_id__in=target_team_ids)
-        profiles = profiles.filter(target_scope)
-    profiles = list(profiles.order_by("player_id", "team_id"))
-    match_ids = list(ProviderMatch.objects.filter(competition_season=competition_season).values_list("id", flat=True))
-    all_events = list(ProviderMatchEvent.objects.filter(
-        provider_match__competition_season=competition_season,
-    ).select_related("player", "team"))
-    resolved_assists = direct_assist_events(all_events)
-    goal_context = goal_transition_context(competition_season)
-    latest_match = ProviderMatch.objects.filter(competition_season=competition_season).order_by("-kickoff_at", "-id").first()
-    versions = source_versions(competition_season)
-    rows = []
-    total_exposure = 0
-    for profile in profiles:
-        features = build_feature_snapshot(profile, match_ids, all_events, resolved_assists, goal_context)
-        exposure = features["exposure"]["verified_seconds"]
-        total_exposure += exposure
-        rows.append(PlayerSeasonRoleFeatureSnapshot(
-            competition_season=competition_season,
-            player_id=profile.player_id,
-            team_id=profile.team_id,
-            feature_version=ROLE_FEATURE_VERSION,
-            features=features,
-            verified_exposure_seconds=exposure,
-            source_event_version=versions["event"],
-            source_state_version=versions["state"],
-            source_participation_version=versions["participation"],
-            source_possession_version=versions["possession"],
-            calculated_through_match=latest_match,
-            calculated_through_date=latest_match.kickoff_at.date() if latest_match else None,
-            is_current=False,
-        ))
-    pairs = {(profile.player_id, profile.team_id) for profile in profiles}
-    with transaction.atomic():
-        PlayerSeasonRoleFeatureSnapshot.objects.bulk_create(rows, batch_size=250)
-        now = timezone.now()
-        current = PlayerSeasonRoleFeatureSnapshot.objects.filter(
-            competition_season=competition_season,
-            is_current=True,
-        )
-        if target_player_ids is not None or target_team_ids is not None:
-            target_scope = models.Q()
-            if target_player_ids is not None:
-                target_scope |= models.Q(player_id__in=target_player_ids)
-            if target_team_ids is not None:
-                target_scope |= models.Q(team_id__in=target_team_ids)
-            current = current.filter(target_scope)
-        current.exclude(pk__in=[row.pk for row in rows]).update(is_current=False, superseded_at=now)
-        PlayerSeasonRoleFeatureSnapshot.objects.filter(pk__in=[row.pk for row in rows]).update(is_current=True)
-    return {
-        "feature_version": ROLE_FEATURE_VERSION,
-        "snapshots": len(rows),
-        "verified_exposure_seconds": total_exposure,
-        "affected_player_ids": sorted({player_id for player_id, _team_id in pairs}),
-        "affected_team_ids": sorted({team_id for _player_id, team_id in pairs}),
-    }
+    from ingestion.services.player_role_materialization import (
+        materialize_bounded_player_role_features,
+    )
+
+    return materialize_bounded_player_role_features(
+        competition_season,
+        affected_player_ids=affected_player_ids,
+        affected_team_ids=affected_team_ids,
+    )
 
 
 def refresh_score_event_features(
