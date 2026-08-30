@@ -19,6 +19,8 @@ from ingestion.models import (
     MatchStatePhase,
     MaterializedApiPayload,
     PlayerSeasonDerivedStats,
+    PlayerSeasonRole,
+    PlayerSeasonRoleFeatureSnapshot,
     Provider,
     ProviderMatch,
     ProviderMatchCarry,
@@ -118,6 +120,46 @@ class PlayerStateComparisonTests(TestCase):
             is_touch=True,
             is_progressive_pass=end_x > x,
             is_defensive=is_defensive,
+        )
+
+    def publish_role(self, archetype, scoring_version):
+        snapshot, _ = PlayerSeasonRoleFeatureSnapshot.objects.get_or_create(
+            competition_season=self.competition_season,
+            player=self.player,
+            team=self.home,
+            is_current=True,
+            defaults={
+                "feature_version": "features-v1",
+                "features": {
+                    "identity": {"player_id": self.player.id, "team_id": self.home.id},
+                    "exposure": {"verified_seconds": 54_000},
+                },
+                "verified_exposure_seconds": 54_000,
+                "source_event_version": "event-v1",
+                "source_state_version": "state-v1",
+                "source_participation_version": "participation-v1",
+                "source_possession_version": "possession-v1",
+            },
+        )
+        PlayerSeasonRole.objects.filter(
+            competition_season=self.competition_season,
+            player=self.player,
+            team=self.home,
+            is_current=True,
+        ).update(is_current=False)
+        PlayerSeasonRole.objects.create(
+            competition_season=self.competition_season,
+            player=self.player,
+            team=self.home,
+            feature_snapshot=snapshot,
+            primary_archetype=archetype,
+            primary_fit=0.8,
+            classification_shape="clear",
+            evidence_confidence="established",
+            traits=[],
+            candidates=[],
+            evidence={"explanation": archetype},
+            scoring_version=scoring_version,
         )
 
     def add_carry(self, index, seconds, player, *, x, y, end_x, end_y):
@@ -416,6 +458,25 @@ class PlayerStateComparisonTests(TestCase):
         self.assertEqual(payload["season_role"]["confidence"], "pending")
         self.assertIn("selected", payload["state_evidence"])
         self.assertIn("baseline", payload["state_evidence"])
+
+    def test_state_lens_cache_tracks_current_role_model_version(self):
+        self.publish_role("Connector", "role-v1")
+        path = f"/api/v1/player-seasons/event-profile/{self.player.id}/state-comparison"
+        params = {**self.scope, "team": self.home.id, "state": "winning"}
+
+        first = self.client.get(path, params)
+        second = self.client.get(path, params)
+        self.assertEqual(first["X-Materialized-Payload"], "miss")
+        self.assertEqual(second["X-Materialized-Payload"], "hit")
+
+        self.publish_role("Ball Winner", "role-v2")
+        refreshed = self.client.get(path, params)
+        cached = self.client.get(path, params)
+
+        self.assertEqual(refreshed["X-Materialized-Payload"], "miss")
+        self.assertEqual(refreshed.json()["season_role"]["primary_archetype"], "Ball Winner")
+        self.assertEqual(refreshed.json()["season_role"]["scoring_version"], "role-v2")
+        self.assertEqual(cached["X-Materialized-Payload"], "hit")
 
     def test_comparison_projects_transition_leverage_onto_verified_player_actions(self):
         request = APIRequestFactory().get(

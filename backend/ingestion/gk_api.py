@@ -429,7 +429,7 @@ class GkDerivedPlayerSeasonDetailApi(APIView):
             model_version(CompetitionSeason),
         )
         try:
-            payload, _ = get_or_build_payload(
+            payload, cached = get_or_build_payload(
                 cache_key=cache_key,
                 source_version=source_version,
                 builder=lambda: self._build_payload(request, canonical_player_id),
@@ -438,7 +438,9 @@ class GkDerivedPlayerSeasonDetailApi(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except PlayerSeasonGkDerivedStats.DoesNotExist:
             return Response({"detail": "GK derived player-season not found."}, status=status.HTTP_404_NOT_FOUND)
-        return Response(payload)
+        response = Response(payload)
+        response["X-Materialized-Payload"] = "hit" if cached else "miss"
+        return response
 
     def _build_payload(self, request, canonical_player_id: int) -> dict:
         try:
