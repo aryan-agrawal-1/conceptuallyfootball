@@ -152,7 +152,7 @@ def task_run_team_merge(competition_season_id: int) -> dict:
     return {"ok": run.status == IngestionRunStatus.SUCCESS, "run_id": run.id, "error": run.error_detail}
 
 
-@shared_task
+@shared_task(queue="ingestion")
 def task_materialize_player_season_roles(
     competition_season_id: int,
     affected_player_ids: list[int] | None = None,

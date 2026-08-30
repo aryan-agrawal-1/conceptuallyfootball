@@ -15,6 +15,7 @@ from ingestion.services.player_role_orchestration import (
     RoleMaterializationAlreadyRunning,
     run_player_role_materialization,
 )
+from ingestion.tasks import task_materialize_player_season_roles
 
 
 class PlayerRoleOrchestrationTests(TestCase):
@@ -26,6 +27,12 @@ class PlayerRoleOrchestrationTests(TestCase):
             season=season,
         )
         cache.clear()
+
+    def test_celery_role_jobs_use_the_single_lane_ingestion_queue(self):
+        self.assertEqual(
+            task_materialize_player_season_roles._get_exec_options()["queue"],
+            "ingestion",
+        )
 
     @patch("ingestion.services.player_season_roles.materialize_player_season_roles")
     def test_success_persists_mode_counts_timing_queries_and_rss(self, materialize):
