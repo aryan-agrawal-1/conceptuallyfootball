@@ -1,0 +1,59 @@
+{
+  "competition_season_id": 4,
+  "dataset": {
+    "competition": "ENG1",
+    "season": "2025-26",
+    "matches": 380,
+    "player_team_profiles": 549
+  },
+  "measured_at": "2026-08-30",
+  "match_batch_size": 5,
+  "affected_scope_curve": [
+    {
+      "peak_rss_mb": 195.516,
+      "profiles": 1,
+      "wall_time_seconds": 22.164
+    },
+    {
+      "peak_rss_mb": 215.531,
+      "profiles": 55,
+      "wall_time_seconds": 55.998
+    },
+    {
+      "peak_rss_mb": 261.641,
+      "profiles": 110,
+      "wall_time_seconds": 71.916
+    },
+    {
+      "peak_rss_mb": 490.203,
+      "profiles": 440,
+      "wall_time_seconds": 152.17
+    },
+    {
+      "peak_rss_mb": 553.625,
+      "profiles": 549,
+      "wall_time_seconds": 161.331
+    }
+  ],
+  "threshold": {
+    "full_extraction_profile_ratio": 0.8,
+    "rationale": "At 440 of 549 profiles, incremental extraction saved only 5.7% versus the measured full pass. Scopes at or above 80% use a complete rebuild; smaller scopes retain the measured material saving."
+  },
+  "final_shadow": {
+    "build_seconds": 169.992,
+    "feature_differences": 0,
+    "peak_rss_mb": 967.156,
+    "role_and_trait_differences": 0,
+    "total_seconds_including_comparison_and_scoring": 173.099
+  },
+  "legacy_baseline": {
+    "peak_rss_mb": 3231.328,
+    "representative_profile_extrapolation_minutes": 49
+  },
+  "notes": [
+    "All measurements are read-only and were run in fresh Django shell processes against the same season-4 source rows.",
+    "The final-shadow peak includes loading accepted snapshots and roles for comparison, so it is conservative relative to extraction alone.",
+    "An affected-mode shadow covering every previously rounding-sensitive profile also completed with zero feature differences.",
+    "Publication writes were not executed during benchmark or shadow validation."
+  ]
+}
