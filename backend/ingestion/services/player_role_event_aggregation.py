@@ -26,6 +26,7 @@ from ingestion.services.player_role_aggregation import (
     MATCH_COLUMNS,
     ActionAccumulator,
     CompactMatchBatch,
+    DecimalMeasure,
     GeometryAccumulator,
     PlayerRoleFeatureAccumulator,
 )
@@ -72,6 +73,23 @@ def distance_metres(row: Mapping) -> float | None:
     return (delta_x ** 2 + delta_y ** 2) ** 0.5
 
 
+def add_movement(
+    lengths: DecimalMeasure,
+    forward: DecimalMeasure,
+    row: Mapping,
+) -> None:
+    length = distance_metres(row)
+    if length is not None:
+        lengths.add(length)
+    if row.get("x") is None or row.get("end_x") is None:
+        return
+    delta = row["end_x"] - row["x"]
+    forward.add(
+        delta * 0.0105,
+        exact_value=Decimal(delta) * Decimal("0.0105"),
+    )
+
+
 def add_event_action(accumulator: ActionAccumulator, event: Mapping) -> None:
     event_type = event.get("event_type")
     defensive = is_defensive_event(event_type, defensive_qualifier=event.get("is_defensive", False))
@@ -93,15 +111,7 @@ def add_event_action(accumulator: ActionAccumulator, event: Mapping) -> None:
         accumulator.counters["key_passes"] += bool(event.get("is_key_pass"))
         accumulator.counters["crosses"] += bool(event.get("is_cross"))
         accumulator.counters["long_balls"] += bool(event.get("is_long_ball"))
-        length = distance_metres(event)
-        if length is not None:
-            accumulator.pass_lengths.add(length)
-        if event.get("x") is not None and event.get("end_x") is not None:
-            delta = event["end_x"] - event["x"]
-            accumulator.pass_forward.add(
-                delta * 0.0105,
-                exact_value=Decimal(delta) * Decimal("0.0105"),
-            )
+        add_movement(accumulator.pass_lengths, accumulator.pass_forward, event)
     accumulator.counters["shots"] += event_type == MatchEventType.SHOT
     accumulator.counters["goals"] += (
         event_type == MatchEventType.SHOT
@@ -125,15 +135,7 @@ def add_carry_action(accumulator: ActionAccumulator, carry: Mapping) -> None:
     accumulator.counters["progressive_actions"] += bool(carry.get("is_progressive_carry"))
     accumulator.counters["carry_final_third_entries"] += bool(carry.get("is_final_third_entry"))
     accumulator.counters["carry_box_entries"] += bool(carry.get("is_box_entry"))
-    length = distance_metres(carry)
-    if length is not None:
-        accumulator.carry_lengths.add(length)
-    if carry.get("x") is not None and carry.get("end_x") is not None:
-        delta = carry["end_x"] - carry["x"]
-        accumulator.carry_forward.add(
-            delta * 0.0105,
-            exact_value=Decimal(delta) * Decimal("0.0105"),
-        )
+    add_movement(accumulator.carry_lengths, accumulator.carry_forward, carry)
 
 
 def line_breaking_pass(event: Mapping) -> bool:
