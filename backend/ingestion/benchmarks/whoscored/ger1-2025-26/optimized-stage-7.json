@@ -1,0 +1,40 @@
+{
+  "report_version": 1,
+  "scope": {
+    "competition": "GER1",
+    "competition_season_id": 23,
+    "season": "2025-26",
+    "matches": 50,
+    "events": 77330,
+    "stored_payload_sha256": "aaca1f8da5333d9afaf1251d6d9e473db0c15349d3f0cd170e638902f2cdb05d"
+  },
+  "event_profiles": {
+    "run_id": 2268,
+    "rows": {"players": 750, "teams": 18},
+    "baseline": {"wall_seconds": 7.497, "peak_rss_mb": 820.67},
+    "optimized": {"wall_seconds": 9.869, "peak_rss_mb": 404.53},
+    "peak_rss_reduction_percent": 50.71,
+    "notes": "The compact event load fell from 2.296s to 0.357s. Total time is not treated as a speed regression gate because repeated versioned writes and identity-report timing increased on the retained local database."
+  },
+  "player_roles": {
+    "run_id": 2270,
+    "rows": {"feature_snapshots": 375, "roles": 375},
+    "baseline": {"wall_seconds": 29.412, "peak_rss_mb": 878.75, "queries": 424},
+    "optimized": {"wall_seconds": 32.222, "peak_rss_mb": 470.09, "queries": 437},
+    "peak_rss_reduction_percent": 46.51,
+    "notes": "Runtime is within 10% on a database containing repeated superseded benchmark rows. The bounded-memory change prioritizes VPS safety; a clean-database timing comparison remains part of the full optimized backfill."
+  },
+  "semantic_output_digests": {
+    "player_event_profiles": {"rows": 750, "sha256": "2196379d159794d54e302aeea77a138b65f701df944051f8388d744c1bccdac9"},
+    "team_event_profiles": {"rows": 18, "sha256": "d7b8e2c9db7e16bf5cd40a9b1c68e1e6e0460ab24eb7f9ace9605da31b200aee"},
+    "player_role_feature_snapshots": {"rows": 375, "sha256": "a7b792273743de2f7f7fbf71fb3402d6fcc61f47f2d128459d6e46f4d10c704d"},
+    "player_roles": {"rows": 375, "sha256": "8c5436b8ed0ddbc0699c0bc6a06fd4871346058a2a4e4100e861978d462b1efa"}
+  },
+  "equivalence": {
+    "event_profile_digests_match_baseline": true,
+    "feature_pairs_compared": 375,
+    "feature_pair_differences": 0,
+    "role_pairs_compared": 375,
+    "role_pair_differences": 0
+  }
+}
