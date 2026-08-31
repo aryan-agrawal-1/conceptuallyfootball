@@ -21,22 +21,24 @@ import {
   EventMapViewTabs, EventSelectionDetails, ShotMapLegend,
 } from './EventMapUi'
 import {
-  CARRY_FILTERS,
   EvidenceRow,
   MapStage,
-  PASS_FILTERS,
-  PASS_MAP_LAYERS,
-  PASS_OUTCOMES,
-  PENALTY_OPTIONS,
   PenaltyToggle,
   PlayerExposureCard,
   PlayerPassingEvidence,
   PlayerShootingEvidence,
+  ShotMapFilters,
+  StateEvidenceCard,
+} from './PlayerEventMapSupport'
+import {
+  CARRY_FILTERS,
+  PASS_FILTERS,
+  PASS_MAP_LAYERS,
+  PASS_OUTCOMES,
+  PENALTY_OPTIONS,
   SHARED_SPATIAL_FILTERS,
   SHOT_CHANCE_FILTERS,
   SHOT_OUTCOME_FILTERS,
-  ShotMapFilters,
-  StateEvidenceCard,
   formatCohortMetric,
   formatComparisonMetric,
   playerDefensiveSelection,
@@ -50,7 +52,7 @@ import {
   type PlayerMap,
   type ShotChanceFilter,
   type ShotOutcomeFilter,
-} from './PlayerEventMapSupport'
+} from './PlayerEventMapLogic'
 
 export function PlayerEventMaps({ playerId, competition, season, teams, positionGroup, rateMode }: {
   playerId: number
