@@ -204,6 +204,7 @@ def run_whoscored_ingestion(
         started_at=timezone.now(),
     )
     failures: list[WhoScoredMatchFailure] = []
+    pipeline_diagnostics: dict[str, Any] = {}
     try:
         active_client = client or SoccerdataWhoScoredClient(
             WhoScoredSourceConfig(
@@ -230,6 +231,7 @@ def run_whoscored_ingestion(
             client=active_client,
             request_controller=request_controller,
             run=run,
+            diagnostics=pipeline_diagnostics,
         )
         # Persist the discovered schedule, but isolate malformed rows so an
         # unrelated fixture cannot prevent valid selected matches from running.
@@ -325,6 +327,7 @@ def run_whoscored_ingestion(
             }
             for failure in failures
         ]
+        stats["pipeline"] = pipeline_diagnostics
         identity_report = build_event_identity_report(competition_season)
         identity = identity_report.volume
         stats.update({

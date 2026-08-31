@@ -35,6 +35,7 @@ from ingestion.services.whoscored_normalization import (
     parse_match_payload,
     replace_match_events,
 )
+from ingestion.services.player_role_diagnostics import resident_memory_mb
 
 
 ACCESS_FAILURE_MARKERS = (
@@ -200,6 +201,7 @@ class WhoScoredLifecycleService:
         clock: Callable[[], object] = timezone.now,
         run: IngestionRun | None = None,
         normalization_policy: NormalizationPolicy | None = None,
+        diagnostics: dict | None = None,
     ) -> None:
         if not competition_season.supports_whoscored:
             raise ValueError("WhoScored is not configured for this competition season.")
@@ -209,6 +211,24 @@ class WhoScoredLifecycleService:
         self.clock = clock
         self.run = run
         self.normalization_policy = normalization_policy
+        self.diagnostics = diagnostics
+
+    def record_stage(self, stage: str, started_at: float) -> None:
+        if self.diagnostics is None:
+            return
+        elapsed = time.monotonic() - started_at
+        stages = self.diagnostics.setdefault("stages", {})
+        entry = stages.setdefault(
+            stage,
+            {"calls": 0, "total_seconds": 0.0, "max_seconds": 0.0},
+        )
+        entry["calls"] += 1
+        entry["total_seconds"] = round(entry["total_seconds"] + elapsed, 6)
+        entry["max_seconds"] = round(max(entry["max_seconds"], elapsed), 6)
+        self.diagnostics["peak_rss_mb"] = max(
+            float(self.diagnostics.get("peak_rss_mb") or 0),
+            resident_memory_mb(),
+        )
 
     def discover_matches(self, *, force_cache: bool = False) -> list[ProviderMatch]:
         source_matches = self.client.list_matches(force_cache=force_cache)
@@ -318,6 +338,7 @@ class WhoScoredLifecycleService:
             )
             else ProviderPayloadLifecycle.PRELIMINARY
         )
+        stage_started = time.monotonic()
         retrieved = self.request_controller.fetch(
             self.client,
             int(provider_match.provider_match_id),
@@ -329,8 +350,11 @@ class WhoScoredLifecycleService:
                 and target_lifecycle == ProviderPayloadLifecycle.FINAL
             ),
         )
+        self.record_stage("match_fetch", stage_started)
+        stage_started = time.monotonic()
         wrapped_bytes = canonical_raw_payload_bytes(retrieved.payload)
         checksum = hashlib.sha256(wrapped_bytes).hexdigest()
+        self.record_stage("canonicalize_checksum", stage_started)
         changed = current_payload is None or current_payload.payload_sha256 != checksum
         settling_unchanged_preliminary = bool(
             not changed
@@ -340,13 +364,16 @@ class WhoScoredLifecycleService:
         )
         normalized_match = None
         if changed or settling_unchanged_preliminary:
+            stage_started = time.monotonic()
             normalized_match = parse_match_payload(
                 retrieved.payload,
                 policy=self.normalization_policy,
                 changed_payload=current_payload is not None,
             )
+            self.record_stage("normalize_payload", stage_started)
 
-        return self.persist_payload(
+        stage_started = time.monotonic()
+        result = self.persist_payload(
             provider_match=provider_match,
             retrieved=retrieved,
             wrapped_bytes=wrapped_bytes,
@@ -355,6 +382,8 @@ class WhoScoredLifecycleService:
             fetched_at=now,
             normalized_match=normalized_match,
         )
+        self.record_stage("persist_match", stage_started)
+        return result
 
     def persist_payload(
         self,
@@ -485,6 +514,7 @@ class WhoScoredLifecycleService:
                 locked_match,
                 normalized_match,
                 run=self.run,
+                diagnostics=self.diagnostics,
             )
             new_player_ids, new_team_ids = affected_entity_ids(locked_match)
 

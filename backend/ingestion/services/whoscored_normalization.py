@@ -5,6 +5,7 @@ import json
 import math
 from dataclasses import asdict, dataclass, field
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from time import monotonic
 from typing import Any, Mapping, Sequence
 
 from django.db import transaction
@@ -778,6 +779,7 @@ def replace_match_events(
     *,
     batch_size: int = 1000,
     run: IngestionRun | None = None,
+    diagnostics: dict | None = None,
 ) -> int:
     if not normalized_match.diagnostics.valid:
         raise WhoScoredNormalizationError(normalized_match.diagnostics)
@@ -785,14 +787,17 @@ def replace_match_events(
         locked_match = ProviderMatch.objects.select_for_update().get(
             pk=provider_match.pk
         )
+        stage_started = monotonic()
         locked_match.events.all().delete()
         rows = [
             ProviderMatchEvent(provider_match=locked_match, **event.model_values())
             for event in normalized_match.events
         ]
         ProviderMatchEvent.objects.bulk_create(rows, batch_size=batch_size)
+        record_pipeline_stage(diagnostics, "replace_events", stage_started)
         from ingestion.services.identity import attach_provider_match_identities
 
+        stage_started = monotonic()
         attach_provider_match_identities(
             locked_match,
             run=run,
@@ -800,24 +805,53 @@ def replace_match_events(
             player_names=dict(normalized_match.player_names),
             include_report=False,
         )
+        record_pipeline_stage(diagnostics, "attach_identities", stage_started)
         from ingestion.services.game_state import materialize_match_game_state
 
+        stage_started = monotonic()
         materialize_match_game_state(locked_match, clock=normalized_match.clock)
+        record_pipeline_stage(diagnostics, "game_state", stage_started)
         from ingestion.services.player_participation import (
             materialize_match_player_participation,
         )
 
+        stage_started = monotonic()
         materialize_match_player_participation(
             locked_match,
             lineup_players=normalized_match.players,
         )
+        record_pipeline_stage(diagnostics, "player_participation", stage_started)
         from ingestion.services.carry_derivation import replace_match_carries
 
+        stage_started = monotonic()
         replace_match_carries(locked_match)
+        record_pipeline_stage(diagnostics, "carries", stage_started)
         from ingestion.services.possession_context import replace_match_possessions
 
+        stage_started = monotonic()
         replace_match_possessions(locked_match)
+        record_pipeline_stage(diagnostics, "possessions", stage_started)
     return len(normalized_match.events)
+
+
+def record_pipeline_stage(diagnostics: dict | None, stage: str, started_at: float) -> None:
+    if diagnostics is None:
+        return
+    from ingestion.services.player_role_diagnostics import resident_memory_mb
+
+    elapsed = monotonic() - started_at
+    stages = diagnostics.setdefault("stages", {})
+    entry = stages.setdefault(
+        stage,
+        {"calls": 0, "total_seconds": 0.0, "max_seconds": 0.0},
+    )
+    entry["calls"] += 1
+    entry["total_seconds"] = round(entry["total_seconds"] + elapsed, 6)
+    entry["max_seconds"] = round(max(entry["max_seconds"], elapsed), 6)
+    diagnostics["peak_rss_mb"] = max(
+        float(diagnostics.get("peak_rss_mb") or 0),
+        resident_memory_mb(),
+    )
 
 
 def normalized_event_type(event_name: str) -> int:
