@@ -201,27 +201,6 @@ def _bulk_scope_evidence(
     }
 
 
-def _bulk_eligible_refinements(episodes: Sequence) -> dict:
-    states = {
-        MatchEventGameState.DRAWING: "drawing",
-        MatchEventGameState.WINNING: "winning",
-        MatchEventGameState.LOSING: "losing",
-    }
-    return {
-        "states": sorted({states[row.state] for row in episodes if row.state in states}),
-        "goal_differences": sorted({row.goal_difference for row in episodes}),
-        "phases": sorted({row.phase for row in episodes}),
-        "draw_provenances": sorted({row.draw_provenance for row in episodes}),
-        "state_age_seconds": {
-            "minimum": 0 if episodes else None,
-            "maximum": max(
-                (row.end_second - row.state_entry_second for row in episodes),
-                default=None,
-            ),
-        },
-    }
-
-
 def _load_bulk_style_inputs(competition_season, team_ids: Sequence[int], scopes: dict[str, StateLensScope]) -> dict:
     """Load a season's style inputs once for all team/state cohorts.
 
@@ -622,9 +601,6 @@ class TeamStyleShapeApi(APIView):
         )
         target_match_ids = list(
             target_scoped_all.values_list("provider_match_id", flat=True).distinct()
-        )
-        target_eligible_events = target_scoped_all.filter(
-            provider_match__game_state__eligible=True
         )
         target_state_metadata = state_lens_metadata(
             profile.team_id,
