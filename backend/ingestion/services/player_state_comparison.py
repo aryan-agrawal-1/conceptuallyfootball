@@ -705,29 +705,6 @@ def team_matched_context(team_events: list, team_carries: list, segments: list[P
     )
 
 
-def _transition_scope_matches(context: dict, scope: StateLensScope) -> bool:
-    """Match a #117 observation to the already-selected player State Lens."""
-
-    if scope.state != "all" and context.get("state") != scope.state:
-        return False
-    if scope.goal_difference is not None and context.get("goal_difference") != scope.goal_difference:
-        return False
-    if scope.phase is not None and context.get("phase") != scope.phase:
-        return False
-    if scope.draw_provenance is not None and context.get("draw_provenance") != scope.draw_provenance:
-        return False
-    age = context.get("state_age_seconds")
-    if scope.minimum_state_age_seconds is not None and (
-        age is None or age < scope.minimum_state_age_seconds
-    ):
-        return False
-    if scope.maximum_state_age_seconds is not None and (
-        age is None or age >= scope.maximum_state_age_seconds
-    ):
-        return False
-    return True
-
-
 def _transition_player_evidence(
     profile,
     segments: list[PlayerExposureSegment],
@@ -906,7 +883,7 @@ def _transition_player_evidence(
                 match_ref=match_refs.get(match.id, 0),
                 episodes=episodes_by_match_team.get((match.id, int(team_id)), ()),
             )
-            if _transition_scope_matches(opportunity_observation["state"], scope):
+            if scope.matches_context(opportunity_observation["state"]):
                 opportunities += 1
         verified_player_sequences = [
             sequence
@@ -926,7 +903,7 @@ def _transition_player_evidence(
             match_ref=match_refs.get(match.id, 0),
             episodes=episodes_by_match_team.get((match.id, int(team_id)), ()),
         )
-        if not _transition_scope_matches(observation["state"], scope):
+        if not scope.matches_context(observation["state"]):
             state_or_team_mismatch_count += 1
             continue
         # #117 deliberately exposes the richer rapid-transition outcome but

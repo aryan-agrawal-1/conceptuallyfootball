@@ -937,23 +937,6 @@ def possession_observation(
     }
 
 
-def _scope_context(context: Mapping[str, Any], scope: StateLensScope) -> bool:
-    if scope.state != "all" and context.get("state") != scope.state:
-        return False
-    if scope.goal_difference is not None and context.get("goal_difference") != scope.goal_difference:
-        return False
-    if scope.phase is not None and context.get("phase") != scope.phase:
-        return False
-    if scope.draw_provenance is not None and context.get("draw_provenance") != scope.draw_provenance:
-        return False
-    age = context.get("state_age_seconds")
-    if scope.minimum_state_age_seconds is not None and (age is None or age < scope.minimum_state_age_seconds):
-        return False
-    if scope.maximum_state_age_seconds is not None and (age is None or age >= scope.maximum_state_age_seconds):
-        return False
-    return True
-
-
 def _rate(count: int, denominator: int) -> float | None:
     return round(count / denominator, 4) if denominator else None
 
@@ -1193,7 +1176,7 @@ def _build_player_involvement(
         selected_events = [
             event
             for event in trace
-            if event["team_perspective"] == "for" and _scope_context(event["game_state"], scope)
+            if event["team_perspective"] == "for" and scope.matches_context(event["game_state"])
         ]
         if not selected_events:
             continue
@@ -1264,7 +1247,7 @@ def _build_player_involvement(
         selected_events = [
             event
             for event in trace
-            if _scope_context(event["game_state"], scope)
+            if scope.matches_context(event["game_state"])
         ]
         if not selected_events:
             continue
@@ -1563,7 +1546,7 @@ def build_transition_leverage_payload(
             episodes=episodes_by_match.get(match.id, ()),
         )
         all_observations.append(observation)
-        if _scope_context(observation["state"], lens.selected):
+        if lens.selected.matches_context(observation["state"]):
             selected_observations.append(observation)
     observed_match_ids = {
         match_id
@@ -1601,7 +1584,7 @@ def build_transition_leverage_payload(
         baseline_observations = [
             row
             for row in all_observations
-            if _scope_context(row["state"], lens.baseline)
+            if lens.baseline.matches_context(row["state"])
         ]
         baseline_scope = _build_scope(
             baseline_observations,
