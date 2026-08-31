@@ -159,6 +159,15 @@ class WhoScoredLifecycleTests(TestCase):
             away_score=1,
         )
 
+    def test_default_request_policy_preserves_production_safety_limits(self) -> None:
+        policy = WhoScoredFetchPolicy()
+
+        self.assertEqual(policy.minimum_match_delay_seconds, 5)
+        self.assertEqual(policy.maximum_match_delay_seconds, 10)
+        self.assertEqual(policy.maximum_attempts, 4)
+        self.assertEqual(policy.access_failure_limit, 5)
+        self.assertEqual(policy.settlement_delay, timedelta(hours=12))
+
     def test_discovers_and_upserts_schedule_metadata(self) -> None:
         self.client.matches = [
             SourceMatch(
@@ -225,8 +234,11 @@ class WhoScoredLifecycleTests(TestCase):
         )
 
         self.assertEqual(first.action, "stored")
+        self.assertTrue(first.events_replaced)
         self.assertEqual(second.action, "reused_final")
+        self.assertFalse(second.events_replaced)
         self.assertEqual(forced.action, "unchanged")
+        self.assertFalse(forced.events_replaced)
         self.assertEqual(self.client.fetch_calls, [(9000001, False), (9000001, True)])
         self.assertEqual(
             sorted(self.provider_match.events.values_list("id", flat=True)),
@@ -307,6 +319,7 @@ class WhoScoredLifecycleTests(TestCase):
             preliminary.lifecycle_state, ProviderPayloadLifecycle.PRELIMINARY
         )
         self.assertEqual(settled.action, "finalized_unchanged")
+        self.assertFalse(settled.events_replaced)
         self.assertEqual(payload.lifecycle_state, ProviderPayloadLifecycle.FINAL)
         self.assertEqual(payload.final_sha256, payload.preliminary_sha256)
         self.assertTrue(settled_state.eligible)
@@ -365,6 +378,7 @@ class WhoScoredLifecycleTests(TestCase):
         result = self.service.process_match(self.provider_match, historical=False)
 
         self.assertEqual(result.action, "replaced")
+        self.assertTrue(result.events_replaced)
         self.assertEqual(result.affected_player_ids, (player.id,))
         self.assertEqual(result.affected_team_ids, (team.id,))
         self.assertFalse(
