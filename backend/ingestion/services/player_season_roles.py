@@ -270,7 +270,7 @@ def raw_candidates(features: dict) -> list[RawCandidate]:
             "Goalkeepers only; needs 20 recorded saves.",
         ),
     ]
-    return [candidate if candidate.eligible else RawCandidate(candidate.label, False, candidate.components, candidate.unsupported_reason) for candidate in candidates]
+    return candidates
 
 
 def score_candidate_cohort(feature_rows: list[dict]) -> list[list[dict]]:
