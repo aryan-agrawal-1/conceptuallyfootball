@@ -29,6 +29,7 @@ from ingestion.services.season_refresh_activation import (
     apply_season_refresh_activation,
     plan_season_refresh_activation,
 )
+from ingestion.whoscored_identity_manifest import WHOSCORED_TEAM_MAPPINGS
 
 
 class CompetitionSeedBatch2Tests(TestCase):
@@ -107,6 +108,9 @@ class CompetitionSeedBatch2Tests(TestCase):
                 "expected": 306,
             },
         )
+        mappings = WHOSCORED_TEAM_MAPPINGS[("GER1", "2025-26")]
+        self.assertEqual(len(mappings), 18)
+        self.assertEqual(len(set(mappings.values())), 18)
 
     def test_seed_is_idempotent_and_keeps_new_slices_unpublished_and_disabled(self):
         call_command("seed_competition_slices")
