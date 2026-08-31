@@ -10,7 +10,9 @@ from ingestion.competition_scope import resolve_active_competition_season
 from ingestion.services.whoscored_pipeline_benchmark import (
     benchmark_stage,
     benchmark_stored_payload_parse,
+    materialized_output_digests,
     report_header,
+    run_history,
     scope_inventory,
 )
 
@@ -24,7 +26,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--stage",
             action="append",
-            choices=("inventory", "stored-payload-parse"),
+            choices=("inventory", "stored-payload-parse", "run-history", "output-digests"),
             help="Stage to run; repeat as needed. Defaults to both stages.",
         )
         parser.add_argument(
@@ -61,6 +63,17 @@ class Command(BaseCommand):
                         competition_season,
                         limit=options["match_limit"],
                     ),
+                )
+            )
+        if "run-history" in selected:
+            report["stages"].append(
+                benchmark_stage("run-history", lambda: run_history(competition_season))
+            )
+        if "output-digests" in selected:
+            report["stages"].append(
+                benchmark_stage(
+                    "output-digests",
+                    lambda: materialized_output_digests(competition_season),
                 )
             )
 

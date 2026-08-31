@@ -13,12 +13,15 @@ from time import perf_counter
 from typing import Callable, Iterator
 
 from django import get_version as django_version
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import connection, models
 
 from ingestion.models import (
     PlayerSeasonEventProfile,
     PlayerSeasonRole,
     PlayerSeasonRoleFeatureSnapshot,
+    IngestionKind,
+    IngestionRun,
     Provider,
     ProviderMatch,
     ProviderMatchCarry,
@@ -201,6 +204,8 @@ def benchmark_stored_payload_parse(competition_season, *, limit: int | None = No
         digest.update(stored.provider_match.provider_match_id.encode("utf-8"))
         digest.update(b":")
         digest.update(str(len(normalized.events)).encode("ascii"))
+        digest.update(b":")
+        digest.update(stored.payload_sha256.encode("ascii"))
         digest.update(b"\n")
         match_count += 1
         event_count += len(normalized.events)
@@ -212,6 +217,154 @@ def benchmark_stored_payload_parse(competition_season, *, limit: int | None = No
         "compressed_payload_bytes": compressed_bytes,
         "uncompressed_payload_bytes": uncompressed_bytes,
         "aggregate_digest": digest.hexdigest(),
+    }
+
+
+def run_history(competition_season) -> dict:
+    summaries = {}
+    for kind in (
+        IngestionKind.WHOSCORED_FETCH,
+        IngestionKind.EVENT_PROFILES,
+        IngestionKind.PLAYER_ROLES,
+    ):
+        run = (
+            IngestionRun.objects.filter(
+                competition_season=competition_season,
+                kind=kind,
+            )
+            .order_by("-id")
+            .first()
+        )
+        if run is None:
+            summaries[kind] = None
+            continue
+        stats = run.stats or {}
+        summary = {
+            "run_id": run.id,
+            "status": run.status,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        }
+        if kind == IngestionKind.WHOSCORED_FETCH:
+            summary.update(
+                {
+                    key: stats.get(key)
+                    for key in (
+                        "outcome",
+                        "elapsed_seconds",
+                        "matches_considered",
+                        "requests",
+                        "successful_fetches",
+                        "raw_payload_reuses",
+                        "retries",
+                        "normalized_event_count",
+                        "coverage",
+                        "pipeline",
+                    )
+                }
+            )
+            summary["event_identity"] = (stats.get("event_identity") or {}).get("volume")
+        elif kind == IngestionKind.EVENT_PROFILES:
+            summary.update(
+                {
+                    key: stats.get(key)
+                    for key in (
+                        "formula_version",
+                        "coverage",
+                        "public_complete",
+                        "internal_pilot",
+                        "player_profiles",
+                        "team_profiles",
+                        "pipeline",
+                    )
+                }
+            )
+            summary["event_identity"] = (stats.get("event_identity") or {}).get("volume")
+        else:
+            summary.update(
+                {
+                    key: stats.get(key)
+                    for key in (
+                        "requested_mode",
+                        "match_batch_size",
+                        "stage_timings_seconds",
+                        "rows_processed",
+                        "rss_samples_mb",
+                        "peak_rss_mb",
+                        "query_count",
+                    )
+                }
+            )
+        summaries[kind] = summary
+    return summaries
+
+
+def queryset_digest(queryset, *, order_by: tuple[str, ...], excluded: set[str]) -> dict:
+    fields = [
+        field.attname
+        for field in queryset.model._meta.concrete_fields
+        if field.name not in excluded and field.attname not in excluded
+    ]
+    digest = hashlib.sha256()
+    count = 0
+    for row in queryset.order_by(*order_by).values(*fields).iterator(chunk_size=250):
+        digest.update(
+            json.dumps(
+                row,
+                cls=DjangoJSONEncoder,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+        digest.update(b"\n")
+        count += 1
+    return {"rows": count, "sha256": digest.hexdigest()}
+
+
+def materialized_output_digests(competition_season) -> dict:
+    common_excluded = {
+        "id",
+        "created_at",
+        "updated_at",
+        "superseded_at",
+        "materialized_ingestion_run",
+        "materialized_ingestion_run_id",
+        "is_current",
+    }
+    return {
+        "player_event_profiles": queryset_digest(
+            PlayerSeasonEventProfile.objects.filter(
+                competition_season=competition_season,
+                is_current=True,
+            ),
+            order_by=("player_id", "team_id", "split_type"),
+            excluded=common_excluded,
+        ),
+        "team_event_profiles": queryset_digest(
+            TeamSeasonEventProfile.objects.filter(
+                competition_season=competition_season,
+                is_current=True,
+            ),
+            order_by=("team_id",),
+            excluded=common_excluded,
+        ),
+        "player_role_feature_snapshots": queryset_digest(
+            PlayerSeasonRoleFeatureSnapshot.objects.filter(
+                competition_season=competition_season,
+                is_current=True,
+            ),
+            order_by=("player_id", "team_id"),
+            excluded=common_excluded,
+        ),
+        "player_roles": queryset_digest(
+            PlayerSeasonRole.objects.filter(
+                competition_season=competition_season,
+                is_current=True,
+            ),
+            order_by=("player_id", "team_id"),
+            excluded=common_excluded,
+        ),
     }
 
 

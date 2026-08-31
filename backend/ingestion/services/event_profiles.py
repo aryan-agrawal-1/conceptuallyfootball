@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from time import monotonic
 from typing import Iterable
 
 from django.db import transaction
@@ -23,6 +24,7 @@ from ingestion.services.identity import (
     build_event_identity_report,
     validate_event_identity_publication,
 )
+from ingestion.services.player_role_diagnostics import record_stage, sample_memory
 from ingestion.services.whoscored_normalization import (
     ACTION_GRID_COLUMNS, ACTION_GRID_ROWS,
     action_grid_assignment, grid_assignment, is_action_event, is_defensive_event,
@@ -192,11 +194,20 @@ def materialize_event_profiles(
     if not competition_season.supports_whoscored:
         raise ValueError("WhoScored is not configured for this competition season.")
     _start(run)
+    diagnostics = {"stage_timings_seconds": {}, "rss_samples_mb": {}}
+    total_started = monotonic()
+    sample_memory(diagnostics, "start")
     try:
         with transaction.atomic():
+            stage_started = monotonic()
             report = build_event_identity_report(competition_season)
+            record_stage(diagnostics, "identity_report", stage_started)
+            stage_started = monotonic()
             all_events = _profile_events(competition_season)
+            record_stage(diagnostics, "load_events", stage_started)
+            stage_started = monotonic()
             coverage = _coverage_report(competition_season, all_events)
+            record_stage(diagnostics, "coverage", stage_started)
             public_complete = (
                 coverage["complete"]
                 and report.volume.unmapped_team_events == 0
@@ -208,10 +219,12 @@ def materialize_event_profiles(
                 "coverage": coverage,
                 "public_complete": public_complete,
                 "internal_pilot": internal_pilot,
+                "pipeline": diagnostics,
             }
             validate_event_identity_publication(report)
             if not all_events:
                 raise ValueError("No normalized WhoScored events are available to materialize.")
+            stage_started = monotonic()
             if affected_player_ids is None:
                 player_ids = {e.player_id for e in all_events if e.player_id}
                 player_ids.update(PlayerSeasonEventProfile.objects.filter(competition_season=competition_season, is_current=True).values_list("player_id", flat=True))
@@ -222,9 +235,13 @@ def materialize_event_profiles(
                 team_ids.update(TeamSeasonEventProfile.objects.filter(competition_season=competition_season, is_current=True).values_list("team_id", flat=True))
             else:
                 team_ids = set(affected_team_ids)
+            record_stage(diagnostics, "resolve_profile_scopes", stage_started)
             if competition_season.is_published and not public_complete and not internal_pilot:
                 raise ValueError("Published event profiles require mapped teams and complete WhoScored coverage.")
+            stage_started = monotonic()
             result = _publish(competition_season, run, all_events, player_ids, team_ids)
+            record_stage(diagnostics, "publish_profiles", stage_started)
+            record_stage(diagnostics, "total", total_started)
             stats = run.stats | {
                 "player_profiles": result.player_rows,
                 "team_profiles": result.team_rows,

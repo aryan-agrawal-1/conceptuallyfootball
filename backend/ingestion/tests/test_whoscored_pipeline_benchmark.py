@@ -6,6 +6,7 @@ from ingestion.services.whoscored_pipeline_benchmark import (
     QueryMetrics,
     benchmark_stage,
     measured_read_only_queries,
+    queryset_digest,
 )
 
 
@@ -32,3 +33,17 @@ class WhoScoredPipelineBenchmarkReadOnlyTests(TransactionTestCase):
 
         self.assertEqual(metrics.count, 1)
         self.assertGreaterEqual(metrics.elapsed_seconds, 0)
+
+    def test_queryset_digest_ignores_excluded_fields(self):
+        from ingestion.models import Season
+
+        first = Season.objects.create(label="2025-26", sort_order=2026)
+        digest = queryset_digest(
+            Season.objects.all(),
+            order_by=("label",),
+            excluded={"id"},
+        )
+        first.id += 100
+
+        self.assertEqual(digest["rows"], 1)
+        self.assertEqual(len(digest["sha256"]), 64)
