@@ -225,4 +225,3 @@ class TeamResponseHalfLifeApi(APIView):
             matches=matches,
             selected_match_ref=match_ref,
         )
-

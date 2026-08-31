@@ -452,7 +452,6 @@ def _scope_matches(concession: ResponseConcession, scope: StateLensScope | Mappi
 def _stable_segments(
     data: ResponseMatchData,
     *,
-    focal_team_id: int,
     state: str | None,
     phase: str | None,
     goal_difference: int | None,
@@ -638,7 +637,6 @@ def _metric_snapshot(
 def _destination_segments(
     data: Sequence[ResponseMatchData],
     *,
-    focal_team_id: int,
     state: str | None,
     phase: str | None,
     goal_difference: int | None,
@@ -648,7 +646,6 @@ def _destination_segments(
     for item in data:
         segments, seconds = _stable_segments(
             item,
-            focal_team_id=focal_team_id,
             state=state,
             phase=phase,
             goal_difference=goal_difference,
@@ -667,7 +664,6 @@ def _destination(
 ) -> dict[str, Any]:
     exact, exact_exposure = _destination_segments(
         data,
-        focal_team_id=focal_team_id,
         state=concession.after_state,
         phase=concession.phase,
         goal_difference=concession.after_goal_difference,
@@ -701,7 +697,6 @@ def _destination(
     if not candidate_available:
         relaxed, relaxed_exposure = _destination_segments(
             data,
-            focal_team_id=focal_team_id,
             state=concession.after_state,
             phase=concession.phase,
             goal_difference=None,
@@ -811,7 +806,7 @@ def _signal(
     }
 
 
-def _period_for(second: int, match: Any, periods: Sequence[Any]) -> Any | None:
+def _period_for(second: int, periods: Sequence[Any]) -> Any | None:
     return next(
         (
             period
@@ -827,7 +822,7 @@ def _period_boundary_reason(
     *,
     periods: Sequence[Any],
 ) -> str | None:
-    period = _period_for(concession.second, concession, periods)
+    period = _period_for(concession.second, periods)
     if period is None:
         return "period_boundary"
     if int(period.end_second) - concession.second < RESPONSE_HALF_LIFE_WINDOW_SECONDS:
@@ -876,10 +871,6 @@ def _uncertainty_reason(
     return None
 
 
-def _window_segments(start: int, end: int) -> list[tuple[int, int]]:
-    return [(start, end)] if end > start else []
-
-
 def _windows_for_episode(
     data: ResponseMatchData,
     *,
@@ -889,7 +880,7 @@ def _windows_for_episode(
     periods: Sequence[Any],
     goals: Sequence[Any],
 ) -> tuple[list[dict[str, Any]], str | None]:
-    period = _period_for(concession.second, data.match, periods)
+    period = _period_for(concession.second, periods)
     if period is None and not periods:
         episode_end = max(
             (int(getattr(row, "end_second", concession.second)) for row in data.episodes),
@@ -938,7 +929,7 @@ def _windows_for_episode(
             data.carries,
             match=data.match,
             focal_team_id=focal_team_id,
-            segments=_window_segments(start, end),
+            segments=[(start, end)],
             exposure_seconds=end - start,
         )
         attacking = _signal(snapshot, destination, group="attacking") if not censor_reason and destination["available"] else None
@@ -1135,6 +1126,10 @@ def build_response_half_life_cohort(
         int(getattr(item.match, "id", getattr(item.match, "pk", 0))): item
         for item in destination_matches
     }
+    matches_by_id = {
+        int(getattr(item.match, "id", getattr(item.match, "pk", 0))): item
+        for item in matches
+    }
     trace_rows = []
     censor_reasons = Counter()
     if uncertain_event_count:
@@ -1158,10 +1153,7 @@ def build_response_half_life_cohort(
         )
         if destination["available"]:
             destination_count += 1
-        item = next(
-            (value for value in matches if int(getattr(value.match, "id", getattr(value.match, "pk", 0))) == concession.provider_match_id),
-            None,
-        )
+        item = matches_by_id.get(concession.provider_match_id)
         if item is None:
             reason = "state_evidence_missing"
             windows = []
@@ -1184,8 +1176,6 @@ def build_response_half_life_cohort(
             windows=windows,
             censor_reason=reason,
         )
-        episode["attacking"] = _half_life(windows, "attacking")
-        episode["structural"] = _half_life(windows, "structural")
         if episode["qualifies"]:
             qualifying_concession_count += 1
             qualifying_window_count += sum(not window["censored"] for window in windows)
