@@ -13,6 +13,7 @@ from django.core.management import CommandError, call_command
 from django.test import SimpleTestCase
 
 from ingestion.services.whoscored_client import (
+    CachedScheduleMixin,
     RetrievedMatchPayload,
     SoccerdataWhoScoredClient,
     SourceMatch,
@@ -101,6 +102,25 @@ class WhoScoredClientFoundationTests(SimpleTestCase):
 
         self.assertTrue(config.headless)
         self.assertTrue(readers[0].options["headless"])
+
+    def test_schedule_mixin_reads_the_source_once_per_reader(self) -> None:
+        class SourceReader:
+            def __init__(self):
+                self.calls = []
+
+            def read_schedule(self, force_cache=False):
+                self.calls.append(force_cache)
+                return object()
+
+        class CachedReader(CachedScheduleMixin, SourceReader):
+            pass
+
+        reader = CachedReader()
+        first = reader.read_schedule(force_cache=False)
+        second = reader.read_schedule(force_cache=True)
+
+        self.assertIs(first, second)
+        self.assertEqual(reader.calls, [False])
 
     def test_reader_initialization_fails_closed_without_a_browser_driver(self) -> None:
         class ReaderWithoutDriver:

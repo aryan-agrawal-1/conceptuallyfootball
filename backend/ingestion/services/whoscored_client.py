@@ -309,6 +309,17 @@ def _validated_json_document(url: str, body_text: Any) -> str:
     return body_text
 
 
+class CachedScheduleMixin:
+    """Reuse one immutable schedule frame for the lifetime of a source reader."""
+
+    cached_schedule = None
+
+    def read_schedule(self, force_cache: bool = False):
+        if self.cached_schedule is None:
+            self.cached_schedule = super().read_schedule(force_cache=force_cache)
+        return self.cached_schedule
+
+
 class SoccerdataWhoScoredClient:
     def __init__(
         self,
@@ -330,7 +341,7 @@ class SoccerdataWhoScoredClient:
             if factory is None:
                 from soccerdata import WhoScored
 
-                class CompatibleWhoScored(WhoScored):
+                class CompatibleWhoScored(CachedScheduleMixin, WhoScored):
                     @classmethod
                     def _all_leagues(cls) -> dict[str, str]:
                         # soccerdata keys its built-in league map by the reader
