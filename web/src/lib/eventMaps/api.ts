@@ -64,6 +64,18 @@ type ApiMatch = {
   subject_team_id: number | null
 }
 
+export function mapSubjectMatches(matches: ApiMatch[]): EventMatchLookup {
+  return Object.fromEntries(matches.map(match => {
+    const home = match.home_team_id === match.subject_team_id
+    return [String(match.ref), {
+      matchId: String(match.ref),
+      opponent: home ? (match.away_team_name ?? 'Unknown opponent') : (match.home_team_name ?? 'Unknown opponent'),
+      matchDate: match.kickoff_at,
+      venue: home ? 'home' : match.away_team_id === match.subject_team_id ? 'away' : 'neutral',
+    }]
+  }))
+}
+
 type ApiShot = {
   match_ref: number
   team_id: number | null

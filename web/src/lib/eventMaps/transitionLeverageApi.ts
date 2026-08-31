@@ -15,7 +15,7 @@ import type {
   TransitionStateChange,
 } from '../../types/transitionLeverage'
 import { appendStateLens, mapStateLens, type ApiStateLens, type StateLensRequest } from './stateLensApi'
-import { BASE, readJson } from './api'
+import { BASE, readJson, requestParams } from './api'
 
 type ApiAction = {
   sequence: number
@@ -532,8 +532,7 @@ export async function fetchTeamTransitionLeverage(
   matchRef?: string | null,
   stateLens?: StateLensRequest,
 ): Promise<TransitionLeveragePayload> {
-  const params = new URLSearchParams({ competition, season })
-  if (matchRef != null) params.set('match', matchRef)
+  const params = requestParams(competition, season, undefined, matchRef)
   appendStateLens(params, stateLens)
   const raw = await readJson<ApiPayload>(
     `${BASE}/team-seasons/transition-leverage/${teamId}?${params.toString()}`,
