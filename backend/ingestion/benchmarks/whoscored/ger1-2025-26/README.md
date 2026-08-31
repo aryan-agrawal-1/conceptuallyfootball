@@ -13,6 +13,9 @@ remain in private backend storage.
   profile and role materialization changes.
 - `clean-full-season-stage-8.json`: isolated-database 306-match ingestion,
   materialization, storage, identity, determinism, publication, and API results.
+- `lifecycle-stage-9.json`: cached no-op/resume evidence, production request
+  policy, changed and unchanged settlement behavior, affected rebuild cost, and
+  post-rebuild API gates.
 
 The 50-match corpus is identified by the aggregate stored-payload digest
 `aaca1f8da5333d9afaf1251d6d9e473db0c15349d3f0cd170e638902f2cdb05d`.
