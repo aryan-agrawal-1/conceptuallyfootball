@@ -781,8 +781,8 @@ class TeamStyleShapeApi(APIView):
                 else None
             ),
             "normalisation_note": (
-                "Horizontal state positions use each axis's all-state competition-season p10-p90 spread; "
-                "0 is p10, 100 is p90, and values outside that typical range are clipped with an edge marker."
+                "Horizontal state positions use each axis's full all-state competition-season prevalence percentile scale; "
+                "0 is p0, 100 is p100, and values outside the observed cohort range are shown at the corresponding edge."
             ),
         }
 

@@ -75,6 +75,10 @@ function formatValue(axis: TeamStyleAxis, value = axis.value) {
   return value.toFixed(2)
 }
 
+function formatPercentile(percentile: number | null | undefined) {
+  return percentile == null ? 'Percentile unavailable' : `P${Math.round(percentile)}`
+}
+
 function formatDelta(shift: TeamStyleSignedShift | undefined) {
   if (!shift || shift.rawDelta == null) return '—'
   const sign = shift.rawDelta > 0 ? '+' : ''
@@ -216,9 +220,11 @@ function StyleComparisonRadar({ payload, axes }: { payload: TeamStyleShapePayloa
     item,
     points: axes.map((axis, index) => {
       const stateAxis = item.cohort.axes[axis.key]
-      const normalized = normalizedPosition(stateAxis?.value ?? null, payload.distributions.overall[axis.key])
-      const coordinate = point(index, 0.18 + ((normalized?.position ?? 0) / 100) * 0.82)
-      return { axis, stateAxis, normalized, coordinate }
+      const percentile = stateAxis?.percentile == null
+        ? null
+        : Math.max(0, Math.min(100, stateAxis.percentile))
+      const coordinate = point(index, 0.18 + ((percentile ?? 0) / 100) * 0.82)
+      return { axis, stateAxis, percentile, coordinate }
     }),
   }))
 
@@ -226,7 +232,7 @@ function StyleComparisonRadar({ payload, axes }: { payload: TeamStyleShapePayloa
     <div ref={wrapRef} className="relative mx-auto w-full max-w-[720px]">
       <svg viewBox="0 0 400 400" className="h-auto w-full overflow-visible" role="img" aria-labelledby="team-style-radar-title team-style-radar-description">
         <title id="team-style-radar-title">Team style comparison radar</title>
-        <desc id="team-style-radar-description">The radar follows the selected State Lens cohorts. Distance from the centre is position within the competition-season all-state typical range, not quality.</desc>
+        <desc id="team-style-radar-description">The radar follows the selected State Lens cohorts. Distance from the centre is prevalence percentile within the cohort, not quality.</desc>
         {[0.25, 0.5, 0.75, 1].map(fraction => (
           <circle key={fraction} cx={center} cy={center} r={radius * fraction} fill="none" stroke="#2A3050" strokeWidth="1" strokeDasharray={fraction === 1 ? undefined : '3 5'} />
         ))}
@@ -242,8 +248,8 @@ function StyleComparisonRadar({ payload, axes }: { payload: TeamStyleShapePayloa
         {seriesPoints.map(({ item, points }) => <g key={item.key}>
           <polygon points={points.map(value => `${value.coordinate.x},${value.coordinate.y}`).join(' ')} fill={item.color} fillOpacity="0.12" stroke={item.color} strokeWidth="2" />
           {points.map(value => {
-            const sparse = value.stateAxis?.reliability === 'sparse' || value.stateAxis?.reliability === 'unavailable' || !value.normalized
-            const description = `${item.label} · ${value.axis.label}: ${value.stateAxis ? formatValue(value.axis, value.stateAxis.value) : 'unavailable'}`
+            const sparse = value.stateAxis?.reliability === 'sparse' || value.stateAxis?.reliability === 'unavailable' || value.percentile == null
+            const description = `${item.label} · ${value.axis.label}: ${value.stateAxis ? formatValue(value.axis, value.stateAxis.value) : 'unavailable'} · ${formatPercentile(value.percentile)}`
             return <g key={`${item.key}-${value.axis.key}`} role="img" aria-label={description}>
               <title>{description}</title>
               <circle
@@ -271,13 +277,13 @@ function StyleComparisonRadar({ payload, axes }: { payload: TeamStyleShapePayloa
         </g>)}
       </svg>
       <ChartLegend series={series} />
-      <p className="mt-2 text-center text-[9px] text-ink-muted">Distance from centre = position within the all-state competition-season P10–P90 range · not a quality score</p>
+      <p className="mt-2 text-center text-[9px] text-ink-muted">Distance from centre = cohort prevalence percentile · not a quality score</p>
       {tip && axes[tip.axisIndex] ? <div className="pointer-events-none absolute z-50 min-w-[210px] -translate-x-1/2 -translate-y-[calc(100%+10px)] border border-electric/40 bg-panel/95 px-2.5 py-2 text-[10px] shadow-xl" style={{ left: tip.x, top: tip.y }}>
         <p className="mb-1 text-[9px] font-bold uppercase tracking-[0.16em] text-ink-muted">{axes[tip.axisIndex].label}</p>
         <div className="space-y-1 font-mono">
           {series.map(item => {
             const axis = item.cohort.axes[axes[tip.axisIndex].key]
-            return <p key={item.key} className="flex items-baseline justify-between gap-4"><span style={{ color: item.color }}>{item.label}</span><span className="text-ink">{axis ? formatValue(axis) : '—'}</span></p>
+            return <p key={item.key} className="flex items-baseline justify-between gap-4"><span style={{ color: item.color }}>{item.label}</span><span className="text-right"><span className="text-ink">{axis ? formatValue(axis) : '—'}</span><span className="ml-2 text-ink-muted">{formatPercentile(axis?.percentile)}</span></span></p>
           })}
         </div>
       </div> : null}
@@ -293,16 +299,21 @@ type ChartSeries = {
   cohort: TeamStyleCohort
 }
 
-function normalizedPosition(
+function percentilePosition(
   value: number | null,
   distribution: TeamStyleDistribution | undefined,
 ) {
-  const p10 = distribution?.distribution.p10
-  const p90 = distribution?.distribution.p90
-  if (value == null || p10 == null || p90 == null || p90 <= p10) return null
+  const values = distribution?.distribution.values ?? []
+  if (value == null || values.length === 0) return null
+  let less = 0
+  let equal = 0
+  for (const candidate of values) {
+    if (candidate < value) less += 1
+    else if (candidate === value) equal += 1
+  }
   return {
-    position: Math.max(0, Math.min(100, ((value - p10) / (p90 - p10)) * 100)),
-    direction: value < p10 ? 'low' as const : value > p90 ? 'high' as const : null,
+    position: Math.max(0, Math.min(100, (100 * (less + equal / 2)) / values.length)),
+    direction: value < values[0] ? 'low' as const : value > values[values.length - 1] ? 'high' as const : null,
   }
 }
 
@@ -378,14 +389,14 @@ function StateComparisonChart({
           aria-labelledby="team-style-states-title team-style-states-description"
         >
           <title id="team-style-states-title">Team style by game state</title>
-          <desc id="team-style-states-description">Every row always compares All States, Winning, Drawing and Losing against the all-state competition-season tenth to ninetieth percentile range. Each raw value is printed with its node.</desc>
+          <desc id="team-style-states-description">Every row compares All States, Winning, Drawing and Losing on the full all-state competition-season prevalence percentile scale from P0 to P100. Each raw value is printed with its node.</desc>
           <text x="12" y="16" fill="#65759E" fontSize="9" fontWeight="600" letterSpacing="1.2">METRIC</text>
-          <text x={left} y="16" fill="#8A95B8" fontSize="9" fontWeight="600" letterSpacing="0.35">LOWER IN TYPICAL RANGE</text>
-          <text x={left + plotWidth} y="16" textAnchor="end" fill="#8A95B8" fontSize="9" fontWeight="600" letterSpacing="0.35">HIGHER IN TYPICAL RANGE</text>
+          <text x={left} y="16" fill="#8A95B8" fontSize="9" fontWeight="600" letterSpacing="0.35">LOWER PREVALENCE PERCENTILE</text>
+          <text x={left + plotWidth} y="16" textAnchor="end" fill="#8A95B8" fontSize="9" fontWeight="600" letterSpacing="0.35">HIGHER PREVALENCE PERCENTILE</text>
           {[0, 50, 100].map(position => (
             <g key={position}>
               <line x1={xFor(position)} y1={top - 13} x2={xFor(position)} y2={height - 18} stroke="#252B43" strokeWidth="1" strokeDasharray={position === 50 ? '2 5' : undefined} />
-              <text x={xFor(position)} y={height - 4} textAnchor={position === 0 ? 'start' : position === 100 ? 'end' : 'middle'} fill="#65759E" fontSize="8">{position === 0 ? 'P10' : position === 100 ? 'P90' : 'P50'}</text>
+              <text x={xFor(position)} y={height - 4} textAnchor={position === 0 ? 'start' : position === 100 ? 'end' : 'middle'} fill="#65759E" fontSize="8">{position === 0 ? 'P0' : position === 100 ? 'P100' : 'P50'}</text>
             </g>
           ))}
           {axes.map((axis, index) => {
@@ -396,20 +407,20 @@ function StateComparisonChart({
             const distribution = payload.distributions.overall[axis.key]
             const points = series.map(item => {
               const stateAxis = item.cohort.axes[axis.key]
-              const normalized = normalizedPosition(stateAxis?.value ?? null, distribution)
-              const supported = Boolean(normalized && stateAxis?.reliability !== 'sparse' && stateAxis?.reliability !== 'unavailable')
-              return { item, stateAxis, normalized, supported }
+              const percentile = percentilePosition(stateAxis?.value ?? null, distribution)
+              const supported = Boolean(percentile && stateAxis?.reliability !== 'sparse' && stateAxis?.reliability !== 'unavailable')
+              return { item, stateAxis, percentile, supported }
             })
-            const supportedPositions = points.filter(point => point.supported && point.normalized).map(point => point.normalized!.position)
+            const supportedPositions = points.filter(point => point.supported && point.percentile).map(point => point.percentile!.position)
             const min = supportedPositions.length > 1 ? Math.min(...supportedPositions) : null
             const max = supportedPositions.length > 1 ? Math.max(...supportedPositions) : null
             const readoutLaneByKey = new Map<string, number>()
             const plottedPoints = points
-              .filter(point => point.normalized)
-              .sort((a, b) => a.normalized!.position - b.normalized!.position)
+              .filter(point => point.percentile)
+              .sort((a, b) => a.percentile!.position - b.percentile!.position)
             let clusterStart = 0
             plottedPoints.forEach((point, pointIndex) => {
-              if (pointIndex > 0 && point.normalized!.position - plottedPoints[pointIndex - 1].normalized!.position >= 14) {
+              if (pointIndex > 0 && point.percentile!.position - plottedPoints[pointIndex - 1].percentile!.position >= 14) {
                 clusterStart = pointIndex
               }
               readoutLaneByKey.set(point.item.key, pointIndex - clusterStart)
@@ -439,16 +450,16 @@ function StateComparisonChart({
                 {points.map(point => {
                   const stateAxis = point.stateAxis
                   const rawValue = stateAxis ? formatValue(axis, stateAxis.value) : '—'
-                  const x = point.normalized ? xFor(point.normalized.position) : null
+                  const x = point.percentile ? xFor(point.percentile.position) : null
                   const sparse = !stateAxis || stateAxis.reliability === 'sparse' || stateAxis.reliability === 'unavailable'
-                  const description = `${point.item.label} · ${axis.label}: ${rawValue} · ${stateAxis?.reliability ?? 'unavailable'}${point.normalized?.direction ? ` · outside ${point.normalized.direction === 'low' ? 'P10' : 'P90'}` : ''}`
+                  const description = `${point.item.label} · ${axis.label}: ${rawValue} · ${point.percentile ? `P${Math.round(point.percentile.position)}` : 'percentile unavailable'} · ${stateAxis?.reliability ?? 'unavailable'}${point.percentile?.direction ? ` · outside ${point.percentile.direction === 'low' ? 'P0' : 'P100'}` : ''}`
                   const readoutLane = readoutLaneByKey.get(point.item.key) ?? 0
-                  const readoutAnchor = point.normalized && point.normalized.position <= 7 ? 'start' : point.normalized && point.normalized.position >= 93 ? 'end' : 'middle'
+                  const readoutAnchor = point.percentile && point.percentile.position <= 7 ? 'start' : point.percentile && point.percentile.position >= 93 ? 'end' : 'middle'
                   const readoutX = x == null
                     ? null
-                    : point.normalized && point.normalized.position <= 7
+                    : point.percentile && point.percentile.position <= 7
                       ? x + 9
-                      : point.normalized && point.normalized.position >= 93
+                      : point.percentile && point.percentile.position >= 93
                         ? x - 9
                         : x
                   return (
@@ -472,7 +483,7 @@ function StateComparisonChart({
                     >
                       <title>{description}</title>
                       {x == null ? null : sparse ? <StateMarker x={x} y={y} color={point.item.color} shape="square" hollow opacity={0.4} /> : <CompareSvgMarker x={x} y={y} color={point.item.color} />}
-                      {x != null && point.normalized?.direction ? <EdgeIndicator x={x} y={y} direction={point.normalized.direction} color={point.item.color} /> : null}
+                      {x != null && point.percentile?.direction ? <EdgeIndicator x={x} y={y} direction={point.percentile.direction} color={point.item.color} /> : null}
                       {readoutX != null ? <text x={readoutX} y={y + 20 + readoutLane * 12} textAnchor={readoutAnchor} fill={sparse ? '#65759E' : point.item.color} fontSize="9" fontWeight="600" fontFamily="ui-monospace, SFMono-Regular, monospace">{rawValue}</text> : null}
                     </g>
                   )
@@ -483,7 +494,7 @@ function StateComparisonChart({
         </svg>
       </div>
       <ChartLegend series={series} />
-      <p className="text-[9px] leading-relaxed text-ink-muted">All four cohorts stay visible regardless of the active State Lens. Position is a linear location within each metric's all-state P10–P90 range, not a percentile or quality score; sparse observations are hollow.</p>
+      <p className="text-[9px] leading-relaxed text-ink-muted">All four cohorts stay visible regardless of the active State Lens. Position is the full 0–100 prevalence percentile against the all-state competition-season cohort, not a quality score; sparse observations are hollow.</p>
       {tip ? <div className="pointer-events-none absolute z-50 min-w-[220px] -translate-x-1/2 -translate-y-[calc(100%+10px)] border border-electric/40 bg-panel/95 px-2.5 py-2 text-[10px] leading-relaxed text-ink shadow-xl" style={{ left: tip.x, top: tip.y }}>
         {tip.description}
       </div> : null}
@@ -690,7 +701,7 @@ export function TeamStyleShapePanel({
     <div className="space-y-3">
     <EventMapCard
       title="State Lens radar"
-      description="The active State Lens rendered through the shared comparison-chart visual language. Distance from the centre is typical-range position, not quality."
+      description="The active State Lens rendered through the shared comparison-chart visual language. Distance from the centre is cohort prevalence percentile, not quality."
       controls={(
         <AxisPicker definitions={payload.axisDefinitions} selected={activeAxisKeys} onChange={setAxisSelection} />
       )}
