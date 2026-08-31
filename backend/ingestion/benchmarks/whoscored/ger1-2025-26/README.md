@@ -11,6 +11,8 @@ remain in private backend storage.
   acquisition/derivation/profile/role timings, peak RSS, and output digests.
 - `optimized-stage-7.json`: equivalent-corpus comparison after the bounded-memory
   profile and role materialization changes.
+- `clean-full-season-stage-8.json`: isolated-database 306-match ingestion,
+  materialization, storage, identity, determinism, publication, and API results.
 
 The 50-match corpus is identified by the aggregate stored-payload digest
 `aaca1f8da5333d9afaf1251d6d9e473db0c15349d3f0cd170e638902f2cdb05d`.

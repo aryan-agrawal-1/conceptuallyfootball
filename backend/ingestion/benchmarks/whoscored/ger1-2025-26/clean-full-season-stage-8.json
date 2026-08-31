@@ -1,0 +1,121 @@
+{
+  "report_version": 1,
+  "environment": {
+    "database": "isolated PostgreSQL database",
+    "database_vendor": "postgresql",
+    "django": "5.2.13",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "python": "3.11.4"
+  },
+  "scope": {
+    "competition": "GER1",
+    "season": "2025-26",
+    "expected_matches": 306,
+    "completed_matches": 306,
+    "payloads": 306,
+    "events": 478270,
+    "stored_payload_sha256": "4eb2530be0a3d80375cc2952258daef393ff425c522fbd3f0191ecba2c8ac00b"
+  },
+  "acquisition": {
+    "active_wall_seconds_approximate": 6013,
+    "active_wall_minutes_approximate": 100.2,
+    "seconds_per_match_approximate": 19.65,
+    "successful_final_segment": {
+      "wall_seconds": 4990.454,
+      "matches_considered": 306,
+      "requests": 236,
+      "successful_fetches": 235,
+      "raw_payload_reuses": 71,
+      "retries": 0,
+      "failures": 0,
+      "peak_rss_mb": 286.47
+    },
+    "notes": "Two operator-interrupted runs committed 71 matches before the final resumable segment. Active wall time sums those safe segments and excludes the code-test pause. Match requests retained the production 5-10 second anti-bot delay."
+  },
+  "materialization": {
+    "identity": {
+      "mapped_team_events": 478270,
+      "unmapped_team_events": 0,
+      "mapped_player_events": 463910,
+      "player_events": 473392,
+      "unmapped_player_percent": 2.003,
+      "publication_failure": false
+    },
+    "event_profiles": {
+      "wall_seconds": 11.17,
+      "peak_rss_mb": 875.17,
+      "player_rows": 984,
+      "team_rows": 18,
+      "coverage_complete": true,
+      "public_complete": true
+    },
+    "player_roles_fresh_process": {
+      "wall_seconds": 39.229,
+      "peak_rss_mb": 625.34,
+      "queries": 598,
+      "feature_snapshots": 496,
+      "roles": 496,
+      "feature_pair_differences_on_repeat": 0,
+      "role_pair_differences_on_repeat": 0
+    },
+    "team_pipeline": {
+      "sofascore_source_rows": 19,
+      "overall_stats_coverage_rows": 18,
+      "merged_rows": 19,
+      "regular_season_event_profile_teams": 18,
+      "extra_playoff_team_without_regular_season_profile": "SC Paderborn 07"
+    }
+  },
+  "rows": {
+    "carries": 89174,
+    "game_state_audits": 306,
+    "player_participations": 12219,
+    "player_intervals": 9555,
+    "player_state_exposures": 27155,
+    "team_state_episodes": 1544,
+    "team_state_exposures": 1008,
+    "possessions": 112377,
+    "possession_events": 419231,
+    "possession_participants": 279722
+  },
+  "storage": {
+    "database_before_bytes": 19067363,
+    "database_after_bytes": 832860643,
+    "database_delta_bytes": 813793280,
+    "database_delta_mib": 776.09,
+    "database_bytes_per_match": 2659455,
+    "compressed_payload_bytes": 31522595,
+    "uncompressed_payload_bytes": 341643054,
+    "top_five_same_scale_projection_bytes": 4068966400,
+    "top_five_same_scale_projection_gib": 3.79,
+    "largest_relation_delta": {
+      "relation": "ingestion_providermatchevent",
+      "bytes": 571637760
+    },
+    "notes": "The delta includes the WhoScored path plus the previously missing SofaScore team source and team merge required by the team summary API. Superseded benchmark-only role versions were removed and the exact role tables compacted before measurement."
+  },
+  "semantic_output_digests": {
+    "player_event_profiles": {"rows": 984, "sha256": "fda3abf9b0ac6a2f7aca5b3b3f907699a74d99d1b2fd4c7d633f902b31ed6424"},
+    "team_event_profiles": {"rows": 18, "sha256": "33d00988c81eb81e095dbeb8adb2adfd365fac6b1ed14f26d639b00279d87aa8"},
+    "player_role_feature_snapshots": {"rows": 496, "sha256": "0941813b404916245ff42571059eaef7f488336deb69bc72b6d13f86bc8fa1c8"},
+    "player_roles": {"rows": 496, "sha256": "3978cdfd4c11cfbf1c879bb2db859fcd6eb4de32f5678c809bbce93abe706747"}
+  },
+  "gates": {
+    "publication_readiness": "passed",
+    "published": true,
+    "api_statuses": {
+      "player_event_profile": 200,
+      "player_passes": 200,
+      "team_event_profile": 200,
+      "player_summary": 200,
+      "team_summary": 200
+    },
+    "affected_backend_tests_passed": 93
+  },
+  "vps_guidance": {
+    "single_worker_minimum_ram_gib": 1.25,
+    "single_worker_recommended_ram_gib": 1.5,
+    "maintenance_window_minutes": 110,
+    "notes": "Run one full-season materialization worker at a time. Parallel SofaScore or Understat tasks add their own RSS; they do not reduce the WhoScored peak. Weekly affected-entity updates should be materially smaller than this full rebuild."
+  }
+}
