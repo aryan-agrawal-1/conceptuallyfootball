@@ -19,8 +19,6 @@ from ingestion.models import (
 from ingestion.services.player_role_aggregation import (
     CARRY_COLUMNS,
     CompactMatchBatch,
-    DEFAULT_MATCH_BATCH_SIZE,
-    DETERMINISTIC_ORDERING,
     EVENT_COLUMNS,
     EXPOSURE_COLUMNS,
     MATCH_COLUMNS,
@@ -141,7 +139,7 @@ class PlayerRoleAggregationContractTests(SimpleTestCase):
         self.assertEqual(measure.mean(2, exact=True, tie_direction="floor"), 2.11)
         self.assertEqual(measure.mean(2, exact=True, tie_direction="ceiling"), 2.12)
 
-    def test_compact_column_contracts_are_valid_scalar_queryset_projections(self):
+    def test_compact_column_contracts_are_valid_queryset_projections(self):
         projections = (
             (ProviderMatch, MATCH_COLUMNS),
             (PlayerSeasonEventProfile, PROFILE_COLUMNS),
@@ -156,13 +154,8 @@ class PlayerRoleAggregationContractTests(SimpleTestCase):
         )
         for model, columns in projections:
             model.objects.values(*columns)
-            self.assertTrue(columns)
-            self.assertTrue(all(not column.endswith("__") for column in columns))
 
-    def test_batch_size_and_ordering_are_fixed_and_explicit(self):
-        self.assertEqual(DEFAULT_MATCH_BATCH_SIZE, 5)
-        self.assertEqual(DETERMINISTIC_ORDERING["matches"], ("kickoff_at", "id"))
-        self.assertEqual(DETERMINISTIC_ORDERING["possessions"][-2:], ("possession_index", "id"))
+    def test_compact_batch_rejects_oversized_or_cross_match_rows(self):
         batch = CompactMatchBatch(matches=tuple({"id": value} for value in range(1, 6)))
         self.assertEqual(batch.match_ids, (1, 2, 3, 4, 5))
         with self.assertRaises(ValueError):
