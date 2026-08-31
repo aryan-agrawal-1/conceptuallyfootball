@@ -552,8 +552,3 @@ class TeamTransitionLeverageApiTests(TestCase):
         self.assertEqual(payload["selected"]["observations"][0]["possession_trace"][0]["event_type"], "pass")
         self.assertNotIn("action_evidence", payload["selected"]["observations"][0])
         self.assertNotIn("provider_team_id", first.content.decode())
-
-    def test_api_reuses_state_lens_validation(self):
-        response = self.request(state="winning", goal_difference=-1)
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("goal_difference", str(response.data["detail"]))

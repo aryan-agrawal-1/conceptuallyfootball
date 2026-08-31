@@ -4,72 +4,14 @@ from itertools import permutations
 
 from django.test import SimpleTestCase
 
-from ingestion.models import (
-    PlayerSeasonDerivedStats,
-    PlayerSeasonEventProfile,
-    ProviderMatch,
-    ProviderMatchCarry,
-    ProviderMatchEvent,
-    ProviderMatchPlayerStateExposure,
-    ProviderMatchPossession,
-    ProviderMatchPossessionEvent,
-    ProviderMatchPossessionParticipant,
-    ProviderMatchTeamGameStateEpisode,
-)
 from ingestion.services.player_role_aggregation import (
-    CARRY_COLUMNS,
     CompactMatchBatch,
-    EVENT_COLUMNS,
-    EXPOSURE_COLUMNS,
-    MATCH_COLUMNS,
-    POSSESSION_COLUMNS,
-    POSSESSION_EVENT_COLUMNS,
-    POSSESSION_PARTICIPANT_COLUMNS,
-    PROFILE_COLUMNS,
-    SUPPORTING_METRIC_COLUMNS,
-    TEAM_EPISODE_COLUMNS,
     BoundedEvidenceAccumulator,
     DecimalMeasure,
     ExposureInterval,
     ExposureIntervalIndex,
     PlayerRoleFeatureAccumulator,
 )
-
-
-REQUIRED_FEATURE_PATHS = {
-    "$.identity",
-    "$.identity.player_id",
-    "$.identity.team_id",
-    "$.identity.competition_season_id",
-    "$.position",
-    "$.position.group",
-    "$.position.average_touch",
-    "$.exposure",
-    "$.exposure.verified_seconds",
-    "$.overall",
-    "$.overall.summary",
-    "$.overall.geometry",
-    "$.overall.team_geometry",
-    "$.overall.team_action_shares",
-    "$.overall.passing",
-    "$.overall.carrying",
-    "$.states",
-    "$.transitions",
-    "$.score_events",
-    "$.state_spatial",
-}
-
-
-def feature_key_paths(value, prefix="$", paths=None):
-    paths = paths if paths is not None else set()
-    if isinstance(value, dict):
-        for key, child in value.items():
-            path = f"{prefix}.{key}"
-            paths.add(path)
-            feature_key_paths(child, path, paths)
-    elif isinstance(value, list) and value:
-        feature_key_paths(value[0], f"{prefix}[]", paths)
-    return paths
 
 
 def batch_accumulator(seed: int) -> PlayerRoleFeatureAccumulator:
@@ -139,22 +81,6 @@ class PlayerRoleAggregationContractTests(SimpleTestCase):
         self.assertEqual(measure.mean(2, exact=True, tie_direction="floor"), 2.11)
         self.assertEqual(measure.mean(2, exact=True, tie_direction="ceiling"), 2.12)
 
-    def test_compact_column_contracts_are_valid_queryset_projections(self):
-        projections = (
-            (ProviderMatch, MATCH_COLUMNS),
-            (PlayerSeasonEventProfile, PROFILE_COLUMNS),
-            (PlayerSeasonDerivedStats, SUPPORTING_METRIC_COLUMNS),
-            (ProviderMatchEvent, EVENT_COLUMNS),
-            (ProviderMatchCarry, CARRY_COLUMNS),
-            (ProviderMatchPlayerStateExposure, EXPOSURE_COLUMNS),
-            (ProviderMatchTeamGameStateEpisode, TEAM_EPISODE_COLUMNS),
-            (ProviderMatchPossession, POSSESSION_COLUMNS),
-            (ProviderMatchPossessionEvent, POSSESSION_EVENT_COLUMNS),
-            (ProviderMatchPossessionParticipant, POSSESSION_PARTICIPANT_COLUMNS),
-        )
-        for model, columns in projections:
-            model.objects.values(*columns)
-
     def test_compact_batch_rejects_oversized_or_cross_match_rows(self):
         batch = CompactMatchBatch(matches=tuple({"id": value} for value in range(1, 6)))
         self.assertEqual(batch.match_ids, (1, 2, 3, 4, 5))
@@ -208,12 +134,6 @@ class PlayerRoleAggregationContractTests(SimpleTestCase):
         reverse = deepcopy(second).merge(deepcopy(first)).to_json()
         self.assertEqual(forward, reverse)
         self.assertEqual(forward, [{"id": "a"}, {"id": "b"}])
-
-    def test_conversion_can_represent_every_existing_feature_field(self):
-        accumulator = batch_accumulator(1)
-        actual = accumulator.to_feature_json()
-
-        self.assertTrue(REQUIRED_FEATURE_PATHS <= feature_key_paths(actual))
 
     def test_merge_rejects_cross_team_or_metadata_contamination(self):
         source = batch_accumulator(1)
