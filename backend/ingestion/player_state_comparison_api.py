@@ -38,8 +38,6 @@ from ingestion.services.player_state_comparison import (
 )
 from ingestion.services.player_season_roles import serialize_season_role
 from ingestion.state_lens import parse_state_lens
-
-
 class PlayerStateComparisonApi(PlayerEventProfileMixin, APIView):
     """Verified player state cohorts and matched team-relative evidence."""
 

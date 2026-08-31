@@ -1114,7 +1114,6 @@ def build_player_state_comparison(profile, lens: StateLens, match_ids: Iterable[
             lens.baseline,
         )
     comparison = None
-    roles = []
     if baseline_player is not None and baseline_evidence is not None:
         comparison = {
             "enabled": True,
@@ -1158,10 +1157,6 @@ def build_player_state_comparison(profile, lens: StateLens, match_ids: Iterable[
                 else {}
             ),
         }
-        # The unpublished response-role experiment mixed state comparisons
-        # with season archetypes. Stable identity now comes exclusively from
-        # the player-team-season role materialization.
-        roles = []
     return {
         "contract_version": PLAYER_STATE_COMPARISON_VERSION,
         "canonical_player_id": profile.player_id,
@@ -1174,7 +1169,7 @@ def build_player_state_comparison(profile, lens: StateLens, match_ids: Iterable[
         "comparison": comparison,
         # Compatibility-only selected-lens evidence. The stable header role is
         # supplied separately by the season-role materialization.
-        "response_roles": roles,
+        "response_roles": [],
         "role_formulae": [],
         "team_context": {
             "available": team_context_required,
