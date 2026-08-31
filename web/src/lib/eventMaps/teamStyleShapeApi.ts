@@ -1,5 +1,4 @@
 import type {
-  EventMatchLookup,
   StateLensScope,
 } from '../../types/eventMaps'
 import type {
@@ -12,7 +11,7 @@ import type {
   TeamStyleSignedShift,
 } from '../../types/teamStyleShape'
 import { appendStateLens, mapStateLens, type ApiStateLens, type StateLensRequest } from './stateLensApi'
-import { BASE, readJson } from './api'
+import { BASE, mapSubjectMatches, readJson, requestParams } from './api'
 
 type ApiAxis = {
   key: string
@@ -283,20 +282,6 @@ function mapSignedShift(value: ApiSignedShift): TeamStyleSignedShift {
   }
 }
 
-function mapMatches(value: ApiPayload['matches']): EventMatchLookup {
-  const output: EventMatchLookup = {}
-  for (const match of value) {
-    const home = match.home_team_id === match.subject_team_id
-    output[String(match.ref)] = {
-      matchId: String(match.ref),
-      opponent: home ? (match.away_team_name ?? 'Unknown opponent') : (match.home_team_name ?? 'Unknown opponent'),
-      matchDate: match.kickoff_at,
-      venue: home ? 'home' : match.away_team_id === match.subject_team_id ? 'away' : 'neutral',
-    }
-  }
-  return output
-}
-
 export async function fetchTeamStyleShape(
   teamId: number,
   competition: string,
@@ -306,8 +291,7 @@ export async function fetchTeamStyleShape(
   axisKeys?: string[],
   includeGameStates = false,
 ): Promise<TeamStyleShapePayload> {
-  const params = new URLSearchParams({ competition, season })
-  if (matchRef != null) params.set('match', matchRef)
+  const params = requestParams(competition, season, undefined, matchRef)
   appendStateLens(params, stateLens)
   if (axisKeys?.length) params.set('axes', axisKeys.join(','))
   if (includeGameStates) params.set('include_game_states', '1')
@@ -329,7 +313,7 @@ export async function fetchTeamStyleShape(
     competitionCode: raw.competition_code,
     seasonLabel: raw.season_label,
     selectedMatchRef: raw.selected_match_ref,
-    matches: mapMatches(raw.matches),
+    matches: mapSubjectMatches(raw.matches),
     axisKeys: raw.axis_keys,
     axisDefinitions: raw.axis_definitions.map(value => ({
       key: value.key,

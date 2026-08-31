@@ -68,6 +68,16 @@ REQUIRED_CORPUS_CLASSES = {
     "goals_assists",
     "transition_involvement",
 }
+ROLE_OUTPUT_FIELDS = (
+    "primary_archetype",
+    "primary_fit",
+    "secondary_archetype",
+    "secondary_fit",
+    "classification_shape",
+    "evidence_confidence",
+    "traits",
+    "candidates",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,29 +156,12 @@ def timed(timings: dict[str, float], name: str, function, *args, **kwargs):
 
 def role_output(features: dict, candidates: list[dict], traits: list[dict]) -> dict:
     assignment = assign_classification(features, candidates, traits)
-    return {
-        "primary_archetype": assignment["primary_archetype"],
-        "primary_fit": assignment["primary_fit"],
-        "secondary_archetype": assignment["secondary_archetype"],
-        "secondary_fit": assignment["secondary_fit"],
-        "classification_shape": assignment["classification_shape"],
-        "evidence_confidence": assignment["evidence_confidence"],
-        "traits": assignment["traits"],
-        "candidates": candidates,
-    }
+    assignment["candidates"] = candidates
+    return {field: assignment[field] for field in ROLE_OUTPUT_FIELDS}
 
 
 def persisted_role_output(role: PlayerSeasonRole) -> dict:
-    return {
-        "primary_archetype": role.primary_archetype,
-        "primary_fit": role.primary_fit,
-        "secondary_archetype": role.secondary_archetype,
-        "secondary_fit": role.secondary_fit,
-        "classification_shape": role.classification_shape,
-        "evidence_confidence": role.evidence_confidence,
-        "traits": role.traits,
-        "candidates": role.candidates,
-    }
+    return {field: getattr(role, field) for field in ROLE_OUTPUT_FIELDS}
 
 
 def benchmark_player_role_features(
@@ -384,16 +377,7 @@ def compare_oracle(oracle: dict, candidate_profiles: dict) -> list[str]:
 
 
 def persisted_role_output_values(row: dict) -> dict:
-    return {
-        "primary_archetype": row["primary_archetype"],
-        "primary_fit": row["primary_fit"],
-        "secondary_archetype": row["secondary_archetype"],
-        "secondary_fit": row["secondary_fit"],
-        "classification_shape": row["classification_shape"],
-        "evidence_confidence": row["evidence_confidence"],
-        "traits": row["traits"],
-        "candidates": row["candidates"],
-    }
+    return {field: row[field] for field in ROLE_OUTPUT_FIELDS}
 
 
 def current_role_output_rows(competition_season) -> tuple[list[dict], list[dict]]:

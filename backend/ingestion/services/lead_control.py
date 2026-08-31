@@ -207,7 +207,10 @@ def _scope_matches_episode(episode: Any, scope: StateLensScope | None) -> bool:
     return True
 
 
-def _episode_window(episode: Any, scope: StateLensScope | None, *, source: str = "lead", matched_lead_key: tuple[int, int] | None = None) -> tuple[int, int] | None:
+def _episode_window(
+    episode: Any,
+    scope: StateLensScope | None,
+) -> tuple[int, int] | None:
     start = _int(getattr(episode, "start_second", None))
     end = _int(getattr(episode, "end_second", None))
     state_entry = _int(getattr(episode, "state_entry_second", None), start or 0) or 0
@@ -228,7 +231,7 @@ def _clock_bucket(second: int) -> int:
 def _episode_to_windows(episode: Any, scope: StateLensScope | None, *, source: str = "lead", matched_lead_key: tuple[int, int] | None = None) -> list[LeadWindow]:
     if not _scope_matches_episode(episode, scope):
         return []
-    window = _episode_window(episode, scope, source=source, matched_lead_key=matched_lead_key)
+    window = _episode_window(episode, scope)
     if window is None:
         return []
     match_id, episode_index = _episode_key(episode)
@@ -398,68 +401,47 @@ def _rows_by_match(rows: Iterable[Any], match_id_getter: Any) -> dict[int, list[
     return indexed
 
 
-def _window_candidates(
-    windows: Sequence[LeadWindow] | Mapping[int, tuple[tuple[int, ...], tuple[LeadWindow, ...]]],
+def _window_at_second(
+    second: int | None,
     match_id: int,
-) -> Sequence[LeadWindow]:
+    windows: Sequence[LeadWindow] | Mapping[int, tuple[tuple[int, ...], tuple[LeadWindow, ...]]],
+) -> LeadWindow | None:
+    if second is None:
+        return None
     if isinstance(windows, Mapping):
         indexed = windows.get(match_id)
         if indexed is None:
-            return ()
-        return indexed[1]
-    return windows
+            return None
+        starts, candidates = indexed
+        candidate_index = bisect_right(starts, second) - 1
+        while candidate_index >= 0 and candidates[candidate_index].start_second <= second:
+            window = candidates[candidate_index]
+            if window.end_second > second:
+                return window
+            candidate_index -= 1
+        return None
+    for window in windows:
+        if window.match_id == match_id and window.start_second <= second < window.end_second:
+            return window
+    return None
 
 
 def _event_in_windows(
     event: Any,
     windows: Sequence[LeadWindow] | Mapping[int, tuple[tuple[int, ...], tuple[LeadWindow, ...]]],
 ) -> LeadWindow | None:
-    second = _event_second(event)
-    if second is None:
-        return None
-    match_id = _event_match_id(event)
-    if isinstance(windows, Mapping):
-        indexed = windows.get(match_id)
-        if indexed is None:
-            return None
-        starts, candidates = indexed
-        candidate_index = bisect_right(starts, second) - 1
-        while candidate_index >= 0 and candidates[candidate_index].start_second <= second:
-            window = candidates[candidate_index]
-            if window.end_second > second:
-                return window
-            candidate_index -= 1
-        return None
-    for window in _window_candidates(windows, match_id):
-        if window.match_id == match_id and window.start_second <= second < window.end_second:
-            return window
-    return None
+    return _window_at_second(_event_second(event), _event_match_id(event), windows)
 
 
 def _possession_in_windows(
     possession: Any,
     windows: Sequence[LeadWindow] | Mapping[int, tuple[tuple[int, ...], tuple[LeadWindow, ...]]],
 ) -> LeadWindow | None:
-    second = _int(getattr(possession, "start_second", None))
-    if second is None:
-        return None
-    match_id = _possession_match_id(possession)
-    if isinstance(windows, Mapping):
-        indexed = windows.get(match_id)
-        if indexed is None:
-            return None
-        starts, candidates = indexed
-        candidate_index = bisect_right(starts, second) - 1
-        while candidate_index >= 0 and candidates[candidate_index].start_second <= second:
-            window = candidates[candidate_index]
-            if window.end_second > second:
-                return window
-            candidate_index -= 1
-        return None
-    for window in _window_candidates(windows, match_id):
-        if window.match_id == match_id and window.start_second <= second < window.end_second:
-            return window
-    return None
+    return _window_at_second(
+        _int(getattr(possession, "start_second", None)),
+        _possession_match_id(possession),
+        windows,
+    )
 
 
 def _is_deleted(event: Any) -> bool:
@@ -1032,24 +1014,35 @@ def _axes(gravity: Mapping[str, Any], ownership: Mapping[str, Any]) -> dict[str,
     # Positive gravity components indicate more retreat relative to the
     # matched drawing baseline.  The fixed scales are intentionally visible in
     # the API thresholds; they are display axes, not team-strength scores.
+    def pair(
+        metrics: Mapping[str, Any],
+        key: str,
+        scale_key: str,
+        nested: str | None = None,
+        *,
+        invert: bool = False,
+    ) -> tuple[float | None, float]:
+        delta = _metric_delta(metrics, key, nested)
+        return (-delta if invert and delta is not None else delta, AXIS_SCALES[scale_key])
+
     gravity_pairs = [
-        (-_metric_delta(gravity, "touch_origin_height") if _metric_delta(gravity, "touch_origin_height") is not None else None, 15.0),
-        (-_metric_delta(gravity, "pass_origin_height") if _metric_delta(gravity, "pass_origin_height") is not None else None, 15.0),
-        (-_metric_delta(gravity, "defensive_action_height") if _metric_delta(gravity, "defensive_action_height") is not None else None, 15.0),
-        (-_metric_delta(gravity, "pass_direction", "forward") if _metric_delta(gravity, "pass_direction", "forward") is not None else None, 0.25),
-        (-_metric_delta(gravity, "box_entries") if _metric_delta(gravity, "box_entries") is not None else None, 2.0),
-        (-_metric_delta(gravity, "shots") if _metric_delta(gravity, "shots") is not None else None, 2.0),
-        (_metric_delta(gravity, "clearances"), 2.0),
-        (_metric_delta(gravity, "opponent_territory_height"), 15.0),
+        pair(gravity, "touch_origin_height", "height_pitch_points", invert=True),
+        pair(gravity, "pass_origin_height", "height_pitch_points", invert=True),
+        pair(gravity, "defensive_action_height", "height_pitch_points", invert=True),
+        pair(gravity, "pass_direction", "pass_forward_share", "forward", invert=True),
+        pair(gravity, "box_entries", "rate_per_90", invert=True),
+        pair(gravity, "shots", "rate_per_90", invert=True),
+        pair(gravity, "clearances", "rate_per_90"),
+        pair(gravity, "opponent_territory_height", "height_pitch_points"),
     ]
     ownership_pairs = [
-        (-_metric_delta(ownership, "opponent_box_entries") if _metric_delta(ownership, "opponent_box_entries") is not None else None, 2.0),
-        (-_metric_delta(ownership, "opponent_shots") if _metric_delta(ownership, "opponent_shots") is not None else None, 2.0),
-        (-_metric_delta(ownership, "opponent_big_chances") if _metric_delta(ownership, "opponent_big_chances") is not None else None, 1.0),
-        (_metric_delta(ownership, "own_territorial_exits"), 2.0),
-        (_metric_delta(ownership, "own_counters"), 2.0),
-        (_metric_delta(ownership, "own_shots"), 2.0),
-        (_metric_delta(ownership, "time_to_first_meaningful_opponent_attack"), 300.0),
+        pair(ownership, "opponent_box_entries", "rate_per_90", invert=True),
+        pair(ownership, "opponent_shots", "rate_per_90", invert=True),
+        pair(ownership, "opponent_big_chances", "opponent_big_chances_per_90", invert=True),
+        pair(ownership, "own_territorial_exits", "rate_per_90"),
+        pair(ownership, "own_counters", "rate_per_90"),
+        pair(ownership, "own_shots", "rate_per_90"),
+        pair(ownership, "time_to_first_meaningful_opponent_attack", "first_attack_seconds"),
     ]
     gravity_value, gravity_available = _axis_value(gravity_pairs)
     ownership_value, ownership_available = _axis_value(ownership_pairs)

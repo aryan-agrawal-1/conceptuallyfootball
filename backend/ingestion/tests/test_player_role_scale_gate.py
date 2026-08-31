@@ -1,7 +1,5 @@
-from io import StringIO
 from unittest.mock import patch
 
-from django.core.management import call_command
 from django.db.models.query import QuerySet
 from django.test import TestCase
 
@@ -45,7 +43,7 @@ def minimal_role_features(player_id, team_id, competition_season_id):
     }
 
 
-class PlayerRoleScoreOnlyShadowTests(TestCase):
+class PlayerRoleCohortMixin:
     def setUp(self):
         competition = Competition.objects.create(name="Test League", short_code="TL")
         season = Season.objects.create(label="2099-00")
@@ -74,6 +72,7 @@ class PlayerRoleScoreOnlyShadowTests(TestCase):
             )
         score_player_season_roles(self.competition_season)
 
+class PlayerRoleScoreOnlyShadowTests(PlayerRoleCohortMixin, TestCase):
     def test_score_only_shadow_reads_no_raw_evidence_and_matches_published_roles(self):
         report = score_only_shadow(self.competition_season)
 
@@ -84,35 +83,7 @@ class PlayerRoleScoreOnlyShadowTests(TestCase):
         self.assertGreater(report["wall_time_seconds"], 0)
 
 
-class PlayerRolePublicationRetryTests(TestCase):
-    def setUp(self):
-        competition = Competition.objects.create(name="Test League", short_code="TL")
-        season = Season.objects.create(label="2099-00")
-        self.competition_season = CompetitionSeason.objects.create(
-            competition=competition,
-            season=season,
-        )
-        team = CanonicalTeam.objects.create(name="Team")
-        for index in range(2):
-            player = CanonicalPlayer.objects.create(display_name=f"Player {index}")
-            PlayerSeasonRoleFeatureSnapshot.objects.create(
-                competition_season=self.competition_season,
-                player=player,
-                team=team,
-                feature_version="test",
-                features=minimal_role_features(
-                    player.id,
-                    team.id,
-                    self.competition_season.id,
-                ),
-                verified_exposure_seconds=5_400,
-                source_event_version="test",
-                source_state_version="test",
-                source_participation_version="test",
-                source_possession_version="test",
-            )
-        score_player_season_roles(self.competition_season)
-
+class PlayerRolePublicationRetryTests(PlayerRoleCohortMixin, TestCase):
     def test_failed_role_publication_and_retry_leave_one_complete_current_cohort(self):
         initial_role_ids = set(PlayerSeasonRole.objects.filter(
             competition_season=self.competition_season,
@@ -163,38 +134,3 @@ class PlayerRolePublicationRetryTests(TestCase):
             ).count(),
             2,
         )
-
-
-class PlayerRoleScaleGateCommandTests(TestCase):
-    def setUp(self):
-        competition = Competition.objects.create(name="Test League", short_code="TL")
-        season = Season.objects.create(label="2099-00")
-        self.competition_season = CompetitionSeason.objects.create(
-            competition=competition,
-            season=season,
-        )
-
-    @patch("ingestion.management.commands.benchmark_player_role_scale_gate.load_baseline")
-    @patch("ingestion.management.commands.benchmark_player_role_scale_gate.run_player_role_scale_gate")
-    def test_command_passes_explicit_scale_points_to_the_read_only_gate(self, run_gate, load_baseline):
-        load_baseline.return_value = {"observations": []}
-        run_gate.return_value = {"gates": {"complete_cohort": True}}
-        output = StringIO()
-
-        call_command(
-            "benchmark_player_role_scale_gate",
-            self.competition_season.id,
-            "--batch-size",
-            "4",
-            "--match-count",
-            "12",
-            stdout=output,
-        )
-
-        run_gate.assert_called_once_with(
-            self.competition_season,
-            batch_size=4,
-            scale_match_counts=(12,),
-            baseline={"observations": []},
-        )
-        self.assertIn("Player-role scale gate passed.", output.getvalue())

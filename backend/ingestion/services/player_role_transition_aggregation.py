@@ -177,14 +177,18 @@ def aggregate_transition_batch(
             and link.event.team_id == team_id
             and (int(link.event.player_id), team_id) in accumulators
         }
-        team_sequences_by_player = {
-            player_id: [
-                sequence for sequence, link in enumerate(links)
-                if link.event.team_id == team_id
-                and inside(intervals, link.event.timeline_seconds)
-            ]
-            for player_id, intervals in scoped.items()
-        }
+        team_sequences_by_player = {player_id: [] for player_id in scoped}
+        player_sequences_by_player = defaultdict(list)
+        for sequence, link in enumerate(links):
+            event = link.event
+            if event.team_id != team_id:
+                continue
+            for player_id, intervals in scoped.items():
+                if not inside(intervals, event.timeline_seconds):
+                    continue
+                team_sequences_by_player[player_id].append(sequence)
+                if event.player_id == player_id:
+                    player_sequences_by_player[player_id].append(sequence)
         relevant_players = involved_players | {
             player_id for player_id, sequences in team_sequences_by_player.items() if sequences
         }
@@ -208,12 +212,7 @@ def aggregate_transition_batch(
                 if player_id in candidate_players:
                     target.counters["state_or_team_mismatch"] += 1
                 continue
-            player_sequences = [
-                sequence for sequence, link in enumerate(links)
-                if link.event.player_id == player_id
-                and link.event.team_id == team_id
-                and inside(intervals, link.event.timeline_seconds)
-            ]
+            player_sequences = player_sequences_by_player.get(player_id, [])
             if not player_sequences:
                 if player_id in candidate_players:
                     target.counters["outside_verified_player_interval"] += 1

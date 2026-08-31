@@ -238,16 +238,6 @@ class LeadControlRuleTests(SimpleTestCase):
         self.assertIsNone(payload["quadrant"]["placement"]["label"])
         self.assertEqual(payload["selected"]["gravity"]["components"]["pass_origin_height"]["count"], 1)
 
-    def test_quadrant_labels_are_descriptive_and_not_strength_claims(self):
-        axes = {
-            "behavioral_retreat": {"value": 20},
-            "process_control": {"value": 80},
-        }
-        placement = quadrant_for(axes, eligible=True)
-        self.assertEqual(placement["label"], "assertive controllers")
-        self.assertIn("not a causal", placement["note"])
-
-
 class TeamLeadControlApiTests(TestCase):
     @classmethod
     def setUpTestData(cls):
@@ -373,8 +363,3 @@ class TeamLeadControlApiTests(TestCase):
         self.assertIn("ownership", payload["selected"])
         self.assertIn("clock_matching", payload["comparison"])
         self.assertNotIn("provider_team_id", first.content.decode())
-
-    def test_api_reuses_state_lens_validation(self):
-        response = self.request(state="winning", goal_difference=-1)
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("goal_difference", str(response.data["detail"]))

@@ -1,4 +1,4 @@
-import type { EventMatchLookup, StateLensMetadata } from '../../types/eventMaps'
+import type { StateLensMetadata } from '../../types/eventMaps'
 import type {
   LeadControlAxis,
   LeadControlEpisode,
@@ -7,7 +7,7 @@ import type {
   LeadControlSurface,
 } from '../../types/leadControl'
 import { appendStateLens, mapStateLens, type ApiStateLens, type StateLensRequest } from './stateLensApi'
-import { BASE, readJson } from './api'
+import { BASE, mapSubjectMatches, readJson, requestParams } from './api'
 
 type ApiMetric = {
   key: string
@@ -280,20 +280,6 @@ function mapSurface(value: ApiSurface): LeadControlSurface {
   }
 }
 
-function mapMatches(value: ApiPayload['matches']): EventMatchLookup {
-  const output: EventMatchLookup = {}
-  for (const match of value) {
-    const home = match.home_team_id === match.subject_team_id
-    output[String(match.ref)] = {
-      matchId: String(match.ref),
-      opponent: home ? (match.away_team_name ?? 'Unknown opponent') : (match.home_team_name ?? 'Unknown opponent'),
-      matchDate: match.kickoff_at,
-      venue: home ? 'home' : match.away_team_id === match.subject_team_id ? 'away' : 'neutral',
-    }
-  }
-  return output
-}
-
 function mapEpisode(value: ApiEpisode): LeadControlEpisode {
   return {
     episodeId: value.episode_id,
@@ -339,8 +325,7 @@ export async function fetchTeamLeadControl(
   matchRef: string | null,
   stateLens: StateLensRequest,
 ): Promise<LeadControlPayload> {
-  const params = new URLSearchParams({ competition, season })
-  if (matchRef != null) params.set('match', matchRef)
+  const params = requestParams(competition, season, undefined, matchRef)
   appendStateLens(params, stateLens)
   const raw = await readJson<ApiPayload>(
     `${BASE}/team-seasons/lead-control/${teamId}?${params.toString()}`,
@@ -359,7 +344,7 @@ export async function fetchTeamLeadControl(
     team: raw.team,
     competitionSeason: raw.competition_season,
     selectedMatchRef: raw.selected_match_ref,
-    matches: mapMatches(raw.matches),
+    matches: mapSubjectMatches(raw.matches),
     stateLens: mapStateLens(raw.state_lens) as StateLensMetadata,
     selected: {
       ...selected,

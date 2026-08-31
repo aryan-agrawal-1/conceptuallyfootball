@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import hashlib
 import json
-from typing import TypeVar
+from typing import Mapping, TypeVar
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count, Q, QuerySet
@@ -72,6 +72,21 @@ class StateLensScope:
 
     def cache_scope(self) -> tuple:
         return tuple(getattr(self, field) for field in SCOPE_FIELDS)
+
+    def matches_context(self, context: Mapping) -> bool:
+        if self.state != "all" and context.get("state") != self.state:
+            return False
+        for field in ("goal_difference", "phase", "draw_provenance"):
+            expected = getattr(self, field)
+            if expected is not None and context.get(field) != expected:
+                return False
+        age = context.get("state_age_seconds")
+        return not (
+            self.minimum_state_age_seconds is not None
+            and (age is None or age < self.minimum_state_age_seconds)
+            or self.maximum_state_age_seconds is not None
+            and (age is None or age >= self.maximum_state_age_seconds)
+        )
 
 
 @dataclass(frozen=True, slots=True)

@@ -705,29 +705,6 @@ def team_matched_context(team_events: list, team_carries: list, segments: list[P
     )
 
 
-def _transition_scope_matches(context: dict, scope: StateLensScope) -> bool:
-    """Match a #117 observation to the already-selected player State Lens."""
-
-    if scope.state != "all" and context.get("state") != scope.state:
-        return False
-    if scope.goal_difference is not None and context.get("goal_difference") != scope.goal_difference:
-        return False
-    if scope.phase is not None and context.get("phase") != scope.phase:
-        return False
-    if scope.draw_provenance is not None and context.get("draw_provenance") != scope.draw_provenance:
-        return False
-    age = context.get("state_age_seconds")
-    if scope.minimum_state_age_seconds is not None and (
-        age is None or age < scope.minimum_state_age_seconds
-    ):
-        return False
-    if scope.maximum_state_age_seconds is not None and (
-        age is None or age >= scope.maximum_state_age_seconds
-    ):
-        return False
-    return True
-
-
 def _transition_player_evidence(
     profile,
     segments: list[PlayerExposureSegment],
@@ -906,7 +883,7 @@ def _transition_player_evidence(
                 match_ref=match_refs.get(match.id, 0),
                 episodes=episodes_by_match_team.get((match.id, int(team_id)), ()),
             )
-            if _transition_scope_matches(opportunity_observation["state"], scope):
+            if scope.matches_context(opportunity_observation["state"]):
                 opportunities += 1
         verified_player_sequences = [
             sequence
@@ -926,7 +903,7 @@ def _transition_player_evidence(
             match_ref=match_refs.get(match.id, 0),
             episodes=episodes_by_match_team.get((match.id, int(team_id)), ()),
         )
-        if not _transition_scope_matches(observation["state"], scope):
+        if not scope.matches_context(observation["state"]):
             state_or_team_mismatch_count += 1
             continue
         # #117 deliberately exposes the richer rapid-transition outcome but
@@ -1060,108 +1037,105 @@ def position_group(profile) -> str:
     return "UNK"
 
 
+def _state_cohort(
+    profile,
+    scope: StateLensScope,
+    match_ids: list[int],
+    *,
+    team_context_required: bool,
+) -> tuple[dict, dict | None, dict]:
+    player_events, team_events, carries, team_carries, _events, segments = state_event_rows(
+        profile,
+        scope,
+        match_ids,
+    )
+    evidence = player_state_evidence(profile, match_ids, scope)
+    exposure_seconds = evidence["exposure_seconds"]
+    player = action_context(player_events, carries, exposure_seconds)
+    team = (
+        team_matched_context(team_events, team_carries, segments, exposure_seconds)
+        if team_context_required
+        else None
+    )
+    player["team_action_shares"] = (
+        team_relative_shares(player["summary"], team["summary"])
+        if team is not None
+        else {}
+    )
+    player["possession"] = possession_context(profile, segments, scope)
+    return player, team, evidence
+
+
+def _comparison_payload(
+    selected_player: dict,
+    selected_team: dict | None,
+    baseline_player: dict,
+    baseline_team: dict | None,
+) -> dict:
+    def rate_delta(key: str) -> dict:
+        selected = selected_player["rates"].get(key, {}).get("per_90")
+        baseline = baseline_player["rates"].get(key, {}).get("per_90")
+        return {
+            "absolute": delta_value(selected, baseline),
+            "relative": relative_delta(selected, baseline),
+            "unit": "per_90",
+        }
+
+    def location_delta(selected: dict, baseline: dict) -> dict:
+        return {
+            axis: delta_value(selected["touch_location"][axis], baseline["touch_location"][axis])
+            for axis in ("x", "y")
+        }
+
+    return {
+        "enabled": True,
+        "selected_minus_baseline": {
+            key: rate_delta(key) for key in selected_player["rates"]
+        },
+        "movement": {
+            "player": location_delta(selected_player, baseline_player),
+            "matched_team": (
+                location_delta(selected_team, baseline_team)
+                if selected_team is not None and baseline_team is not None
+                else None
+            ),
+        },
+        "action_share_change": {
+            key: delta_value(
+                selected_player["team_action_shares"][key]["share"],
+                baseline_player["team_action_shares"][key]["share"],
+            )
+            for key in selected_player["team_action_shares"]
+        },
+    }
 
 
 def build_player_state_comparison(profile, lens: StateLens, match_ids: Iterable[int], *, team_context_required: bool = True) -> dict:
     match_ids = list(dict.fromkeys(int(value) for value in match_ids))
-    selected_player_events, selected_team_events, selected_carries, selected_team_carries, _events, selected_segments = state_event_rows(profile, lens.selected, match_ids)
-    selected_evidence = player_state_evidence(profile, match_ids, lens.selected)
-    selected_player = action_context(selected_player_events, selected_carries, selected_evidence["exposure_seconds"])
-    selected_team = (
-        team_matched_context(
-            selected_team_events,
-            selected_team_carries,
-            selected_segments,
-            selected_evidence["exposure_seconds"],
-        )
-        if team_context_required
-        else None
-    )
-    selected_player["team_action_shares"] = (
-        team_relative_shares(selected_player["summary"], selected_team["summary"])
-        if selected_team is not None
-        else {}
-    )
-    selected_player["possession"] = possession_context(
+    selected_player, selected_team, selected_evidence = _state_cohort(
         profile,
-        selected_segments,
         lens.selected,
+        match_ids,
+        team_context_required=team_context_required,
     )
     baseline_player = baseline_team = baseline_evidence = None
-    baseline_segments: list[PlayerExposureSegment] = []
     if lens.baseline is not None:
-        baseline_player_events, baseline_team_events, baseline_carries, baseline_team_carries, _baseline_events, baseline_segments = state_event_rows(profile, lens.baseline, match_ids)
-        baseline_evidence = player_state_evidence(profile, match_ids, lens.baseline)
-        baseline_player = action_context(baseline_player_events, baseline_carries, baseline_evidence["exposure_seconds"])
-        baseline_team = (
-            team_matched_context(
-                baseline_team_events,
-                baseline_team_carries,
-                baseline_segments,
-                baseline_evidence["exposure_seconds"],
-            )
-            if team_context_required
-            else None
-        )
-        baseline_player["team_action_shares"] = (
-            team_relative_shares(baseline_player["summary"], baseline_team["summary"])
-            if baseline_team is not None
-            else {}
-        )
-        baseline_player["possession"] = possession_context(
+        baseline_player, baseline_team, baseline_evidence = _state_cohort(
             profile,
-            baseline_segments,
             lens.baseline,
+            match_ids,
+            team_context_required=team_context_required,
         )
-    comparison = None
-    roles = []
-    if baseline_player is not None and baseline_evidence is not None:
-        comparison = {
-            "enabled": True,
-            "selected_minus_baseline": {
-                key: {
-                    "absolute": delta_value(selected_player["rates"].get(key, {}).get("per_90"), baseline_player["rates"].get(key, {}).get("per_90")),
-                    "relative": relative_delta(selected_player["rates"].get(key, {}).get("per_90"), baseline_player["rates"].get(key, {}).get("per_90")),
-                    "unit": "per_90",
-                }
-                for key in selected_player["rates"]
-            },
-            "movement": {
-                "player": {
-                    "x": delta_value(selected_player["touch_location"]["x"], baseline_player["touch_location"]["x"]),
-                    "y": delta_value(selected_player["touch_location"]["y"], baseline_player["touch_location"]["y"]),
-                },
-                "matched_team": (
-                    {
-                        "x": delta_value(
-                            selected_team["touch_location"]["x"],
-                            baseline_team["touch_location"]["x"],
-                        ),
-                        "y": delta_value(
-                            selected_team["touch_location"]["y"],
-                            baseline_team["touch_location"]["y"],
-                        ),
-                    }
-                    if selected_team is not None and baseline_team is not None
-                    else None
-                ),
-            },
-            "action_share_change": (
-                {
-                    key: delta_value(
-                        selected_player["team_action_shares"][key]["share"],
-                        baseline_player["team_action_shares"][key]["share"],
-                    )
-                    for key in selected_player["team_action_shares"]
-                }
-                if team_context_required
-                else {}
-            ),
-        }
-        # The unpublished response-role experiment mixed state comparisons
-        # with season archetypes. Stable identity now comes exclusively from
-        # the player-team-season role materialization.
-        roles = []
+    comparison = (
+        _comparison_payload(
+            selected_player,
+            selected_team,
+            baseline_player,
+            baseline_team,
+        )
+        if baseline_player is not None
+        else None
+    )
     return {
         "contract_version": PLAYER_STATE_COMPARISON_VERSION,
         "canonical_player_id": profile.player_id,
@@ -1174,7 +1148,7 @@ def build_player_state_comparison(profile, lens: StateLens, match_ids: Iterable[
         "comparison": comparison,
         # Compatibility-only selected-lens evidence. The stable header role is
         # supplied separately by the season-role materialization.
-        "response_roles": roles,
+        "response_roles": [],
         "role_formulae": [],
         "team_context": {
             "available": team_context_required,
