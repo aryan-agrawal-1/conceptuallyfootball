@@ -1,0 +1,25 @@
+{
+  "browser": {
+    "headless": true,
+    "mode": "headless"
+  },
+  "completed_match_count": 306,
+  "coordinate_error_count": 0,
+  "league": "GER-Bundesliga",
+  "match_event_counts": [1500, 1556, 1638],
+  "match_payload_sha256": [
+    "bdad073e4ac929c40c7ffb5492d11e829136cb05ecd222c8c75270c2ff645a66",
+    "9f04e18c541b8717d862bc5088c85a45ebf69cb0a9a6b486eb986866d6839d2e",
+    "e7db121b2b1c7a0c145b811b69ab1e8f6056092d3ba0e5af817f1a6698dc8e63"
+  ],
+  "schedule_match_count": 306,
+  "season": "2025-26",
+  "shot_orientation_gate": {
+    "assessed_team_sides": 6,
+    "failed_team_sides": 0,
+    "minimum_assessed_team_sides": 2,
+    "passed": true
+  },
+  "source": "soccerdata.WhoScored"
+}
+

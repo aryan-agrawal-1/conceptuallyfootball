@@ -1,0 +1,655 @@
+{
+  "captured_at": "2026-08-31T17:57:39.270694+00:00",
+  "environment": {
+    "database_vendor": "postgresql",
+    "django": "5.2.13",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "python": "3.11.4"
+  },
+  "report_version": 1,
+  "scope": {
+    "competition": "GER1",
+    "competition_season_id": 23,
+    "season": "2025-26"
+  },
+  "stages": [
+    {
+      "database_queries": 20,
+      "database_query_seconds": 0.398135,
+      "name": "inventory",
+      "peak_rss_mb": 96.375,
+      "result": {
+        "database_storage": {
+          "available": true,
+          "database": "statballer",
+          "database_bytes": 3884298723,
+          "ingestion_relations_total_bytes": 3869417472,
+          "relations": [
+            {
+              "estimated_live_rows": 1198023,
+              "index_bytes": 263176192,
+              "relation": "ingestion_galaxysimilarity",
+              "table_bytes": 1651245056,
+              "total_bytes": 1914904576
+            },
+            {
+              "estimated_live_rows": 655214,
+              "index_bytes": 157802496,
+              "relation": "ingestion_providermatchevent",
+              "table_bytes": 199729152,
+              "total_bytes": 357613568
+            },
+            {
+              "estimated_live_rows": 285190,
+              "index_bytes": 78610432,
+              "relation": "ingestion_playerseasonderivedstats",
+              "table_bytes": 230031360,
+              "total_bytes": 308723712
+            },
+            {
+              "estimated_live_rows": 79826,
+              "index_bytes": 34430976,
+              "relation": "ingestion_galaxyplayerembedding",
+              "table_bytes": 161685504,
+              "total_bytes": 197607424
+            },
+            {
+              "estimated_live_rows": 70417,
+              "index_bytes": 18604032,
+              "relation": "ingestion_sofascoreplayerseasonsource",
+              "table_bytes": 133005312,
+              "total_bytes": 193855488
+            },
+            {
+              "estimated_live_rows": 294291,
+              "index_bytes": 63823872,
+              "relation": "ingestion_mergedplayerseason",
+              "table_bytes": 99852288,
+              "total_bytes": 163733504
+            },
+            {
+              "estimated_live_rows": 319980,
+              "index_bytes": 64307200,
+              "relation": "ingestion_playerseasonsimilarity",
+              "table_bytes": 41492480,
+              "total_bytes": 105840640
+            },
+            {
+              "estimated_live_rows": 154742,
+              "index_bytes": 41861120,
+              "relation": "ingestion_providermatchpossession",
+              "table_bytes": 62464000,
+              "total_bytes": 104374272
+            },
+            {
+              "estimated_live_rows": 573375,
+              "index_bytes": 52396032,
+              "relation": "ingestion_providermatchpossessionevent",
+              "table_bytes": 34537472,
+              "total_bytes": 86974464
+            },
+            {
+              "estimated_live_rows": 15752,
+              "index_bytes": 3121152,
+              "relation": "ingestion_playerseasoneventprofile",
+              "table_bytes": 6930432,
+              "total_bytes": 65028096
+            },
+            {
+              "estimated_live_rows": 378117,
+              "index_bytes": 30982144,
+              "relation": "ingestion_providermatchpossessionparticipant",
+              "table_bytes": 25772032,
+              "total_bytes": 56786944
+            },
+            {
+              "estimated_live_rows": 430,
+              "index_bytes": 65536,
+              "relation": "ingestion_providermatchpayload",
+              "table_bytes": 114688,
+              "total_bytes": 45211648
+            },
+            {
+              "estimated_live_rows": 2772,
+              "index_bytes": 901120,
+              "relation": "ingestion_playerseasonrolefeaturesnapshot",
+              "table_bytes": 1089536,
+              "total_bytes": 44367872
+            },
+            {
+              "estimated_live_rows": 127150,
+              "index_bytes": 24100864,
+              "relation": "ingestion_providermatchcarry",
+              "table_bytes": 19456000,
+              "total_bytes": 43589632
+            },
+            {
+              "estimated_live_rows": 84124,
+              "index_bytes": 20127744,
+              "relation": "ingestion_reepplayerrow",
+              "table_bytes": 9224192,
+              "total_bytes": 29392896
+            },
+            {
+              "estimated_live_rows": 63996,
+              "index_bytes": 13639680,
+              "relation": "ingestion_playerseasonembedding",
+              "table_bytes": 14073856,
+              "total_bytes": 27746304
+            },
+            {
+              "estimated_live_rows": 105649,
+              "index_bytes": 10051584,
+              "relation": "ingestion_providermatchplayerstateexposure",
+              "table_bytes": 15261696,
+              "total_bytes": 25346048
+            },
+            {
+              "estimated_live_rows": 3870,
+              "index_bytes": 1302528,
+              "relation": "ingestion_playerseasonrole",
+              "table_bytes": 8331264,
+              "total_bytes": 20291584
+            },
+            {
+              "estimated_live_rows": 22465,
+              "index_bytes": 5398528,
+              "relation": "ingestion_playerseasongkderivedstats",
+              "table_bytes": 7045120,
+              "total_bytes": 12476416
+            },
+            {
+              "estimated_live_rows": 2617,
+              "index_bytes": 753664,
+              "relation": "ingestion_sofascoreteamseasonsource",
+              "table_bytes": 4104192,
+              "total_bytes": 8380416
+            },
+            {
+              "estimated_live_rows": 13902,
+              "index_bytes": 4628480,
+              "relation": "ingestion_understatplayerseasonsource",
+              "table_bytes": 3588096,
+              "total_bytes": 8257536
+            },
+            {
+              "estimated_live_rows": 30531,
+              "index_bytes": 5120000,
+              "relation": "ingestion_providerplayermapping",
+              "table_bytes": 2596864,
+              "total_bytes": 7749632
+            },
+            {
+              "estimated_live_rows": 11063,
+              "index_bytes": 2277376,
+              "relation": "ingestion_playerpositionresolution",
+              "table_bytes": 3145728,
+              "total_bytes": 5464064
+            },
+            {
+              "estimated_live_rows": 336,
+              "index_bytes": 147456,
+              "relation": "ingestion_teamseasoneventprofile",
+              "table_bytes": 720896,
+              "total_bytes": 5398528
+            },
+            {
+              "estimated_live_rows": 16986,
+              "index_bytes": 2269184,
+              "relation": "ingestion_providermatchplayerparticipation",
+              "table_bytes": 2850816,
+              "total_bytes": 5160960
+            },
+            {
+              "estimated_live_rows": 27805,
+              "index_bytes": 2187264,
+              "relation": "ingestion_canonicalplayer",
+              "table_bytes": 2039808,
+              "total_bytes": 4259840
+            },
+            {
+              "estimated_live_rows": 13061,
+              "index_bytes": 1171456,
+              "relation": "ingestion_providermatchplayerinterval",
+              "table_bytes": 1523712,
+              "total_bytes": 2727936
+            },
+            {
+              "estimated_live_rows": 5748,
+              "index_bytes": 1359872,
+              "relation": "ingestion_providermatchteamgamestateepisode",
+              "table_bytes": 860160,
+              "total_bytes": 2252800
+            },
+            {
+              "estimated_live_rows": 2043,
+              "index_bytes": 294912,
+              "relation": "ingestion_ingestionrun",
+              "table_bytes": 1630208,
+              "total_bytes": 2220032
+            },
+            {
+              "estimated_live_rows": 912,
+              "index_bytes": 188416,
+              "relation": "ingestion_galaxyarchetype",
+              "table_bytes": 1933312,
+              "total_bytes": 2154496
+            },
+            {
+              "estimated_live_rows": 0,
+              "index_bytes": 614400,
+              "relation": "ingestion_materializedapipayload",
+              "table_bytes": 0,
+              "total_bytes": 1925120
+            },
+            {
+              "estimated_live_rows": 2821,
+              "index_bytes": 679936,
+              "relation": "ingestion_mergedteamseason",
+              "table_bytes": 1064960,
+              "total_bytes": 1777664
+            },
+            {
+              "estimated_live_rows": 2579,
+              "index_bytes": 770048,
+              "relation": "ingestion_unmatchedproviderplayer",
+              "table_bytes": 344064,
+              "total_bytes": 1146880
+            },
+            {
+              "estimated_live_rows": 3750,
+              "index_bytes": 679936,
+              "relation": "ingestion_providermatchteamgamestateexposure",
+              "table_bytes": 417792,
+              "total_bytes": 1130496
+            },
+            {
+              "estimated_live_rows": 101,
+              "index_bytes": 196608,
+              "relation": "ingestion_galaxysnapshot",
+              "table_bytes": 212992,
+              "total_bytes": 876544
+            },
+            {
+              "estimated_live_rows": 430,
+              "index_bytes": 65536,
+              "relation": "ingestion_providermatchpossessionbuild",
+              "table_bytes": 663552,
+              "total_bytes": 770048
+            },
+            {
+              "estimated_live_rows": 430,
+              "index_bytes": 147456,
+              "relation": "ingestion_providermatchgamestate",
+              "table_bytes": 516096,
+              "total_bytes": 704512
+            },
+            {
+              "estimated_live_rows": 157,
+              "index_bytes": 98304,
+              "relation": "ingestion_competitionseason",
+              "table_bytes": 327680,
+              "total_bytes": 655360
+            },
+            {
+              "estimated_live_rows": 686,
+              "index_bytes": 286720,
+              "relation": "ingestion_providermatch",
+              "table_bytes": 196608,
+              "total_bytes": 516096
+            },
+            {
+              "estimated_live_rows": 860,
+              "index_bytes": 237568,
+              "relation": "ingestion_providermatchplayedperiod",
+              "table_bytes": 73728,
+              "total_bytes": 344064
+            },
+            {
+              "estimated_live_rows": 430,
+              "index_bytes": 73728,
+              "relation": "ingestion_providermatchplayerparticipationbuild",
+              "table_bytes": 229376,
+              "total_bytes": 344064
+            },
+            {
+              "estimated_live_rows": 490,
+              "index_bytes": 237568,
+              "relation": "ingestion_unmatchedproviderteam",
+              "table_bytes": 65536,
+              "total_bytes": 335872
+            },
+            {
+              "estimated_live_rows": 794,
+              "index_bytes": 204800,
+              "relation": "ingestion_providerteammapping",
+              "table_bytes": 81920,
+              "total_bytes": 311296
+            },
+            {
+              "estimated_live_rows": 127,
+              "index_bytes": 147456,
+              "relation": "ingestion_reepteamrow",
+              "table_bytes": 16384,
+              "total_bytes": 188416
+            },
+            {
+              "estimated_live_rows": 734,
+              "index_bytes": 65536,
+              "relation": "ingestion_canonicalteam",
+              "table_bytes": 49152,
+              "total_bytes": 139264
+            },
+            {
+              "estimated_live_rows": 28,
+              "index_bytes": 98304,
+              "relation": "ingestion_competition",
+              "table_bytes": 8192,
+              "total_bytes": 106496
+            },
+            {
+              "estimated_live_rows": 0,
+              "index_bytes": 73728,
+              "relation": "ingestion_ingestionbatch",
+              "table_bytes": 0,
+              "total_bytes": 81920
+            },
+            {
+              "estimated_live_rows": 0,
+              "index_bytes": 65536,
+              "relation": "ingestion_ingestionbatchitem",
+              "table_bytes": 0,
+              "total_bytes": 73728
+            },
+            {
+              "estimated_live_rows": 12,
+              "index_bytes": 49152,
+              "relation": "ingestion_season",
+              "table_bytes": 8192,
+              "total_bytes": 57344
+            },
+            {
+              "estimated_live_rows": 0,
+              "index_bytes": 40960,
+              "relation": "ingestion_playerseasonclubspell",
+              "table_bytes": 0,
+              "total_bytes": 40960
+            }
+          ],
+          "vendor": "postgresql"
+        },
+        "payload_bytes": {
+          "compressed_bytes": 5137533,
+          "uncompressed_bytes": 55400088
+        },
+        "row_counts": {
+          "carries": 14897,
+          "events": 77330,
+          "game_state_audits": 50,
+          "matches": 306,
+          "payloads": 50,
+          "player_event_profiles": 1500,
+          "player_intervals": 1569,
+          "player_participations": 1997,
+          "player_role_feature_snapshots": 1125,
+          "player_roles": 1125,
+          "player_state_exposures": 10558,
+          "possession_events": 67449,
+          "possession_participants": 45027,
+          "possessions": 17969,
+          "team_event_profiles": 36,
+          "team_state_episodes": 618,
+          "team_state_exposures": 406
+        }
+      },
+      "rss_before_mb": 96.375,
+      "wall_seconds": 0.415031
+    },
+    {
+      "database_queries": 1,
+      "database_query_seconds": 0.012651,
+      "name": "stored-payload-parse",
+      "peak_rss_mb": 157.438,
+      "result": {
+        "aggregate_digest": "aaca1f8da5333d9afaf1251d6d9e473db0c15349d3f0cd170e638902f2cdb05d",
+        "compressed_payload_bytes": 5137533,
+        "matches": 50,
+        "normalized_events": 77330,
+        "uncompressed_payload_bytes": 55400088
+      },
+      "rss_before_mb": 96.375,
+      "wall_seconds": 5.209689
+    },
+    {
+      "database_queries": 3,
+      "database_query_seconds": 0.010634,
+      "name": "run-history",
+      "peak_rss_mb": 157.438,
+      "result": {
+        "event_profiles": {
+          "coverage": {
+            "complete": false,
+            "completed_matches": 306,
+            "discovered_complete": false,
+            "expected_matches": 306,
+            "observed_matches": 50
+          },
+          "event_identity": {
+            "mapped_player_events": 75257,
+            "mapped_team_events": 77330,
+            "player_events": 76526,
+            "playerless_events": 804,
+            "publication_failure": false,
+            "total_events": 77330,
+            "unmapped_player_events": 1269,
+            "unmapped_player_percent": "1.658259937798918014792358153",
+            "unmapped_team_events": 0,
+            "warning": true
+          },
+          "finished_at": "2026-08-31T17:56:09.769050+00:00",
+          "formula_version": "event_profiles_v3",
+          "internal_pilot": true,
+          "pipeline": {
+            "peak_rss_mb": 820.67,
+            "rss_samples_mb": {
+              "coverage": 422.67,
+              "identity_report": 98.3,
+              "load_events": 422.67,
+              "publish_profiles": 820.67,
+              "resolve_profile_scopes": 422.67,
+              "start": 95.28,
+              "total": 820.67
+            },
+            "stage_timings_seconds": {
+              "coverage": 0.022,
+              "identity_report": 0.418,
+              "load_events": 2.296,
+              "publish_profiles": 4.688,
+              "resolve_profile_scopes": 0.073,
+              "total": 7.497
+            }
+          },
+          "player_profiles": 750,
+          "public_complete": false,
+          "run_id": 2265,
+          "started_at": "2026-08-31T17:56:02.268258+00:00",
+          "status": "success",
+          "team_profiles": 18
+        },
+        "player_roles": {
+          "finished_at": "2026-08-31T17:57:16.487608+00:00",
+          "match_batch_size": 5,
+          "peak_rss_mb": 878.75,
+          "query_count": 424,
+          "requested_mode": "full",
+          "rows_processed": {
+            "carries": 14897,
+            "events": 77330,
+            "feature_rows": 375,
+            "non_possession_exposures": 10558,
+            "non_possession_match_batches": 62,
+            "non_possession_matches": 306,
+            "possession_event_links": 67449,
+            "possession_participants": 45027,
+            "possessions": 17969,
+            "published_feature_snapshots": 375,
+            "published_roles": 375,
+            "score_event_profiles": 375,
+            "scored_cohort": 375,
+            "target_profiles": 375,
+            "team_state_episodes": 618,
+            "transition_events": 67449,
+            "transition_exposures": 10558,
+            "transition_match_batches": 62,
+            "transition_matches": 306
+          },
+          "rss_samples_mb": {
+            "cohort_scoring_and_publication": 878.75,
+            "event_carry_exposure_aggregation": 154.06,
+            "feature_extraction_and_publication": 878.75,
+            "feature_json_conversion": 627.64,
+            "feature_publication": 878.75,
+            "features_complete": 878.75,
+            "initialize_accumulators": 107.52,
+            "possession_transition_aggregation": 248.39,
+            "resolve_scope": 95.33,
+            "score_event_index": 248.39,
+            "start": 95.03,
+            "total": 878.75
+          },
+          "run_id": 2267,
+          "stage_timings_seconds": {
+            "cohort_scoring_and_publication": 1.279,
+            "event_carry_exposure_aggregation": 11.628,
+            "feature_extraction_and_publication": 28.13,
+            "feature_json_conversion": 4.186,
+            "feature_publication": 4.576,
+            "initialize_accumulators": 0.039,
+            "possession_transition_aggregation": 7.343,
+            "resolve_scope": 0.007,
+            "score_event_index": 0.258,
+            "total": 29.412
+          },
+          "started_at": "2026-08-31T17:56:47.075872+00:00",
+          "status": "success"
+        },
+        "whoscored_fetch": {
+          "coverage": {
+            "completed_matches": 306,
+            "completed_payload_coverage": 0.1634,
+            "expected_match_coverage": 0.1634,
+            "expected_matches": 306,
+            "final_payloads": 50
+          },
+          "elapsed_seconds": 857.051,
+          "event_identity": {
+            "mapped_player_events": 75257,
+            "mapped_team_events": 77330,
+            "player_events": 76526,
+            "playerless_events": 804,
+            "publication_failure": false,
+            "total_events": 77330,
+            "unmapped_player_events": 1269,
+            "unmapped_player_percent": "1.658259937798918014792358153",
+            "unmapped_team_events": 0,
+            "warning": true
+          },
+          "finished_at": "2026-08-31T17:52:21.126916+00:00",
+          "matches_considered": 50,
+          "normalized_event_count": 77330,
+          "outcome": "success",
+          "pipeline": {
+            "peak_rss_mb": 254.81,
+            "stages": {
+              "attach_identities": {
+                "calls": 40,
+                "max_seconds": 0.450564,
+                "total_seconds": 13.465667
+              },
+              "canonicalize_checksum": {
+                "calls": 40,
+                "max_seconds": 0.024105,
+                "total_seconds": 0.665902
+              },
+              "carries": {
+                "calls": 40,
+                "max_seconds": 0.108074,
+                "total_seconds": 2.312564
+              },
+              "game_state": {
+                "calls": 40,
+                "max_seconds": 1.350171,
+                "total_seconds": 44.811834
+              },
+              "match_fetch": {
+                "calls": 40,
+                "max_seconds": 21.049626,
+                "total_seconds": 709.176473
+              },
+              "normalize_payload": {
+                "calls": 40,
+                "max_seconds": 0.129755,
+                "total_seconds": 3.22578
+              },
+              "persist_match": {
+                "calls": 40,
+                "max_seconds": 5.392258,
+                "total_seconds": 138.342184
+              },
+              "player_participation": {
+                "calls": 40,
+                "max_seconds": 0.160911,
+                "total_seconds": 3.847406
+              },
+              "possessions": {
+                "calls": 40,
+                "max_seconds": 3.316174,
+                "total_seconds": 57.932937
+              },
+              "replace_events": {
+                "calls": 40,
+                "max_seconds": 0.367213,
+                "total_seconds": 10.951636
+              }
+            }
+          },
+          "raw_payload_reuses": 10,
+          "requests": 41,
+          "retries": 0,
+          "run_id": 2262,
+          "started_at": "2026-08-31T17:38:04.115691+00:00",
+          "status": "success",
+          "successful_fetches": 40
+        }
+      },
+      "rss_before_mb": 157.438,
+      "wall_seconds": 0.012253
+    },
+    {
+      "database_queries": 4,
+      "database_query_seconds": 0.060527,
+      "name": "output-digests",
+      "peak_rss_mb": 213.641,
+      "result": {
+        "player_event_profiles": {
+          "rows": 750,
+          "sha256": "2196379d159794d54e302aeea77a138b65f701df944051f8388d744c1bccdac9"
+        },
+        "player_role_feature_snapshots": {
+          "rows": 375,
+          "sha256": "cbc013116aaae01acc3cff952a2abc6be06cbf2844ec7498dcc9e5c509be231b"
+        },
+        "player_roles": {
+          "rows": 375,
+          "sha256": "93a88d07356b5eebecc4d13007296f2982b38c656afb7ad0ad311939c3ba7db0"
+        },
+        "team_event_profiles": {
+          "rows": 18,
+          "sha256": "d7b8e2c9db7e16bf5cd40a9b1c68e1e6e0460ab24eb7f9ace9605da31b200aee"
+        }
+      },
+      "rss_before_mb": 157.438,
+      "wall_seconds": 3.002818
+    }
+  ]
+}
