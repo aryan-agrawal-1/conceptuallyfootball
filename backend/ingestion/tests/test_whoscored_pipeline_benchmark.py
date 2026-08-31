@@ -6,6 +6,7 @@ from ingestion.services.whoscored_pipeline_benchmark import (
     QueryMetrics,
     benchmark_stage,
     measured_read_only_queries,
+    materialized_output_digests,
     queryset_digest,
 )
 
@@ -47,3 +48,60 @@ class WhoScoredPipelineBenchmarkReadOnlyTests(TransactionTestCase):
 
         self.assertEqual(digest["rows"], 1)
         self.assertEqual(len(digest["sha256"]), 64)
+
+    def test_materialized_digest_ignores_version_row_metadata(self):
+        from ingestion.models import (
+            CanonicalPlayer,
+            CanonicalTeam,
+            Competition,
+            CompetitionSeason,
+            PlayerSeasonRole,
+            PlayerSeasonRoleFeatureSnapshot,
+            Season,
+        )
+
+        competition = Competition.objects.create(name="Test", short_code="TST")
+        season = Season.objects.create(label="2024-25", sort_order=2025)
+        competition_season = CompetitionSeason.objects.create(
+            competition=competition,
+            season=season,
+        )
+        team = CanonicalTeam.objects.create(name="Team")
+        player = CanonicalPlayer.objects.create(display_name="Player")
+        snapshots = []
+        roles = []
+        for current in (False, True):
+            snapshot = PlayerSeasonRoleFeatureSnapshot.objects.create(
+                competition_season=competition_season,
+                player=player,
+                team=team,
+                feature_version="v1",
+                features={"value": 1},
+                source_event_version="v1",
+                source_state_version="v1",
+                source_participation_version="v1",
+                source_possession_version="v1",
+                is_current=current,
+            )
+            snapshots.append(snapshot)
+            roles.append(PlayerSeasonRole.objects.create(
+                competition_season=competition_season,
+                player=player,
+                team=team,
+                feature_snapshot=snapshot,
+                classification_shape="single",
+                evidence_confidence="provisional",
+                scoring_version="v1",
+                is_current=current,
+            ))
+
+        current_digest = materialized_output_digests(competition_season)
+        PlayerSeasonRoleFeatureSnapshot.objects.filter(pk=snapshots[1].pk).update(is_current=False)
+        PlayerSeasonRoleFeatureSnapshot.objects.filter(pk=snapshots[0].pk).update(is_current=True)
+        PlayerSeasonRole.objects.filter(pk=roles[1].pk).update(is_current=False)
+        PlayerSeasonRole.objects.filter(pk=roles[0].pk).update(is_current=True)
+
+        self.assertEqual(
+            materialized_output_digests(competition_season),
+            current_digest,
+        )

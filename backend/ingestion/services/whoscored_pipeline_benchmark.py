@@ -325,6 +325,7 @@ def queryset_digest(queryset, *, order_by: tuple[str, ...], excluded: set[str]) 
 def materialized_output_digests(competition_season) -> dict:
     common_excluded = {
         "id",
+        "calculated_at",
         "created_at",
         "updated_at",
         "superseded_at",
@@ -332,6 +333,7 @@ def materialized_output_digests(competition_season) -> dict:
         "materialized_ingestion_run_id",
         "is_current",
     }
+    role_excluded = common_excluded | {"feature_snapshot", "feature_snapshot_id"}
     return {
         "player_event_profiles": queryset_digest(
             PlayerSeasonEventProfile.objects.filter(
@@ -363,7 +365,7 @@ def materialized_output_digests(competition_season) -> dict:
                 is_current=True,
             ),
             order_by=("player_id", "team_id"),
-            excluded=common_excluded,
+            excluded=role_excluded,
         ),
     }
 
