@@ -90,6 +90,23 @@ class CompetitionSeedBatch2Tests(TestCase):
         self.assertFalse(by_code["UCL"]["include_in_domestic_aggregates"])
         self.assertEqual(by_code["UCL"]["minimum_eligible_minutes"], 270)
         self.assertTrue(by_code["BEL2"]["include_in_domestic_aggregates"])
+        bundesliga = next(
+            row for row in by_code["GER1"]["seasons"] if row["label"] == "2025-26"
+        )
+        self.assertEqual(
+            {
+                "has_whoscored": bundesliga["has_whoscored"],
+                "league": bundesliga["whoscored_league"],
+                "season": bundesliga["whoscored_season"],
+                "expected": bundesliga["whoscored_expected_match_count"],
+            },
+            {
+                "has_whoscored": True,
+                "league": "GER-Bundesliga",
+                "season": "2025-26",
+                "expected": 306,
+            },
+        )
 
     def test_seed_is_idempotent_and_keeps_new_slices_unpublished_and_disabled(self):
         call_command("seed_competition_slices")
@@ -121,6 +138,9 @@ class CompetitionSeedBatch2Tests(TestCase):
                 )
                 self.assertEqual(rows.count(), 1)
                 row = rows.get()
+                if config["code"] == "GER1" and season_config["label"] == "2025-26":
+                    self.assertTrue(row.supports_whoscored)
+                    self.assertEqual(row.whoscored_expected_match_count, 306)
                 if season_config["label"] == "2026-27" or (
                     config["code"] in {"EST1", "NOR1"} and season_config["label"] == "2026"
                 ) or config["code"] in {

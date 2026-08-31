@@ -33,6 +33,9 @@ def _season_row(
     sofascore_season_id: int | None,
     understat_league: str | None = None,
     understat_season_year: str | None = None,
+    whoscored_league: str | None = None,
+    whoscored_season: str | None = None,
+    whoscored_expected_match_count: int | None = None,
     is_active: bool = True,
     refresh_enabled: bool = False,
     legacy_label_alias: str | None = None,
@@ -52,6 +55,13 @@ def _season_row(
     }
     if legacy_label_alias is not None:
         row["legacy_label_alias"] = legacy_label_alias
+    if whoscored_league is not None:
+        row.update(
+            has_whoscored=True,
+            whoscored_league=whoscored_league,
+            whoscored_season=whoscored_season or label,
+            whoscored_expected_match_count=whoscored_expected_match_count,
+        )
     for key, value in (
         ("expected_team_count", expected_team_count),
         ("min_merged_team_count", min_merged_team_count),
@@ -133,7 +143,17 @@ COMPETITION_SEED_MANIFEST = [
             _season_row("2022-23", sofascore_unique_tournament_id=35, sofascore_season_id=42268, understat_league="Bundesliga", understat_season_year="2022"),
             _season_row("2023-24", sofascore_unique_tournament_id=35, sofascore_season_id=52608, understat_league="Bundesliga", understat_season_year="2023"),
             _season_row("2024-25", sofascore_unique_tournament_id=35, sofascore_season_id=63516, understat_league="Bundesliga", understat_season_year="2024"),
-            _season_row("2025-26", sofascore_unique_tournament_id=35, sofascore_season_id=77333, understat_league="Bundesliga", understat_season_year="2025", refresh_enabled=True),
+            _season_row(
+                "2025-26",
+                sofascore_unique_tournament_id=35,
+                sofascore_season_id=77333,
+                understat_league="Bundesliga",
+                understat_season_year="2025",
+                whoscored_league="GER-Bundesliga",
+                whoscored_season="2025-26",
+                whoscored_expected_match_count=306,
+                refresh_enabled=True,
+            ),
         ],
     },
     {
