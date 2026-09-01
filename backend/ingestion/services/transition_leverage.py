@@ -57,7 +57,7 @@ TRANSITION_LEVERAGE_FORMULA_VERSION = "transition_leverage_v1"
 # observation references and the duplicated action-evidence alias was removed.
 # The public contract remains v2 for the player-state projection; the separate
 # shape token invalidates old materialized payloads safely.
-TRANSITION_LEVERAGE_API_VERSION = "transition_leverage_api_v2"
+TRANSITION_LEVERAGE_API_VERSION = "transition_leverage_api_v3"
 TRANSITION_LEVERAGE_PAYLOAD_SHAPE_VERSION = "transition_leverage_payload_v2"
 PLAYER_EVIDENCE_LIMIT = 25
 OBSERVATION_LIMIT = 100
@@ -931,8 +931,6 @@ def possession_observation(
             )
         ),
         "state_transition": transition,
-        "actual_state_transition": transition["actual"],
-        "transition_classification": transition["classification"],
         "possession_trace": trace,
     }
 
@@ -1431,9 +1429,7 @@ def _build_scope(
         "scope": scope.public(),
         "attacking": attacking,
         "concession": concession,
-        "concession_vulnerability": concession,
         "players": players,
-        "player_involvement": players,
         "observations": bounded_observations,
         "coverage": _coverage(
             matches=matches,

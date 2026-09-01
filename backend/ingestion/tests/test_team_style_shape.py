@@ -308,7 +308,7 @@ class TeamStyleShapeApiTests(TestCase):
         response = self.call({"competition": "TST", "season": "2025-26", "state": "winning", "baseline_state": "drawing"})
         self.assertEqual(response.status_code, 200)
         payload = json.loads(response.content)
-        self.assertEqual(payload["contract_version"], "v2")
+        self.assertEqual(payload["contract_version"], "v3")
         self.assertEqual(payload["selected"]["scope"]["state"], "winning")
         self.assertEqual(payload["baseline"]["scope"]["state"], "drawing")
         self.assertEqual(payload["overall"]["scope"]["state"], "all")

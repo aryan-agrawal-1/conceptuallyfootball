@@ -134,12 +134,6 @@ export type StateDeltaMapContract = {
   notes?: string[]
 }
 
-/** Semantic aliases used by player comparison consumers. */
-export type DeltaMapContract = StateDeltaMapContract
-export type PlayerStateDeltaMapContract = StateDeltaMapContract & {
-  subject: DeltaMapSubject & { type: 'player'; id: number | string }
-}
-
 export type DeltaMapCellInput = {
   column: number
   row: number

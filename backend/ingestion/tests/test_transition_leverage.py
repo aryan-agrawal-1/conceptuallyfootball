@@ -539,7 +539,7 @@ class TeamTransitionLeverageApiTests(TestCase):
         payload = json.loads(first.content)
         self.assertEqual(payload["selected"]["attacking"]["opportunities"], 1)
         self.assertEqual(payload["selected"]["concession"]["opportunities"], 0)
-        player = payload["selected"]["player_involvement"][0]
+        player = payload["selected"]["players"][0]
         self.assertEqual(player["opportunities"], 1)
         self.assertEqual(player["involved_possessions"], 1)
         self.assertEqual(player["sequence_stages"]["origin_recovery"]["possessions"], 1)

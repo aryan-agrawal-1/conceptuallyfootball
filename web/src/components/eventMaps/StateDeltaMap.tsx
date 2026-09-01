@@ -553,6 +553,3 @@ export function StateDeltaMap({
     </section>
   )
 }
-
-/** Short alias for consumers that call the primitive simply DeltaMap. */
-export const DeltaMap = StateDeltaMap

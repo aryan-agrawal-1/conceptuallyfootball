@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from hashlib import sha256
-
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import status
 from rest_framework.response import Response
@@ -100,8 +98,6 @@ class TeamResponseHalfLifeApi(APIView):
                 carry_version,
                 period_version,
             )
-            if len(source_version) > 128:
-                source_version = f"{RESPONSE_HALF_LIFE_API_VERSION}:{sha256(source_version.encode()).hexdigest()}"
             response, cached = get_or_build_payload_response(
                 cache_key=cache_key,
                 source_version=source_version,

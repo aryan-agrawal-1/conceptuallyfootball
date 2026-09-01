@@ -100,9 +100,7 @@ type ApiSignedShift = {
   raw_delta: number | null
   unit: string | null
   normalised_delta: number | null
-  normalized_delta?: number | null
   normalisation: string
-  normalization?: string
   scale: number | null
   direction: 'prevalence'
   eligible: boolean
@@ -273,8 +271,8 @@ function mapSignedShift(value: ApiSignedShift): TeamStyleSignedShift {
     baselineValue: value.baseline_value,
     rawDelta: value.raw_delta,
     unit: value.unit,
-    normalisedDelta: value.normalised_delta ?? value.normalized_delta ?? null,
-    normalisation: value.normalisation ?? value.normalization ?? '',
+    normalisedDelta: value.normalised_delta,
+    normalisation: value.normalisation,
     scale: value.scale,
     direction: value.direction,
     eligible: value.eligible,

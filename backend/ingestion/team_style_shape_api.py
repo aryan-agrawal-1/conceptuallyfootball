@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from hashlib import sha256
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import status
@@ -18,7 +17,6 @@ from rest_framework.views import APIView
 
 from ingestion.api_cache import (
     get_or_build_payload_response,
-    joined_version,
     model_version,
     stable_cache_key,
 )
@@ -63,7 +61,7 @@ from ingestion.state_lens import (
 )
 
 
-TEAM_STYLE_SHAPE_API_VERSION = "v2"
+TEAM_STYLE_SHAPE_API_VERSION = "v3"
 STYLE_GAME_STATES = ("winning", "drawing", "losing")
 
 
@@ -557,11 +555,6 @@ class TeamStyleShapeApi(APIView):
                 possession_version,
                 carry_version,
             )
-            # MaterializedApiPayload.source_version is bounded to 128 chars;
-            # the full joined provenance is intentionally hashed rather than
-            # truncated so every source/formula change remains distinct.
-            if len(source_version) > 128:
-                source_version = f"{TEAM_STYLE_SHAPE_API_VERSION}:{sha256(source_version.encode()).hexdigest()}"
             response, cached = get_or_build_payload_response(
                 cache_key=cache_key,
                 source_version=source_version,
