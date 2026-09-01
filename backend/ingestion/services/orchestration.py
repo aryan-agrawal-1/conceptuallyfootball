@@ -4,6 +4,7 @@ import random
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from typing import Any
+from time import monotonic
 from zoneinfo import ZoneInfo
 
 from celery import current_app
@@ -34,6 +35,7 @@ from ingestion.services.ingest import (
     run_team_merge_job,
 )
 from ingestion.services.position_resolution import run_position_resolution_job
+from ingestion.services.player_role_diagnostics import resident_memory_mb
 from ingestion.services.season_labels import aggregate_season_label
 from ingestion.services.sofascore_client import (
     reset_request_metrics,
@@ -330,7 +332,19 @@ def _run_stage(item: IngestionBatchItem, stage: str, kind: str, fn, *, required:
     cs = item.competition_season
     _record_stage(item, stage)
     run = _create_run(kind, cs)
+    started_at = monotonic()
+    rss_before = resident_memory_mb()
     fn(cs, run=run)
+    run.refresh_from_db()
+    run.stats = {
+        **(run.stats or {}),
+        "orchestration_resources": {
+            "wall_seconds": round(monotonic() - started_at, 3),
+            "rss_before_mb": rss_before,
+            "peak_rss_mb": resident_memory_mb(),
+        },
+    }
+    run.save(update_fields=["stats"])
     _record_stage(item, stage, run)
     run.refresh_from_db()
     if required and run.status != IngestionRunStatus.SUCCESS:
