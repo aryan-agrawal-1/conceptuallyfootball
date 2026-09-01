@@ -275,6 +275,63 @@ class WhoScoredWeeklyTests(TestCase):
         self.assertEqual(item.status, IngestionBatchItemStatus.SUCCESS)
         self.assertEqual(item.stage_stats["materialization"]["outcome"], "no_op")
 
+    @patch("ingestion.services.whoscored_weekly.materialize_changed_entities")
+    @patch("ingestion.services.whoscored_weekly.run_weekly_acquisition")
+    def test_partial_acquisition_materializes_successes_before_retry(
+        self,
+        acquisition,
+        materialize,
+    ):
+        batch = plan_weekly_batch(day=NOW.date(), manual=True)
+        item = batch.items.get()
+        run = IngestionRun.objects.create(
+            kind="whoscored_fetch",
+            competition_season=self.competition_season,
+            status=IngestionRunStatus.FAILED,
+            error_detail="one failed match",
+        )
+        stats = {
+            "events_changed": True,
+            "affected_player_ids": [1],
+            "affected_team_ids": [2],
+            "failures": [{"match_id": "failed"}],
+        }
+        acquisition.return_value = (run, stats)
+        materialize.return_value = {"outcome": "rebuilt"}
+
+        result = execute_weekly_item(item.id)
+
+        item.refresh_from_db()
+        self.assertFalse(result["ok"])
+        materialize.assert_called_once_with(self.competition_season, stats)
+        self.assertEqual(item.stage_stats["materialization"]["outcome"], "rebuilt")
+        self.assertEqual(item.status, IngestionBatchItemStatus.FAILED)
+
+    @patch("ingestion.services.whoscored_weekly.materialize_changed_entities")
+    @patch("ingestion.services.whoscored_weekly.run_weekly_acquisition")
+    def test_materialization_failure_resumes_without_refetch(
+        self,
+        acquisition,
+        materialize,
+    ):
+        batch = plan_weekly_batch(day=NOW.date(), manual=True)
+        item = batch.items.get()
+        prior = {
+            "events_changed": True,
+            "affected_player_ids": [1],
+            "affected_team_ids": [2],
+            "failures": [],
+        }
+        item.stage_stats = {"acquisition": prior}
+        item.save(update_fields=["stage_stats"])
+        materialize.return_value = {"outcome": "rebuilt"}
+
+        result = execute_weekly_item(item.id)
+
+        self.assertTrue(result["ok"])
+        acquisition.assert_not_called()
+        materialize.assert_called_once_with(self.competition_season, prior)
+
     @patch("ingestion.services.whoscored_weekly.run_player_role_materialization")
     @patch("ingestion.services.whoscored_weekly.materialize_event_profiles")
     def test_changed_entities_feed_narrow_profile_and_role_scopes(

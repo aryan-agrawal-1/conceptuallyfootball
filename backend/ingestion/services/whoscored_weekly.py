@@ -483,14 +483,23 @@ def execute_weekly_item(item_id: int) -> dict:
             update_fields=["status", "current_stage", "started_at", "updated_at"]
         )
     try:
-        run, acquisition = run_weekly_acquisition(
-            item.competition_season,
-            correction_cutoff=item.batch.started_at,
+        prior_acquisition = item.stage_stats.get("acquisition")
+        resume_materialization = bool(
+            prior_acquisition
+            and prior_acquisition.get("events_changed")
+            and "materialization" not in item.stage_stats
         )
-        item.stage_run_ids = {**item.stage_run_ids, "acquisition": run.id}
-        item.stage_stats = {**item.stage_stats, "acquisition": acquisition}
-        if run.status != IngestionRunStatus.SUCCESS:
-            raise RuntimeError(run.error_detail or "WhoScored acquisition failed.")
+        if resume_materialization:
+            acquisition = prior_acquisition
+            acquisition_failed = bool(acquisition.get("failures"))
+        else:
+            run, acquisition = run_weekly_acquisition(
+                item.competition_season,
+                correction_cutoff=item.batch.started_at,
+            )
+            item.stage_run_ids = {**item.stage_run_ids, "acquisition": run.id}
+            item.stage_stats = {**item.stage_stats, "acquisition": acquisition}
+            acquisition_failed = run.status != IngestionRunStatus.SUCCESS
         item.current_stage = "materialization"
         item.save(
             update_fields=[
@@ -505,6 +514,11 @@ def execute_weekly_item(item_id: int) -> dict:
             acquisition,
         )
         item.stage_stats = {**item.stage_stats, "materialization": materialization}
+        item.save(update_fields=["stage_stats", "updated_at"])
+        if acquisition_failed:
+            raise RuntimeError(
+                "WhoScored acquisition retained successful matches but requires retry."
+            )
         item.status = IngestionBatchItemStatus.SUCCESS
         item.current_stage = "done"
         item.finished_at = timezone.now()
