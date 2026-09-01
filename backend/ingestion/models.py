@@ -418,6 +418,7 @@ class IngestionRun(models.Model):
 
 class IngestionBatch(models.Model):
     KIND_DAILY_REFRESH = "daily_refresh"
+    KIND_WEEKLY_WHOSCORED = "weekly_whoscored"
 
     kind = models.CharField(max_length=32, default=KIND_DAILY_REFRESH, db_index=True)
     status = models.CharField(
@@ -498,6 +499,17 @@ class IngestionBatchItem(models.Model):
 
     def __str__(self) -> str:
         return f"{self.batch_id}:{self.competition_season_id} {self.status}"
+
+
+class IngestionLease(models.Model):
+    key = models.CharField(max_length=128, unique=True)
+    owner_token = models.CharField(max_length=64)
+    expires_at = models.DateTimeField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"{self.key} until {self.expires_at.isoformat()}"
 
 
 class MaterializedApiPayload(models.Model):

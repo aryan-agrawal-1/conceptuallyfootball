@@ -41,6 +41,7 @@ from ingestion.services.player_role_transition_aggregation import (
 # less than 6%, so affected scopes at or above this share use the simpler full
 # rebuild. Keep the choice explicit so later evidence can change it safely.
 FULL_EXTRACTION_PROFILE_RATIO = 0.8
+FEATURE_PUBLICATION_BATCH_SIZE = 25
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,6 +189,26 @@ def preserve_accepted_rounding(candidate, floor, ceiling, reference):
     return candidate
 
 
+def current_feature_references(competition_season, target_pairs):
+    """Stream existing JSON in deterministic pair order without retaining the cohort."""
+
+    if not target_pairs:
+        return iter(())
+    player_ids = {player_id for player_id, _team_id in target_pairs}
+    team_ids = {team_id for _player_id, team_id in target_pairs}
+    rows = PlayerSeasonRoleFeatureSnapshot.objects.filter(
+        competition_season=competition_season,
+        is_current=True,
+        player_id__in=player_ids,
+        team_id__in=team_ids,
+    ).values_list("player_id", "team_id", "features").order_by("player_id", "team_id")
+    return (
+        (int(player_id), int(team_id), features)
+        for player_id, team_id, features in rows.iterator(chunk_size=1)
+        if (int(player_id), int(team_id)) in target_pairs
+    )
+
+
 def build_bounded_feature_rows(
     competition_season,
     profiles: tuple[dict, ...],
@@ -259,21 +280,19 @@ def build_bounded_feature_rows(
     started_at = monotonic()
     total_exposure = 0
     feature_rows = []
-    references = {
-        (int(player_id), int(team_id)): features
-        for player_id, team_id, features in PlayerSeasonRoleFeatureSnapshot.objects.filter(
-            competition_season=competition_season,
-            is_current=True,
-            player_id__in={player_id for player_id, _team_id in target_pairs},
-            team_id__in={team_id for _player_id, team_id in target_pairs},
-        ).values_list("player_id", "team_id", "features")
-        if (int(player_id), int(team_id)) in target_pairs
-    }
+    references = iter(current_feature_references(competition_season, target_pairs))
+    reference_row = next(references, None)
     for pair in sorted(accumulators):
-        accumulator = accumulators[pair]
+        while reference_row is not None and reference_row[:2] < pair:
+            reference_row = next(references, None)
+        reference = (
+            reference_row[2]
+            if reference_row is not None and reference_row[:2] == pair
+            else None
+        )
+        accumulator = accumulators.pop(pair)
         accumulator.score_events = Counter(score_index.evidence(*pair))
         features = accumulator.to_feature_json()
-        reference = references.get(pair)
         if reference is not None:
             features = preserve_accepted_rounding(
                 features,
@@ -330,7 +349,10 @@ def publish_feature_snapshots(
     if not rows:
         return
     with transaction.atomic():
-        PlayerSeasonRoleFeatureSnapshot.objects.bulk_create(rows, batch_size=250)
+        PlayerSeasonRoleFeatureSnapshot.objects.bulk_create(
+            rows,
+            batch_size=FEATURE_PUBLICATION_BATCH_SIZE,
+        )
         current = PlayerSeasonRoleFeatureSnapshot.objects.filter(
             competition_season=competition_season,
             is_current=True,

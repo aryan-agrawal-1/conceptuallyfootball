@@ -14,6 +14,7 @@ from ingestion.models import (
     GalaxySnapshot,
     IngestionBatch,
     IngestionBatchItem,
+    IngestionLease,
     IngestionRun,
     MergedPlayerSeason,
     MergedTeamSeason,
@@ -163,6 +164,12 @@ class IngestionBatchItemAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
     )
+
+
+@admin.register(IngestionLease)
+class IngestionLeaseAdmin(admin.ModelAdmin):
+    list_display = ("key", "expires_at", "updated_at")
+    readonly_fields = ("key", "owner_token", "expires_at", "created_at", "updated_at")
 
 
 @admin.register(ProviderMatch)

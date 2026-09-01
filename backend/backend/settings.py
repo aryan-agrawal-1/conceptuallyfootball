@@ -145,6 +145,7 @@ if env_bool("DJANGO_TRUST_X_FORWARDED_PROTO", False):
 
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
+CELERY_TIMEZONE = os.environ.get("STATBALLER_DAILY_REFRESH_TIME_ZONE", "Europe/London")
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 60 * 60
 CELERY_WORKER_PREFETCH_MULTIPLIER = int(os.environ.get("CELERY_WORKER_PREFETCH_MULTIPLIER", "4"))
@@ -160,15 +161,51 @@ CELERY_WORKER_MAX_MEMORY_PER_CHILD = (
 )
 CELERY_TASK_ROUTES = {
     "ingestion.tasks.task_plan_daily_refresh": {"queue": "ingestion-planner"},
+    "ingestion.tasks.task_plan_weekly_whoscored": {"queue": "ingestion-planner"},
+    "ingestion.tasks.task_plan_due_whoscored_settlements": {
+        "queue": "ingestion-planner"
+    },
     "ingestion.tasks.task_refresh_competition_season_item": {"queue": "ingestion"},
     "ingestion.tasks.task_finalize_daily_refresh_batch": {"queue": "ingestion"},
+    "ingestion.tasks.task_run_weekly_whoscored_item": {"queue": "whoscored"},
+    "ingestion.tasks.task_run_due_whoscored_settlements": {"queue": "whoscored"},
 }
 CELERY_BEAT_SCHEDULE = {
     "plan-daily-refresh": {
         "task": "ingestion.tasks.task_plan_daily_refresh",
         "schedule": crontab(minute="*/15"),
     },
+    "plan-weekly-whoscored": {
+        "task": "ingestion.tasks.task_plan_weekly_whoscored",
+        "schedule": crontab(minute=30, hour=7, day_of_week="tuesday"),
+    },
+    "plan-due-whoscored-settlements": {
+        "task": "ingestion.tasks.task_plan_due_whoscored_settlements",
+        "schedule": crontab(minute="*/15"),
+    },
 }
+
+STATBALLER_WHOSCORED_WEEKLY_ENABLED = env_bool(
+    "STATBALLER_WHOSCORED_WEEKLY_ENABLED", False
+)
+STATBALLER_WHOSCORED_COMPLETION_GRACE_HOURS = int(
+    os.environ.get("STATBALLER_WHOSCORED_COMPLETION_GRACE_HOURS", "3")
+)
+STATBALLER_WHOSCORED_SETTLEMENT_DELAY_HOURS = int(
+    os.environ.get("STATBALLER_WHOSCORED_SETTLEMENT_DELAY_HOURS", "12")
+)
+STATBALLER_WHOSCORED_CORRECTION_WINDOW_DAYS = int(
+    os.environ.get("STATBALLER_WHOSCORED_CORRECTION_WINDOW_DAYS", "14")
+)
+STATBALLER_WHOSCORED_RECOVERY_WINDOW_DAYS = int(
+    os.environ.get("STATBALLER_WHOSCORED_RECOVERY_WINDOW_DAYS", "28")
+)
+STATBALLER_WHOSCORED_MAX_MATCHES_PER_RUN = int(
+    os.environ.get("STATBALLER_WHOSCORED_MAX_MATCHES_PER_RUN", "50")
+)
+STATBALLER_INGESTION_LEASE_TTL_SECONDS = int(
+    os.environ.get("STATBALLER_INGESTION_LEASE_TTL_SECONDS", "9000")
+)
 
 REST_FRAMEWORK = {
     "DEFAULT_FILTER_BACKENDS": ["django_filters.rest_framework.DjangoFilterBackend"],

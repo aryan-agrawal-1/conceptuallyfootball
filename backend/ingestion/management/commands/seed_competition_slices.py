@@ -170,6 +170,14 @@ class Command(BaseCommand):
                     "is_active": season_cfg.get("is_active", True),
                     "refresh_enabled": season_cfg.get("refresh_enabled", False),
                 }
+                for field_name in (
+                    "has_whoscored",
+                    "whoscored_league",
+                    "whoscored_season",
+                    "whoscored_expected_match_count",
+                ):
+                    if field_name in season_cfg:
+                        defaults[field_name] = season_cfg[field_name]
                 defaults.update(season_threshold_overrides)
 
                 reconciled_slice = _reconcile_legacy_season_label(competition, season, season_cfg)

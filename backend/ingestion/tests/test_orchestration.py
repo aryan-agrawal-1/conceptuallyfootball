@@ -222,6 +222,10 @@ class DailyRefreshExecutionTests(TestCase):
             "galaxy",
         ):
             self.assertIn(stage, self.item.stage_run_ids)
+            run = IngestionRun.objects.get(pk=self.item.stage_run_ids[stage])
+            resources = run.stats["orchestration_resources"]
+            self.assertGreaterEqual(resources["peak_rss_mb"], resources["rss_before_mb"])
+            self.assertGreaterEqual(resources["wall_seconds"], 0)
         self.assertIn("BIG5", self.batch.aggregate_run_ids)
         self.assertIn("ALL", self.batch.aggregate_run_ids)
 

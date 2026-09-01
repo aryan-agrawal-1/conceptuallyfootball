@@ -48,6 +48,7 @@ class WhoScoredIngestionOptions:
     dry_run: bool = False
     allow_over_cap: bool = False
     headed_debug: bool = False
+    historical: bool = True
 
 
 @dataclass
@@ -170,6 +171,9 @@ def run_whoscored_ingestion(
         "fetch_failures": 0,
         "validation_failures": 0,
         "normalized_event_count": 0,
+        "match_actions": {},
+        "affected_player_ids": [],
+        "affected_team_ids": [],
         "mapped_player_events": 0,
         "unmapped_player_events": 0,
         "mapped_team_events": 0,
@@ -204,6 +208,7 @@ def run_whoscored_ingestion(
         started_at=timezone.now(),
     )
     failures: list[WhoScoredMatchFailure] = []
+    pipeline_diagnostics: dict[str, Any] = {}
     try:
         active_client = client or SoccerdataWhoScoredClient(
             WhoScoredSourceConfig(
@@ -230,6 +235,7 @@ def run_whoscored_ingestion(
             client=active_client,
             request_controller=request_controller,
             run=run,
+            diagnostics=pipeline_diagnostics,
         )
         # Persist the discovered schedule, but isolate malformed rows so an
         # unrelated fixture cannot prevent valid selected matches from running.
@@ -268,9 +274,15 @@ def run_whoscored_ingestion(
             for match in selected_source_matches
             if str(match.match_id) in local_matches
         ]
+        affected_player_ids: set[int] = set()
+        affected_team_ids: set[int] = set()
         for provider_match in selected_matches:
             try:
-                result = lifecycle.process_match(provider_match, historical=True, force=options.force)
+                result = lifecycle.process_match(
+                    provider_match,
+                    historical=options.historical,
+                    force=options.force,
+                )
             except WhoScoredAccessCutoffError as error:
                 evidence = safe_failure_evidence(
                     error,
@@ -304,7 +316,16 @@ def run_whoscored_ingestion(
                 stats["raw_payload_reuses"] += 1
             else:
                 stats["successful_fetches"] += 1
+            stats["match_actions"][result.action] = (
+                stats["match_actions"].get(result.action, 0) + 1
+            )
+            if result.events_replaced:
+                affected_player_ids.update(result.affected_player_ids)
+                affected_team_ids.update(result.affected_team_ids)
             stats["normalized_event_count"] += result.normalized_event_count
+
+        stats["affected_player_ids"] = sorted(affected_player_ids)
+        stats["affected_team_ids"] = sorted(affected_team_ids)
 
         controller = lifecycle.request_controller
         stats["match_detail_requests"] = controller.stats.requests
@@ -325,6 +346,7 @@ def run_whoscored_ingestion(
             }
             for failure in failures
         ]
+        stats["pipeline"] = pipeline_diagnostics
         identity_report = build_event_identity_report(competition_season)
         identity = identity_report.volume
         stats.update({

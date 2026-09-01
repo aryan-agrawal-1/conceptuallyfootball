@@ -179,6 +179,83 @@ class WhoScoredIngestionCommandTests(TestCase):
         self.assertEqual(result.stats["normalized_event_count"], 14)
 
     @patch("ingestion.services.whoscored_ingestion.WhoScoredLifecycleService")
+    def test_lifecycle_actions_expose_only_replaced_event_scopes(self, lifecycle_class):
+        historical_modes = []
+
+        class Controller:
+            class stats:
+                requests = 0
+                retries = 0
+
+        actions = {
+            "1": WhoScoredMatchResult(
+                provider_match_id="1",
+                action="reused_final",
+                lifecycle_state="final",
+                payload_sha256="one",
+                normalized_event_count=10,
+                affected_player_ids=(11,),
+                affected_team_ids=(21,),
+            ),
+            "2": WhoScoredMatchResult(
+                provider_match_id="2",
+                action="finalized_unchanged",
+                lifecycle_state="final",
+                payload_sha256="two",
+                normalized_event_count=20,
+                affected_player_ids=(12,),
+                affected_team_ids=(22,),
+            ),
+            "3": WhoScoredMatchResult(
+                provider_match_id="3",
+                action="replaced",
+                lifecycle_state="final",
+                payload_sha256="three",
+                normalized_event_count=30,
+                affected_player_ids=(12, 13),
+                affected_team_ids=(22, 23),
+            ),
+        }
+
+        class Lifecycle:
+            def __init__(self, **kwargs):
+                self.request_controller = Controller()
+
+            def upsert_match(self, source):
+                return ProviderMatch.objects.create(
+                    provider=Provider.WHOSCORED,
+                    provider_match_id=str(source.match_id),
+                    competition_season=self_slice,
+                    kickoff_at=source.kickoff_at,
+                    status=ProviderMatchStatus.COMPLETED,
+                    home_provider_team_id=str(source.home_team_id),
+                    away_provider_team_id=str(source.away_team_id),
+                )
+
+            def process_match(self, provider_match, **kwargs):
+                historical_modes.append(kwargs["historical"])
+                return actions[provider_match.provider_match_id]
+
+        self_slice = self.slice
+        lifecycle_class.side_effect = Lifecycle
+        result = run_whoscored_ingestion(
+            competition_season=self.slice,
+            options=WhoScoredIngestionOptions(historical=False),
+            client=FakeClient(
+                [source_match(1, 1), source_match(2, 2), source_match(3, 3)]
+            ),
+        )
+
+        self.assertEqual(
+            result.stats["match_actions"],
+            {"reused_final": 1, "finalized_unchanged": 1, "replaced": 1},
+        )
+        self.assertEqual(result.stats["raw_payload_reuses"], 1)
+        self.assertEqual(historical_modes, [False, False, False])
+        self.assertEqual(result.stats["affected_player_ids"], [12, 13])
+        self.assertEqual(result.stats["affected_team_ids"], [22, 23])
+
+    @patch("ingestion.services.whoscored_ingestion.WhoScoredLifecycleService")
     def test_malformed_unselected_schedule_row_does_not_abort_selected_match(self, lifecycle_class):
         class Controller:
             class stats:

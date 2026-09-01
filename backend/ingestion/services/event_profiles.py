@@ -7,7 +7,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Iterable
+from time import monotonic
+from typing import Iterable, NamedTuple
 
 from django.db import transaction
 from django.utils import timezone
@@ -23,6 +24,7 @@ from ingestion.services.identity import (
     build_event_identity_report,
     validate_event_identity_publication,
 )
+from ingestion.services.player_role_diagnostics import record_stage, sample_memory
 from ingestion.services.whoscored_normalization import (
     ACTION_GRID_COLUMNS, ACTION_GRID_ROWS,
     action_grid_assignment, grid_assignment, is_action_event, is_defensive_event,
@@ -41,6 +43,33 @@ class BuildResult:
     affected_team_ids: set[int]
 
 
+class ProfileEvent(NamedTuple):
+    provider_match_id: int
+    player_id: int | None
+    team_id: int | None
+    expanded_minute: int | None
+    minute: int
+    x: float | None
+    y: float | None
+    end_x: float | None
+    end_y: float | None
+    event_type: str
+    outcome_successful: bool | None
+    is_touch: bool
+    is_key_pass: bool
+    is_cross: bool
+    is_long_ball: bool
+    is_big_chance: bool
+    is_defensive: bool
+    shot_outcome: str
+    is_progressive_pass: bool
+    is_final_third_entry: bool
+    is_box_entry: bool
+
+
+PROFILE_EVENT_COLUMNS = ProfileEvent._fields
+
+
 def _start(run: IngestionRun) -> None:
     run.status = IngestionRunStatus.RUNNING
     run.started_at = timezone.now()
@@ -54,7 +83,7 @@ def _fail(run: IngestionRun, exc: Exception) -> None:
     run.save(update_fields=["status", "finished_at", "error_detail", "stats"])
 
 
-def _event_minutes(events: Iterable[ProviderMatchEvent], match_minutes: dict[int, int]) -> int:
+def _event_minutes(events: Iterable[ProfileEvent], match_minutes: dict[int, int]) -> int:
     return sum(match_minutes[event_id] for event_id in {event.provider_match_id for event in events})
 
 
@@ -67,7 +96,7 @@ def event_profile_availability(passes: int, shots: int, actions: int) -> dict:
 
 
 def _grid(
-    events: Iterable[ProviderMatchEvent],
+    events: Iterable[ProfileEvent],
     minutes: int,
     *,
     touches_only: bool = False,
@@ -101,7 +130,7 @@ def _grid(
     return cells, total
 
 
-def _summary(events: list[ProviderMatchEvent]) -> dict:
+def _summary(events: list[ProfileEvent]) -> dict:
     passes = [event for event in events if event.event_type == MatchEventType.PASS]
     shots = [event for event in events if event.event_type == MatchEventType.SHOT]
     take_ons = [event for event in events if event.event_type == MatchEventType.TAKE_ON]
@@ -127,7 +156,7 @@ def _summary(events: list[ProviderMatchEvent]) -> dict:
     }
 
 
-def _pass_flow(events: Iterable[ProviderMatchEvent]) -> list[dict]:
+def _pass_flow(events: Iterable[ProfileEvent]) -> list[dict]:
     values = defaultdict(lambda: [0, 0, 0, 0, 0, 0.0])
     for event in events:
         if (
@@ -172,11 +201,12 @@ def _pass_flow(events: Iterable[ProviderMatchEvent]) -> list[dict]:
     return rows
 
 
-def _profile_events(competition_season: CompetitionSeason) -> list[ProviderMatchEvent]:
-    return list(ProviderMatchEvent.objects.filter(
+def _profile_events(competition_season: CompetitionSeason) -> list[ProfileEvent]:
+    rows = ProviderMatchEvent.objects.filter(
         provider_match__competition_season=competition_season,
         provider_match__provider=Provider.WHOSCORED,
-    ).select_related("provider_match"))
+    ).values_list(*PROFILE_EVENT_COLUMNS)
+    return [ProfileEvent(*row) for row in rows.iterator(chunk_size=5000)]
 
 
 def materialize_event_profiles(
@@ -192,11 +222,20 @@ def materialize_event_profiles(
     if not competition_season.supports_whoscored:
         raise ValueError("WhoScored is not configured for this competition season.")
     _start(run)
+    diagnostics = {"stage_timings_seconds": {}, "rss_samples_mb": {}}
+    total_started = monotonic()
+    sample_memory(diagnostics, "start")
     try:
         with transaction.atomic():
+            stage_started = monotonic()
             report = build_event_identity_report(competition_season)
+            record_stage(diagnostics, "identity_report", stage_started)
+            stage_started = monotonic()
             all_events = _profile_events(competition_season)
+            record_stage(diagnostics, "load_events", stage_started)
+            stage_started = monotonic()
             coverage = _coverage_report(competition_season, all_events)
+            record_stage(diagnostics, "coverage", stage_started)
             public_complete = (
                 coverage["complete"]
                 and report.volume.unmapped_team_events == 0
@@ -208,10 +247,12 @@ def materialize_event_profiles(
                 "coverage": coverage,
                 "public_complete": public_complete,
                 "internal_pilot": internal_pilot,
+                "pipeline": diagnostics,
             }
             validate_event_identity_publication(report)
             if not all_events:
                 raise ValueError("No normalized WhoScored events are available to materialize.")
+            stage_started = monotonic()
             if affected_player_ids is None:
                 player_ids = {e.player_id for e in all_events if e.player_id}
                 player_ids.update(PlayerSeasonEventProfile.objects.filter(competition_season=competition_season, is_current=True).values_list("player_id", flat=True))
@@ -222,9 +263,13 @@ def materialize_event_profiles(
                 team_ids.update(TeamSeasonEventProfile.objects.filter(competition_season=competition_season, is_current=True).values_list("team_id", flat=True))
             else:
                 team_ids = set(affected_team_ids)
+            record_stage(diagnostics, "resolve_profile_scopes", stage_started)
             if competition_season.is_published and not public_complete and not internal_pilot:
                 raise ValueError("Published event profiles require mapped teams and complete WhoScored coverage.")
+            stage_started = monotonic()
             result = _publish(competition_season, run, all_events, player_ids, team_ids)
+            record_stage(diagnostics, "publish_profiles", stage_started)
+            record_stage(diagnostics, "total", total_started)
             stats = run.stats | {
                 "player_profiles": result.player_rows,
                 "team_profiles": result.team_rows,
@@ -243,7 +288,7 @@ def materialize_event_profiles(
         return None
 
 
-def _coverage_report(competition_season: CompetitionSeason, events: list[ProviderMatchEvent]) -> dict:
+def _coverage_report(competition_season: CompetitionSeason, events: list[ProfileEvent]) -> dict:
     expected = competition_season.whoscored_expected_match_count
     completed = set(competition_season.provider_matches.filter(provider=Provider.WHOSCORED, status="completed").values_list("id", flat=True))
     observed = {event.provider_match_id for event in events}
@@ -255,9 +300,13 @@ def _coverage_report(competition_season: CompetitionSeason, events: list[Provide
             "discovered_complete": discovered_complete, "complete": discovered_complete and expected_complete}
 
 
-def _publish(cs: CompetitionSeason, run: IngestionRun, events: list[ProviderMatchEvent], player_ids: set[int], team_ids: set[int]) -> BuildResult:
-    by_player, by_player_team, by_team = defaultdict(list), defaultdict(list), defaultdict(list)
+def _publish(cs: CompetitionSeason, run: IngestionRun, events: list[ProfileEvent], player_ids: set[int], team_ids: set[int]) -> BuildResult:
+    by_player = defaultdict(list)
+    by_player_team = defaultdict(list)
+    by_team = defaultdict(list)
+    by_match = defaultdict(list)
     for event in events:
+        by_match[event.provider_match_id].append(event)
         if event.player_id:
             by_player[event.player_id].append(event)
             if event.team_id:
@@ -279,7 +328,11 @@ def _publish(cs: CompetitionSeason, run: IngestionRun, events: list[ProviderMatc
         for team_id in sorted({team_id for (pid, team_id) in by_player_team if pid == player_id}):
             scoped = by_player_team[(player_id, team_id)]
             player_rows.append(_player_row(cs, run, player_id, team_id, EventProfileSplitType.TEAM, scoped, derived_minutes.get(player_id, 0), match_minutes))
-    team_rows = [_team_row(cs, run, team_id, by_team[team_id], events) for team_id in sorted(team_ids) if team_id in by_team]
+    team_rows = [
+        _team_row(cs, run, team_id, by_team[team_id], by_match)
+        for team_id in sorted(team_ids)
+        if team_id in by_team
+    ]
     if len({(row.player_id, row.team_id, row.split_type) for row in player_rows}) != len(player_rows):
         raise ValueError("Duplicate player event-profile scope.")
     if (
@@ -311,13 +364,14 @@ def _player_row(cs, run, player_id, team_id, split_type, events, minutes, match_
         observed_event_minutes=_event_minutes(events, match_minutes), minutes=minutes, action_grid=grid, is_current=False, **summary)
 
 
-def _team_row(cs, run, team_id, events, all_events):
+def _team_row(cs, run, team_id, events, by_match):
     summary = _summary(events); grid, _ = _grid(events, 0, touches_only=True)
     match_ids = {event.provider_match_id for event in events}
     opponents = [
         event
-        for event in all_events
-        if event.team_id != team_id and event.provider_match_id in match_ids
+        for match_id in match_ids
+        for event in by_match[match_id]
+        if event.team_id != team_id
     ]
     opponent_grid, _ = _grid(opponents, 0, touches_only=True); against = _summary(opponents)
     observed = len({e.provider_match_id for e in events})
