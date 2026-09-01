@@ -1,6 +1,15 @@
-from celery import shared_task
+from datetime import timedelta
 
-from ingestion.models import CompetitionSeason, IngestionKind, IngestionRun, IngestionRunStatus, PlayerDataMode
+from celery import current_app, shared_task
+
+from ingestion.models import (
+    CompetitionSeason,
+    IngestionBatchItem,
+    IngestionKind,
+    IngestionRun,
+    IngestionRunStatus,
+    PlayerDataMode,
+)
 from pathlib import Path
 
 from django.conf import settings
@@ -200,11 +209,143 @@ def task_plan_daily_refresh() -> dict:
     return enqueue_due_daily_batch()
 
 
-@shared_task
-def task_refresh_competition_season_item(batch_item_id: int) -> dict:
-    return execute_batch_item(batch_item_id)
+def ingestion_lease_ttl() -> timedelta:
+    seconds = int(getattr(settings, "STATBALLER_INGESTION_LEASE_TTL_SECONDS", 9000))
+    return timedelta(seconds=seconds)
+
+
+def acquire_whoscored_task_leases(task, competition_season_id: int):
+    from ingestion.services.ingestion_leases import acquire_lease, release_lease
+
+    heavy = acquire_lease("heavy-maintenance", ttl=ingestion_lease_ttl())
+    if heavy is None:
+        raise task.retry(countdown=300)
+    scope = acquire_lease(
+        f"whoscored:{competition_season_id}",
+        ttl=ingestion_lease_ttl(),
+    )
+    if scope is None:
+        release_lease(heavy)
+        raise task.retry(countdown=300)
+    return heavy, scope
+
+
+def release_whoscored_task_leases(heavy, scope) -> None:
+    from ingestion.services.ingestion_leases import release_lease
+
+    release_lease(scope)
+    release_lease(heavy)
+
+
+@shared_task(bind=True, max_retries=None)
+def task_refresh_competition_season_item(self, batch_item_id: int) -> dict:
+    from ingestion.services.ingestion_leases import acquire_lease, release_lease
+
+    lease = acquire_lease("heavy-maintenance", ttl=ingestion_lease_ttl())
+    if lease is None:
+        raise self.retry(countdown=300)
+    try:
+        return execute_batch_item(batch_item_id)
+    finally:
+        release_lease(lease)
 
 
 @shared_task
 def task_finalize_daily_refresh_batch(batch_id: int) -> dict:
     return finalize_batch_if_complete(batch_id)
+
+
+@shared_task
+def task_plan_weekly_whoscored() -> dict:
+    from ingestion.services.whoscored_weekly import plan_weekly_batch
+
+    batch = plan_weekly_batch()
+    if batch.status != "running":
+        return {"ok": False, "batch_id": batch.id, "status": batch.status}
+    pending = list(batch.items.filter(status="pending").order_by("planned_order"))
+    for item in pending:
+        current_app.send_task(
+            "ingestion.tasks.task_run_weekly_whoscored_item",
+            args=[item.id],
+            queue="whoscored",
+        )
+    return {"ok": True, "batch_id": batch.id, "items": len(pending)}
+
+
+@shared_task(bind=True, max_retries=None, soft_time_limit=6900, time_limit=7200)
+def task_run_weekly_whoscored_item(self, batch_item_id: int) -> dict:
+    from ingestion.services.whoscored_weekly import execute_weekly_item
+
+    item = IngestionBatchItem.objects.select_related("competition_season").get(
+        pk=batch_item_id
+    )
+    heavy, scope = acquire_whoscored_task_leases(
+        self,
+        item.competition_season_id,
+    )
+    try:
+        return execute_weekly_item(batch_item_id)
+    finally:
+        release_whoscored_task_leases(heavy, scope)
+
+
+@shared_task
+def task_plan_due_whoscored_settlements(manual: bool = False) -> dict:
+    from ingestion.services.ingestion_leases import acquire_lease
+    from ingestion.services.whoscored_weekly import (
+        due_settlement_matches,
+        weekly_competition_seasons,
+        weekly_refresh_enabled,
+    )
+
+    if not manual and not weekly_refresh_enabled():
+        return {"ok": False, "status": "disabled", "items": 0}
+    queued = []
+    for competition_season in weekly_competition_seasons():
+        if not due_settlement_matches(competition_season):
+            continue
+        lease = acquire_lease(
+            f"whoscored-settlement-queued:{competition_season.id}",
+            ttl=ingestion_lease_ttl(),
+        )
+        if lease is None:
+            continue
+        current_app.send_task(
+            "ingestion.tasks.task_run_due_whoscored_settlements",
+            args=[competition_season.id, lease.owner_token],
+            queue="whoscored",
+        )
+        queued.append(competition_season.id)
+    return {"ok": True, "items": len(queued), "competition_season_ids": queued}
+
+
+@shared_task(bind=True, max_retries=None, soft_time_limit=6900, time_limit=7200)
+def task_run_due_whoscored_settlements(
+    self,
+    competition_season_id: int,
+    queued_owner_token: str,
+) -> dict:
+    from ingestion.services.ingestion_leases import LeaseHandle, release_lease
+    from ingestion.services.whoscored_weekly import (
+        materialize_changed_entities,
+        run_due_settlements,
+    )
+
+    queued = LeaseHandle(
+        f"whoscored-settlement-queued:{competition_season_id}",
+        queued_owner_token,
+    )
+    heavy, scope = acquire_whoscored_task_leases(self, competition_season_id)
+    try:
+        competition_season = CompetitionSeason.objects.get(pk=competition_season_id)
+        run, stats = run_due_settlements(competition_season)
+        materialization = materialize_changed_entities(competition_season, stats)
+        return {
+            "ok": run is None or run.status == IngestionRunStatus.SUCCESS,
+            "run_id": run.id if run else None,
+            "stats": stats,
+            "materialization": materialization,
+        }
+    finally:
+        release_whoscored_task_leases(heavy, scope)
+        release_lease(queued)
